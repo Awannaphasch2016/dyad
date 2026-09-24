@@ -283,3 +283,8 @@ export function visibleComposerActions<T extends { id: string }>(
 export function showMessageRevisionActions(factory: boolean): boolean {
   return !factory;
 }
+
+/** Factory phase chats hide the assistant model name under each reply. */
+export function showAssistantModelAttribution(factory: boolean): boolean {
+  return !factory;
+}

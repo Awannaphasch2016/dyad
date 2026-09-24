@@ -56,6 +56,11 @@ import {
 } from "./messageApprovalStatus";
 import { ChatMessageAnnotationLayer } from "./ChatMessageAnnotationLayer";
 import { isChatMessageAnnotatable } from "./chatAnnotationEligibility";
+import { useChats } from "@/hooks/useChats";
+import {
+  hasFactoryPhases,
+  showAssistantModelAttribution,
+} from "@/lib/factoryPhase";
 
 /** Extract <dyad-attachment> tags from message content and return parsed attachment data. */
 function extractAttachments(content: string): {
@@ -116,6 +121,10 @@ const ChatMessage = ({
 }: ChatMessageProps) => {
   const { isStreaming } = useStreamChat();
   const appId = useAtomValue(selectedAppIdAtom);
+  const { chats } = useChats(appId);
+  const showModelAttribution = showAssistantModelAttribution(
+    hasFactoryPhases(chats),
+  );
   const { versions: liveVersions } = useVersions(appId);
   const {
     state: previewState,
@@ -423,7 +432,8 @@ const ChatMessage = ({
                       <span>Rejected</span>
                     </div>
                   )}
-                  {message.role === "assistant" &&
+                  {showModelAttribution &&
+                    message.role === "assistant" &&
                     (message.model || executionBackend === "claude-code") && (
                       <div className="flex items-center gap-1 text-gray-500 dark:text-gray-400 w-full sm:w-auto">
                         <Bot className="h-4 w-4 flex-shrink-0" />

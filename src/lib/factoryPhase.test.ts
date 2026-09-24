@@ -3,6 +3,7 @@ import {
   canContinueFactoryPhase,
   visibleComposerActions,
   showMessageRevisionActions,
+  showAssistantModelAttribution,
   continuePrefill,
   extractFactoryPhaseSummary,
   factoryPhaseChatMode,
@@ -333,5 +334,10 @@ Here is what I understood. Approve to continue, or tell me what to change.
   it("hides Undo and Retry on every factory phase chat", () => {
     expect(showMessageRevisionActions(true)).toBe(false);
     expect(showMessageRevisionActions(false)).toBe(true);
+  });
+
+  it("hides the assistant model badge on factory phase chats", () => {
+    expect(showAssistantModelAttribution(true)).toBe(false);
+    expect(showAssistantModelAttribution(false)).toBe(true);
   });
 });
