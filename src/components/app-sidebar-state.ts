@@ -104,6 +104,23 @@ export function isSidebarItemActive({
   return pathname.startsWith("/plugins");
 }
 
+/**
+ * The rail icon for the page you're on stays highlighted, and so does the icon
+ * for the panel the sidebar is currently showing. On a touch screen the panel
+ * can open before the route changes, and that icon still needs to read as open.
+ */
+export function isSidebarRailHighlighted({
+  title,
+  pathname,
+  selectedPanel,
+}: {
+  title: AppSidebarItemTitle;
+  pathname: string;
+  selectedPanel: AppSidebarPanel | null;
+}): boolean {
+  return isSidebarItemActive({ title, pathname }) || selectedPanel === title;
+}
+
 export function shouldShowSelectedAppChatList({
   selectedPanel,
   selectedAppId,

@@ -3,6 +3,7 @@ import {
   getRouteSidebarPanel,
   getSelectedSidebarPanel,
   isSidebarItemActive,
+  isSidebarRailHighlighted,
   shouldExpandSidebarForHover,
   shouldShowSelectedAppChatList,
 } from "@/components/app-sidebar-state";
@@ -30,6 +31,37 @@ describe("app sidebar state", () => {
         pathname: "/apps",
       }),
     ).toBe("Apps");
+  });
+
+  it("highlights the open panel as well as the current page", () => {
+    expect(
+      isSidebarRailHighlighted({
+        title: "Library",
+        pathname: "/templates",
+        selectedPanel: "Library",
+      }),
+    ).toBe(true);
+    expect(
+      isSidebarRailHighlighted({
+        title: "Templates",
+        pathname: "/templates",
+        selectedPanel: "Library",
+      }),
+    ).toBe(true);
+    expect(
+      isSidebarRailHighlighted({
+        title: "Settings",
+        pathname: "/templates",
+        selectedPanel: "Library",
+      }),
+    ).toBe(false);
+    expect(
+      isSidebarRailHighlighted({
+        title: "Plugins",
+        pathname: "/plugins",
+        selectedPanel: null,
+      }),
+    ).toBe(true);
   });
 
   it("does not restore a hover expansion after the pointer leaves", () => {
