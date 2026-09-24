@@ -3,6 +3,7 @@ import {
   canContinueFactoryPhase,
   continuePrefill,
   extractFactoryPhaseSummary,
+  factoryPhaseChatMode,
   factoryPhaseChats,
   factoryPhaseKickoff,
   latestFactoryPhaseSummary,
@@ -24,6 +25,12 @@ describe("factoryPhase", () => {
     expect(phaseFromTitle("Delivery")).toBe("delivery");
     expect(phaseFromTitle("Tiny Garden")).toBeNull();
     expect(phaseFromTitle(null)).toBeNull();
+  });
+
+  it("keeps Discovery and Delivery read-only", () => {
+    expect(factoryPhaseChatMode("discovery")).toBe("ask");
+    expect(factoryPhaseChatMode("implementation")).toBe("build");
+    expect(factoryPhaseChatMode("delivery")).toBe("ask");
   });
 
   it("opens the preview only for implementation", () => {

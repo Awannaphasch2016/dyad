@@ -19,6 +19,11 @@ export function phaseFromTitle(
   return TITLE_TO_PHASE[title] ?? null;
 }
 
+/** Discovery and Delivery stay read-only. Implementation is the build chat. */
+export function factoryPhaseChatMode(phase: FactoryPhase): "ask" | "build" {
+  return phase === "implementation" ? "build" : "ask";
+}
+
 export function factoryPhaseLabel(phase: FactoryPhase): string {
   if (phase === "discovery") return "Discovery";
   if (phase === "implementation") return "Implementation";
