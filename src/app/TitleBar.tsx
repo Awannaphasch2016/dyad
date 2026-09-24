@@ -15,7 +15,6 @@ import { useEffect, useState } from "react";
 import { DyadProSuccessDialog } from "@/components/DyadProSuccessDialog";
 import { useTheme } from "@/contexts/ThemeContext";
 import { ipc } from "@/ipc/types";
-import { useSystemPlatform } from "@/hooks/useSystemPlatform";
 import { useUserBudgetInfo } from "@/hooks/useUserBudgetInfo";
 import type { UserBudgetInfo } from "@/ipc/types";
 import {
@@ -43,8 +42,7 @@ export const TitleBar = () => {
   const { settings, refreshSettings } = useSettings();
   const queryClient = useQueryClient();
   const [isSuccessDialogOpen, setIsSuccessDialogOpen] = useState(false);
-  const platform = useSystemPlatform();
-  const showWindowControls = platform !== null && platform !== "darwin";
+  const showWindowControls = false;
 
   const { lastDeepLink, clearLastDeepLink } = useDeepLink();
   useEffect(() => {

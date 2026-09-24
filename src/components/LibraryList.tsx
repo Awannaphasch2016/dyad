@@ -1,7 +1,7 @@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { BookOpen, Palette, FileText, Image } from "lucide-react";
+import { Shield } from "lucide-react";
 
 type LibrarySection = {
   id: string;
@@ -11,10 +11,12 @@ type LibrarySection = {
 };
 
 const LIBRARY_SECTIONS: LibrarySection[] = [
-  { id: "all", label: "All", to: "/library", icon: BookOpen },
-  { id: "themes", label: "Themes", to: "/library/themes", icon: Palette },
-  { id: "prompts", label: "Prompts", to: "/library/prompts", icon: FileText },
-  { id: "media", label: "Media", to: "/library/media", icon: Image },
+  {
+    id: "members",
+    label: "Members & permissions",
+    to: "/library",
+    icon: Shield,
+  },
 ];
 
 export function LibraryList({ show }: { show: boolean }) {
@@ -28,7 +30,7 @@ export function LibraryList({ show }: { show: boolean }) {
   return (
     <div className="flex flex-col h-full">
       <div className="flex-shrink-0 p-4">
-        <h2 className="text-lg font-semibold tracking-tight">Library</h2>
+        <h2 className="text-lg font-semibold tracking-tight">Admin</h2>
       </div>
       <ScrollArea className="flex-grow">
         <div className="space-y-1 p-4 pt-0">

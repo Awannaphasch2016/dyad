@@ -1,4 +1,4 @@
-import { type LucideIcon, Home, HelpCircle, BookOpen } from "lucide-react";
+import { type LucideIcon, Home, HelpCircle, Shield } from "lucide-react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useSidebar } from "@/components/ui/sidebar"; // import useSidebar hook
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -43,16 +43,19 @@ const items = [
     title: "Apps",
     to: "/",
     icon: Home,
+    label: "Apps",
   },
   {
     title: "Library",
     to: "/library",
-    icon: BookOpen,
+    icon: Shield,
+    label: "Admin",
   },
 ] satisfies Array<{
   title: AppSidebarItemTitle;
   to: string;
   icon: ComponentType<{ className?: string }>;
+  label: string;
 }>;
 
 type AppSidebarItemTo = (typeof items)[number]["to"];
@@ -369,7 +372,7 @@ function AppIcons({
               <SidebarMenuItem key={item.title}>
                 <AppSidebarRailButton
                   icon={item.icon}
-                  label={item.title}
+                  label={item.label}
                   to={item.to}
                   isActive={isActive}
                   isCurrent={isCurrent}
