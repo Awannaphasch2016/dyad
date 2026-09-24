@@ -61,7 +61,7 @@ export function FreeAgentQuotaBanner({
             don't want to wait, upgrade to Dyad Pro
             {onSwitchToBuildMode
               ? " or switch to Build mode."
-              : ". To use Build mode, first choose a model other than Dyad Free."}
+              : ". To use Build mode, first choose a model other than wewebplus Free."}
           </p>
           <div className="flex flex-wrap gap-2">
             <Button onClick={handleUpgrade} size="sm" className="gap-1.5">

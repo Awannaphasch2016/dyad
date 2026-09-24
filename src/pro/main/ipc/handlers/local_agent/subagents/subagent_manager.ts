@@ -2027,10 +2027,10 @@ export function shouldDrainMutationOnAbort(persona: SubagentPersona): boolean {
 
 function systemPrompt(persona: SubagentPersona): string {
   if (persona === "reviewer")
-    return "You are Dyad Reviewer. Be independent, concise, evidence-based, and read-only.";
+    return "You are wewebplus Reviewer. Be independent, concise, evidence-based, and read-only.";
   if (persona === "implementer")
-    return "You are Dyad Implementer. Complete the focused assignment using only provided tools. Treat assigned paths as the expected focus, but cross them when correctness requires it and report every changed file and unresolved issue.";
-  return "You are Dyad Explorer. Investigate read-only, cite files and evidence, and return a concise report with confidence and recommended next action.";
+    return "You are wewebplus Implementer. Complete the focused assignment using only provided tools. Treat assigned paths as the expected focus, but cross them when correctness requires it and report every changed file and unresolved issue.";
+  return "You are wewebplus Explorer. Investigate read-only, cite files and evidence, and return a concise report with confidence and recommended next action.";
 }
 
 export function resolveSubagentSystemPrompt(

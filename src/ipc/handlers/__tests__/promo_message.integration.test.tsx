@@ -209,7 +209,7 @@ describe("promo message (integration)", () => {
         name: message.cta,
       }),
     );
-    expect(await screen.findByText("Unlock Dyad Pro")).toBeTruthy();
+    expect(await screen.findByText("Unlock wewebplus Pro")).toBeTruthy();
   }, 60_000);
 
   it("opens an external URL from a community promo CTA", async () => {

@@ -208,7 +208,9 @@ it("allows free users to connect without the usage-fee sentence", async () => {
 it("does not offer connection until billing settings are loaded", async () => {
   mocks.settingsLoading = true;
   await open();
-  expect(await screen.findByText("Checking Dyad Pro status…")).toBeVisible();
+  expect(
+    await screen.findByText("Checking wewebplus Pro status…"),
+  ).toBeVisible();
   expect(
     screen.getByRole("menuitem", { name: "Connect with ChatGPT" }),
   ).toHaveAttribute("aria-disabled", "true");
@@ -219,7 +221,9 @@ it("keeps connected copy neutral while billing settings load", async () => {
   mocks.settingsLoading = true;
   mocks.connected = true;
   await open();
-  expect(await screen.findByText("Checking Dyad Pro status…")).toBeVisible();
+  expect(
+    await screen.findByText("Checking wewebplus Pro status…"),
+  ).toBeVisible();
   expect(
     screen.queryByText("Disconnect ChatGPT to use your OpenAI API key."),
   ).toBeNull();

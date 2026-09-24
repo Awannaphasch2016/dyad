@@ -10,9 +10,9 @@ export const SUBSCRIPTION_BILLING_ERRORS = {
     url: "https://academy.dyad.sh/subscription",
   },
   KEY_REJECTED: {
-    title: "Your Dyad Pro key was rejected",
+    title: "Your wewebplus Pro key was rejected",
     description: "Get your current Pro key.",
-    message: "Your Dyad Pro key was rejected. Get your current Pro key.",
+    message: "Your wewebplus Pro key was rejected. Get your current Pro key.",
     action: "Open membership portal",
     url: "https://academy.dyad.sh",
   },

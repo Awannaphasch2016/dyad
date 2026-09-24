@@ -71,12 +71,12 @@ export function hasFactoryPhases<T extends { title: string | null }>(
 
 export function factoryPhaseHint(phase: FactoryPhase): string {
   if (phase === "discovery") {
-    return "Dyad asks about the page name, one sentence, and what goes on the page. Approve once its Discovery summary looks right.";
+    return "wewebplus asks about the page name, one sentence, and what goes on the page. Approve once its Discovery summary looks right.";
   }
   if (phase === "implementation") {
     return "Send the prefilled summary to start the build, then review the preview. Approve once the page looks right.";
   }
-  return "Dyad summarizes what was built. Approve delivery when the trial is finished.";
+  return "wewebplus summarizes what was built. Approve delivery when the trial is finished.";
 }
 
 export interface FactoryPhaseProgress {

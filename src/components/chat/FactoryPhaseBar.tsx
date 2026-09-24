@@ -305,8 +305,8 @@ export function FactoryPhaseBar() {
           <>
             {" "}
             {isStreaming
-              ? "Dyad is working…"
-              : `Approval unlocks when Dyad posts its ${factoryPhaseLabel(phase)} summary.`}
+              ? "wewebplus is working…"
+              : `Approval unlocks when wewebplus posts its ${factoryPhaseLabel(phase)} summary.`}
           </>
         )}
       </p>

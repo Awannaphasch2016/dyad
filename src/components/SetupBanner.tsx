@@ -153,7 +153,7 @@ export function SetupBanner({
             </div>
             <div className="min-w-0">
               <h3 className="text-lg font-semibold text-primary">
-                Start free Dyad Pro trial
+                Start free wewebplus Pro trial
               </h3>
               <p className="mt-0.5 text-sm text-muted-foreground">
                 No API keys. Access leading models instantly.
@@ -209,7 +209,7 @@ export function SetupBanner({
           </div>
           {!settings && (
             <p className="mt-2 text-xs text-muted-foreground">
-              Checking Dyad Pro status…
+              Checking wewebplus Pro status…
             </p>
           )}
           {subscription.data?.pending && (

@@ -132,8 +132,8 @@ export function SubscriptionConnectionStatus() {
           {(!settings || hasPro) && (
             <p>
               {!settings
-                ? "Checking Dyad Pro status…"
-                : "Uses up to 1.5 Dyad Pro credits / 1 million tokens processed."}
+                ? "Checking wewebplus Pro status…"
+                : "Uses up to 1.5 wewebplus Pro credits / 1 million tokens processed."}
             </p>
           )}
         </div>
