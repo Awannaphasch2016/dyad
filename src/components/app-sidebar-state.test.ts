@@ -33,7 +33,7 @@ describe("app sidebar state", () => {
     ).toBe("Apps");
   });
 
-  it("highlights the open panel as well as the current page", () => {
+  it("highlights only the open sidebar panel when one is showing", () => {
     expect(
       isSidebarRailHighlighted({
         title: "Library",
@@ -43,18 +43,25 @@ describe("app sidebar state", () => {
     ).toBe(true);
     expect(
       isSidebarRailHighlighted({
-        title: "Templates",
-        pathname: "/templates",
-        selectedPanel: "Library",
-      }),
-    ).toBe(true);
-    expect(
-      isSidebarRailHighlighted({
-        title: "Settings",
+        title: "Apps",
         pathname: "/templates",
         selectedPanel: "Library",
       }),
     ).toBe(false);
+    expect(
+      isSidebarRailHighlighted({
+        title: "Library",
+        pathname: "/library",
+        selectedPanel: "Apps",
+      }),
+    ).toBe(false);
+    expect(
+      isSidebarRailHighlighted({
+        title: "Apps",
+        pathname: "/library",
+        selectedPanel: "Apps",
+      }),
+    ).toBe(true);
     expect(
       isSidebarRailHighlighted({
         title: "Plugins",

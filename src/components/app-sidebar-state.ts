@@ -105,9 +105,10 @@ export function isSidebarItemActive({
 }
 
 /**
- * The rail icon for the page you're on stays highlighted, and so does the icon
- * for the panel the sidebar is currently showing. On a touch screen the panel
- * can open before the route changes, and that icon still needs to read as open.
+ * When the sidebar is showing a panel (Apps, Admin, Settings), only that rail
+ * icon is highlighted. Otherwise the icon for the current route is highlighted.
+ * This avoids Admin staying lit while the Apps list is open on a /library URL
+ * before navigation finishes.
  */
 export function isSidebarRailHighlighted({
   title,
@@ -118,7 +119,10 @@ export function isSidebarRailHighlighted({
   pathname: string;
   selectedPanel: AppSidebarPanel | null;
 }): boolean {
-  return isSidebarItemActive({ title, pathname }) || selectedPanel === title;
+  if (selectedPanel != null) {
+    return selectedPanel === title;
+  }
+  return isSidebarItemActive({ title, pathname });
 }
 
 export function shouldShowSelectedAppChatList({
