@@ -20,7 +20,7 @@ import { usePostHog } from "posthog-js/react";
 import { useLanguageModelProviders } from "@/hooks/useLanguageModelProviders";
 import { useScrollAndNavigateTo } from "@/hooks/useScrollAndNavigateTo";
 // @ts-ignore
-import logo from "../../assets/logo.svg";
+import logo from "../../assets/wewebplus-logo.jpg";
 // @ts-ignore
 import openrouterLogo from "../../assets/ai-logos/openrouter-logo.png";
 import { SetupDyadProButton } from "./ProBanner";
@@ -148,9 +148,11 @@ export function SetupBanner({
           className="mt-5 flex w-full cursor-pointer items-center justify-between gap-4 rounded-lg border border-primary/45 bg-primary/8 p-4 text-left transition-colors hover:bg-primary/12 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 dark:bg-primary/15 dark:hover:bg-primary/20"
         >
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary/10">
-              <img src={logo} alt="wewebplus Logo" className="size-6" />
-            </div>
+            <img
+              src={logo}
+              alt="wewebplus"
+              className="size-11 shrink-0 rounded-lg object-contain"
+            />
             <div className="min-w-0">
               <h3 className="text-lg font-semibold text-primary">
                 Start free wewebplus Pro trial

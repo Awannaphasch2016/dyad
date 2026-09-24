@@ -7,7 +7,7 @@ import { useSettings } from "@/hooks/useSettings";
 import { Button } from "@/components/ui/button";
 import { AppAvatar } from "@/components/AppAvatar";
 // @ts-ignore
-import logo from "../../assets/logo.svg";
+import logo from "../../assets/wewebplus-logo.jpg";
 import { providerSettingsRoute } from "@/routes/settings/providers/$provider";
 import { cn } from "@/lib/utils";
 import { useDeepLink } from "@/contexts/DeepLinkContext";
@@ -98,7 +98,11 @@ export const TitleBar = () => {
         <div className="flex items-center shrink-0">
           <div className={`${showWindowControls ? "pl-2" : "pl-18"}`}></div>
 
-          <img src={logo} alt="wewebplus" className="ml-2 w-5 h-5 shrink-0" />
+          <img
+            src={logo}
+            alt="wewebplus"
+            className="ml-1.5 h-8 w-8 shrink-0 rounded-md object-contain"
+          />
 
           <Tooltip>
             <TooltipTrigger
