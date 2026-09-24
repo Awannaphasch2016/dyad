@@ -8,7 +8,7 @@ import {
   useMemo,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useAtom, useAtomValue, useSetAtom, useStore } from "jotai";
 import { selectAtom } from "jotai/utils";
 import { AnimatePresence, motion, type Transition } from "framer-motion";
 import {
@@ -47,6 +47,7 @@ import { useChatStreamManager } from "@/chat_stream/ChatStreamProvider";
 import { streamInvocationRef } from "@/chat_stream/transition";
 import { useChatScroll } from "./chat/scroll/useChatScroll";
 import { automaticChatScrollReason } from "./chatPanelScroll";
+import { shouldApplyFetchedChatMessages } from "./chatPanelMessages";
 import {
   useChatMessages,
   useChatMessagesLoaded,
@@ -68,6 +69,7 @@ export function ChatPanel({
   const { t } = useTranslation("chat");
   const messages = useChatMessages(chatId);
   const messagesLoaded = useChatMessagesLoaded(chatId);
+  const store = useStore();
   const setMessagesById = useSetAtom(chatMessagesByIdAtom);
   const setScrollToBottomRequestedChatIds = useSetAtom(
     scrollToBottomRequestedChatIdsAtom,
@@ -200,16 +202,23 @@ export function ChatPanel({
       // no-op when no chat
       return;
     }
-    // Skip IPC fetch entirely when streaming: the patch stream carries fresher
-    // content than the throttled DB snapshot, and overwriting would corrupt the
-    // renderer's base for subsequent patches (offset mismatch). onEnd will do
-    // a correct full sync when the stream finishes.
-    // Read at call time so both checks observe the current machine snapshot.
-    if (chatStreamManager.getIsStreaming(chatId)) return;
     const chat = await ipc.chat.getChat(chatId);
-    // Re-check after the async fetch: streaming may have started while in flight.
-    if (chatStreamManager.getIsStreaming(chatId)) return;
+    // A live assistant patch is fresher than this snapshot. An empty thread,
+    // or one that is still waiting for the reply, takes the saved messages so
+    // the Discovery question is visible even when the patch stream is owned
+    // by another window.
+    const streaming = chatStreamManager.getIsStreaming(chatId);
     setMessagesById((prev) => {
+      const current = prev.get(chatId);
+      if (
+        !shouldApplyFetchedChatMessages({
+          streaming,
+          current,
+          fetched: chat.messages,
+        })
+      ) {
+        return prev;
+      }
       const next = new Map(prev);
       next.set(chatId, chat.messages);
       return next;
@@ -217,8 +226,24 @@ export function ChatPanel({
   }, [chatId, chatStreamManager, setMessagesById]);
 
   useEffect(() => {
-    fetchChatMessages();
-  }, [fetchChatMessages]);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const load = (remaining: number) => {
+      void fetchChatMessages().finally(() => {
+        if (cancelled || chatId == null || remaining <= 0) return;
+        const current = store.get(chatMessagesByIdAtom).get(chatId);
+        const last = current?.[current.length - 1];
+        const hasReply = last?.role === "assistant" && last.content.length > 0;
+        if (hasReply) return;
+        timer = setTimeout(() => load(remaining - 1), 1000);
+      });
+    };
+    load(12);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [chatId, fetchChatMessages, store]);
 
   const closeTerminal = useCallback(() => {
     if (!chatId) return;
