@@ -5,7 +5,6 @@ import {
   HelpCircle,
   Store,
   BookOpen,
-  Blocks,
 } from "lucide-react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useSidebar } from "@/components/ui/sidebar"; // import useSidebar hook
@@ -66,11 +65,6 @@ const items = [
     title: "Templates",
     to: "/templates",
     icon: Store,
-  },
-  {
-    title: "Plugins",
-    to: "/plugins",
-    icon: Blocks,
   },
 ] satisfies Array<{
   title: AppSidebarItemTitle;
@@ -367,8 +361,8 @@ function AppIcons({
       case "Library":
         return "start-hover:library";
       default:
-        // Items without a sub-list (Templates, Plugins) dismiss any open
-        // preview so a stale list doesn't linger while hovering an unrelated icon.
+        // Items without a sub-list (Templates) dismiss any open preview so a
+        // stale list doesn't linger while hovering an unrelated icon.
         return "clear-hover";
     }
   };
