@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { getPreviewToolbarActionVisibility } from "./previewToolbarLayout";
+import {
+  getPreviewToolbarActionVisibility,
+  previewTabsForFactory,
+} from "./previewToolbarLayout";
 
 describe("getPreviewToolbarActionVisibility", () => {
   it("shows secondary actions before the toolbar has been measured", () => {
@@ -24,5 +27,21 @@ describe("getPreviewToolbarActionVisibility", () => {
     expect(getPreviewToolbarActionVisibility(600)).toEqual({
       showOpenBrowser: false,
     });
+  });
+});
+
+describe("previewTabsForFactory", () => {
+  it("hides Publish and Configure on a factory app", () => {
+    expect(
+      previewTabsForFactory(
+        ["preview", "code", "publish", "configure", "problems"],
+        true,
+      ),
+    ).toEqual(["preview", "code", "problems"]);
+  });
+
+  it("keeps Publish and Configure on other apps", () => {
+    const tabs = ["preview", "code", "publish", "configure"];
+    expect(previewTabsForFactory(tabs, false)).toEqual(tabs);
   });
 });
