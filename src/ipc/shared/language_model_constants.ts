@@ -60,7 +60,7 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
     {
       name: GPT_5_6_SOL_MODEL_NAME,
       displayName: "GPT 5.6 Sol",
-      description: "Frontier agentic coding model used by Dyad Reviewer",
+      description: "Frontier agentic coding model used by wewebplus Reviewer",
       contextWindow: 372_000,
       temperature: 1,
       dollarSigns: 6,
@@ -410,7 +410,7 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
       name: "free-pro",
       displayName: "Free (Daily)",
       description:
-        "5 free messages per day for Dyad Pro users (note: your data may be used for training models)",
+        "5 free messages per day for wewebplus Pro users (note: your data may be used for training models)",
       tag: "Free",
       tagColor: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
       maxOutputTokens: 32_000,

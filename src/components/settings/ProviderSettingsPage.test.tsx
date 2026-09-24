@@ -184,7 +184,7 @@ describe("ProviderSettingsPage", () => {
     mocks.updateSettings.mockResolvedValue(undefined);
 
     renderProviderSettingsPage("auto");
-    await saveApiKey("Dyad", "auto");
+    await saveApiKey("wewebplus", "auto");
 
     await waitFor(() =>
       expect(mocks.sendFirstPrompt).toHaveBeenCalledWith({

@@ -179,7 +179,7 @@ export async function getModelClient(
   const model = getAutoSidekickRuntimeModel(selectedModel);
   if (selectedModelSelection.connection === "pro" && !settings.enableDyadPro)
     throw new DyadError(
-      "Enable Dyad Pro before using Pro credits.",
+      "Enable wewebplus Pro before using Pro credits.",
       DyadErrorKind.Auth,
     );
   // A supplied connection is the source already accepted for this turn.
@@ -230,7 +230,7 @@ export async function getModelClient(
   const dyadApiKey = settings.enableDyadPro
     ? getProviderApiKeyForRequest(
         settings.providerSettings?.auto?.apiKey?.value,
-        "Dyad",
+        "wewebplus",
       )
     : undefined;
   const isLocalProvider = ["ollama", "lmstudio"].includes(model.provider);
@@ -239,7 +239,7 @@ export async function getModelClient(
   );
   if (connection === "pro" && !isDyadProEnabledForRequest)
     throw new DyadError(
-      "Enable Dyad Pro before using Pro credits.",
+      "Enable wewebplus Pro before using Pro credits.",
       DyadErrorKind.Auth,
     );
 
@@ -249,7 +249,7 @@ export async function getModelClient(
     !isDyadProEnabledForRequest
   ) {
     throw new DyadError(
-      "Auto (balanced) requires Dyad Pro. Switch to another model or enable Dyad Pro.",
+      "Auto (balanced) requires wewebplus Pro. Switch to another model or enable wewebplus Pro.",
       DyadErrorKind.Auth,
     );
   }
@@ -266,7 +266,7 @@ export async function getModelClient(
 
   if (isFreeProModel(model) && (!settings.enableDyadPro || !dyadApiKey)) {
     throw new DyadError(
-      "Dyad Free requires an active Dyad Pro API key. Switch to another model or enable Dyad Pro.",
+      "wewebplus Free requires an active wewebplus Pro API key. Switch to another model or enable wewebplus Pro.",
       DyadErrorKind.Auth,
     );
   }
@@ -327,11 +327,11 @@ export async function getModelClient(
       });
 
       logger.debug(
-        `\x1b[1;97;44m Using Dyad Pro API key for model: ${model.name} \x1b[0m`,
+        `\x1b[1;97;44m Using wewebplus Pro API key for model: ${model.name} \x1b[0m`,
       );
 
       logger.debug(
-        `\x1b[1;30;42m Using Dyad Pro engine: ${dyadEngineUrl ?? "<prod>"} \x1b[0m`,
+        `\x1b[1;30;42m Using wewebplus Pro engine: ${dyadEngineUrl ?? "<prod>"} \x1b[0m`,
       );
 
       // Do not use free variant (for openrouter).
@@ -354,7 +354,7 @@ export async function getModelClient(
       };
     } else {
       throw new DyadError(
-        "This provider is not available through Pro credits. Turn off Dyad Pro to use your own API key.",
+        "This provider is not available through Pro credits. Turn off wewebplus Pro to use your own API key.",
         DyadErrorKind.Validation,
       );
     }

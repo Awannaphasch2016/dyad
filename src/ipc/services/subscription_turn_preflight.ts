@@ -77,7 +77,7 @@ export async function preflightSubscriptionTurn(
     const apiKey = settings.providerSettings?.auto?.apiKey?.value;
     if (!apiKey)
       throw new DyadError(
-        "Connect Dyad Pro before using an external model.",
+        "Connect wewebplus Pro before using an external model.",
         DyadErrorKind.Auth,
       );
     externalModelAdmission = await checkExternalModelAdmission(apiKey, signal);

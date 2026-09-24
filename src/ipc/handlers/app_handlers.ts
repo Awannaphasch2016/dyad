@@ -488,7 +488,7 @@ async function ensureAppOffTestBranch(appId: number): Promise<void> {
     return;
   }
   throw new DyadError(
-    "Dyad couldn't restore this app's real database settings after recording, so starting it now would run against the temporary test branch. Check your Neon connection, then try again so Dyad can finish recovery.",
+    "wewebplus couldn't restore this app's real database settings after recording, so starting it now would run against the temporary test branch. Check your Neon connection, then try again so wewebplus can finish recovery.",
     DyadErrorKind.Precondition,
   );
 }
@@ -607,7 +607,7 @@ async function deleteAppById(
         stranded(
           deletedRow.neonProjectId
             ? "Neon rejected the delete"
-            : "the app was no longer linked to a Neon project, so Dyad could not address the branch",
+            : "the app was no longer linked to a Neon project, so wewebplus could not address the branch",
         );
       }
     } catch (error) {
@@ -1007,7 +1007,7 @@ export function registerAppHandlers() {
       }
       if (!restored) {
         throw new DyadError(
-          "Dyad couldn't restore this app's real database settings from a previous test or recording session. Retry after checking the Neon connection.",
+          "wewebplus couldn't restore this app's real database settings from a previous test or recording session. Retry after checking the Neon connection.",
           DyadErrorKind.Precondition,
         );
       }
@@ -1067,7 +1067,7 @@ export function registerAppHandlers() {
           !isTestBranchCleanupOnly(originalApp.neonTestBranchId)
         ) {
           throw new DyadError(
-            "Dyad couldn't restore this app's real database settings from a previous test or recording session. Retry after checking the Neon connection.",
+            "wewebplus couldn't restore this app's real database settings from a previous test or recording session. Retry after checking the Neon connection.",
             DyadErrorKind.Precondition,
           );
         }

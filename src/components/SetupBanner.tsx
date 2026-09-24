@@ -136,8 +136,8 @@ export function SetupBanner({
           ) : (
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
               {hasProviderSetup
-                ? "Change how Dyad accesses AI."
-                : "Dyad uses AI to build your app."}
+                ? "Change how wewebplus accesses AI."
+                : "wewebplus uses AI to build your app."}
             </p>
           )}
         </div>
@@ -149,7 +149,7 @@ export function SetupBanner({
         >
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary/10">
-              <img src={logo} alt="Dyad Logo" className="size-6" />
+              <img src={logo} alt="wewebplus Logo" className="size-6" />
             </div>
             <div className="min-w-0">
               <h3 className="text-lg font-semibold text-primary">

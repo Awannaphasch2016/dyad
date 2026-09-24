@@ -116,7 +116,7 @@ export function SubscriptionConnectionStatus() {
           <div className="mx-auto mb-3 rounded-full bg-primary/10 p-4 text-primary">
             <Sparkles className="size-8" />
           </div>
-          <DialogTitle>Enjoy your extra Dyad usage!</DialogTitle>
+          <DialogTitle>Enjoy your extra wewebplus usage!</DialogTitle>
           <DialogDescription>
             Your ChatGPT subscription is connected.
           </DialogDescription>

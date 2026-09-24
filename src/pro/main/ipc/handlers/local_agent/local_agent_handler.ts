@@ -802,8 +802,8 @@ export async function handleLocalAgentStream(
   ) {
     const errorMessage =
       referencedApps.length > 0
-        ? "Referencing other apps (@app:Name) in local-agent mode requires Dyad Pro. Please enable Dyad Pro in Settings → Pro."
-        : "Agent v2 requires Dyad Pro. Please enable Dyad Pro in Settings → Pro.";
+        ? "Referencing other apps (@app:Name) in local-agent mode requires wewebplus Pro. Please enable wewebplus Pro in Settings → Pro."
+        : "Agent v2 requires wewebplus Pro. Please enable wewebplus Pro in Settings → Pro.";
     safeSend(event.sender, "chat:response:error", {
       chatId: req.chatId,
       invocationRef: req.invocationRef,

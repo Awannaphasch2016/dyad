@@ -271,7 +271,7 @@ export const SCREENSHOT_PASTE_REMINDER =
 export function formatScreenshotStatusLine(outcome: ScreenshotOutcome): string {
   switch (outcome.status) {
     case "captured":
-      return `${SCREENSHOT_STATUS_PREFIX} captured (reporter captured a screenshot in Dyad; if no image is attached, ask them to paste it)`;
+      return `${SCREENSHOT_STATUS_PREFIX} captured (reporter captured a screenshot in wewebplus; if no image is attached, ask them to paste it)`;
     case "declined":
       return `${SCREENSHOT_STATUS_PREFIX} declined`;
     case "capture-failed":
@@ -308,7 +308,7 @@ function formatSettingsLines(
     `- Selected Model: ${field(`${model.provider}:${model.name}`)}`,
     `- Chat Mode: ${field(settings.selectedChatMode ?? "default")}`,
     `- Auto Approve Changes: ${settings.autoApproveChanges ?? "n/a"}`,
-    `- Dyad Pro Enabled: ${settings.enableDyadPro ?? "n/a"}`,
+    `- wewebplus Pro Enabled: ${settings.enableDyadPro ?? "n/a"}`,
     `- Effort Level: ${field(selectedModel?.effortLevel ?? "medium")}`,
     `- Runtime Mode: ${field(settings.runtimeMode2 ?? "n/a")}`,
     `- Release Channel: ${field(settings.releaseChannel ?? "n/a")}`,
@@ -320,7 +320,7 @@ function formatSystemInfoSection(
   userBudget: UserBudgetInfo | undefined,
 ): string {
   return `## System Information
-- Dyad Version: ${field(debugInfo.dyadVersion)}
+- wewebplus Version: ${field(debugInfo.dyadVersion)}
 - Platform: ${field(debugInfo.platform)}
 - Architecture: ${field(debugInfo.architecture)}
 - Node Version: ${field(debugInfo.nodeVersion || "n/a")}

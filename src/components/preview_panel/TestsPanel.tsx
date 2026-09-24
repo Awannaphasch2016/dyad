@@ -1269,7 +1269,7 @@ export function TestsPanel() {
       ? "Wait for the current test run to finish."
       : isRecordingSession
         ? "A recording session is already in progress."
-        : "Click through your app in the preview and Dyad writes the test for you.";
+        : "Click through your app in the preview and wewebplus writes the test for you.";
 
   const enableTesting = useCallback(() => {
     if (selectedAppId == null) return;
@@ -2119,8 +2119,8 @@ function EnableTestingScreen({
         Enable testing for this app
       </h3>
       <p className="text-sm text-muted-foreground max-w-sm mb-5">
-        Let Dyad write and run end-to-end tests that drive your app like a real
-        user. Tests are a starting point you can review, edit, and re-run.
+        Let wewebplus write and run end-to-end tests that drive your app like a
+        real user. Tests are a starting point you can review, edit, and re-run.
       </p>
 
       {/* Data-safety warning, scaled to how well runs are isolated for this
@@ -2143,8 +2143,8 @@ function EnableTestingScreen({
             {hasSupabaseIsolation
               ? "Each test and retry gets a fresh Supabase test user. Seed required user data in each test or beforeEach; supported user-owned rows are cleaned up afterward. Isolation relies on Row-Level Security, which may not cover every table. We strongly recommend enabling data backups before running tests, in case they do something unintended."
               : hasManagedDatabase
-                ? "Dyad can't isolate this database in the current setup. These tests can create, update, or delete current data, so we strongly recommend enabling data backups before running them."
-                : "These tests can create, update, or delete real data, and Dyad can't isolate a custom or non-database backend. We strongly recommend enabling data backups before running tests, in case they do something unintended."}
+                ? "wewebplus can't isolate this database in the current setup. These tests can create, update, or delete current data, so we strongly recommend enabling data backups before running them."
+                : "These tests can create, update, or delete real data, and wewebplus can't isolate a custom or non-database backend. We strongly recommend enabling data backups before running tests, in case they do something unintended."}
           </span>
         </div>
       )}

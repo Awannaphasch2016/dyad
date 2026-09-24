@@ -698,12 +698,12 @@ describe("ModelPicker", () => {
     expect(screen.queryByText("Premium")).toBeNull();
     expect(screen.queryByText("Local models")).toBeNull();
     expect(screen.queryByText("Free (OpenRouter)")).toBeNull();
-    expect(screen.getByText("Dyad Free")).toBeTruthy();
+    expect(screen.getByText("wewebplus Free")).toBeTruthy();
     expect(screen.getByText("2/5 left")).toBeTruthy();
     expect(screen.getByText("Data sharing")).toBeTruthy();
     expect(
       screen
-        .getByText("Dyad Free")
+        .getByText("wewebplus Free")
         .closest("button")
         ?.getAttribute("aria-label"),
     ).toContain("2/5 left. Data sharing");
@@ -1432,7 +1432,7 @@ describe("ModelPicker", () => {
     expect(screen.queryByText("GPT 5")).toBeNull();
     expect(screen.getByText("All models")).toBeTruthy();
     expect(screen.queryByText("Other AI providers")).toBeNull();
-    expect(screen.queryByText("Dyad Free")).toBeNull();
+    expect(screen.queryByText("wewebplus Free")).toBeNull();
     expect(screen.getByText("Free (OpenRouter)")).toBeTruthy();
   });
 
@@ -1771,7 +1771,7 @@ describe("ModelPicker", () => {
 
     render(<ModelPicker />);
 
-    expect(screen.queryByText("Dyad Free")).toBeNull();
+    expect(screen.queryByText("wewebplus Free")).toBeNull();
     expect(
       screen.getByText(
         "Upgrade from wewebplus Pro trial to unlock more models.",
@@ -1799,7 +1799,7 @@ describe("ModelPicker", () => {
 
     render(<ModelPicker />);
 
-    fireEvent.click(screen.getByText("Dyad Free").closest("button")!);
+    fireEvent.click(screen.getByText("wewebplus Free").closest("button")!);
 
     expect(mocks.updateSettings).not.toHaveBeenCalled();
   });
@@ -1807,7 +1807,7 @@ describe("ModelPicker", () => {
   it("moves Build mode to Agent when selecting Dyad Free", async () => {
     render(<ModelPicker />);
 
-    fireEvent.click(screen.getByText("Dyad Free").closest("button")!);
+    fireEvent.click(screen.getByText("wewebplus Free").closest("button")!);
 
     await waitFor(() => {
       expect(mocks.updateSettings).toHaveBeenCalledWith({
@@ -1835,7 +1835,7 @@ describe("ModelPicker", () => {
     };
 
     render(<ModelPicker />);
-    fireEvent.click(screen.getByText("Dyad Free").closest("button")!);
+    fireEvent.click(screen.getByText("wewebplus Free").closest("button")!);
 
     await waitFor(() => {
       expect(mocks.setChatSelection).toHaveBeenCalledWith({

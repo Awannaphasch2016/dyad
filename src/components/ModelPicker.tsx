@@ -36,6 +36,7 @@ import { ipc, type LanguageModel, type LocalModel } from "@/ipc/types";
 import { useLanguageModelProviders } from "@/hooks/useLanguageModelProviders";
 import { useSettings } from "@/hooks/useSettings";
 import { PriceBadge } from "@/components/PriceBadge";
+import { productLabel } from "@/lib/product_label";
 import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queryKeys";
@@ -446,45 +447,48 @@ export function ModelPicker() {
   const getModelDisplayName = (
     displayModel: LargeLanguageModel = selectedModel,
   ) => {
-    if (displayModel.provider === "claude-code")
-      return `Claude Code — ${claudeCodeDisplayName(displayModel.name, availableClaudeModels, modelsByProviders)}`;
-    if (isAutoSidekickModel(displayModel)) {
-      return AUTO_SIDEKICK_DISPLAY_NAME;
-    }
-    if (displayModel.provider === "ollama") {
-      return (
-        ollamaModels.find(
-          (model: LocalModel) => model.modelName === displayModel.name,
-        )?.displayName || displayModel.name
-      );
-    }
-    if (displayModel.provider === "lmstudio") {
-      return (
-        lmStudioModels.find(
-          (model: LocalModel) => model.modelName === displayModel.name,
-        )?.displayName || displayModel.name // Fallback to path if not found
-      );
-    }
-
-    // For cloud models, look up in the modelsByProviders data
-    if (modelsByProviders && modelsByProviders[displayModel.provider]) {
-      const customFoundModel = modelsByProviders[displayModel.provider].find(
-        (model) =>
-          model.type === "custom" && model.id === displayModel.customModelId,
-      );
-      if (customFoundModel) {
-        return customFoundModel.displayName;
+    const rawName = (() => {
+      if (displayModel.provider === "claude-code")
+        return `Claude Code — ${claudeCodeDisplayName(displayModel.name, availableClaudeModels, modelsByProviders)}`;
+      if (isAutoSidekickModel(displayModel)) {
+        return AUTO_SIDEKICK_DISPLAY_NAME;
       }
-      const foundModel = modelsByProviders[displayModel.provider].find(
-        (model) => model.apiName === displayModel.name,
-      );
-      if (foundModel) {
-        return foundModel.displayName;
+      if (displayModel.provider === "ollama") {
+        return (
+          ollamaModels.find(
+            (model: LocalModel) => model.modelName === displayModel.name,
+          )?.displayName || displayModel.name
+        );
       }
-    }
+      if (displayModel.provider === "lmstudio") {
+        return (
+          lmStudioModels.find(
+            (model: LocalModel) => model.modelName === displayModel.name,
+          )?.displayName || displayModel.name // Fallback to path if not found
+        );
+      }
 
-    // Fallback if not found
-    return displayModel.name;
+      // For cloud models, look up in the modelsByProviders data
+      if (modelsByProviders && modelsByProviders[displayModel.provider]) {
+        const customFoundModel = modelsByProviders[displayModel.provider].find(
+          (model) =>
+            model.type === "custom" && model.id === displayModel.customModelId,
+        );
+        if (customFoundModel) {
+          return customFoundModel.displayName;
+        }
+        const foundModel = modelsByProviders[displayModel.provider].find(
+          (model) => model.apiName === displayModel.name,
+        );
+        if (foundModel) {
+          return foundModel.displayName;
+        }
+      }
+
+      // Fallback if not found
+      return displayModel.name;
+    })();
+    return productLabel(rawName);
   };
 
   // Get auto provider models (if any)
@@ -802,7 +806,7 @@ export function ModelPicker() {
 
   const getProviderDisplayName = (providerId: string) => {
     const provider = providers?.find((p) => p.id === providerId);
-    return provider?.name ?? providerId;
+    return productLabel(provider?.name ?? providerId);
   };
 
   // Non-Pro users can still use any cloud model with their own API key, so a
@@ -989,7 +993,7 @@ export function ModelPicker() {
     const subscriptionEligible = isClaudeCode || chatGPTSubscriptionEligible;
     const subscriptionLabel = isClaudeCode ? "Claude Code" : "ChatGPT plan";
     const unlockedAriaLabel = [
-      model.displayName,
+      productLabel(model.displayName),
       subscriptionEligible ? subscriptionLabel : null,
       showPrice && !subscriptionEligible && model.dollarSigns != null
         ? model.dollarSigns === 0
@@ -1019,13 +1023,15 @@ export function ModelPicker() {
           )}
           <span className="min-w-0 flex flex-col items-start">
             <span
-              title={model.description ? undefined : model.displayName}
+              title={
+                model.description ? undefined : productLabel(model.displayName)
+              }
               className={cn(
                 "block max-w-full truncate text-[13px] leading-tight",
                 isLocked && "text-muted-foreground",
               )}
             >
-              {model.displayName}
+              {productLabel(model.displayName)}
             </span>
           </span>
         </span>
@@ -1160,8 +1166,8 @@ export function ModelPicker() {
         {...commonProps}
         aria-label={
           isFreeProviderRow
-            ? `${model.displayName} — requires an API key from ${getProviderDisplayName(providerId)}`
-            : `${model.displayName} — requires wewebplus Pro or an API key from ${getProviderDisplayName(providerId)}`
+            ? `${productLabel(model.displayName)} — requires an API key from ${getProviderDisplayName(providerId)}`
+            : `${productLabel(model.displayName)} — requires wewebplus Pro or an API key from ${getProviderDisplayName(providerId)}`
         }
         onClick={() => handleLockedModelClick(providerId, model)}
       >
@@ -1330,7 +1336,7 @@ export function ModelPicker() {
       <DropdownMenuSub key={`${providerId}-${model.modelName}`}>
         <DropdownMenuSubTrigger
           hideChevron
-          aria-label={`${model.displayName}. Effort: ${effortLabel}. Press Enter to select; press Right Arrow to configure effort.`}
+          aria-label={`${productLabel(model.displayName)}. Effort: ${effortLabel}. Press Enter to select; press Right Arrow to configure effort.`}
           className={cn(
             "relative py-1.5 w-full",
             isSelected &&
@@ -1354,9 +1360,9 @@ export function ModelPicker() {
               <div className="min-w-0 flex flex-col items-start">
                 <span
                   className="block max-w-full truncate text-[13px] leading-tight"
-                  title={model.displayName}
+                  title={productLabel(model.displayName)}
                 >
-                  {model.displayName}
+                  {productLabel(model.displayName)}
                 </span>
                 <span
                   className="block max-w-full truncate text-xs text-muted-foreground"
@@ -1944,8 +1950,8 @@ export function ModelPicker() {
             <>
               <DialogHeader>
                 <DialogTitle>
-                  Use {unlockTarget?.model.displayName} with your own{" "}
-                  {unlockTargetProviderName} API key
+                  Use {productLabel(unlockTarget?.model.displayName ?? "")} with
+                  your own {unlockTargetProviderName} API key
                 </DialogTitle>
                 <DialogDescription>
                   Free models run through your own {unlockTargetProviderName}{" "}
@@ -1964,10 +1970,12 @@ export function ModelPicker() {
             <>
               <DialogHeader>
                 <DialogTitle>
-                  Unlock {unlockTarget?.model.displayName} with wewebplus Pro
+                  Unlock {productLabel(unlockTarget?.model.displayName ?? "")}{" "}
+                  with wewebplus Pro
                 </DialogTitle>
                 <DialogDescription>
-                  wewebplus Pro gives you {unlockTarget?.model.displayName} and
+                  wewebplus Pro gives you{" "}
+                  {productLabel(unlockTarget?.model.displayName ?? "")} and
                   every other leading AI model with one subscription — no API
                   keys needed.
                 </DialogDescription>

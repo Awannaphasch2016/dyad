@@ -1931,7 +1931,7 @@ async function preflightPersonaModel(
   );
   if (!available) {
     throw new DyadError(
-      `${persona} requires ${defaults.name}, which is not currently available. Check your Dyad Pro model access and try again.`,
+      `${persona} requires ${defaults.name}, which is not currently available. Check your wewebplus Pro model access and try again.`,
       DyadErrorKind.Precondition,
     );
   }
@@ -1944,7 +1944,7 @@ async function preflightPersonaModel(
     await getModelClient(settings.selectedModel, settings);
   } catch (error) {
     throw new DyadError(
-      `${persona} could not start because ${defaults.name} is not configured. Check your Dyad Pro model access and try again.`,
+      `${persona} could not start because ${defaults.name} is not configured. Check your wewebplus Pro model access and try again.`,
       DyadErrorKind.Precondition,
       { cause: error },
     );
@@ -2323,8 +2323,8 @@ function assertPro(persona?: SubagentPersona): void {
   if (!isDyadProEnabled(readSettings())) {
     throw new DyadError(
       persona
-        ? `${persona} sub-agents require Dyad Pro.`
-        : "Sub-agents require Dyad Pro.",
+        ? `${persona} sub-agents require wewebplus Pro.`
+        : "Sub-agents require wewebplus Pro.",
       DyadErrorKind.Auth,
     );
   }
@@ -2436,7 +2436,7 @@ function errorMessage(error: unknown): string {
 
 function boundDurableReport(value: string): string {
   if (value.length <= MAX_DURABLE_REPORT_CHARS) return value;
-  return `${value.slice(0, MAX_DURABLE_REPORT_CHARS)}\n\n[Report truncated by Dyad]`;
+  return `${value.slice(0, MAX_DURABLE_REPORT_CHARS)}\n\n[Report truncated by wewebplus]`;
 }
 
 export function isReusableReviewStatus(status: string): boolean {
@@ -2701,7 +2701,7 @@ function watchEntitlement(
       threadId,
       "entitlement_revoked",
       null,
-      "Dyad Pro entitlement was revoked while this sub-agent was running.",
+      "wewebplus Pro entitlement was revoked while this sub-agent was running.",
     ).catch((error) =>
       logger.error(
         `Failed to persist entitlement revocation for ${threadId}`,

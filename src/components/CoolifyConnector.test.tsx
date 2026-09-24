@@ -951,7 +951,7 @@ describe("the server and project pickers while discovery is in flight", () => {
     const user = userEvent.setup();
     render(<CoolifyConnector appId={1} />);
 
-    expect(screen.queryByText(/has no servers Dyad can see/)).toBeNull();
+    expect(screen.queryByText(/has no servers wewebplus can see/)).toBeNull();
     await user.click(screen.getByTestId("coolify-server-select"));
     expect(screen.getByText("Loading servers...")).toBeTruthy();
   });

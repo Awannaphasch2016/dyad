@@ -5,7 +5,7 @@ export const SUBSCRIPTION_BILLING_ERRORS = {
     title: "You’re out of AI credits",
     description: "Add credits to continue using your subscription.",
     message:
-      "You're out of Dyad credits. Add credits to continue using your subscription.",
+      "You're out of wewebplus credits. Add credits to continue using your subscription.",
     action: "Get more credits",
     url: "https://academy.dyad.sh/subscription",
   },
