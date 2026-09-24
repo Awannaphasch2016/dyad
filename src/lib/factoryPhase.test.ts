@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   canContinueFactoryPhase,
+  visibleComposerActions,
   continuePrefill,
   extractFactoryPhaseSummary,
   factoryPhaseChatMode,
@@ -320,5 +321,11 @@ Here is what I understood. Approve to continue, or tell me what to change.
     expect(continuePrefill("implementation")).toMatch(/Discovery/);
     expect(continuePrefill("delivery")).toBeUndefined();
     expect(continuePrefill("discovery")).toBeUndefined();
+  });
+
+  it("hides Keep going on a factory chat", () => {
+    const actions = [{ id: "keep-going" }, { id: "refresh" }];
+    expect(visibleComposerActions(actions, true)).toEqual([{ id: "refresh" }]);
+    expect(visibleComposerActions(actions, false)).toEqual(actions);
   });
 });

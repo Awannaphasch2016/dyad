@@ -269,3 +269,12 @@ export function continuePrefill(
   }
   return undefined;
 }
+
+/** Factory chats hide the generic "Keep going" suggestion. */
+export function visibleComposerActions<T extends { id: string }>(
+  actions: readonly T[],
+  factory: boolean,
+): T[] {
+  if (!factory) return [...actions];
+  return actions.filter((action) => action.id !== "keep-going");
+}

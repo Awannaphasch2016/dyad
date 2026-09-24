@@ -108,6 +108,7 @@ import {
 import { PromoMessage, usePromoMessage } from "./PromoMessage";
 import { useCountTokens } from "@/hooks/useCountTokens";
 import { useChats } from "@/hooks/useChats";
+import { hasFactoryPhases, visibleComposerActions } from "@/lib/factoryPhase";
 import { useRouter } from "@tanstack/react-router";
 import { showError as showErrorToast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
@@ -248,7 +249,8 @@ export function ChatInput({ chatId }: { chatId?: number }) {
   const { refreshAppIframe } = useRunApp();
   const { navigate } = useRouter();
   const setSelectedChatId = useSetAtom(selectedChatIdAtom);
-  const { invalidateChats } = useChats(appId);
+  const { chats, invalidateChats } = useChats(appId);
+  const factoryComposer = hasFactoryPhases(chats);
   const [imageGeneratorOpen, setImageGeneratorOpen] = useState(false);
   const handleOpenImageGenerator = useCallback(() => {
     setImageGeneratorOpen(true);
@@ -356,7 +358,7 @@ export function ChatInput({ chatId }: { chatId?: number }) {
   // Promo cap row on the composer; never stack two caps — the context limit
   // warning wins the slot.
   const promo = usePromoMessage(chatId);
-  const showPromo = promo.visible && !showBanner;
+  const showPromo = promo.visible && !showBanner && !factoryComposer;
 
   useEffect(() => {
     if (error) {
@@ -980,6 +982,7 @@ export function ChatInput({ chatId }: { chatId?: number }) {
                 proposal={proposal}
                 onApprove={handleApprove}
                 onReject={handleReject}
+                factoryComposer={factoryComposer}
                 isApprovable={
                   !isProposalLoading &&
                   !!proposal &&
@@ -1066,6 +1069,17 @@ export function ChatInput({ chatId }: { chatId?: number }) {
           />
 
           <div className="flex items-end gap-1">
+            {factoryComposer && (
+              <div className="mb-0.5 ml-1">
+                <AuxiliaryActionsMenu
+                  onFileSelect={handleFileSelect}
+                  showTokenBar={showTokenBar}
+                  toggleShowTokenBar={toggleShowTokenBar}
+                  appId={appId ?? undefined}
+                  onGenerateImage={handleOpenImageGenerator}
+                />
+              </div>
+            )}
             <LexicalChatInput
               value={inputValue}
               onChange={setInputValue}
@@ -1078,7 +1092,7 @@ export function ChatInput({ chatId }: { chatId?: number }) {
             />
 
             {/* Voice-to-text button */}
-            {isProEnabled ? (
+            {!factoryComposer && isProEnabled ? (
               <Tooltip>
                 <TooltipTrigger
                   render={
@@ -1118,25 +1132,30 @@ export function ChatInput({ chatId }: { chatId?: number }) {
                 </TooltipContent>
               </Tooltip>
             ) : (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <button
-                      onClick={() =>
-                        ipc.system.openExternalUrl("https://dyad.sh/pro")
-                      }
-                      aria-label={t("voiceToTextPro", "Voice to text (Pro)")}
-                      className="px-2 py-2 mb-0.5 text-muted-foreground hover:text-primary rounded-lg transition-colors duration-150 cursor-pointer relative"
-                    />
-                  }
-                >
-                  <Mic size={20} />
-                  <Lock size={10} className="absolute -top-0.5 -right-0.5" />
-                </TooltipTrigger>
-                <TooltipContent>
-                  {t("voiceToTextRequiresPro", "Voice to text (requires Pro)")}
-                </TooltipContent>
-              </Tooltip>
+              !factoryComposer && (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <button
+                        onClick={() =>
+                          ipc.system.openExternalUrl("https://dyad.sh/pro")
+                        }
+                        aria-label={t("voiceToTextPro", "Voice to text (Pro)")}
+                        className="px-2 py-2 mb-0.5 text-muted-foreground hover:text-primary rounded-lg transition-colors duration-150 cursor-pointer relative"
+                      />
+                    }
+                  >
+                    <Mic size={20} />
+                    <Lock size={10} className="absolute -top-0.5 -right-0.5" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {t(
+                      "voiceToTextRequiresPro",
+                      "Voice to text (requires Pro)",
+                    )}
+                  </TooltipContent>
+                </Tooltip>
+              )
             )}
 
             {isStreaming ? (
@@ -1194,19 +1213,21 @@ export function ChatInput({ chatId }: { chatId?: number }) {
               </Tooltip>
             )}
           </div>
-          <div className="px-2 flex items-center justify-between pb-0.5 pt-0.5">
-            <div className="flex items-center">
-              <ChatInputControls />
-            </div>
+          {!factoryComposer && (
+            <div className="px-2 flex items-center justify-between pb-0.5 pt-0.5">
+              <div className="flex items-center">
+                <ChatInputControls />
+              </div>
 
-            <AuxiliaryActionsMenu
-              onFileSelect={handleFileSelect}
-              showTokenBar={showTokenBar}
-              toggleShowTokenBar={toggleShowTokenBar}
-              appId={appId ?? undefined}
-              onGenerateImage={handleOpenImageGenerator}
-            />
-          </div>
+              <AuxiliaryActionsMenu
+                onFileSelect={handleFileSelect}
+                showTokenBar={showTokenBar}
+                toggleShowTokenBar={toggleShowTokenBar}
+                appId={appId ?? undefined}
+                onGenerateImage={handleOpenImageGenerator}
+              />
+            </div>
+          )}
           {/* TokenBar is only displayed when showTokenBar is true */}
           {showTokenBar && <TokenBar chatId={chatId} />}
         </div>
@@ -1458,11 +1479,19 @@ export function mapActionToButton(action: SuggestedAction) {
   }
 }
 
-function ActionProposalActions({ proposal }: { proposal: ActionProposal }) {
+function ActionProposalActions({
+  proposal,
+  factoryComposer,
+}: {
+  proposal: ActionProposal;
+  factoryComposer: boolean;
+}) {
+  const actions = visibleComposerActions(proposal.actions, factoryComposer);
+  if (actions.length === 0) return null;
   return (
     <div className="border-b border-border p-2 pb-0 flex items-center justify-between">
       <div className="flex items-center space-x-2 overflow-x-auto pb-2">
-        {proposal.actions.map((action) => mapActionToButton(action))}
+        {actions.map((action) => mapActionToButton(action))}
       </div>
     </div>
   );
@@ -1472,6 +1501,7 @@ interface ChatInputActionsProps {
   proposal: Proposal;
   onApprove: () => void;
   onReject: () => void;
+  factoryComposer: boolean;
   isApprovable: boolean; // Can be used to enable/disable buttons
   isApproving: boolean; // State for approving
   isRejecting: boolean; // State for rejecting
@@ -1482,6 +1512,7 @@ function ChatInputActions({
   proposal,
   onApprove,
   onReject,
+  factoryComposer,
   isApprovable,
   isApproving,
   isRejecting,
@@ -1493,7 +1524,12 @@ function ChatInputActions({
     return <div>{t("tipProposal")}</div>;
   }
   if (proposal.type === "action-proposal") {
-    return <ActionProposalActions proposal={proposal}></ActionProposalActions>;
+    return (
+      <ActionProposalActions
+        proposal={proposal}
+        factoryComposer={factoryComposer}
+      />
+    );
   }
 
   // Split files into server functions and other files - only for CodeProposal
