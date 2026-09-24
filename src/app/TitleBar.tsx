@@ -94,7 +94,7 @@ export const TitleBar = () => {
          * main content area, breaking the "tab merges into content" affordance.
          */}
         <div className="flex items-center shrink-0">
-          <div className={`${showWindowControls ? "pl-2" : "pl-18"}`}></div>
+          <div className="pl-2"></div>
 
           <img
             src={logo}
