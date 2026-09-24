@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAtomValue } from "jotai";
 import { useQueries } from "@tanstack/react-query";
-import { Lock } from "lucide-react";
+import { CheckCircle2, Lock } from "lucide-react";
 import { selectedAppIdAtom } from "@/atoms/appAtoms";
 import { selectedChatIdAtom } from "@/atoms/chatAtoms";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { isStreamActive } from "@/chat_stream/transition";
 import { useChatStreamState } from "@/hooks/useChatStream";
 import { useChats } from "@/hooks/useChats";
 import { useSelectChat } from "@/hooks/useSelectChat";
+import { useStreamChat } from "@/hooks/useStreamChat";
 import { ipc } from "@/ipc/types";
 import {
   FACTORY_PHASES,
@@ -17,9 +18,11 @@ import {
   continuePrefill,
   factoryPhaseChats,
   factoryPhaseHint,
+  factoryPhaseKickoff,
   factoryPhaseLabel,
   hasFactoryPhases,
   isFactoryPhaseUnlocked,
+  latestFactoryPhaseSummary,
   latestUnlockedFactoryPhase,
   lockedFactoryPhaseReason,
   nextFactoryPhase,
@@ -63,7 +66,9 @@ export function FactoryPhaseBar() {
   const chatId = useAtomValue(selectedChatIdAtom);
   const { chats } = useChats(appId);
   const { selectChat } = useSelectChat();
+  const { streamMessage } = useStreamChat();
   const streamState = useChatStreamState(chatId ?? undefined);
+  const kickedOffChatIds = useRef(new Set<number>());
   const [approvals, setApprovals] = useState<{
     appId: number | null;
     phases: FactoryPhase[];
@@ -84,14 +89,18 @@ export function FactoryPhaseBar() {
     }),
   });
 
+  const messagesByPhase = new Map<
+    FactoryPhase,
+    { role: string; content: string }[]
+  >();
   const started = new Set<FactoryPhase>();
-  const replied = new Set<FactoryPhase>();
+  const summaries = new Map<FactoryPhase, string>();
   FACTORY_PHASES.forEach((item, index) => {
     const messages = phaseChatQueries[index]?.data?.messages ?? [];
+    messagesByPhase.set(item, messages);
     if (messages.length > 0) started.add(item);
-    if (messages.some((message) => message.role === "assistant")) {
-      replied.add(item);
-    }
+    const summary = latestFactoryPhaseSummary(messages, item);
+    if (summary) summaries.set(item, summary);
   });
   const progress = { approved: new Set(approvedPhases), started };
   const progressLoaded = phaseChatQueries.every(
@@ -100,36 +109,96 @@ export function FactoryPhaseBar() {
 
   const current = chats.find((chat) => chat.id === chatId);
   const phase = enabled ? phaseFromTitle(current?.title) : null;
-  const phaseLocked = phase != null && !isFactoryPhaseUnlocked(phase, progress);
+  const phaseUnlocked =
+    phase != null && isFactoryPhaseUnlocked(phase, progress);
   const fallbackPhase = latestUnlockedFactoryPhase(progress);
   const fallbackChatId = byPhase[fallbackPhase]?.id;
+  const isStreaming = streamState ? isStreamActive(streamState) : false;
+  const streamIdle =
+    streamState != null &&
+    streamState.phase === "idle" &&
+    streamState.lastAcceptance == null;
 
   useEffect(() => {
-    if (!phaseLocked || !progressLoaded || appId == null) return;
+    if (phase == null || phaseUnlocked || !progressLoaded || appId == null) {
+      return;
+    }
     if (fallbackChatId == null || fallbackChatId === chatId) return;
     selectChat({ chatId: fallbackChatId, appId });
-  }, [phaseLocked, progressLoaded, appId, fallbackChatId, chatId, selectChat]);
+  }, [
+    phase,
+    phaseUnlocked,
+    progressLoaded,
+    appId,
+    fallbackChatId,
+    chatId,
+    selectChat,
+  ]);
+
+  const currentMessageCount =
+    phase != null ? (messagesByPhase.get(phase)?.length ?? 0) : 0;
+  const previousPhase =
+    phase != null ? FACTORY_PHASES[FACTORY_PHASES.indexOf(phase) - 1] : null;
+  const kickoff =
+    phase != null
+      ? factoryPhaseKickoff(
+          phase,
+          previousPhase ? (summaries.get(previousPhase) ?? null) : null,
+        )
+      : null;
+
+  useEffect(() => {
+    if (
+      kickoff == null ||
+      chatId == null ||
+      appId == null ||
+      !phaseUnlocked ||
+      !progressLoaded ||
+      !streamIdle ||
+      currentMessageCount > 0 ||
+      kickedOffChatIds.current.has(chatId)
+    ) {
+      return;
+    }
+    kickedOffChatIds.current.add(chatId);
+    void streamMessage({ prompt: kickoff, chatId, appId });
+  }, [
+    kickoff,
+    chatId,
+    appId,
+    phaseUnlocked,
+    progressLoaded,
+    streamIdle,
+    currentMessageCount,
+    streamMessage,
+  ]);
 
   if (!enabled || appId == null || !phase) return null;
 
   const next = nextFactoryPhase(phase);
   const nextChat = next ? byPhase[next] : undefined;
-  const canContinue = canContinueFactoryPhase({
-    hasAssistantReply: replied.has(phase),
-    isStreaming: streamState ? isStreamActive(streamState) : false,
+  const phaseSummary = summaries.get(phase) ?? null;
+  const canApprove = canContinueFactoryPhase({
+    hasPhaseSummary: phaseSummary != null,
+    isStreaming,
   });
+  const alreadyApproved = approvedPhases.includes(phase);
 
-  const approveAndContinue = () => {
-    if (!next || !nextChat) return;
-    const phases = approvedPhases.includes(phase)
+  const recordApproval = () => {
+    const phases = alreadyApproved
       ? approvedPhases
       : [...approvedPhases, phase];
     writeApprovals(appId, phases);
     setApprovals({ appId, phases });
+  };
+
+  const approveAndContinue = () => {
+    if (!next || !nextChat) return;
+    recordApproval();
     selectChat({
       chatId: nextChat.id,
       appId,
-      prefillInput: continuePrefill(next),
+      prefillInput: continuePrefill(next, phaseSummary),
     });
   };
 
@@ -166,18 +235,44 @@ export function FactoryPhaseBar() {
             type="button"
             size="sm"
             className="ml-auto"
-            disabled={!canContinue}
+            disabled={!canApprove}
             data-testid="factory-phase-continue"
             onClick={approveAndContinue}
           >
             Approve and continue to {factoryPhaseLabel(next)}
           </Button>
         )}
+        {!next &&
+          (alreadyApproved ? (
+            <span
+              className="ml-auto inline-flex items-center gap-1 text-sm font-medium text-green-600"
+              data-testid="factory-phase-done"
+            >
+              <CheckCircle2 className="size-4" aria-hidden />
+              Delivery approved
+            </span>
+          ) : (
+            <Button
+              type="button"
+              size="sm"
+              className="ml-auto"
+              disabled={!canApprove}
+              data-testid="factory-phase-continue"
+              onClick={recordApproval}
+            >
+              Approve delivery
+            </Button>
+          ))}
       </div>
       <p className={cn("mt-2 text-xs text-muted-foreground")}>
         {factoryPhaseHint(phase)}
-        {next && nextChat && !canContinue && (
-          <> Continue unlocks after Dyad replies in this phase.</>
+        {!canApprove && !alreadyApproved && (
+          <>
+            {" "}
+            {isStreaming
+              ? "Dyad is working…"
+              : `Approval unlocks when Dyad posts its ${factoryPhaseLabel(phase)} summary.`}
+          </>
         )}
       </p>
     </div>

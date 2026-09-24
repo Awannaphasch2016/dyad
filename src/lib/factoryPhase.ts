@@ -55,12 +55,12 @@ export function hasFactoryPhases<T extends { title: string | null }>(
 
 export function factoryPhaseHint(phase: FactoryPhase): string {
   if (phase === "discovery") {
-    return "Answer with the page name, one sentence, and what should be on the page. Continue only when you approve building.";
+    return "Dyad asks about the page name, one sentence, and what goes on the page. Approve once its Discovery summary looks right.";
   }
   if (phase === "implementation") {
-    return "The preview is the page being built. Say what to change here. Continue only when you approve it.";
+    return "Send the prefilled summary to start the build, then review the preview. Approve once the page looks right.";
   }
-  return "This chat is delivery. The page was already previewed during implementation. Approve here when the trial is finished.";
+  return "Dyad summarizes what was built. Approve delivery when the trial is finished.";
 }
 
 export interface FactoryPhaseProgress {
@@ -108,15 +108,85 @@ export function latestUnlockedFactoryPhase(
   return latest;
 }
 
-/** Continue needs a finished assistant reply in the current phase to approve. */
+/** Approval needs Dyad's finished phase summary; an ordinary reply is not enough. */
 export function canContinueFactoryPhase({
-  hasAssistantReply,
+  hasPhaseSummary,
   isStreaming,
 }: {
-  hasAssistantReply: boolean;
+  hasPhaseSummary: boolean;
   isStreaming: boolean;
 }): boolean {
-  return hasAssistantReply && !isStreaming;
+  return hasPhaseSummary && !isStreaming;
+}
+
+export function factoryPhaseSummaryHeading(phase: FactoryPhase): string {
+  return `${factoryPhaseLabel(phase)} summary`;
+}
+
+/**
+ * Returns the bullet list under Dyad's "## <Phase> summary" heading, or null
+ * when the message has no complete summary for that phase.
+ */
+export function extractFactoryPhaseSummary(
+  content: string,
+  phase: FactoryPhase,
+): string | null {
+  const withoutThinking = content.replace(/<think>[\s\S]*?<\/think>/gi, "");
+  const lines = withoutThinking.split(/\r?\n/);
+  const heading = factoryPhaseSummaryHeading(phase).toLowerCase();
+  const start = lines.findIndex((line) => {
+    const match = /^\s*#{1,4}\s*(.+?)\s*$/.exec(line);
+    return (
+      match != null &&
+      match[1].replace(/\*/g, "").replace(/:\s*$/, "").trim().toLowerCase() ===
+        heading
+    );
+  });
+  if (start === -1) return null;
+  const bullets: string[] = [];
+  for (const line of lines.slice(start + 1)) {
+    if (/^\s*([-*]|\d+\.)\s+/.test(line)) {
+      bullets.push(line.trimEnd());
+      continue;
+    }
+    if (line.trim() === "") {
+      if (bullets.length > 0) break;
+      continue;
+    }
+    if (bullets.length > 0 && /^\s{2,}\S/.test(line)) {
+      bullets.push(line.trimEnd());
+      continue;
+    }
+    break;
+  }
+  return bullets.length > 0 ? bullets.join("\n") : null;
+}
+
+/** The latest phase summary Dyad wrote in this chat, if the last reply has one. */
+export function latestFactoryPhaseSummary(
+  messages: readonly { role: string; content: string }[],
+  phase: FactoryPhase,
+): string | null {
+  const lastAssistant = [...messages]
+    .reverse()
+    .find((message) => message.role === "assistant");
+  return lastAssistant
+    ? extractFactoryPhaseSummary(lastAssistant.content, phase)
+    : null;
+}
+
+/** Discovery and Delivery start with Dyad's turn; Implementation waits for the person to send. */
+export function factoryPhaseKickoff(
+  phase: FactoryPhase,
+  previousSummary: string | null,
+): string | null {
+  if (phase === "discovery") return "Start Discovery.";
+  if (phase === "delivery") {
+    return previousSummary
+      ? `Start Delivery. Approved implementation summary:\n\n${previousSummary}`
+      : "Start Delivery.";
+  }
+  return null;
 }
 
 export function lockedFactoryPhaseReason(phase: FactoryPhase): string {
@@ -127,12 +197,15 @@ export function lockedFactoryPhaseReason(phase: FactoryPhase): string {
     : "Not available yet";
 }
 
-export function continuePrefill(phase: FactoryPhase): string | undefined {
+/** Prefill for the next chat. Implementation carries the approved Discovery summary. */
+export function continuePrefill(
+  phase: FactoryPhase,
+  previousSummary?: string | null,
+): string | undefined {
   if (phase === "implementation") {
-    return "Build the one-page site from what I approved in Discovery.";
-  }
-  if (phase === "delivery") {
-    return "The one-pager is ready. Summarize the page for delivery.";
+    return previousSummary
+      ? `Build the one-page site from this approved Discovery summary:\n\n${previousSummary}`
+      : "Build the one-page site from what I approved in Discovery.";
   }
   return undefined;
 }

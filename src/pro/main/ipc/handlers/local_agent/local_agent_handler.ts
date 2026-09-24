@@ -606,6 +606,7 @@ export async function handleLocalAgentStream(
     implementerFallbackSystemPrompt,
     supabaseProviderToolsAvailable,
     neonProviderToolsAvailable,
+    factoryDiscoveryQuestionnaire = false,
   }: {
     placeholderMessageId: number;
     systemPrompt: string;
@@ -652,6 +653,8 @@ export async function handleLocalAgentStream(
     supabaseProviderToolsAvailable: boolean;
     /** Whether the root and read-only children can authenticate Neon reads. */
     neonProviderToolsAvailable: boolean;
+    /** Lets a read-only Discovery phase chat ask with the questionnaire form. */
+    factoryDiscoveryQuestionnaire?: boolean;
   },
 ): Promise<boolean> {
   const storedSettings = settingsOverride ?? readSettings();
@@ -1002,6 +1005,7 @@ export async function handleLocalAgentStream(
         ),
       ),
       chatId: chat.id,
+      factoryDiscoveryQuestionnaire,
       planAcceptInNewChat: req.planAcceptInNewChat,
       supabaseProjectId: chat.app.supabaseProjectId,
       supabaseOrganizationSlug: chat.app.supabaseOrganizationSlug,

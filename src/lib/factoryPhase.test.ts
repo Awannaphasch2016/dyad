@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   canContinueFactoryPhase,
   continuePrefill,
+  extractFactoryPhaseSummary,
   factoryPhaseChats,
+  factoryPhaseKickoff,
+  latestFactoryPhaseSummary,
   hasFactoryPhases,
   isFactoryPhaseApproved,
   isFactoryPhaseUnlocked,
@@ -85,24 +88,97 @@ describe("factoryPhase", () => {
     expect(isFactoryPhaseUnlocked("delivery", progress)).toBe(false);
   });
 
-  it("allows Continue only after a finished assistant reply", () => {
+  it("allows approval only after a finished phase summary", () => {
     expect(
-      canContinueFactoryPhase({ hasAssistantReply: false, isStreaming: false }),
+      canContinueFactoryPhase({ hasPhaseSummary: false, isStreaming: false }),
     ).toBe(false);
     expect(
-      canContinueFactoryPhase({ hasAssistantReply: true, isStreaming: true }),
+      canContinueFactoryPhase({ hasPhaseSummary: true, isStreaming: true }),
     ).toBe(false);
     expect(
-      canContinueFactoryPhase({ hasAssistantReply: true, isStreaming: false }),
+      canContinueFactoryPhase({ hasPhaseSummary: true, isStreaming: false }),
     ).toBe(true);
     expect(lockedFactoryPhaseReason("delivery")).toBe(
       "Approve Implementation first",
     );
   });
 
-  it("prefills the next phase without sending it", () => {
+  it("extracts the bullet list under the phase summary heading", () => {
+    const content = `<think>I have all three answers.</think>
+Here is what I understood. Approve to continue, or tell me what to change.
+
+## Discovery summary
+- **Page name:** Tiny Bakery
+- **One sentence:** A neighborhood bakery's opening hours and menu.
+- **Page contents:** Hero, menu of 3 breads, hours, contact.`;
+    expect(extractFactoryPhaseSummary(content, "discovery")).toBe(
+      [
+        "- **Page name:** Tiny Bakery",
+        "- **One sentence:** A neighborhood bakery's opening hours and menu.",
+        "- **Page contents:** Hero, menu of 3 breads, hours, contact.",
+      ].join("\n"),
+    );
+    expect(extractFactoryPhaseSummary(content, "implementation")).toBeNull();
+  });
+
+  it("ignores summaries that only appear inside thinking or have no bullets", () => {
+    expect(
+      extractFactoryPhaseSummary(
+        "<think>## Discovery summary\n- **Page name:** X</think>What is the page name?",
+        "discovery",
+      ),
+    ).toBeNull();
+    expect(
+      extractFactoryPhaseSummary(
+        "## Discovery summary\n\nComing soon.",
+        "discovery",
+      ),
+    ).toBeNull();
+    expect(
+      extractFactoryPhaseSummary(
+        "### **Discovery Summary:**\n* **Page name:** X\r\n* **One sentence:** Y",
+        "discovery",
+      ),
+    ).toBe("* **Page name:** X\n* **One sentence:** Y");
+  });
+
+  it("uses only the latest assistant reply for approval", () => {
+    const summary = "## Discovery summary\n- **Page name:** X";
+    expect(
+      latestFactoryPhaseSummary(
+        [
+          { role: "assistant", content: summary },
+          { role: "user", content: "Change the name" },
+          { role: "assistant", content: "What should the new name be?" },
+        ],
+        "discovery",
+      ),
+    ).toBeNull();
+    expect(
+      latestFactoryPhaseSummary(
+        [
+          { role: "user", content: "Start Discovery." },
+          { role: "assistant", content: summary },
+        ],
+        "discovery",
+      ),
+    ).toBe("- **Page name:** X");
+  });
+
+  it("starts Discovery and Delivery automatically but not Implementation", () => {
+    expect(factoryPhaseKickoff("discovery", null)).toBe("Start Discovery.");
+    expect(factoryPhaseKickoff("implementation", "- a")).toBeNull();
+    expect(factoryPhaseKickoff("delivery", "- **Page:** Index")).toContain(
+      "- **Page:** Index",
+    );
+  });
+
+  it("prefills Implementation with the approved Discovery summary", () => {
+    expect(continuePrefill("implementation", "- **Page name:** X")).toBe(
+      "Build the one-page site from this approved Discovery summary:\n\n- **Page name:** X",
+    );
     expect(continuePrefill("implementation")).toMatch(/Discovery/);
-    expect(continuePrefill("delivery")).toMatch(/delivery/i);
+    expect(continuePrefill("delivery")).toBeUndefined();
     expect(continuePrefill("discovery")).toBeUndefined();
   });
 });
