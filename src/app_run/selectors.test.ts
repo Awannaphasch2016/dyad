@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { projectAppRunRemoteSnapshot } from "./transport";
 import type { AppRunInvocationRef, RunState } from "./state";
-import { selectRemoteAppExit, selectRemoteAppUrl } from "./selectors";
+import {
+  isAppRunLoading,
+  selectRemoteAppExit,
+  selectRemoteAppUrl,
+} from "./selectors";
 
 const invocationRef: AppRunInvocationRef = {
   kind: "app-run",
@@ -12,6 +16,42 @@ const invocationRef: AppRunInvocationRef = {
 function snapshot(state: RunState) {
   return projectAppRunRemoteSnapshot(7, 1, state);
 }
+
+describe("isAppRunLoading", () => {
+  it("shows the page once the server is ready, even if start has not settled", () => {
+    expect(
+      isAppRunLoading({
+        phase: "ready",
+        admissionKind: "preparing",
+        executionKind: "running",
+      }),
+    ).toBe(false);
+    expect(
+      isAppRunLoading({
+        phase: "reloading",
+        admissionKind: "idle",
+        executionKind: "running",
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps the spinner while the server is starting or stopping", () => {
+    expect(
+      isAppRunLoading({
+        phase: "starting",
+        admissionKind: "idle",
+        executionKind: "idle",
+      }),
+    ).toBe(true);
+    expect(
+      isAppRunLoading({
+        phase: "idle",
+        admissionKind: "preparing",
+        executionKind: "idle",
+      }),
+    ).toBe(true);
+  });
+});
 
 describe("app-run remote selectors", () => {
   it("exposes ready and reloading URLs as a running-server signal", () => {

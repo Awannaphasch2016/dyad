@@ -35,6 +35,8 @@ import { useSupabase } from "@/hooks/useSupabase";
 import { useTranslation } from "react-i18next";
 import { ipc } from "@/ipc/types";
 import { useLoadApp } from "@/hooks/useLoadApp";
+import { useChats } from "@/hooks/useChats";
+import { hasFactoryPhases } from "@/lib/factoryPhase";
 import { useQuery } from "@tanstack/react-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queryKeys";
@@ -121,6 +123,8 @@ export function PreviewPanel() {
   const [isConsoleOpen, setIsConsoleOpen] = useState(false);
   const { runApp, loading } = useRunApp();
   const { app } = useLoadApp(selectedAppId);
+  const { chats } = useChats(selectedAppId);
+  const hideSystemMessages = hasFactoryPhases(chats);
   const { settings, updateSettings } = useSettings();
   const queryClient = useQueryClient();
   const key = usePreviewReloadToken(selectedAppId);
@@ -342,7 +346,7 @@ export function PreviewPanel() {
               </div>
             </div>
           </Panel>
-          {isConsoleOpen && (
+          {!hideSystemMessages && isConsoleOpen && (
             <>
               <PanelResizeHandle className="h-1 bg-border hover:bg-gray-400 transition-colors cursor-row-resize" />
               <Panel id="console" minSize={10} defaultSize={30}>
@@ -359,7 +363,7 @@ export function PreviewPanel() {
           )}
         </PanelGroup>
       </div>
-      {!isConsoleOpen && (
+      {!hideSystemMessages && !isConsoleOpen && (
         <ConsoleHeader
           isOpen={false}
           onToggle={() => setIsConsoleOpen(true)}

@@ -5,6 +5,7 @@ import { useAtomValue } from "jotai";
 import { showError, showInputRequest } from "@/lib/toast";
 import { shouldShowPnpmMinimumReleaseAgeWarning } from "@/lib/schemas";
 import { useAppRunRemoteManager } from "@/app_run/AppRunRemoteProvider";
+import { isAppRunLoading } from "@/app_run/selectors";
 import { useAppRunState } from "./useAppRun";
 import { useSettings } from "./useSettings";
 import { usePreviewErrorFacade } from "@/app_wiring/preview_error_facade";
@@ -246,11 +247,11 @@ export function useRunApp() {
   });
   const mutateAppRunRef = useRef(mutation.mutate);
   mutateAppRunRef.current = mutation.mutate;
-  const loading =
-    runState.phase === "starting" ||
-    runState.phase === "stopping" ||
-    mutation.admission.kind === "preparing" ||
-    mutation.execution.kind === "running";
+  const loading = isAppRunLoading({
+    phase: runState.phase,
+    admissionKind: mutation.admission.kind,
+    executionKind: mutation.execution.kind,
+  });
 
   const dispatchMutation = useCallback(
     async (targetAppId: number, operation: AppRunOperationInput) => {

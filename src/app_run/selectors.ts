@@ -43,6 +43,24 @@ export function selectRemoteAppUrl(state: AppRunRemoteSnapshot): AppUrlState {
   };
 }
 
+/**
+ * The preview spinner tracks the server, not a start request that has not
+ * reported back yet. A ready or reloading server is already showing a page.
+ */
+export function isAppRunLoading({
+  phase,
+  admissionKind,
+  executionKind,
+}: {
+  phase: string;
+  admissionKind: string;
+  executionKind: string;
+}): boolean {
+  if (phase === "ready" || phase === "reloading") return false;
+  if (phase === "starting" || phase === "stopping") return true;
+  return admissionKind === "preparing" || executionKind === "running";
+}
+
 export function selectRemoteAppExit(
   state: AppRunRemoteSnapshot,
 ): AppExit | null {
