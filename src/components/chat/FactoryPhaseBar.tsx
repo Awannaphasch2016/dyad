@@ -20,6 +20,7 @@ import {
   factoryPhaseHint,
   factoryPhaseKickoff,
   factoryPhaseLabel,
+  factoryPhaseShade,
   hasFactoryPhases,
   isFactoryPhaseApproved,
   isFactoryPhaseUnlocked,
@@ -225,16 +226,31 @@ export function FactoryPhaseBar() {
           if (!chat) return null;
           const selected = item === phase;
           const unlocked = isFactoryPhaseUnlocked(item, progress);
+          const shade = factoryPhaseShade({
+            phase: item,
+            progress,
+            hasPhaseSummary: summaries.has(item),
+          });
           return (
             <Button
               key={item}
               type="button"
               size="sm"
-              variant={selected ? "default" : "outline"}
+              variant="ghost"
               aria-pressed={selected}
               disabled={!unlocked}
               title={unlocked ? undefined : lockedFactoryPhaseReason(item)}
               data-testid={`factory-phase-${item}`}
+              data-phase-shade={shade}
+              className={cn(
+                "disabled:opacity-100",
+                shade === "finished" &&
+                  "bg-primary text-primary-foreground hover:bg-primary/90",
+                shade === "in-progress" &&
+                  "bg-primary/25 text-primary hover:bg-primary/35",
+                shade === "not-started" && "bg-primary/10 text-primary/60",
+                selected && "ring-2 ring-primary ring-offset-2",
+              )}
               onClick={() => selectChat({ chatId: chat.id, appId })}
             >
               {!unlocked && <Lock className="size-3" aria-hidden />}

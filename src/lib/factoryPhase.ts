@@ -143,6 +143,31 @@ export function showFactoryPhaseApproval({
   return true;
 }
 
+export type FactoryPhaseShade = "not-started" | "in-progress" | "finished";
+
+/**
+ * All three phase buttons use one color. A phase that has started and is not
+ * finished yet is the lighter shade. A finished phase is the solid shade.
+ */
+export function factoryPhaseShade({
+  phase,
+  progress,
+  hasPhaseSummary,
+}: {
+  phase: FactoryPhase;
+  progress: FactoryPhaseProgress;
+  hasPhaseSummary: boolean;
+}): FactoryPhaseShade {
+  if (
+    isFactoryPhaseApproved(phase, progress) ||
+    (phase === "delivery" && hasPhaseSummary)
+  ) {
+    return "finished";
+  }
+  if (progress.started.has(phase)) return "in-progress";
+  return "not-started";
+}
+
 /** Approval needs Dyad's finished phase summary; an ordinary reply is not enough. */
 export function canContinueFactoryPhase({
   hasPhaseSummary,

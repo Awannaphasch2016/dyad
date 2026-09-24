@@ -10,6 +10,7 @@ import {
   hasFactoryPhases,
   isFactoryPhaseApproved,
   isFactoryPhaseUnlocked,
+  factoryPhaseShade,
   showFactoryPhaseApproval,
   latestUnlockedFactoryPhase,
   lockedFactoryPhaseReason,
@@ -166,6 +167,65 @@ describe("factoryPhase", () => {
         hasPhaseSummary: true,
       }),
     ).toBe(false);
+  });
+
+  it("uses a lighter shade while a phase has started and is not finished", () => {
+    const discoveryRunning = {
+      approved: new Set<never>(),
+      started: new Set(["discovery"] as const),
+    };
+    expect(
+      factoryPhaseShade({
+        phase: "discovery",
+        progress: discoveryRunning,
+        hasPhaseSummary: true,
+      }),
+    ).toBe("in-progress");
+    expect(
+      factoryPhaseShade({
+        phase: "implementation",
+        progress: discoveryRunning,
+        hasPhaseSummary: false,
+      }),
+    ).toBe("not-started");
+
+    const implementationRunning = {
+      approved: new Set<never>(),
+      started: new Set(["discovery", "implementation"] as const),
+    };
+    expect(
+      factoryPhaseShade({
+        phase: "discovery",
+        progress: implementationRunning,
+        hasPhaseSummary: true,
+      }),
+    ).toBe("finished");
+    expect(
+      factoryPhaseShade({
+        phase: "implementation",
+        progress: implementationRunning,
+        hasPhaseSummary: false,
+      }),
+    ).toBe("in-progress");
+    expect(
+      factoryPhaseShade({
+        phase: "delivery",
+        progress: implementationRunning,
+        hasPhaseSummary: false,
+      }),
+    ).toBe("not-started");
+
+    const finished = {
+      approved: new Set<never>(),
+      started: new Set(["discovery", "implementation", "delivery"] as const),
+    };
+    expect(
+      factoryPhaseShade({
+        phase: "delivery",
+        progress: finished,
+        hasPhaseSummary: true,
+      }),
+    ).toBe("finished");
   });
 
   it("allows approval only after a finished phase summary", () => {
