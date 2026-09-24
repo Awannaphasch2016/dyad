@@ -5,8 +5,6 @@ import { CheckCircle2, Lock } from "lucide-react";
 import { selectedAppIdAtom } from "@/atoms/appAtoms";
 import { selectedChatIdAtom } from "@/atoms/chatAtoms";
 import { Button } from "@/components/ui/button";
-import { useSettings } from "@/hooks/useSettings";
-import { useTemplates } from "@/hooks/useTemplates";
 import { isStreamActive } from "@/chat_stream/transition";
 import { useChatStreamState } from "@/hooks/useChatStream";
 import { useChats } from "@/hooks/useChats";
@@ -32,36 +30,6 @@ import {
 } from "@/lib/factoryPhase";
 import { queryKeys } from "@/lib/queryKeys";
 import { cn } from "@/lib/utils";
-
-function DiscoveryTemplatePicker() {
-  const { templates } = useTemplates();
-  const { settings, updateSettings } = useSettings();
-  const official = (templates ?? []).filter((template) => template.isOfficial);
-  if (official.length === 0) return null;
-  return (
-    <div
-      className="mt-2 flex flex-wrap items-center gap-2"
-      data-testid="discovery-template-picker"
-    >
-      <span className="text-xs text-muted-foreground">Starting template</span>
-      {official.map((template) => {
-        const selected = settings?.selectedTemplateId === template.id;
-        return (
-          <Button
-            key={template.id}
-            type="button"
-            size="sm"
-            variant={selected ? "default" : "outline"}
-            aria-pressed={selected}
-            onClick={() => updateSettings({ selectedTemplateId: template.id })}
-          >
-            {template.title.replace(/ Template$/, "")}
-          </Button>
-        );
-      })}
-    </div>
-  );
-}
 
 function approvalsStorageKey(appId: number): string {
   return `dyad:factory-phase-approvals:${appId}`;
@@ -310,7 +278,6 @@ export function FactoryPhaseBar() {
           </>
         )}
       </p>
-      {phase === "discovery" && <DiscoveryTemplatePicker />}
     </div>
   );
 }

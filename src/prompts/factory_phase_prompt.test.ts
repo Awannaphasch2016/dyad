@@ -19,6 +19,8 @@ describe("factoryPhaseSystemPrompt", () => {
     expect(prompt).toContain(
       "Do not ask about frameworks, templates, or stacks",
     );
+    expect(prompt).not.toContain("Starting template");
+    expect(prompt).not.toContain("Discovery screen");
     expect(prompt).toContain("## Discovery summary");
   });
 
