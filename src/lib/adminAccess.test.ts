@@ -7,25 +7,32 @@ import {
 } from "./adminAccess";
 
 describe("admin access", () => {
-  it("gives Admin and Member their own permissions", () => {
-    expect(ADMIN_ROLES.map((role) => role.name)).toEqual(["Admin", "Member"]);
+  it("gives admin, reviewer, and dev their own permissions", () => {
+    expect(ADMIN_ROLES.map((role) => role.id)).toEqual([
+      "admin",
+      "reviewer",
+      "dev",
+    ]);
     expect(ADMIN_ROLES[0]?.permissions.map((item) => item.label)).toEqual([
-      "Approve Discovery",
-      "Approve Implementation",
-      "Approve Delivery",
+      "Approve discovery",
+      "Approve implementation",
+      "Approve delivery",
       "Manage members",
     ]);
-    expect(ADMIN_ROLES[1]?.permissions.map((item) => item.label)).toEqual([
+    expect(ADMIN_ROLES[2]?.permissions.map((item) => item.label)).toEqual([
       "View the page",
       "Comment on a phase",
+      "Work in implementation",
     ]);
   });
 
-  it("reads a role from Clerk metadata and defaults the rest to Member", () => {
+  it("reads a role from Clerk metadata and maps legacy member to reviewer", () => {
     expect(roleFromMetadata({ role: "admin" })).toBe("admin");
-    expect(roleFromMetadata({ role: "member" })).toBe("member");
-    expect(roleFromMetadata({ role: "owner" })).toBe("member");
-    expect(roleFromMetadata(null)).toBe("member");
+    expect(roleFromMetadata({ role: "reviewer" })).toBe("reviewer");
+    expect(roleFromMetadata({ role: "dev" })).toBe("dev");
+    expect(roleFromMetadata({ role: "member" })).toBe("reviewer");
+    expect(roleFromMetadata({ role: "owner" })).toBe("reviewer");
+    expect(roleFromMetadata(null)).toBe("reviewer");
   });
 
   it("builds the Account Portal links from a publishable key", () => {
@@ -60,13 +67,13 @@ describe("admin access", () => {
           id: "inv_9",
           email_address: "new@example.com",
           status: "pending",
-          public_metadata: { role: "member" },
+          public_metadata: { role: "reviewer" },
         },
         {
           id: "inv_done",
           email_address: "done@example.com",
           status: "accepted",
-          public_metadata: { role: "member" },
+          public_metadata: { role: "reviewer" },
         },
       ],
     );
@@ -82,7 +89,7 @@ describe("admin access", () => {
         id: "inv_9",
         name: "new@example.com",
         email: "new@example.com",
-        roleId: "member",
+        roleId: "reviewer",
         status: "invited",
       },
     ]);

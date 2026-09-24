@@ -1,4 +1,4 @@
-export const ADMIN_ROLE_IDS = ["admin", "member"] as const;
+export const ADMIN_ROLE_IDS = ["admin", "reviewer", "dev"] as const;
 
 export type AdminRoleId = (typeof ADMIN_ROLE_IDS)[number];
 
@@ -26,30 +26,44 @@ export const ADMIN_ROLES: readonly AdminRole[] = [
     id: "admin",
     name: "Admin",
     permissions: [
-      { id: "approve-discovery", label: "Approve Discovery" },
-      { id: "approve-implementation", label: "Approve Implementation" },
-      { id: "approve-delivery", label: "Approve Delivery" },
+      { id: "approve-discovery", label: "Approve discovery" },
+      { id: "approve-implementation", label: "Approve implementation" },
+      { id: "approve-delivery", label: "Approve delivery" },
       { id: "manage-members", label: "Manage members" },
     ],
   },
   {
-    id: "member",
-    name: "Member",
+    id: "reviewer",
+    name: "Reviewer",
+    permissions: [
+      { id: "approve-discovery", label: "Approve discovery" },
+      { id: "approve-implementation", label: "Approve implementation" },
+      { id: "approve-delivery", label: "Approve delivery" },
+      { id: "view-page", label: "View the page" },
+      { id: "comment", label: "Comment on a phase" },
+    ],
+  },
+  {
+    id: "dev",
+    name: "Dev",
     permissions: [
       { id: "view-page", label: "View the page" },
       { id: "comment", label: "Comment on a phase" },
+      { id: "work-implementation", label: "Work in implementation" },
     ],
   },
 ];
 
 export function isAdminRoleId(value: unknown): value is AdminRoleId {
-  return value === "admin" || value === "member";
+  return value === "admin" || value === "reviewer" || value === "dev";
 }
 
+/** Legacy Clerk metadata used `member` before reviewer/dev existed. */
 export function roleFromMetadata(metadata: unknown): AdminRoleId {
-  if (!metadata || typeof metadata !== "object") return "member";
+  if (!metadata || typeof metadata !== "object") return "reviewer";
   const role = (metadata as { role?: unknown }).role;
-  return isAdminRoleId(role) ? role : "member";
+  if (role === "member") return "reviewer";
+  return isAdminRoleId(role) ? role : "reviewer";
 }
 
 export function copyAdminRoles(): AdminRole[] {
@@ -61,7 +75,7 @@ export function copyAdminRoles(): AdminRole[] {
 
 export function adminRoleById(roleId: AdminRoleId): AdminRole {
   const role = ADMIN_ROLES.find((item) => item.id === roleId);
-  if (!role) return ADMIN_ROLES[1];
+  if (!role) return ADMIN_ROLES[1]!;
   return role;
 }
 

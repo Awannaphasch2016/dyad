@@ -5,6 +5,11 @@ import type { AdminRoleId } from "@/lib/adminAccess";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { showError } from "@/lib/toast";
+import { cn } from "@/lib/utils";
+
+const tableHeadClass =
+  "border-b px-3 py-2 text-left text-sm font-medium text-muted-foreground";
+const tableCellClass = "border-b px-3 py-3 align-top text-sm";
 
 export default function AdminAccessPage() {
   const queryClient = useQueryClient();
@@ -13,7 +18,7 @@ export default function AdminAccessPage() {
     queryFn: () => ipc.clerk.getAccess(),
   });
   const [email, setEmail] = useState("");
-  const [roleId, setRoleId] = useState<AdminRoleId>("member");
+  const [roleId, setRoleId] = useState<AdminRoleId>("reviewer");
   const [pending, setPending] = useState(false);
 
   const refresh = () =>
@@ -98,141 +103,148 @@ export default function AdminAccessPage() {
         )}
 
         {data && (
-          <section
-            data-testid="admin-members"
-            aria-labelledby="admin-members-heading"
-          >
-            <h2
-              id="admin-members-heading"
-              className="mb-3 text-lg font-semibold tracking-tight"
-            >
-              Members
-            </h2>
-            <div className="grid grid-cols-[1fr_11rem] border-b px-3 py-2 text-sm font-medium">
-              <span>Member</span>
-              <span>Role</span>
-            </div>
-            {data.members.length === 0 && (
-              <p className="px-3 py-4 text-sm text-muted-foreground">
-                No members yet. Invite someone by email.
-              </p>
-            )}
-            <ul>
-              {data.members.map((member) => (
-                <li
-                  key={member.id}
-                  className="grid grid-cols-[1fr_11rem] items-center gap-2 border-b px-3 py-3 text-sm"
-                >
-                  <span className="min-w-0">
-                    <span className="block truncate font-medium">
-                      {member.name}
-                    </span>
-                    {member.name !== member.email && (
-                      <span className="block truncate text-muted-foreground">
-                        {member.email}
-                      </span>
-                    )}
-                    {member.status === "invited" && (
-                      <span className="text-xs text-muted-foreground">
-                        Invited
-                      </span>
-                    )}
-                  </span>
-                  {member.status === "active" ? (
-                    <select
-                      aria-label={`Role for ${member.email}`}
-                      className="h-9 rounded-md border bg-transparent px-2"
-                      value={member.roleId}
-                      disabled={pending}
-                      onChange={(event) =>
-                        void changeRole(
-                          member.id,
-                          event.target.value as AdminRoleId,
-                        )
-                      }
+          <section data-testid="admin-members" className="overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr>
+                  <th className={tableHeadClass}>Member</th>
+                  <th className={cn(tableHeadClass, "w-[11rem]")}>Role</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.members.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={2}
+                      className="px-3 py-4 text-sm text-muted-foreground"
                     >
-                      {data.roles.map((role) => (
-                        <option key={role.id} value={role.id}>
-                          {role.name}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <span>
-                      {data.roles.find((role) => role.id === member.roleId)
-                        ?.name ?? member.roleId}
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ul>
-            <form
-              className="mt-4 flex flex-wrap items-center gap-2"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void invite();
-              }}
-            >
-              <Input
-                aria-label="Member email"
-                type="email"
-                placeholder="name@example.com"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                className="max-w-sm"
-              />
-              <select
-                aria-label="Role for new member"
-                className="h-9 rounded-md border bg-transparent px-2"
-                value={roleId}
-                onChange={(event) =>
-                  setRoleId(event.target.value as AdminRoleId)
-                }
-              >
-                {(data.roles.length ? data.roles : []).map((role) => (
-                  <option key={role.id} value={role.id}>
-                    {role.name}
-                  </option>
+                      No members yet. Invite someone by email below.
+                    </td>
+                  </tr>
+                )}
+                {data.members.map((member) => (
+                  <tr key={member.id}>
+                    <td className={tableCellClass}>
+                      <span className="block truncate font-medium">
+                        {member.name}
+                      </span>
+                      {member.name !== member.email && (
+                        <span className="block truncate text-muted-foreground">
+                          {member.email}
+                        </span>
+                      )}
+                      {member.status === "invited" && (
+                        <span className="text-xs text-muted-foreground">
+                          Invited
+                        </span>
+                      )}
+                    </td>
+                    <td className={tableCellClass}>
+                      {member.status === "active" ? (
+                        <select
+                          aria-label={`Role for ${member.email}`}
+                          className="h-9 w-full rounded-md border bg-transparent px-2"
+                          value={member.roleId}
+                          disabled={pending}
+                          onChange={(event) =>
+                            void changeRole(
+                              member.id,
+                              event.target.value as AdminRoleId,
+                            )
+                          }
+                        >
+                          {data.roles.map((role) => (
+                            <option key={role.id} value={role.id}>
+                              {role.name}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span>
+                          {data.roles.find((role) => role.id === member.roleId)
+                            ?.name ?? member.roleId}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
                 ))}
-              </select>
-              <Button type="submit" disabled={pending || !data.configured}>
-                Add member
-              </Button>
-            </form>
+                <tr>
+                  <td colSpan={2} className={cn(tableCellClass, "border-b-0")}>
+                    <form
+                      className="flex flex-wrap items-center gap-2"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void invite();
+                      }}
+                    >
+                      <Input
+                        aria-label="Member email"
+                        type="email"
+                        placeholder="name@example.com"
+                        value={email}
+                        onChange={(event) => setEmail(event.target.value)}
+                        className="max-w-sm flex-1"
+                      />
+                      <select
+                        aria-label="Role for new member"
+                        className="h-9 rounded-md border bg-transparent px-2"
+                        value={roleId}
+                        onChange={(event) =>
+                          setRoleId(event.target.value as AdminRoleId)
+                        }
+                      >
+                        {data.roles.map((role) => (
+                          <option key={role.id} value={role.id}>
+                            {role.name}
+                          </option>
+                        ))}
+                      </select>
+                      <Button
+                        type="submit"
+                        disabled={pending || !data.configured}
+                      >
+                        Add member
+                      </Button>
+                    </form>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </section>
         )}
 
         {data && (
           <section
-            className="flex flex-col gap-4"
-            aria-labelledby="admin-permissions-heading"
-            data-testid="admin-permissions"
+            data-testid="admin-roles-table"
+            className="overflow-x-auto"
+            aria-label="Roles and permissions"
           >
-            <h2
-              id="admin-permissions-heading"
-              className="text-lg font-semibold tracking-tight"
-            >
-              Permissions
-            </h2>
-            <div>
-              <h3 className="mb-3 text-base font-semibold">Roles</h3>
-              <div className="grid gap-4 sm:grid-cols-2">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr>
+                  <th className={cn(tableHeadClass, "w-[8rem]")}>Roles</th>
+                  <th className={tableHeadClass}>Permission</th>
+                </tr>
+              </thead>
+              <tbody>
                 {data.roles.map((role) => (
-                  <article
-                    key={role.id}
-                    data-testid={`admin-role-${role.id}`}
-                    className="rounded-xl border bg-[var(--background-lightest)] p-4"
-                  >
-                    <h4 className="text-base font-semibold">{role.name}</h4>
-                    <ul className="mt-3 space-y-1 text-sm">
-                      {role.permissions.map((permission) => (
-                        <li key={permission.id}>{permission.label}</li>
-                      ))}
-                    </ul>
-                  </article>
+                  <tr key={role.id} data-testid={`admin-role-${role.id}`}>
+                    <td className={cn(tableCellClass, "font-medium lowercase")}>
+                      {role.id}
+                    </td>
+                    <td className={tableCellClass}>
+                      <ul className="list-inside list-disc space-y-0.5 text-muted-foreground">
+                        {role.permissions.map((permission) => (
+                          <li key={permission.id} className="text-foreground">
+                            {permission.label}
+                          </li>
+                        ))}
+                      </ul>
+                    </td>
+                  </tr>
                 ))}
-              </div>
-            </div>
+              </tbody>
+            </table>
           </section>
         )}
       </div>

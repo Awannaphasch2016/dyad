@@ -29,7 +29,7 @@ vi.mock("@/ipc/types", () => ({
 }));
 vi.mock("@/lib/toast", () => ({ showError: vi.fn() }));
 
-it("shows members, roles, and permissions", async () => {
+it("shows members and a roles-permissions table", async () => {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -42,14 +42,18 @@ it("shows members, roles, and permissions", async () => {
   expect(
     screen.getByRole("heading", { name: "Members & permissions" }),
   ).toBeTruthy();
-  expect(screen.getByRole("heading", { name: "Members" })).toBeTruthy();
-  expect(screen.getByRole("heading", { name: "Permissions" })).toBeTruthy();
-  expect(screen.getByRole("heading", { name: "Roles" })).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "Members" })).toBeNull();
+  expect(screen.queryByRole("heading", { name: "Permissions" })).toBeNull();
   const membersSection = screen.getByTestId("admin-members");
   expect(membersSection.textContent).toContain("Member");
   expect(membersSection.textContent).toContain("Role");
-  expect(screen.getByText("Approve Discovery")).toBeTruthy();
-  expect(screen.getByText("Comment on a phase")).toBeTruthy();
+  const rolesTable = screen.getByTestId("admin-roles-table");
+  expect(rolesTable.textContent).toContain("admin");
+  expect(rolesTable.textContent).toContain("reviewer");
+  expect(rolesTable.textContent).toContain("dev");
+  expect(screen.getByTestId("admin-role-dev").textContent).toContain(
+    "Work in implementation",
+  );
   expect(screen.queryByText("Themes")).toBeNull();
   expect(screen.queryByText("Prompts")).toBeNull();
 });
