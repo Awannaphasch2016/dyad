@@ -53,6 +53,7 @@ import { useLoadApps } from "@/hooks/useLoadApps";
 import { useSetChatFavorite } from "@/hooks/useSetChatFavorite";
 import { useReducedMotionPref } from "@/hooks/useReducedMotion";
 import { cn } from "@/lib/utils";
+import { hasFactoryPhases, orderedFactoryPhaseChats } from "@/lib/factoryPhase";
 
 const CHAT_ACTION_SPRING = {
   type: "spring" as const,
@@ -80,7 +81,18 @@ export function ChatList({
   const { apps } = useLoadApps();
   const selectedApp = apps.find((app) => app.id === selectedAppId);
 
+  const isFactoryApp = hasFactoryPhases(chats);
+
   const chatGroups = useMemo(() => {
+    if (hasFactoryPhases(chats)) {
+      return [
+        {
+          key: "factory-phases",
+          label: "Phases",
+          chats: orderedFactoryPhaseChats(chats),
+        },
+      ];
+    }
     const favorites: typeof chats = [];
     const today: typeof chats = [];
     const yesterday: typeof chats = [];
@@ -387,16 +399,23 @@ export function ChatList({
         )}
         <SidebarGroupContent>
           <div className="flex flex-col space-y-4">
-            <div className="mx-2 flex items-center gap-2">
-              <Button
-                onClick={handleNewChat}
-                variant="outline"
-                className="flex flex-1 items-center justify-start gap-2 py-3"
-                data-testid="new-chat-button"
-              >
-                <PlusCircle size={16} />
-                <span>{t("newChat")}</span>
-              </Button>
+            <div
+              className={cn(
+                "mx-2 flex items-center gap-2",
+                isFactoryApp && "justify-end",
+              )}
+            >
+              {!isFactoryApp && (
+                <Button
+                  onClick={handleNewChat}
+                  variant="outline"
+                  className="flex flex-1 items-center justify-start gap-2 py-3"
+                  data-testid="new-chat-button"
+                >
+                  <PlusCircle size={16} />
+                  <span>{t("newChat")}</span>
+                </Button>
+              )}
               <Button
                 onClick={() => setIsSearchDialogOpen(!isSearchDialogOpen)}
                 variant="outline"

@@ -119,13 +119,16 @@ export function FactoryPhaseBar() {
     streamState.phase === "idle" &&
     streamState.lastAcceptance == null;
 
+  // A factory app only has its three phase chats; any other chat (or a locked
+  // phase) sends the person to the phase they are allowed to work on.
+  const isOffPhaseChat = enabled && current != null && phase == null;
   useEffect(() => {
-    if (phase == null || phaseUnlocked || !progressLoaded || appId == null) {
-      return;
-    }
+    if (!isOffPhaseChat && (phase == null || phaseUnlocked)) return;
+    if (!progressLoaded || appId == null) return;
     if (fallbackChatId == null || fallbackChatId === chatId) return;
     selectChat({ chatId: fallbackChatId, appId });
   }, [
+    isOffPhaseChat,
     phase,
     phaseUnlocked,
     progressLoaded,

@@ -46,6 +46,17 @@ export function factoryPhaseChats<T extends { title: string | null }>(
   return found;
 }
 
+/** The phase chats in Discovery → Implementation → Delivery order. */
+export function orderedFactoryPhaseChats<T extends { title: string | null }>(
+  chats: T[],
+): T[] {
+  const found = factoryPhaseChats(chats);
+  return FACTORY_PHASES.flatMap((phase) => {
+    const chat = found[phase];
+    return chat ? [chat] : [];
+  });
+}
+
 export function hasFactoryPhases<T extends { title: string | null }>(
   chats: T[],
 ): boolean {

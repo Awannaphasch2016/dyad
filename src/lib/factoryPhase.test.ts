@@ -12,6 +12,7 @@ import {
   latestUnlockedFactoryPhase,
   lockedFactoryPhaseReason,
   nextFactoryPhase,
+  orderedFactoryPhaseChats,
   phaseFromTitle,
   previewOpenForPhase,
 } from "./factoryPhase";
@@ -48,6 +49,18 @@ describe("factoryPhase", () => {
     expect(hasFactoryPhases(chats)).toBe(true);
     expect(factoryPhaseChats(chats).discovery?.id).toBe(1);
     expect(factoryPhaseChats(chats).implementation?.id).toBe(3);
+  });
+
+  it("lists only the phase chats, in phase order", () => {
+    const chats = [
+      { id: 12, title: null },
+      { id: 8, title: "Delivery" },
+      { id: 7, title: "Implementation" },
+      { id: 6, title: "Discovery" },
+    ];
+    expect(orderedFactoryPhaseChats(chats).map((chat) => chat.id)).toEqual([
+      6, 7, 8,
+    ]);
   });
 
   it("keeps later phases locked until the previous phase is approved", () => {
