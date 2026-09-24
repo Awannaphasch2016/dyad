@@ -19,6 +19,8 @@ interface ModifiedFilesCardProps {
   retryUnavailableReason?: string;
   isRetryLoading: boolean;
   isAnyVersionMutationPending: boolean;
+  /** Factory phase chats keep the file list and drop Undo / Retry. */
+  hideRevisionActions?: boolean;
 }
 
 function splitPath(filePath: string): { dir: string; name: string } {
@@ -47,6 +49,7 @@ export function ModifiedFilesCard({
   retryUnavailableReason,
   isRetryLoading,
   isAnyVersionMutationPending,
+  hideRevisionActions = false,
 }: ModifiedFilesCardProps) {
   const { changes, loading, error } = useVersionChanges(appId, commitHash);
   const setPreviewMode = useSetAtom(previewModeAtom);
@@ -78,7 +81,8 @@ export function ModifiedFilesCard({
   // The file list is unavailable while loading, on error, or when the commit
   // changed no user-visible files. In those cases we still render the Undo/Retry
   // footer (the assistant turn produced a commit, so those affordances must stay
-  // available); only the header + list are hidden.
+  // available); only the header + list are hidden. Factory phase chats pass
+  // hideRevisionActions and drop the footer entirely.
   const hasChanges = !loading && !error && !!changes && changes.length > 0;
 
   // Undo and Retry both revert/replace the same last generation, so while either
@@ -86,7 +90,7 @@ export function ModifiedFilesCard({
   const actionsDisabled =
     isUndoLoading || isRetryLoading || isAnyVersionMutationPending;
 
-  const footer = (
+  const footer = hideRevisionActions ? null : (
     <div className="px-3 py-2 flex justify-end gap-2">
       <Button
         variant="outline"
@@ -121,6 +125,8 @@ export function ModifiedFilesCard({
       </Button>
     </div>
   );
+
+  if (hideRevisionActions && !hasChanges) return null;
 
   return (
     <div className="max-w-3xl w-full mx-auto my-2 px-2">

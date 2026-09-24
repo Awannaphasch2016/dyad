@@ -31,6 +31,11 @@ import { useVersionPreview } from "@/hooks/useVersionPreview";
 import type { PreviewEvent } from "@/version_preview/state";
 import { ExtraCommitsRevertDialog } from "./ExtraCommitsRevertDialog";
 import { getExtraRevertedCommits } from "./revertImpact";
+import { useChats } from "@/hooks/useChats";
+import {
+  hasFactoryPhases,
+  showMessageRevisionActions,
+} from "@/lib/factoryPhase";
 
 interface MessagesListProps {
   chatId: number | null;
@@ -58,6 +63,7 @@ interface FooterContext {
   streamMessage: ReturnType<typeof useStreamChat>["streamMessage"];
   selectedChatId: number | null;
   appId: number | null;
+  showRevisionActions: boolean;
   renderSetupBanner: () => React.ReactNode;
 }
 
@@ -135,6 +141,7 @@ function FooterComponent({ context }: { context?: FooterContext }) {
     streamMessage,
     selectedChatId,
     appId,
+    showRevisionActions,
     renderSetupBanner,
     executionBackend,
   } = context;
@@ -460,9 +467,10 @@ function FooterComponent({ context }: { context?: FooterContext }) {
           retryUnavailableReason={retryUnavailableReason}
           isRetryLoading={isRetryLoading}
           isAnyVersionMutationPending={isAnyVersionMutationPending}
+          hideRevisionActions={!showRevisionActions}
         />
       )}
-      {!isStreaming && !showModifiedFilesCard && (
+      {showRevisionActions && !isStreaming && !showModifiedFilesCard && (
         <div className="flex max-w-3xl mx-auto gap-2">
           {isLastMessageAssistant && (
             <Button
@@ -633,6 +641,10 @@ export const MessagesList = forwardRef<HTMLDivElement, MessagesListProps>(
       persistedMessages,
     );
     const { chat: selectedChat } = useChatMode(selectedChatId);
+    const { chats } = useChats(appId);
+    const showRevisionActions = showMessageRevisionActions(
+      hasFactoryPhases(chats),
+    );
 
     // Virtualization only renders visible DOM elements, which creates issues for E2E tests:
     // 1. Off-screen logs don't exist in the DOM and can't be queried by test selectors
@@ -724,6 +736,7 @@ export const MessagesList = forwardRef<HTMLDivElement, MessagesListProps>(
         streamMessage,
         selectedChatId,
         appId,
+        showRevisionActions,
         renderSetupBanner,
       }),
       [
@@ -741,6 +754,7 @@ export const MessagesList = forwardRef<HTMLDivElement, MessagesListProps>(
         streamMessage,
         selectedChatId,
         appId,
+        showRevisionActions,
         renderSetupBanner,
       ],
     );

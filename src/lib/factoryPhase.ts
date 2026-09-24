@@ -278,3 +278,8 @@ export function visibleComposerActions<T extends { id: string }>(
   if (!factory) return [...actions];
   return actions.filter((action) => action.id !== "keep-going");
 }
+
+/** Factory phase chats hide Undo and Retry under the transcript. */
+export function showMessageRevisionActions(factory: boolean): boolean {
+  return !factory;
+}

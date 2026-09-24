@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canContinueFactoryPhase,
   visibleComposerActions,
+  showMessageRevisionActions,
   continuePrefill,
   extractFactoryPhaseSummary,
   factoryPhaseChatMode,
@@ -327,5 +328,10 @@ Here is what I understood. Approve to continue, or tell me what to change.
     const actions = [{ id: "keep-going" }, { id: "refresh" }];
     expect(visibleComposerActions(actions, true)).toEqual([{ id: "refresh" }]);
     expect(visibleComposerActions(actions, false)).toEqual(actions);
+  });
+
+  it("hides Undo and Retry on every factory phase chat", () => {
+    expect(showMessageRevisionActions(true)).toBe(false);
+    expect(showMessageRevisionActions(false)).toBe(true);
   });
 });
