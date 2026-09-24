@@ -124,6 +124,25 @@ export function latestUnlockedFactoryPhase(
   return latest;
 }
 
+/**
+ * The approve control belongs to the phase that is still in progress.
+ * It is gone once that phase was approved, a later phase has started, or
+ * Delivery has posted its summary and the run is finished.
+ */
+export function showFactoryPhaseApproval({
+  phase,
+  progress,
+  hasPhaseSummary,
+}: {
+  phase: FactoryPhase;
+  progress: FactoryPhaseProgress;
+  hasPhaseSummary: boolean;
+}): boolean {
+  if (isFactoryPhaseApproved(phase, progress)) return false;
+  if (phase === "delivery" && hasPhaseSummary) return false;
+  return true;
+}
+
 /** Approval needs Dyad's finished phase summary; an ordinary reply is not enough. */
 export function canContinueFactoryPhase({
   hasPhaseSummary,

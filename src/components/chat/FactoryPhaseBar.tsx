@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useAtomValue } from "jotai";
 import { useQueries } from "@tanstack/react-query";
-import { CheckCircle2, Lock } from "lucide-react";
+import { Lock } from "lucide-react";
 import { selectedAppIdAtom } from "@/atoms/appAtoms";
 import { selectedChatIdAtom } from "@/atoms/chatAtoms";
 import { Button } from "@/components/ui/button";
@@ -21,12 +21,14 @@ import {
   factoryPhaseKickoff,
   factoryPhaseLabel,
   hasFactoryPhases,
+  isFactoryPhaseApproved,
   isFactoryPhaseUnlocked,
   latestFactoryPhaseSummary,
   latestUnlockedFactoryPhase,
   lockedFactoryPhaseReason,
   nextFactoryPhase,
   phaseFromTitle,
+  showFactoryPhaseApproval,
 } from "@/lib/factoryPhase";
 import { queryKeys } from "@/lib/queryKeys";
 import { cn } from "@/lib/utils";
@@ -185,7 +187,14 @@ export function FactoryPhaseBar() {
     hasPhaseSummary: phaseSummary != null,
     isStreaming,
   });
-  const alreadyApproved = approvedPhases.includes(phase);
+  const alreadyApproved = isFactoryPhaseApproved(phase, progress);
+  const showApproval =
+    progressLoaded &&
+    showFactoryPhaseApproval({
+      phase,
+      progress,
+      hasPhaseSummary: phaseSummary != null,
+    });
 
   const recordApproval = () => {
     const phases = alreadyApproved
@@ -233,7 +242,7 @@ export function FactoryPhaseBar() {
             </Button>
           );
         })}
-        {next && nextChat && (
+        {showApproval && next && nextChat && (
           <Button
             type="button"
             size="sm"
@@ -245,31 +254,22 @@ export function FactoryPhaseBar() {
             Approve and continue to {factoryPhaseLabel(next)}
           </Button>
         )}
-        {!next &&
-          (alreadyApproved ? (
-            <span
-              className="ml-auto inline-flex items-center gap-1 text-sm font-medium text-green-600"
-              data-testid="factory-phase-done"
-            >
-              <CheckCircle2 className="size-4" aria-hidden />
-              Delivery approved
-            </span>
-          ) : (
-            <Button
-              type="button"
-              size="sm"
-              className="ml-auto"
-              disabled={!canApprove}
-              data-testid="factory-phase-continue"
-              onClick={recordApproval}
-            >
-              Approve delivery
-            </Button>
-          ))}
+        {showApproval && !next && (
+          <Button
+            type="button"
+            size="sm"
+            className="ml-auto"
+            disabled={!canApprove}
+            data-testid="factory-phase-continue"
+            onClick={recordApproval}
+          >
+            Approve delivery
+          </Button>
+        )}
       </div>
       <p className={cn("mt-2 text-xs text-muted-foreground")}>
         {factoryPhaseHint(phase)}
-        {!canApprove && !alreadyApproved && (
+        {showApproval && !canApprove && (
           <>
             {" "}
             {isStreaming
