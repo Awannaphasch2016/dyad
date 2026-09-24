@@ -54,36 +54,9 @@ export default function AdminAccessPage() {
   return (
     <div className="min-h-screen w-full px-6 py-6">
       <div className="mx-auto flex max-w-3xl flex-col gap-8">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">
-              Members &amp; permissions
-            </h1>
-          </div>
-          {data?.signInUrl && (
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                as="a"
-                href={data.signInUrl}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Sign in
-              </Button>
-              {data.signUpUrl && (
-                <Button
-                  as="a"
-                  href={data.signUpUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Sign up
-                </Button>
-              )}
-            </div>
-          )}
-        </div>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Members &amp; permissions
+        </h1>
 
         {access.isLoading && (
           <p className="text-sm text-muted-foreground">Loading members…</p>

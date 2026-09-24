@@ -42,6 +42,8 @@ it("shows members and a roles-permissions table", async () => {
   expect(
     screen.getByRole("heading", { name: "Members & permissions" }),
   ).toBeTruthy();
+  expect(screen.queryByRole("link", { name: "Sign in" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "Sign up" })).toBeNull();
   expect(screen.queryByRole("heading", { name: "Members" })).toBeNull();
   expect(screen.queryByRole("heading", { name: "Permissions" })).toBeNull();
   const membersSection = screen.getByTestId("admin-members");
