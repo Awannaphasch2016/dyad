@@ -16,6 +16,9 @@ describe("factoryPhaseSystemPrompt", () => {
     expect(prompt).toContain("Start Discovery.");
     expect(prompt).toContain("planning_questionnaire");
     expect(prompt).toContain("Do not write, edit, or plan code");
+    expect(prompt).toContain(
+      "Do not ask about frameworks, templates, or stacks",
+    );
     expect(prompt).toContain("## Discovery summary");
   });
 

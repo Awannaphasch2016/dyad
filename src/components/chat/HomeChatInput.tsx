@@ -40,9 +40,11 @@ import { ipc } from "@/ipc/types";
 export function HomeChatInput({
   onSubmit,
   disabled = false,
+  hideAccessoryControls = false,
 }: {
   onSubmit: (options?: HomeSubmitOptions) => boolean | Promise<boolean>;
   disabled?: boolean;
+  hideAccessoryControls?: boolean;
 }) {
   const [inputValue, setInputValue] = useAtom(homeChatInputValueAtom);
   const [selectedApp, setSelectedApp] = useAtom(homeSelectedAppAtom);
@@ -184,65 +186,68 @@ export function HomeChatInput({
             />
 
             {/* Voice-to-text button */}
-            {isProEnabled ? (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <button
-                      onClick={toggleRecording}
-                      disabled={disabled || isTranscribing}
-                      aria-label={
-                        isRecording
-                          ? "Stop recording"
-                          : isTranscribing
-                            ? "Transcribing..."
-                            : "Voice to text"
-                      }
-                      className={cn(
-                        "px-2 py-2 mb-0.5 text-muted-foreground rounded-lg transition-colors duration-150 cursor-pointer disabled:cursor-default disabled:opacity-30",
-                        isRecording &&
-                          "text-red-500 hover:text-red-600 animate-pulse",
-                        !isRecording && !isTranscribing && "hover:text-primary",
-                      )}
-                    />
-                  }
-                >
-                  {isTranscribing ? (
-                    <Loader2 size={20} className="animate-spin" />
-                  ) : isRecording ? (
-                    <MicOff size={20} />
-                  ) : (
+            {!hideAccessoryControls &&
+              (isProEnabled ? (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <button
+                        onClick={toggleRecording}
+                        disabled={disabled || isTranscribing}
+                        aria-label={
+                          isRecording
+                            ? "Stop recording"
+                            : isTranscribing
+                              ? "Transcribing..."
+                              : "Voice to text"
+                        }
+                        className={cn(
+                          "px-2 py-2 mb-0.5 text-muted-foreground rounded-lg transition-colors duration-150 cursor-pointer disabled:cursor-default disabled:opacity-30",
+                          isRecording &&
+                            "text-red-500 hover:text-red-600 animate-pulse",
+                          !isRecording &&
+                            !isTranscribing &&
+                            "hover:text-primary",
+                        )}
+                      />
+                    }
+                  >
+                    {isTranscribing ? (
+                      <Loader2 size={20} className="animate-spin" />
+                    ) : isRecording ? (
+                      <MicOff size={20} />
+                    ) : (
+                      <Mic size={20} />
+                    )}
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {isRecording
+                      ? "Stop recording"
+                      : isTranscribing
+                        ? "Transcribing..."
+                        : "Voice to text"}
+                  </TooltipContent>
+                </Tooltip>
+              ) : (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <button
+                        onClick={() =>
+                          ipc.system.openExternalUrl("https://dyad.sh/pro")
+                        }
+                        disabled={disabled}
+                        aria-label="Voice to text (Pro)"
+                        className="px-2 py-2 mb-0.5 text-muted-foreground hover:text-primary rounded-lg transition-colors duration-150 cursor-pointer relative"
+                      />
+                    }
+                  >
                     <Mic size={20} />
-                  )}
-                </TooltipTrigger>
-                <TooltipContent>
-                  {isRecording
-                    ? "Stop recording"
-                    : isTranscribing
-                      ? "Transcribing..."
-                      : "Voice to text"}
-                </TooltipContent>
-              </Tooltip>
-            ) : (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <button
-                      onClick={() =>
-                        ipc.system.openExternalUrl("https://dyad.sh/pro")
-                      }
-                      disabled={disabled}
-                      aria-label="Voice to text (Pro)"
-                      className="px-2 py-2 mb-0.5 text-muted-foreground hover:text-primary rounded-lg transition-colors duration-150 cursor-pointer relative"
-                    />
-                  }
-                >
-                  <Mic size={20} />
-                  <Lock size={10} className="absolute -top-0.5 -right-0.5" />
-                </TooltipTrigger>
-                <TooltipContent>Voice to text (requires Pro)</TooltipContent>
-              </Tooltip>
-            )}
+                    <Lock size={10} className="absolute -top-0.5 -right-0.5" />
+                  </TooltipTrigger>
+                  <TooltipContent>Voice to text (requires Pro)</TooltipContent>
+                </Tooltip>
+              ))}
 
             {isStreaming ? (
               <Tooltip>
@@ -281,59 +286,61 @@ export function HomeChatInput({
               </Tooltip>
             )}
           </div>
-          <div className="px-2 flex items-center justify-between pb-0.5 pt-0.5">
-            <div className="flex items-center">
-              <ChatInputControls />
-              {canSelectApp && (
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <button
-                        onClick={() => {
-                          if (!disabled) setAppSearchOpen(true);
-                        }}
-                        disabled={disabled}
-                        className={cn(
-                          "cursor-pointer px-2 py-1 ml-1.5 text-xs font-medium rounded-lg transition-colors flex items-center gap-1",
-                          selectedApp
-                            ? "bg-primary/10 text-primary hover:bg-primary/15"
-                            : "text-foreground/80 hover:text-foreground hover:bg-muted/60",
-                        )}
-                        data-testid="home-app-selector"
-                      />
-                    }
-                  >
-                    <FolderOpenIcon size={14} />
-                    <span className="truncate max-w-[150px]">
-                      {selectedApp ? selectedApp.name : "No app selected"}
-                    </span>
-                    {selectedApp && (
-                      <button
-                        type="button"
-                        disabled={disabled}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedApp(null);
-                        }}
-                        className="hover:bg-primary/20 rounded-sm p-0.5 transition-colors"
-                        aria-label="Deselect app"
-                        data-testid="home-app-selector-clear"
-                      >
-                        <XIcon size={12} />
-                      </button>
-                    )}
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {selectedApp
-                      ? "Change selected app"
-                      : "Select an existing app"}
-                  </TooltipContent>
-                </Tooltip>
-              )}
-            </div>
+          {!hideAccessoryControls && (
+            <div className="px-2 flex items-center justify-between pb-0.5 pt-0.5">
+              <div className="flex items-center">
+                <ChatInputControls />
+                {canSelectApp && (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <button
+                          onClick={() => {
+                            if (!disabled) setAppSearchOpen(true);
+                          }}
+                          disabled={disabled}
+                          className={cn(
+                            "cursor-pointer px-2 py-1 ml-1.5 text-xs font-medium rounded-lg transition-colors flex items-center gap-1",
+                            selectedApp
+                              ? "bg-primary/10 text-primary hover:bg-primary/15"
+                              : "text-foreground/80 hover:text-foreground hover:bg-muted/60",
+                          )}
+                          data-testid="home-app-selector"
+                        />
+                      }
+                    >
+                      <FolderOpenIcon size={14} />
+                      <span className="truncate max-w-[150px]">
+                        {selectedApp ? selectedApp.name : "No app selected"}
+                      </span>
+                      {selectedApp && (
+                        <button
+                          type="button"
+                          disabled={disabled}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedApp(null);
+                          }}
+                          className="hover:bg-primary/20 rounded-sm p-0.5 transition-colors"
+                          aria-label="Deselect app"
+                          data-testid="home-app-selector-clear"
+                        >
+                          <XIcon size={12} />
+                        </button>
+                      )}
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {selectedApp
+                        ? "Change selected app"
+                        : "Select an existing app"}
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+              </div>
 
-            <AuxiliaryActionsMenu onFileSelect={handleFileSelect} />
-          </div>
+              <AuxiliaryActionsMenu onFileSelect={handleFileSelect} />
+            </div>
+          )}
         </div>
       </div>
 

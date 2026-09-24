@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { Folder, PlusCircle, Search, Star } from "lucide-react";
+import { Folder, PlusCircle, Search } from "lucide-react";
 import { useAtomValue } from "jotai";
 import { selectedAppIdAtom } from "@/atoms/appAtoms";
 import {
@@ -44,23 +44,17 @@ export function AppList({ show }: { show?: boolean }) {
     [apps],
   );
 
-  const favoriteApps = useMemo(
-    () => apps.filter((app) => app.isFavorite),
-    [apps],
-  );
-
   const visibleCollectionIds = useMemo(
     () => new Set(collections.map((c) => c.id)),
     [collections],
   );
 
-  const nonFavoriteApps = useMemo(
+  const listedApps = useMemo(
     () =>
       apps.filter(
         (app) =>
-          !app.isFavorite &&
-          (app.collectionId == null ||
-            !visibleCollectionIds.has(app.collectionId)),
+          app.collectionId == null ||
+          !visibleCollectionIds.has(app.collectionId),
       ),
     [apps, visibleCollectionIds],
   );
@@ -134,25 +128,6 @@ export function AppList({ show }: { show?: boolean }) {
               </div>
             ) : (
               <SidebarMenu className="space-y-1" data-testid="app-list">
-                <div className="px-3 pb-1 text-xs font-medium text-muted-foreground">
-                  Favorite apps
-                </div>
-                {favoriteApps.length === 0 ? (
-                  <div className="mx-2 mb-2 flex items-center gap-2 rounded-md border border-dashed border-sidebar-border px-3 py-3 text-xs text-muted-foreground">
-                    <Star size={14} className="shrink-0" />
-                    <span>Star an app to pin it here</span>
-                  </div>
-                ) : (
-                  favoriteApps.map((app) => (
-                    <AppItem
-                      key={app.id}
-                      app={app}
-                      handleAppClick={handleAppClick}
-                      selectedAppId={selectedAppId}
-                      enableMultiWindow={enableMultiWindow}
-                    />
-                  ))
-                )}
                 {collections.length > 0 && (
                   <div
                     data-testid="sidebar-collections-section"
@@ -209,10 +184,7 @@ export function AppList({ show }: { show?: boolean }) {
                     </Accordion>
                   </div>
                 )}
-                <div className="px-3 pb-1 pt-2 text-xs font-medium text-muted-foreground">
-                  Other apps
-                </div>
-                {nonFavoriteApps.map((app) => (
+                {listedApps.map((app) => (
                   <AppItem
                     key={app.id}
                     app={app}

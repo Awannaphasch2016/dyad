@@ -1,11 +1,4 @@
-import {
-  type LucideIcon,
-  Home,
-  Settings,
-  HelpCircle,
-  Store,
-  BookOpen,
-} from "lucide-react";
+import { type LucideIcon, Home, HelpCircle, BookOpen } from "lucide-react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useSidebar } from "@/components/ui/sidebar"; // import useSidebar hook
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -52,19 +45,9 @@ const items = [
     icon: Home,
   },
   {
-    title: "Settings",
-    to: "/settings",
-    icon: Settings,
-  },
-  {
     title: "Library",
     to: "/library",
     icon: BookOpen,
-  },
-  {
-    title: "Templates",
-    to: "/templates",
-    icon: Store,
   },
 ] satisfies Array<{
   title: AppSidebarItemTitle;
@@ -361,8 +344,8 @@ function AppIcons({
       case "Library":
         return "start-hover:library";
       default:
-        // Items without a sub-list (Templates) dismiss any open preview so a
-        // stale list doesn't linger while hovering an unrelated icon.
+        // Items without a sub-list dismiss any open preview so a stale list
+        // doesn't linger while hovering an unrelated icon.
         return "clear-hover";
     }
   };
