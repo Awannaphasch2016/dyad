@@ -18,6 +18,7 @@ import {
 import { ipc } from "@/ipc/types";
 
 import { ChatHeader } from "./chat/ChatHeader";
+import { FactoryPhaseBar } from "./chat/FactoryPhaseBar";
 import { MessagesList } from "./chat/MessagesList";
 import { ChatInput } from "./chat/ChatInput";
 import { VersionPane } from "./chat/VersionPane";
@@ -259,6 +260,7 @@ export function ChatPanel({
           }
         }}
       />
+      <FactoryPhaseBar />
       <div className="flex flex-1 overflow-hidden">
         {!isVersionPaneOpen && (
           <div className="relative flex-1 min-w-0 overflow-hidden">

@@ -15,6 +15,7 @@ import { useChats } from "@/hooks/useChats";
 import { selectedAppIdAtom } from "@/atoms/appAtoms";
 import { selectedChatIdAtom } from "@/atoms/chatAtoms";
 import { ipc } from "@/ipc/types";
+import { phaseFromTitle, previewOpenForPhase } from "@/lib/factoryPhase";
 
 const DEFAULT_CHAT_PANEL_SIZE = 50;
 
@@ -108,6 +109,15 @@ export default function ChatPage() {
     };
   }, [chatId, routeAppId, chats, setSelectedAppId]);
 
+  const factoryPhase = phaseFromTitle(
+    chats.find((chat) => chat.id === chatId)?.title,
+  );
+
+  useEffect(() => {
+    if (!factoryPhase) return;
+    setIsPreviewOpen(previewOpenForPhase(factoryPhase));
+  }, [factoryPhase, setIsPreviewOpen]);
+
   useEffect(() => {
     if (isPreviewOpen) {
       ref.current?.expand();
@@ -155,6 +165,11 @@ export default function ChatPage() {
               chatId={chatId}
               isPreviewOpen={isPreviewOpen}
               onTogglePreview={() => {
+                if (factoryPhase && factoryPhase !== "implementation") {
+                  setIsPreviewOpen(false);
+                  ref.current?.collapse();
+                  return;
+                }
                 setIsPreviewOpen(!isPreviewOpen);
                 if (isPreviewOpen) {
                   ref.current?.collapse();
