@@ -40,7 +40,10 @@ import { cn } from "@/lib/utils";
 import { useReducedMotionPref } from "@/hooks/useReducedMotion";
 import { useChats } from "@/hooks/useChats";
 import { hasFactoryPhases } from "@/lib/factoryPhase";
-import { previewTabsForFactory } from "./previewToolbarLayout";
+import {
+  isFactoryPreviewTab,
+  previewTabsForFactory,
+} from "./previewToolbarLayout";
 import { useVersionPreview } from "@/hooks/useVersionPreview";
 import { useVersions } from "@/hooks/useVersions";
 import {
@@ -251,10 +254,7 @@ export const PreviewToolbar = () => {
   }, [isVersionSelected, previewMode, setPreviewMode]);
 
   useEffect(() => {
-    if (
-      factoryApp &&
-      (previewMode === "publish" || previewMode === "configure")
-    ) {
+    if (factoryApp && !isFactoryPreviewTab(previewMode)) {
       setPreviewMode("preview");
     }
   }, [factoryApp, previewMode, setPreviewMode]);

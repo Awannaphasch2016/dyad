@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   getPreviewToolbarActionVisibility,
+  isFactoryPreviewTab,
   previewTabsForFactory,
 } from "./previewToolbarLayout";
 
@@ -31,17 +32,27 @@ describe("getPreviewToolbarActionVisibility", () => {
 });
 
 describe("previewTabsForFactory", () => {
-  it("hides Publish and Configure on a factory app", () => {
+  it("keeps only Preview and Code on a factory app", () => {
     expect(
       previewTabsForFactory(
-        ["preview", "code", "publish", "configure", "problems"],
+        [
+          "preview",
+          "code",
+          "publish",
+          "configure",
+          "problems",
+          "security",
+          "tests",
+        ],
         true,
       ),
-    ).toEqual(["preview", "code", "problems"]);
+    ).toEqual(["preview", "code"]);
+    expect(isFactoryPreviewTab("preview")).toBe(true);
+    expect(isFactoryPreviewTab("tests")).toBe(false);
   });
 
-  it("keeps Publish and Configure on other apps", () => {
-    const tabs = ["preview", "code", "publish", "configure"];
+  it("keeps every tab on other apps", () => {
+    const tabs = ["preview", "code", "publish", "configure", "tests"];
     expect(previewTabsForFactory(tabs, false)).toEqual(tabs);
   });
 });
