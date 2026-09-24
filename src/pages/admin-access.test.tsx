@@ -39,8 +39,15 @@ it("shows members, roles, and permissions", async () => {
     </QueryClientProvider>,
   );
   expect(await screen.findByText("Ada Lovelace")).toBeTruthy();
-  expect(screen.getByText("members")).toBeTruthy();
-  expect(screen.getByText("role")).toBeTruthy();
+  expect(
+    screen.getByRole("heading", { name: "Members & permissions" }),
+  ).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Members" })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Permissions" })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Roles" })).toBeTruthy();
+  const membersSection = screen.getByTestId("admin-members");
+  expect(membersSection.textContent).toContain("Member");
+  expect(membersSection.textContent).toContain("Role");
   expect(screen.getByText("Approve Discovery")).toBeTruthy();
   expect(screen.getByText("Comment on a phase")).toBeTruthy();
   expect(screen.queryByText("Themes")).toBeNull();

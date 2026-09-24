@@ -51,10 +51,9 @@ export default function AdminAccessPage() {
       <div className="mx-auto flex max-w-3xl flex-col gap-8">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Admin</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Members and permissions
-            </p>
+            <h1 className="text-2xl font-semibold tracking-tight">
+              Members &amp; permissions
+            </h1>
           </div>
           {data?.signInUrl && (
             <div className="flex gap-2">
@@ -99,10 +98,19 @@ export default function AdminAccessPage() {
         )}
 
         {data && (
-          <section data-testid="admin-members">
+          <section
+            data-testid="admin-members"
+            aria-labelledby="admin-members-heading"
+          >
+            <h2
+              id="admin-members-heading"
+              className="mb-3 text-lg font-semibold tracking-tight"
+            >
+              Members
+            </h2>
             <div className="grid grid-cols-[1fr_11rem] border-b px-3 py-2 text-sm font-medium">
-              <span>members</span>
-              <span>role</span>
+              <span>Member</span>
+              <span>Role</span>
             </div>
             {data.members.length === 0 && (
               <p className="px-3 py-4 text-sm text-muted-foreground">
@@ -195,21 +203,36 @@ export default function AdminAccessPage() {
         )}
 
         {data && (
-          <section className="grid gap-4 sm:grid-cols-2">
-            {data.roles.map((role) => (
-              <article
-                key={role.id}
-                data-testid={`admin-role-${role.id}`}
-                className="rounded-xl border bg-[var(--background-lightest)] p-4"
-              >
-                <h2 className="text-base font-semibold">{role.name}</h2>
-                <ul className="mt-3 space-y-1 text-sm">
-                  {role.permissions.map((permission) => (
-                    <li key={permission.id}>{permission.label}</li>
-                  ))}
-                </ul>
-              </article>
-            ))}
+          <section
+            className="flex flex-col gap-4"
+            aria-labelledby="admin-permissions-heading"
+            data-testid="admin-permissions"
+          >
+            <h2
+              id="admin-permissions-heading"
+              className="text-lg font-semibold tracking-tight"
+            >
+              Permissions
+            </h2>
+            <div>
+              <h3 className="mb-3 text-base font-semibold">Roles</h3>
+              <div className="grid gap-4 sm:grid-cols-2">
+                {data.roles.map((role) => (
+                  <article
+                    key={role.id}
+                    data-testid={`admin-role-${role.id}`}
+                    className="rounded-xl border bg-[var(--background-lightest)] p-4"
+                  >
+                    <h4 className="text-base font-semibold">{role.name}</h4>
+                    <ul className="mt-3 space-y-1 text-sm">
+                      {role.permissions.map((permission) => (
+                        <li key={permission.id}>{permission.label}</li>
+                      ))}
+                    </ul>
+                  </article>
+                ))}
+              </div>
+            </div>
           </section>
         )}
       </div>
