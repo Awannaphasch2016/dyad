@@ -7,7 +7,7 @@ import { useSettings } from "@/hooks/useSettings";
 import { Button } from "@/components/ui/button";
 import { AppAvatar } from "@/components/AppAvatar";
 // @ts-ignore
-import logo from "../../assets/wewebplus-logo.jpg";
+import logo from "../../assets/wewebplus-logo.png";
 import { providerSettingsRoute } from "@/routes/settings/providers/$provider";
 import { cn } from "@/lib/utils";
 import { useDeepLink } from "@/contexts/DeepLinkContext";
@@ -101,7 +101,7 @@ export const TitleBar = () => {
           <img
             src={logo}
             alt="wewebplus"
-            className="ml-1.5 h-8 w-8 shrink-0 rounded-md object-contain"
+            className="ml-1.5 h-7 w-auto shrink-0 object-contain"
           />
 
           <Tooltip>

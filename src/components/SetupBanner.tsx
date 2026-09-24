@@ -20,7 +20,7 @@ import { usePostHog } from "posthog-js/react";
 import { useLanguageModelProviders } from "@/hooks/useLanguageModelProviders";
 import { useScrollAndNavigateTo } from "@/hooks/useScrollAndNavigateTo";
 // @ts-ignore
-import logo from "../../assets/wewebplus-logo.jpg";
+import logo from "../../assets/wewebplus-logo.png";
 // @ts-ignore
 import openrouterLogo from "../../assets/ai-logos/openrouter-logo.png";
 import { SetupDyadProButton } from "./ProBanner";
@@ -151,7 +151,7 @@ export function SetupBanner({
             <img
               src={logo}
               alt="wewebplus"
-              className="size-11 shrink-0 rounded-lg object-contain"
+              className="h-11 w-auto shrink-0 object-contain"
             />
             <div className="min-w-0">
               <h3 className="text-lg font-semibold text-primary">
