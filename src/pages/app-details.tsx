@@ -68,6 +68,7 @@ import { AssignAppsToCollectionDialog } from "@/components/AssignAppsToCollectio
 import { useTranslation } from "react-i18next";
 import { queryKeys } from "@/lib/queryKeys";
 import { hasFactoryPhases } from "@/lib/factoryPhase";
+import { KnowledgeBaseContents } from "@/components/KnowledgeBaseContents";
 
 function UnavailableIntegrationCard({
   provider,
@@ -150,6 +151,7 @@ export default function AppDetailsPage() {
 
   // Get the appId and provider filter from search params
   const providerFilter = search.provider;
+  const showingContents = search.section === "contents";
   const { chats, loading: chatsLoading, invalidateChats } = useChats(appId);
   const { selectChat } = useSelectChat();
   // Factory apps walk Discovery → Implementation → Delivery. Path, collections,
@@ -539,6 +541,11 @@ export default function AppDetailsPage() {
             </span>
             <span>{selectedApp.updatedAt.toString()}</span>
           </div>
+          {showingContents && appId && (
+            <div className="col-span-2 border-t border-gray-100 pt-4 dark:border-gray-800">
+              <KnowledgeBaseContents appId={appId} />
+            </div>
+          )}
           {showProjectSetup && (
             <>
               <div className="col-span-2">

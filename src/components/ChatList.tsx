@@ -16,6 +16,7 @@ import {
   Search,
   ArrowLeft,
   Star,
+  BookOpen,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAtom, useSetAtom } from "jotai";
@@ -122,6 +123,19 @@ export function ChatList({
   }, [chats, t]);
   const routerState = useRouterState();
   const isChatRoute = routerState.location.pathname === "/chat";
+  const isContentsRoute =
+    routerState.location.pathname === "/app-details" &&
+    (routerState.location.search as { section?: string } | null)?.section ===
+      "contents";
+
+  const handleContentsClick = () => {
+    if (selectedAppId == null) return;
+    setSelectedChatId(null);
+    navigate({
+      to: "/app-details",
+      search: { appId: selectedAppId, section: "contents" },
+    });
+  };
 
   // Rename dialog state
   const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
@@ -674,6 +688,30 @@ export function ChatList({
                     </SidebarMenu>
                   </div>
                 ))}
+                {selectedAppId != null && (
+                  <div data-testid="chat-group-knowledge-base">
+                    <div className="px-3 pb-1 text-xs font-medium text-muted-foreground">
+                      Knowledge base
+                    </div>
+                    <SidebarMenu className="space-y-1">
+                      <SidebarMenuItem className="mb-1">
+                        <Button
+                          variant="ghost"
+                          onClick={handleContentsClick}
+                          className={`justify-start w-full text-left py-3 hover:bg-sidebar-accent/80 ${
+                            isContentsRoute
+                              ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                              : ""
+                          }`}
+                          data-testid="knowledge-base-contents-button"
+                        >
+                          <BookOpen size={16} className="mr-2 shrink-0" />
+                          <span className="truncate">Contents</span>
+                        </Button>
+                      </SidebarMenuItem>
+                    </SidebarMenu>
+                  </div>
+                )}
               </div>
             )}
           </div>
