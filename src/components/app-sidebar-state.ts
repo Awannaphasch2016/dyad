@@ -104,6 +104,27 @@ export function isSidebarItemActive({
   return pathname.startsWith("/plugins");
 }
 
+/**
+ * When the sidebar is showing a panel (Apps, Admin, Settings), only that rail
+ * icon is highlighted. Otherwise the icon for the current route is highlighted.
+ * This avoids Admin staying lit while the Apps list is open on a /library URL
+ * before navigation finishes.
+ */
+export function isSidebarRailHighlighted({
+  title,
+  pathname,
+  selectedPanel,
+}: {
+  title: AppSidebarItemTitle;
+  pathname: string;
+  selectedPanel: AppSidebarPanel | null;
+}): boolean {
+  if (selectedPanel != null) {
+    return selectedPanel === title;
+  }
+  return isSidebarItemActive({ title, pathname });
+}
+
 export function shouldShowSelectedAppChatList({
   selectedPanel,
   selectedAppId,

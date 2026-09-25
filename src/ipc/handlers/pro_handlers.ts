@@ -215,7 +215,7 @@ export function registerProHandlers() {
 
       if (!apiKey || !settings.enableDyadPro) {
         throw new DyadError(
-          "Dyad Pro is not enabled. Voice-to-text requires a Pro subscription.",
+          "wewebplus Pro is not enabled. Voice-to-text requires a Pro subscription.",
           DyadErrorKind.Auth,
         );
       }

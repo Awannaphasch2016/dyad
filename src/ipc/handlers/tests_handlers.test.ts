@@ -2136,7 +2136,7 @@ describe("tests handlers", () => {
           expect(result.infraError?.message).toMatch(
             /couldn't confirm.*test processes stopped/i,
           );
-          expect(result.infraError?.message).toMatch(/restart Dyad/i);
+          expect(result.infraError?.message).toMatch(/restart wewebplus/i);
           expect(teardown).not.toHaveBeenCalled();
           expect(queuedCallback).not.toHaveBeenCalled();
           expect(createE2eTestWorkspaceMock).not.toHaveBeenCalled();

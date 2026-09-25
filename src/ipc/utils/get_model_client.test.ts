@@ -293,7 +293,7 @@ describe("getModelClient", () => {
           providerSettings: { openai: { apiKey: { value: "test-api" } } },
         } as unknown as UserSettings,
       ),
-    ).rejects.toThrow("Enable Dyad Pro");
+    ).rejects.toThrow("Enable wewebplus Pro");
   });
   test("an explicit auxiliary model does not inherit the default subscription connection", async () => {
     const { modelClient } = await getModelClient(
@@ -835,7 +835,7 @@ describe("getModelClient", () => {
       } as unknown as UserSettings),
     ).rejects.toMatchObject({
       message:
-        "Auto (balanced) requires Dyad Pro. Switch to another model or enable Dyad Pro.",
+        "Auto (balanced) requires wewebplus Pro. Switch to another model or enable wewebplus Pro.",
     });
   });
 

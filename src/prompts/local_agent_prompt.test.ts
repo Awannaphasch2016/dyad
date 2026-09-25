@@ -179,7 +179,7 @@ describe("local_agent_prompt", () => {
       supabaseConnected: true,
     });
 
-    expect(prompt).toContain("You are Dyad Implementer");
+    expect(prompt).toContain("You are wewebplus Implementer");
     expect(prompt).toContain('<provider_invariants provider="supabase">');
     expect(prompt).toContain(SUPABASE_SERVICE_ROLE_BROWSER_RULE);
     expect(prompt).toContain(SUPABASE_GRANTS_AND_RLS_RULE);

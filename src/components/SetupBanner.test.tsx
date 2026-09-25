@@ -150,7 +150,7 @@ it("omits subscription pricing when Pro is active", () => {
 it("waits for settings before showing fees or permitting connection", () => {
   mocks.settingsLoading = true;
   setup();
-  expect(screen.getByText("Checking Dyad Pro status…")).toBeVisible();
+  expect(screen.getByText("Checking wewebplus Pro status…")).toBeVisible();
   expect(screen.queryByText(/No Dyad usage fees/)).not.toBeInTheDocument();
   expect(
     screen.getByRole("button", { name: "ChatGPT subscription" }),

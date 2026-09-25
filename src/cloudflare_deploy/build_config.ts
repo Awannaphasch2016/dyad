@@ -40,7 +40,7 @@ export function buildCloudflareTokenTemplateUrl(): string {
   );
   url.searchParams.set("accountId", "*");
   url.searchParams.set("zoneId", "all");
-  url.searchParams.set("name", "Dyad");
+  url.searchParams.set("name", "wewebplus");
   return url.toString();
 }
 
@@ -150,7 +150,7 @@ export function buildDeployRule(input: DeployRuleInput): DeployRuleBody {
     external_script_id: input.workerTag,
     repo_connection_uuid: input.repoConnectionUuid,
     build_token_uuid: input.buildTokenUuid,
-    trigger_name: "Deploy from Dyad",
+    trigger_name: "Deploy from wewebplus",
     build_command: input.hasBuildScript ? "npm run build" : "",
     deploy_command: `npx wrangler deploy --name ${input.workerName}`,
     root_directory: isRoot ? "/" : `/${input.rootDirectory}`,

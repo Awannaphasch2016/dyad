@@ -34,6 +34,7 @@ import { LoadingBar } from "../ui/LoadingBar";
 import { UncommittedFilesBanner } from "./UncommittedFilesBanner";
 import { terminalOpenByChatIdAtom } from "@/atoms/terminalAtoms";
 import { cn } from "@/lib/utils";
+import { hasFactoryPhases } from "@/lib/factoryPhase";
 
 interface ChatHeaderProps {
   isVersionPaneOpen: boolean;
@@ -56,7 +57,8 @@ export function ChatHeader({
   const [terminalOpenByChatId, setTerminalOpenByChatId] = useAtom(
     terminalOpenByChatIdAtom,
   );
-  const { invalidateChats } = useChats(appId);
+  const { chats, invalidateChats } = useChats(appId);
+  const isFactoryApp = hasFactoryPhases(chats);
   const { selectChat } = useSelectChat();
   const { isStreaming } = useStreamChat();
   const {
@@ -213,15 +215,17 @@ export function ChatHeader({
       {/* Why is this pt-0.5? Because the loading bar is h-1 (it always takes space) and we want the vertical spacing to be consistent.*/}
       <div className="@container flex items-center justify-between pb-1.5 pt-0.5">
         <div className="flex items-center space-x-2">
-          <Button
-            onClick={handleNewChat}
-            variant="ghost"
-            className="hidden @2xs:flex items-center justify-start gap-2 mx-2 py-3"
-            data-testid="new-chat-button"
-          >
-            <PlusCircle size={16} />
-            <span>{t("newChat")}</span>
-          </Button>
+          {!isFactoryApp && (
+            <Button
+              onClick={handleNewChat}
+              variant="ghost"
+              className="hidden @2xs:flex items-center justify-start gap-2 mx-2 py-3"
+              data-testid="new-chat-button"
+            >
+              <PlusCircle size={16} />
+              <span>{t("newChat")}</span>
+            </Button>
+          )}
           <Button
             onClick={onVersionClick}
             variant="ghost"

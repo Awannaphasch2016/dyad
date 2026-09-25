@@ -1,18 +1,26 @@
 import { Provider, createStore } from "jotai";
 import { render, screen } from "@testing-library/react";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { selectedChatIdAtom } from "@/atoms/chatAtoms";
 import { OptimisticChatMessages } from "@/chat_stream/optimistic_messages";
 import { MessagesList } from "./MessagesList";
 
 const state = vi.hoisted(() => ({
   manager: {} as { optimisticMessages: OptimisticChatMessages },
+  isStreaming: true,
+  chats: [] as { title: string | null }[],
 }));
 vi.mock("@/chat_stream/ChatStreamProvider", () => ({
   useChatStreamManager: () => state.manager,
 }));
 vi.mock("@/hooks/useStreamChat", () => ({
-  useStreamChat: () => ({ isStreaming: true, streamMessage: vi.fn() }),
+  useStreamChat: () => ({
+    isStreaming: state.isStreaming,
+    streamMessage: vi.fn(),
+  }),
+}));
+vi.mock("@/hooks/useChats", () => ({
+  useChats: () => ({ chats: state.chats, loading: false }),
 }));
 vi.mock("@/hooks/useVersions", () => ({
   useVersions: () => ({ refreshVersions: vi.fn() }),
@@ -90,6 +98,49 @@ it("uses the rendered chat during navigation before global selection catches up"
     </Provider>,
   );
   expect(screen.getByText("Pending in A")).toBeTruthy();
+  view.unmount();
+  optimisticMessages.dispose();
+});
+
+const factoryChats = [
+  { title: "Discovery" },
+  { title: "Implementation" },
+  { title: "Delivery" },
+];
+
+afterEach(() => {
+  state.isStreaming = true;
+  state.chats = [];
+});
+
+it("hides Undo and Retry on factory phase chats and keeps them on other chats", () => {
+  const store = createStore();
+  store.set(selectedChatIdAtom, 18);
+  const optimisticMessages = new OptimisticChatMessages();
+  state.manager = { optimisticMessages };
+  state.isStreaming = false;
+  state.chats = factoryChats;
+  const messages = [
+    { id: 1, role: "user" as const, content: "Start Delivery." },
+    { id: 2, role: "assistant" as const, content: "Delivery summary" },
+  ];
+  const view = render(
+    <Provider store={store}>
+      <MessagesList chatId={18} messages={messages} />
+    </Provider>,
+  );
+  expect(screen.getByText("Delivery summary")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+
+  state.chats = [{ title: "Notes" }];
+  view.rerender(
+    <Provider store={store}>
+      <MessagesList chatId={18} messages={messages} />
+    </Provider>,
+  );
+  expect(screen.getByRole("button", { name: "Undo" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
   view.unmount();
   optimisticMessages.dispose();
 });

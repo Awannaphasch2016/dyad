@@ -37,9 +37,9 @@ export function ReleaseChannelSelector() {
     } else {
       toast("Using Beta release channel", {
         description:
-          "You will need to restart Dyad for your settings to take effect.",
+          "You will need to restart wewebplus for your settings to take effect.",
         action: {
-          label: "Restart Dyad",
+          label: "Restart wewebplus",
           onClick: () => {
             ipc.system.restartDyad();
           },

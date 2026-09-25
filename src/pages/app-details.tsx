@@ -67,6 +67,8 @@ import { useAppCollections } from "@/hooks/useAppCollections";
 import { AssignAppsToCollectionDialog } from "@/components/AssignAppsToCollectionDialog";
 import { useTranslation } from "react-i18next";
 import { queryKeys } from "@/lib/queryKeys";
+import { hasFactoryPhases } from "@/lib/factoryPhase";
+import { KnowledgeBaseContents } from "@/components/KnowledgeBaseContents";
 
 function UnavailableIntegrationCard({
   provider,
@@ -149,8 +151,12 @@ export default function AppDetailsPage() {
 
   // Get the appId and provider filter from search params
   const providerFilter = search.provider;
+  const showingContents = search.section === "contents";
   const { chats, loading: chatsLoading, invalidateChats } = useChats(appId);
   const { selectChat } = useSelectChat();
+  // Factory apps walk Discovery → Implementation → Delivery. Path, collections,
+  // GitHub, databases, and mobile upgrades are not part of that flow.
+  const showProjectSetup = !chatsLoading && !hasFactoryPhases(chats);
 
   const { data: screenshotsData } = useQuery({
     queryKey: queryKeys.apps.screenshots({ appId }),
@@ -403,6 +409,9 @@ export default function AppDetailsPage() {
     <div
       className="relative min-h-screen p-4 w-full"
       data-testid="app-details-page"
+      data-details-mode={
+        chatsLoading ? "loading" : showProjectSetup ? "setup" : "factory"
+      }
     >
       <BackButton label="Back" className="absolute top-4 left-4 mb-0" />
 
@@ -532,145 +541,160 @@ export default function AppDetailsPage() {
             </span>
             <span>{selectedApp.updatedAt.toString()}</span>
           </div>
-          <div className="col-span-2">
-            <span className="block text-gray-500 dark:text-gray-400 mb-0.5 text-xs">
-              Path
-            </span>
-            <div className="flex items-center gap-1">
-              <Tooltip>
-                <TooltipTrigger
-                  render={
+          {showingContents && appId && (
+            <div className="col-span-2 border-t border-gray-100 pt-4 dark:border-gray-800">
+              <KnowledgeBaseContents appId={appId} />
+            </div>
+          )}
+          {showProjectSetup && (
+            <>
+              <div className="col-span-2">
+                <span className="block text-gray-500 dark:text-gray-400 mb-0.5 text-xs">
+                  Path
+                </span>
+                <div className="flex items-center gap-1">
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="ml-[-8px] p-0.5 h-auto cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                          onClick={() => {
+                            ipc.system.showItemInFolder(currentAppPath);
+                          }}
+                        />
+                      }
+                    >
+                      <Folder className="h-3.5 w-3.5" />
+                    </TooltipTrigger>
+                    <TooltipContent>Show in folder</TooltipContent>
+                  </Tooltip>
+                  <span className="text-sm break-all">{currentAppPath}</span>
+                </div>
+              </div>
+              <div className="col-span-2">
+                <span className="block text-gray-500 dark:text-gray-400 mb-0.5 text-xs">
+                  Collection
+                </span>
+                <div className="flex items-center gap-1">
+                  <Folder className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span
+                    className="text-sm"
+                    data-testid="app-details-collection-name"
+                  >
+                    {currentCollection?.name ?? "No collection yet"}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="ml-1 h-auto text-muted-foreground cursor-pointer hover:bg-transparent hover:text-foreground transition-colors"
+                    onClick={() => setIsAssignCollectionDialogOpen(true)}
+                    data-testid="app-details-edit-collection-button"
+                  >
+                    {selectedApp.collectionId == null ? (
+                      <Plus className="h-3.5 w-3.5" />
+                    ) : (
+                      <Pencil className="h-3.5 w-3.5" />
+                    )}
+                  </Button>
+                  {selectedApp.collectionId != null && (
                     <Button
                       variant="ghost"
-                      size="icon"
-                      className="ml-[-8px] p-0.5 h-auto cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                      onClick={() => {
-                        ipc.system.showItemInFolder(currentAppPath);
+                      size="sm"
+                      className="-ml-2 h-auto text-muted-foreground cursor-pointer hover:bg-transparent hover:text-destructive transition-colors"
+                      onClick={async () => {
+                        try {
+                          await assignApps({
+                            collectionId: null,
+                            appIds: [selectedApp.id],
+                          });
+                          showSuccess("Removed from collection");
+                        } catch (error) {
+                          showError(error);
+                        }
                       }}
-                    />
-                  }
-                >
-                  <Folder className="h-3.5 w-3.5" />
-                </TooltipTrigger>
-                <TooltipContent>Show in folder</TooltipContent>
-              </Tooltip>
-              <span className="text-sm break-all">{currentAppPath}</span>
-            </div>
-          </div>
-          <div className="col-span-2">
-            <span className="block text-gray-500 dark:text-gray-400 mb-0.5 text-xs">
-              Collection
-            </span>
-            <div className="flex items-center gap-1">
-              <Folder className="h-3.5 w-3.5 text-muted-foreground" />
-              <span
-                className="text-sm"
-                data-testid="app-details-collection-name"
-              >
-                {currentCollection?.name ?? "No collection yet"}
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="ml-1 h-auto text-muted-foreground cursor-pointer hover:bg-transparent hover:text-foreground transition-colors"
-                onClick={() => setIsAssignCollectionDialogOpen(true)}
-                data-testid="app-details-edit-collection-button"
-              >
-                {selectedApp.collectionId == null ? (
-                  <Plus className="h-3.5 w-3.5" />
-                ) : (
-                  <Pencil className="h-3.5 w-3.5" />
-                )}
-              </Button>
-              {selectedApp.collectionId != null && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="-ml-2 h-auto text-muted-foreground cursor-pointer hover:bg-transparent hover:text-destructive transition-colors"
-                  onClick={async () => {
-                    try {
-                      await assignApps({
-                        collectionId: null,
-                        appIds: [selectedApp.id],
-                      });
-                      showSuccess("Removed from collection");
-                    } catch (error) {
-                      showError(error);
-                    }
-                  }}
-                  title="Remove from collection"
-                  aria-label="Remove from collection"
-                  data-testid="app-details-remove-collection-button"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              )}
-            </div>
-          </div>
-        </div>
-        <div className="mt-4 flex flex-col gap-2">
-          <Button
-            onClick={handleOpenInChat}
-            disabled={chatsLoading || isOpeningChat}
-            className="cursor-pointer w-full py-5 flex justify-center items-center gap-2"
-            size="lg"
-          >
-            Open in Chat
-            <MessageCircle className="h-4 w-4" />
-          </Button>
-          <div className="border border-gray-200 rounded-md p-4">
-            <GitHubConnector appId={appId} folderName={selectedApp.path} />
-            {selectedApp.githubOrg && selectedApp.githubRepo && appId && (
-              <div className="pt-4 border-t border-gray-100 dark:border-gray-800">
-                <GithubCollaboratorManager appId={appId} />
+                      title="Remove from collection"
+                      aria-label="Remove from collection"
+                      data-testid="app-details-remove-collection-button"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
               </div>
-            )}
-          </div>
-          {/* When providerFilter is set, show the selected connector only if the other provider isn't already active */}
-          {providerFilter === "supabase" &&
-            appId &&
-            !selectedApp?.neonProjectId && <SupabaseConnector appId={appId} />}
-          {providerFilter === "supabase" &&
-            appId &&
-            selectedApp?.neonProjectId && (
-              <UnavailableIntegrationCard provider="supabase" />
-            )}
-          {providerFilter === "neon" &&
-            appId &&
-            !selectedApp?.supabaseProjectId && <NeonConnector appId={appId} />}
-          {providerFilter === "neon" &&
-            appId &&
-            selectedApp?.supabaseProjectId && (
-              <UnavailableIntegrationCard provider="neon" />
-            )}
-          {/* When no providerFilter, show both with existing mutual exclusion */}
-          {!providerFilter && (
-            <>
-              {appId &&
-                !selectedApp?.neonProjectId &&
-                !selectedApp?.supabaseProjectId && (
-                  <div className="flex items-start gap-2 rounded-md border border-muted bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                    <Info className="h-4 w-4 shrink-0 mt-0.5" />
-                    <span>{t("integrations.mutualExclusion.chooseOne")}</span>
-                  </div>
-                )}
-              {appId && !selectedApp?.neonProjectId && (
-                <SupabaseConnector appId={appId} />
-              )}
-              {appId && selectedApp?.neonProjectId && (
-                <UnavailableIntegrationCard provider="supabase" />
-              )}
-              {appId && !selectedApp?.supabaseProjectId && (
-                <NeonConnector appId={appId} />
-              )}
-              {appId && selectedApp?.supabaseProjectId && (
-                <UnavailableIntegrationCard provider="neon" />
-              )}
             </>
           )}
-          {appId && <CapacitorControls appId={appId} />}
-          <AppUpgrades appId={appId} />
         </div>
+        {showProjectSetup && (
+          <div className="mt-4 flex flex-col gap-2">
+            <Button
+              onClick={handleOpenInChat}
+              disabled={chatsLoading || isOpeningChat}
+              className="cursor-pointer w-full py-5 flex justify-center items-center gap-2"
+              size="lg"
+            >
+              Open in Chat
+              <MessageCircle className="h-4 w-4" />
+            </Button>
+            <div className="border border-gray-200 rounded-md p-4">
+              <GitHubConnector appId={appId} folderName={selectedApp.path} />
+              {selectedApp.githubOrg && selectedApp.githubRepo && appId && (
+                <div className="pt-4 border-t border-gray-100 dark:border-gray-800">
+                  <GithubCollaboratorManager appId={appId} />
+                </div>
+              )}
+            </div>
+            {/* When providerFilter is set, show the selected connector only if the other provider isn't already active */}
+            {providerFilter === "supabase" &&
+              appId &&
+              !selectedApp?.neonProjectId && (
+                <SupabaseConnector appId={appId} />
+              )}
+            {providerFilter === "supabase" &&
+              appId &&
+              selectedApp?.neonProjectId && (
+                <UnavailableIntegrationCard provider="supabase" />
+              )}
+            {providerFilter === "neon" &&
+              appId &&
+              !selectedApp?.supabaseProjectId && (
+                <NeonConnector appId={appId} />
+              )}
+            {providerFilter === "neon" &&
+              appId &&
+              selectedApp?.supabaseProjectId && (
+                <UnavailableIntegrationCard provider="neon" />
+              )}
+            {/* When no providerFilter, show both with existing mutual exclusion */}
+            {!providerFilter && (
+              <>
+                {appId &&
+                  !selectedApp?.neonProjectId &&
+                  !selectedApp?.supabaseProjectId && (
+                    <div className="flex items-start gap-2 rounded-md border border-muted bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                      <Info className="h-4 w-4 shrink-0 mt-0.5" />
+                      <span>{t("integrations.mutualExclusion.chooseOne")}</span>
+                    </div>
+                  )}
+                {appId && !selectedApp?.neonProjectId && (
+                  <SupabaseConnector appId={appId} />
+                )}
+                {appId && selectedApp?.neonProjectId && (
+                  <UnavailableIntegrationCard provider="supabase" />
+                )}
+                {appId && !selectedApp?.supabaseProjectId && (
+                  <NeonConnector appId={appId} />
+                )}
+                {appId && selectedApp?.supabaseProjectId && (
+                  <UnavailableIntegrationCard provider="neon" />
+                )}
+              </>
+            )}
+            {appId && <CapacitorControls appId={appId} />}
+            <AppUpgrades appId={appId} />
+          </div>
+        )}
 
         {/* Rename Dialog */}
         <Dialog open={isRenameDialogOpen} onOpenChange={setIsRenameDialogOpen}>
@@ -1085,12 +1109,14 @@ export default function AppDetailsPage() {
           </DialogContent>
         </Dialog>
 
-        <AssignAppsToCollectionDialog
-          open={isAssignCollectionDialogOpen}
-          onOpenChange={setIsAssignCollectionDialogOpen}
-          apps={selectedApp ? [selectedApp] : []}
-          collections={collections}
-        />
+        {showProjectSetup && (
+          <AssignAppsToCollectionDialog
+            open={isAssignCollectionDialogOpen}
+            onOpenChange={setIsAssignCollectionDialogOpen}
+            apps={selectedApp ? [selectedApp] : []}
+            collections={collections}
+          />
+        )}
       </div>
     </div>
   );

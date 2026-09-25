@@ -38,6 +38,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { useReducedMotionPref } from "@/hooks/useReducedMotion";
+import { useChats } from "@/hooks/useChats";
+import { hasFactoryPhases } from "@/lib/factoryPhase";
+import {
+  isFactoryPreviewTab,
+  previewTabsForFactory,
+} from "./previewToolbarLayout";
 import { useVersionPreview } from "@/hooks/useVersionPreview";
 import { useVersions } from "@/hooks/useVersions";
 import {
@@ -203,6 +209,8 @@ export const PreviewToolbar = () => {
     isChatPanelHiddenAtom,
   );
   const selectedAppId = useAtomValue(selectedAppIdAtom);
+  const { chats } = useChats(selectedAppId);
+  const factoryApp = hasFactoryPhases(chats);
   const nativeViewAppId = useAtomValue(previewNativeViewAppIdAtom);
   // Scoped to the selected app: a run belonging to a different app still owns
   // the window's native view, and treating this toolbar as native would hide
@@ -244,6 +252,12 @@ export const PreviewToolbar = () => {
       setPreviewMode("preview");
     }
   }, [isVersionSelected, previewMode, setPreviewMode]);
+
+  useEffect(() => {
+    if (factoryApp && !isFactoryPreviewTab(previewMode)) {
+      setPreviewMode("preview");
+    }
+  }, [factoryApp, previewMode, setPreviewMode]);
 
   const problemCount = problemReport ? problemReport.problems.length : 0;
   const displayCount =
@@ -305,9 +319,10 @@ export const PreviewToolbar = () => {
     },
   };
 
-  const tabOrder: readonly ToolbarMode[] = isVersionSelected
-    ? VERSION_TAB_ORDER
-    : TAB_ORDER;
+  const tabOrder: readonly ToolbarMode[] = previewTabsForFactory(
+    isVersionSelected ? VERSION_TAB_ORDER : TAB_ORDER,
+    factoryApp,
+  );
 
   // Overflow needs real pixel widths (labels vary by locale), so an invisible
   // replica of every tab is measured and the visible set computed from that.
@@ -331,7 +346,7 @@ export const PreviewToolbar = () => {
     setOverflowWidth(
       Math.ceil(overflowMeasureRef.current?.getBoundingClientRect().width ?? 0),
     );
-  }, [isVersionSelected, i18n.language]);
+  }, [isVersionSelected, factoryApp, i18n.language]);
 
   useLayoutEffect(() => {
     const node = tabsAreaRef.current;

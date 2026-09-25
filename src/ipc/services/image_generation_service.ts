@@ -149,7 +149,7 @@ export class ImageGenerationService {
 
     if (!apiKey) {
       throw new DyadError(
-        "Dyad Pro API key is required for image generation",
+        "wewebplus Pro API key is required for image generation",
         DyadErrorKind.Auth,
       );
     }

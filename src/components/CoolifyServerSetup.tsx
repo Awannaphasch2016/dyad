@@ -223,7 +223,7 @@ export function CoolifyServerSetup({
           <ServerCog className="h-5 w-5" />
           Coolify is installed
         </div>
-        {/* Dyad keeps these, so this is a copy rather than the only sight of
+        {/* wewebplus keeps these, so this is a copy rather than the only sight of
             them. Put here anyway: this is the moment they are needed. */}
         <div className="rounded-md border p-3 space-y-2 text-sm">
           <p className="font-medium">
@@ -253,7 +253,7 @@ export function CoolifyServerSetup({
             </div>
           </div>
         </div>
-        {/* Only when it is true. Dyad asks for a certificate and usually gets
+        {/* Only when it is true. wewebplus asks for a certificate and usually gets
             one, so a standing warning would be noise — and a warning nobody
             sees when it matters is worse than one that appears only then. The
             token here carries root abilities and travels on every deploy, not
@@ -265,14 +265,14 @@ export function CoolifyServerSetup({
           >
             <p className="font-medium">This server is not encrypted</p>
             <p className="text-muted-foreground">
-              {result.insecureReason} Dyad will still work, but its access token
-              crosses your network unencrypted every time it deploys. Adding a
-              domain that points at this server fixes it.
+              {result.insecureReason} wewebplus will still work, but its access
+              token crosses your network unencrypted every time it deploys.
+              Adding a domain that points at this server fixes it.
             </p>
             {/* A decision rather than a notice, and only where there is one to
                 make: a token was created, and keeping it is what puts it on
                 the network. Unticked to start, so continuing without reading
-                this leaves Dyad unconnected rather than connected over a
+                this leaves wewebplus unconnected rather than connected over a
                 address nobody agreed to. */}
             {result.tokenStored && (
               <label className="mt-2 flex items-center gap-2">
@@ -283,7 +283,7 @@ export function CoolifyServerSetup({
                   }
                   data-testid="coolify-setup-accept-insecure"
                 />
-                <span>Keep Dyad connected to this address anyway</span>
+                <span>Keep wewebplus connected to this address anyway</span>
               </label>
             )}
           </div>
@@ -291,8 +291,8 @@ export function CoolifyServerSetup({
         {result.tokenStored && (
           <p className="text-sm text-muted-foreground">
             {result.secure
-              ? "Dyad created its own API token, so you can pick a server and project next."
-              : "Dyad created an API token for this server. It is not kept unless you say so above, because this address is not encrypted."}
+              ? "wewebplus created its own API token, so you can pick a server and project next."
+              : "wewebplus created an API token for this server. It is not kept unless you say so above, because this address is not encrypted."}
           </p>
         )}
         {(!result.tokenStored ||
@@ -308,11 +308,11 @@ export function CoolifyServerSetup({
             <p className="font-medium">One step left, in Coolify</p>
             <p className="text-muted-foreground">
               {result.tokenStored
-                ? "Unless you tick the box above, Dyad forgets the token it made."
+                ? "Unless you tick the box above, wewebplus forgets the token it made."
                 : (result.tokenUnavailableReason ??
-                  "Dyad could not create an API token automatically.")}{" "}
+                  "wewebplus could not create an API token automatically.")}{" "}
               Open {result.dashboardUrl}, sign in with the details above,{" "}
-              {/* Dyad turns the API on before it mints, so this stays done
+              {/* wewebplus turns the API on before it mints, so this stays done
                   even when the mint is what failed. */}
               {!result.apiEnabled &&
                 "enable the API under Settings → Advanced, then "}
@@ -376,10 +376,10 @@ export function CoolifyServerSetup({
   return (
     <div className="space-y-3" data-testid="coolify-server-setup">
       <p className="text-sm text-muted-foreground">
-        Dyad allows you to self-host an instance of Coolify to deploy your apps.
-        To install it you need a Linux server with root access and about 2GB of
-        memory. Easiest if you have not created the server yet, since the key
-        below can go in at that point.
+        wewebplus allows you to self-host an instance of Coolify to deploy your
+        apps. To install it you need a Linux server with root access and about
+        2GB of memory. Easiest if you have not created the server yet, since the
+        key below can go in at that point.
       </p>
 
       {/* First because nothing else can happen until it is done. */}
@@ -392,7 +392,7 @@ export function CoolifyServerSetup({
         <p className="text-xs text-muted-foreground">
           Easiest when creating the server: most hosts — DigitalOcean, Hetzner
           and others — have an <strong>SSH keys</strong> field on the create
-          page. Paste this in there and the server will trust Dyad from the
+          page. Paste this in there and the server will trust wewebplus from the
           moment it starts.
         </p>
         <p className="text-xs text-muted-foreground">
@@ -448,7 +448,7 @@ export function CoolifyServerSetup({
         />
         {/* Checked while typing, because neither reason is cheap to find out
             later: a domain Coolify will not take costs the whole install, and
-            an address Dyad cannot put in a shell word costs a run that
+            an address wewebplus cannot put in a shell word costs a run that
             connects, looks the server over, and then fails. */}
         {emailRefusal && (
           <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
@@ -462,7 +462,7 @@ export function CoolifyServerSetup({
 
       <div>
         <Label htmlFor={domainId}>4. Domain (optional)</Label>
-        {/* Dyad can get a certificate without this, using a free service that
+        {/* wewebplus can get a certificate without this, using a free service that
             turns an address into a name. Someone with their own domain is
             better off using it: it is theirs, and that free service shares one
             certificate allowance between everyone who uses it. */}
@@ -480,8 +480,8 @@ export function CoolifyServerSetup({
           </p>
         )}
         <p className="mt-1 text-xs text-muted-foreground">
-          Point it at this server first. Leave blank and Dyad will set up HTTPS
-          using the server&apos;s address.
+          Point it at this server first. Leave blank and wewebplus will set up
+          HTTPS using the server&apos;s address.
         </p>
       </div>
 
@@ -554,7 +554,7 @@ export function CoolifyServerSetup({
           className="text-sm text-amber-600 dark:text-amber-400"
           data-testid="coolify-setup-snapshot-error"
         >
-          Could not read what Dyad is doing with servers right now.{" "}
+          Could not read what wewebplus is doing with servers right now.{" "}
           <button
             type="button"
             className="underline underline-offset-4"
@@ -617,15 +617,15 @@ export function CoolifyServerSetup({
           className="text-sm text-muted-foreground"
           data-testid="coolify-setup-holds-account"
         >
-          Dyad is holding the admin password for {heldServerUrl}, and it has the
-          only copy. Sign out of Coolify to set up another — that shows the
-          password one last time before forgetting it.
+          wewebplus is holding the admin password for {heldServerUrl}, and it
+          has the only copy. Sign out of Coolify to set up another — that shows
+          the password one last time before forgetting it.
         </p>
       )}
       {!inspectionForHost && host.trim() && (
         <p className="text-sm text-muted-foreground">
-          Check the server first. Dyad shows you its fingerprint, and installs
-          only onto the machine that answered.
+          Check the server first. wewebplus shows you its fingerprint, and
+          installs only onto the machine that answered.
         </p>
       )}
 

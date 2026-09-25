@@ -107,8 +107,8 @@ function LockedPassword() {
       className="text-destructive text-sm"
       data-testid="coolify-credentials-locked-password"
     >
-      Dyad is holding an admin password for this server but cannot read it on
-      this machine.
+      wewebplus is holding an admin password for this server but cannot read it
+      on this machine.
     </p>
   );
 }
@@ -140,7 +140,7 @@ export function CoolifyCredentials({
         className="text-muted-foreground text-sm"
         data-testid="coolify-credentials-loading"
       >
-        Looking up what Dyad has stored…
+        Looking up what wewebplus has stored…
       </p>
     );
   }
@@ -156,7 +156,7 @@ export function CoolifyCredentials({
         className="text-destructive text-sm"
         data-testid="coolify-credentials-unreadable"
       >
-        Dyad could not read what it has stored for this Coolify.
+        wewebplus could not read what it has stored for this Coolify.
       </p>
     );
   }
@@ -184,7 +184,7 @@ export function CoolifyCredentials({
         <div className="border-t pt-3 font-semibold">Your Coolify server</div>
       )}
 
-      {/* A password Dyad holds but cannot decrypt comes back absent, which
+      {/* A password wewebplus holds but cannot decrypt comes back absent, which
           renders as a server that never had one — and the way that reads,
           the obvious next move is the sign-out that discards it for good.
           The dialog says this; nowhere else did. */}
@@ -207,7 +207,7 @@ export function CoolifyCredentials({
             <div className="space-y-2" data-testid="coolify-credentials-server">
               {showsBoth && (
                 <div className="text-muted-foreground text-xs">
-                  The server Dyad set up
+                  The server wewebplus set up
                 </div>
               )}
               <Field
@@ -239,7 +239,7 @@ export function CoolifyCredentials({
             >
               {showsBoth && (
                 <div className="text-muted-foreground text-xs">
-                  The Coolify Dyad is connected to
+                  The Coolify wewebplus is connected to
                 </div>
               )}
               <Field

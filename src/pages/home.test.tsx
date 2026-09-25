@@ -135,22 +135,15 @@ describe("HomePage first-prompt projection", () => {
     mocks.updateSettings.mockReset();
   });
 
-  it("opens the Pro page with home upgrade tracking from the upgrade button", () => {
+  it("names the home screen wewebplus and leaves out the marketing controls", () => {
     render(<HomePage />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Upgrade to Pro" }));
-
-    expect(mocks.openExternalUrl).toHaveBeenCalledWith(
-      "https://www.dyad.sh/pro?utm_source=dyad-app&utm_medium=app&utm_campaign=home-upgrade-to-pro",
-    );
-  });
-
-  it("does not prompt existing Pro users to upgrade", () => {
-    mocks.hasDyadProApiKey = true;
-
-    render(<HomePage />);
-
+    expect(screen.getByRole("heading", { name: "wewebplus" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Upgrade to Pro" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /Connect AI to build/ }),
+    ).toBeNull();
+    expect(screen.queryByText("moreIdeas")).toBeNull();
   });
 
   it("submits a captured payload to the machine", () => {
@@ -171,24 +164,6 @@ describe("HomePage first-prompt projection", () => {
         selectedApp: { id: 9, name: "Existing" },
         chatMode: "plan",
         isChatModeExplicit: true,
-      },
-    });
-  });
-
-  it("arms the setup detour with the same captured payload", () => {
-    render(<HomePage />);
-    fireEvent.click(
-      screen.getByRole("button", { name: /Connect AI to build/ }),
-    );
-
-    expect(mocks.send).toHaveBeenCalledWith({
-      type: "ARM_FOR_SETUP",
-      payload: {
-        prompt: "Build a notes app",
-        attachments: [],
-        selectedApp: undefined,
-        chatMode: "build",
-        isChatModeExplicit: false,
       },
     });
   });

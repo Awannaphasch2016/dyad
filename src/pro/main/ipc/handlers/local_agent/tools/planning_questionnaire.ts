@@ -126,6 +126,8 @@ export const planningQuestionnaireTool: ToolDefinition<
   inputSchema: planningQuestionnaireSchema,
   defaultConsent: "always",
   modifiesState: true,
+  // Only writes questionnaire metadata, never app files.
+  allowInReadOnlyModes: (ctx) => ctx.factoryDiscoveryQuestionnaire === true,
 
   getConsentPreview: (args) =>
     `Questionnaire (${args.questions.length} questions)`,

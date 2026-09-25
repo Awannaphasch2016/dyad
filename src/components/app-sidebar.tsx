@@ -1,16 +1,8 @@
-import {
-  type LucideIcon,
-  Home,
-  Settings,
-  HelpCircle,
-  Store,
-  BookOpen,
-  Blocks,
-} from "lucide-react";
+import { type LucideIcon, Home, HelpCircle, Shield } from "lucide-react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useSidebar } from "@/components/ui/sidebar"; // import useSidebar hook
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ComponentType } from "react";
+import type { ComponentType, PointerEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { dropdownOpenAtom } from "@/atoms/uiAtoms";
@@ -38,6 +30,7 @@ import {
   type AppSidebarItemTitle,
   getSelectedSidebarPanel,
   isSidebarItemActive,
+  isSidebarRailHighlighted,
   shouldExpandSidebarForHover,
   shouldShowSelectedAppChatList,
 } from "./app-sidebar-state";
@@ -50,31 +43,19 @@ const items = [
     title: "Apps",
     to: "/",
     icon: Home,
-  },
-  {
-    title: "Settings",
-    to: "/settings",
-    icon: Settings,
+    label: "Apps",
   },
   {
     title: "Library",
     to: "/library",
-    icon: BookOpen,
-  },
-  {
-    title: "Templates",
-    to: "/templates",
-    icon: Store,
-  },
-  {
-    title: "Plugins",
-    to: "/plugins",
-    icon: Blocks,
+    icon: Shield,
+    label: "Admin",
   },
 ] satisfies Array<{
   title: AppSidebarItemTitle;
   to: string;
   icon: ComponentType<{ className?: string }>;
+  label: string;
 }>;
 
 type AppSidebarItemTo = (typeof items)[number]["to"];
@@ -84,6 +65,7 @@ function AppSidebarRailButton({
   label,
   isExpanded,
   isActive = false,
+  isCurrent = false,
   to,
   onClick,
   onMouseEnter,
@@ -92,17 +74,27 @@ function AppSidebarRailButton({
   label: string;
   isExpanded: boolean;
   isActive?: boolean;
+  isCurrent?: boolean;
   to?: AppSidebarItemTo;
   onClick?: () => void;
   onMouseEnter?: () => void;
 }) {
+  const navigate = useNavigate();
   const className = cn(
     "group/rail-button relative mb-1 flex h-10 items-center justify-center rounded-xl outline-none transition-[width,background-color] duration-200 ease-linear focus-visible:ring-2 focus-visible:ring-sidebar-ring",
     isExpanded ? "w-14" : "w-10",
     isActive
-      ? "bg-primary/15"
+      ? "bg-sidebar-accent"
       : "hover:bg-sidebar-accent active:bg-sidebar-accent",
   );
+  // A finger tap expands the rail before click, and iPad Safari drops that
+  // click when the button moves. Navigate on touch start so the first tap
+  // still opens the page.
+  const handlePointerDown = (event: PointerEvent) => {
+    if (event.pointerType !== "touch") return;
+    onMouseEnter?.();
+    if (to) navigate({ to });
+  };
   const content = (
     <>
       <span
@@ -130,8 +122,10 @@ function AppSidebarRailButton({
       <Link
         to={to}
         aria-label={label}
+        aria-current={isCurrent ? "page" : undefined}
         className={className}
         onMouseEnter={onMouseEnter}
+        onPointerDown={handlePointerDown}
       >
         {content}
       </Link>
@@ -142,9 +136,11 @@ function AppSidebarRailButton({
     <button
       type="button"
       aria-label={label}
+      aria-current={isCurrent ? "page" : undefined}
       className={className}
       onClick={onClick}
       onMouseEnter={onMouseEnter}
+      onPointerDown={handlePointerDown}
     >
       {content}
     </button>
@@ -273,6 +269,7 @@ export function AppSidebar() {
             <AppIcons
               onHoverChange={setHoverState}
               isExpanded={state === "expanded"}
+              selectedPanel={selectedItem}
             />
           </div>
           {/* Right Column: Contextual sub-list (only visible when expanded) */}
@@ -332,9 +329,11 @@ export function AppSidebar() {
 function AppIcons({
   onHoverChange,
   isExpanded,
+  selectedPanel,
 }: {
   onHoverChange: (state: AppSidebarHoverState) => void;
   isExpanded: boolean;
+  selectedPanel: ReturnType<typeof getSelectedSidebarPanel>;
 }) {
   const routerState = useRouterState();
   const pathname = routerState.location.pathname;
@@ -348,8 +347,8 @@ function AppIcons({
       case "Library":
         return "start-hover:library";
       default:
-        // Items without a sub-list (Templates, Plugins) dismiss any open
-        // preview so a stale list doesn't linger while hovering an unrelated icon.
+        // Items without a sub-list dismiss any open preview so a stale list
+        // doesn't linger while hovering an unrelated icon.
         return "clear-hover";
     }
   };
@@ -359,18 +358,24 @@ function AppIcons({
       <SidebarGroupContent>
         <SidebarMenu>
           {items.map((item) => {
-            const isActive = isSidebarItemActive({
+            const isCurrent = isSidebarItemActive({
               title: item.title,
               pathname,
+            });
+            const isActive = isSidebarRailHighlighted({
+              title: item.title,
+              pathname,
+              selectedPanel,
             });
 
             return (
               <SidebarMenuItem key={item.title}>
                 <AppSidebarRailButton
                   icon={item.icon}
-                  label={item.title}
+                  label={item.label}
                   to={item.to}
                   isActive={isActive}
+                  isCurrent={isCurrent}
                   isExpanded={isExpanded}
                   onMouseEnter={() => onHoverChange(hoverForTitle(item.title))}
                 />

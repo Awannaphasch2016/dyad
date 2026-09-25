@@ -20,7 +20,7 @@ import { usePostHog } from "posthog-js/react";
 import { useLanguageModelProviders } from "@/hooks/useLanguageModelProviders";
 import { useScrollAndNavigateTo } from "@/hooks/useScrollAndNavigateTo";
 // @ts-ignore
-import logo from "../../assets/logo.svg";
+import logo from "../../assets/wewebplus-logo.png";
 // @ts-ignore
 import openrouterLogo from "../../assets/ai-logos/openrouter-logo.png";
 import { SetupDyadProButton } from "./ProBanner";
@@ -136,8 +136,8 @@ export function SetupBanner({
           ) : (
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
               {hasProviderSetup
-                ? "Change how Dyad accesses AI."
-                : "Dyad uses AI to build your app."}
+                ? "Change how wewebplus accesses AI."
+                : "wewebplus uses AI to build your app."}
             </p>
           )}
         </div>
@@ -148,12 +148,14 @@ export function SetupBanner({
           className="mt-5 flex w-full cursor-pointer items-center justify-between gap-4 rounded-lg border border-primary/45 bg-primary/8 p-4 text-left transition-colors hover:bg-primary/12 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 dark:bg-primary/15 dark:hover:bg-primary/20"
         >
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary/10">
-              <img src={logo} alt="Dyad Logo" className="size-6" />
-            </div>
+            <img
+              src={logo}
+              alt="wewebplus"
+              className="h-11 w-auto shrink-0 object-contain"
+            />
             <div className="min-w-0">
               <h3 className="text-lg font-semibold text-primary">
-                Start free Dyad Pro trial
+                Start free wewebplus Pro trial
               </h3>
               <p className="mt-0.5 text-sm text-muted-foreground">
                 No API keys. Access leading models instantly.
@@ -209,7 +211,7 @@ export function SetupBanner({
           </div>
           {!settings && (
             <p className="mt-2 text-xs text-muted-foreground">
-              Checking Dyad Pro status…
+              Checking wewebplus Pro status…
             </p>
           )}
           {subscription.data?.pending && (

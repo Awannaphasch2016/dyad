@@ -53,14 +53,14 @@ export function ProModeSelector() {
           <Sparkles className="h-3.5 w-3.5" />
           <span className="font-medium">Pro</span>
         </TooltipTrigger>
-        <TooltipContent>Configure Dyad Pro settings</TooltipContent>
+        <TooltipContent>Configure wewebplus Pro settings</TooltipContent>
       </Tooltip>
       <PopoverContent className="w-80 border-primary/20">
         <div className="space-y-4">
           <div className="space-y-1">
             <h4 className="font-medium flex items-center gap-1.5">
               <Sparkles className="h-4 w-4 text-primary" />
-              <span className="text-primary font-medium">Dyad Pro</span>
+              <span className="text-primary font-medium">wewebplus Pro</span>
             </h4>
             <div className="h-px bg-gradient-to-r from-primary/50 via-primary/20 to-transparent" />
           </div>
@@ -130,8 +130,8 @@ export function ProModeSelector() {
           )}
           <SelectorRow
             id="pro-enabled"
-            label="Enable Dyad Pro"
-            tooltip="Uses your selected model usage source and Dyad Pro credits for Pro features."
+            label="Enable wewebplus Pro"
+            tooltip="Uses your selected model usage source and wewebplus Pro credits for Pro features."
             isTogglable={hasProKey}
             settingEnabled={Boolean(settings?.enableDyadPro)}
             toggle={toggleProEnabled}

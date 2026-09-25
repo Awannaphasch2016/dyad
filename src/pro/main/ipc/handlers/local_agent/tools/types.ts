@@ -87,6 +87,8 @@ export interface AgentContext {
   referencedApps: Map<string, string>;
   referencedAppIds?: Map<string, number>;
   chatId: number;
+  /** A read-only Discovery phase chat may still ask with planning_questionnaire. */
+  factoryDiscoveryQuestionnaire?: boolean;
   planAcceptInNewChat?: boolean;
   supabaseProjectId: string | null;
   supabaseOrganizationSlug: string | null;

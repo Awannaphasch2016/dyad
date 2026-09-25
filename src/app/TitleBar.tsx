@@ -7,7 +7,7 @@ import { useSettings } from "@/hooks/useSettings";
 import { Button } from "@/components/ui/button";
 import { AppAvatar } from "@/components/AppAvatar";
 // @ts-ignore
-import logo from "../../assets/logo.svg";
+import logo from "../../assets/wewebplus-logo.png";
 import { providerSettingsRoute } from "@/routes/settings/providers/$provider";
 import { cn } from "@/lib/utils";
 import { useDeepLink } from "@/contexts/DeepLinkContext";
@@ -15,7 +15,6 @@ import { useEffect, useState } from "react";
 import { DyadProSuccessDialog } from "@/components/DyadProSuccessDialog";
 import { useTheme } from "@/contexts/ThemeContext";
 import { ipc } from "@/ipc/types";
-import { useSystemPlatform } from "@/hooks/useSystemPlatform";
 import { useUserBudgetInfo } from "@/hooks/useUserBudgetInfo";
 import type { UserBudgetInfo } from "@/ipc/types";
 import {
@@ -43,8 +42,7 @@ export const TitleBar = () => {
   const { settings, refreshSettings } = useSettings();
   const queryClient = useQueryClient();
   const [isSuccessDialogOpen, setIsSuccessDialogOpen] = useState(false);
-  const platform = useSystemPlatform();
-  const showWindowControls = platform !== null && platform !== "darwin";
+  const showWindowControls = false;
 
   const { lastDeepLink, clearLastDeepLink } = useDeepLink();
   useEffect(() => {
@@ -96,9 +94,13 @@ export const TitleBar = () => {
          * main content area, breaking the "tab merges into content" affordance.
          */}
         <div className="flex items-center shrink-0">
-          <div className={`${showWindowControls ? "pl-2" : "pl-18"}`}></div>
+          <div className="pl-2"></div>
 
-          <img src={logo} alt="Dyad" className="ml-2 w-5 h-5 shrink-0" />
+          <img
+            src={logo}
+            alt="wewebplus"
+            className="ml-1.5 h-7 w-auto shrink-0 object-contain"
+          />
 
           <Tooltip>
             <TooltipTrigger

@@ -185,6 +185,29 @@ describe("discovery versus invocation availability", () => {
     expect(JSON.stringify(result)).toContain("already run");
     expect(ctx.onXmlComplete).toHaveBeenCalled();
   });
+  it("offers the planning questionnaire in read-only mode only for factory Discovery chats", () => {
+    const tool = TOOL_DEFINITIONS.find(
+      (tool) => tool.name === "planning_questionnaire",
+    )!;
+    const askCtx = { isDyadPro: false } as import("./tools/types").AgentContext;
+    const discoveryCtx = {
+      ...askCtx,
+      factoryDiscoveryQuestionnaire: true,
+    } as import("./tools/types").AgentContext;
+    expect(shouldIncludeTool(tool, askCtx, { readOnly: true })).toBe(false);
+    expect(shouldIncludeTool(tool, discoveryCtx, { readOnly: true })).toBe(
+      true,
+    );
+    expect(
+      shouldIncludeTool(tool, discoveryCtx, { readOnly: true }, "invocation"),
+    ).toBe(true);
+    const writeFile = TOOL_DEFINITIONS.find(
+      (tool) => tool.name === "write_file",
+    )!;
+    expect(shouldIncludeTool(writeFile, discoveryCtx, { readOnly: true })).toBe(
+      false,
+    );
+  });
   it("does not turn search routing preferences into authorization while retaining Pro checks", () => {
     const tool = TOOL_DEFINITIONS.find((tool) => tool.name === "code_search")!;
     const ctx = {

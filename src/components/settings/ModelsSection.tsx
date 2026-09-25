@@ -18,6 +18,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useQueryClient } from "@tanstack/react-query";
+import { productLabel } from "@/lib/product_label";
 import { queryKeys } from "@/lib/queryKeys";
 
 interface ModelsSectionProps {
@@ -125,7 +126,7 @@ export function ModelsSection({ providerId }: ModelsSectionProps) {
             >
               <div className="flex justify-between items-center">
                 <h4 className="text-lg font-semibold text-gray-800 dark:text-gray-100">
-                  {model.displayName}
+                  {productLabel(model.displayName)}
                 </h4>
                 {model.type === "custom" && (
                   <div className="flex gap-2">

@@ -606,6 +606,7 @@ export async function handleLocalAgentStream(
     implementerFallbackSystemPrompt,
     supabaseProviderToolsAvailable,
     neonProviderToolsAvailable,
+    factoryDiscoveryQuestionnaire = false,
   }: {
     placeholderMessageId: number;
     systemPrompt: string;
@@ -652,6 +653,8 @@ export async function handleLocalAgentStream(
     supabaseProviderToolsAvailable: boolean;
     /** Whether the root and read-only children can authenticate Neon reads. */
     neonProviderToolsAvailable: boolean;
+    /** Lets a read-only Discovery phase chat ask with the questionnaire form. */
+    factoryDiscoveryQuestionnaire?: boolean;
   },
 ): Promise<boolean> {
   const storedSettings = settingsOverride ?? readSettings();
@@ -799,8 +802,8 @@ export async function handleLocalAgentStream(
   ) {
     const errorMessage =
       referencedApps.length > 0
-        ? "Referencing other apps (@app:Name) in local-agent mode requires Dyad Pro. Please enable Dyad Pro in Settings → Pro."
-        : "Agent v2 requires Dyad Pro. Please enable Dyad Pro in Settings → Pro.";
+        ? "Referencing other apps (@app:Name) in local-agent mode requires wewebplus Pro. Please enable wewebplus Pro in Settings → Pro."
+        : "Agent v2 requires wewebplus Pro. Please enable wewebplus Pro in Settings → Pro.";
     safeSend(event.sender, "chat:response:error", {
       chatId: req.chatId,
       invocationRef: req.invocationRef,
@@ -1002,6 +1005,7 @@ export async function handleLocalAgentStream(
         ),
       ),
       chatId: chat.id,
+      factoryDiscoveryQuestionnaire,
       planAcceptInNewChat: req.planAcceptInNewChat,
       supabaseProjectId: chat.app.supabaseProjectId,
       supabaseOrganizationSlug: chat.app.supabaseOrganizationSlug,

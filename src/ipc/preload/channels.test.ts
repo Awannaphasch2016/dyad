@@ -11,6 +11,8 @@ import {
   coolifySetupEvents,
 } from "../types/coolify_setup";
 import { cloudflareContracts } from "../types/cloudflare";
+import { clerkContracts } from "../types/clerk";
+import { knowledgeContracts } from "../types/knowledge";
 import {
   VALID_INVOKE_CHANNELS,
   VALID_RECEIVE_CHANNELS,
@@ -65,6 +67,22 @@ describe("coolify-setup preload channels", () => {
     }
     for (const event of Object.values(coolifySetupEvents)) {
       expect(VALID_RECEIVE_CHANNELS).toContain(event.channel);
+    }
+  });
+});
+
+describe("clerk preload channels", () => {
+  it("allows every Clerk invoke contract", () => {
+    for (const contract of Object.values(clerkContracts)) {
+      expect(VALID_INVOKE_CHANNELS).toContain(contract.channel);
+    }
+  });
+});
+
+describe("knowledge preload channels", () => {
+  it("allows every knowledge invoke contract", () => {
+    for (const contract of Object.values(knowledgeContracts)) {
+      expect(VALID_INVOKE_CHANNELS).toContain(contract.channel);
     }
   });
 });

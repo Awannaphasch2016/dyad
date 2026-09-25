@@ -87,6 +87,15 @@ export const queryKeys = {
   },
 
   // ─────────────────────────────────────────────────────────────────────────────
+  // Knowledge base
+  // ─────────────────────────────────────────────────────────────────────────────
+  knowledge: {
+    all: ["knowledge"] as const,
+    list: ({ appId }: { appId: number | null }) =>
+      ["knowledge", "list", appId] as const,
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────────
   // Plans
   // ─────────────────────────────────────────────────────────────────────────────
   plans: {
@@ -525,6 +534,7 @@ export type AppQueryKey =
       (typeof queryKeys.appCollections)[keyof typeof queryKeys.appCollections]
     >
   | QueryKeyOf<(typeof queryKeys.chats)[keyof typeof queryKeys.chats]>
+  | QueryKeyOf<(typeof queryKeys.knowledge)[keyof typeof queryKeys.knowledge]>
   | QueryKeyOf<(typeof queryKeys.plans)[keyof typeof queryKeys.plans]>
   | QueryKeyOf<(typeof queryKeys.proposals)[keyof typeof queryKeys.proposals]>
   | QueryKeyOf<(typeof queryKeys.versions)[keyof typeof queryKeys.versions]>

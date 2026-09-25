@@ -33,7 +33,7 @@ describe("buildCloudflareTokenTemplateUrl", () => {
     });
     expect(url.searchParams.get("accountId")).toBe("*");
     expect(url.searchParams.get("zoneId")).toBe("all");
-    expect(url.searchParams.get("name")).toBe("Dyad");
+    expect(url.searchParams.get("name")).toBe("wewebplus");
   });
 });
 
@@ -105,7 +105,7 @@ describe("buildDeployRule", () => {
       external_script_id: "tag-1",
       repo_connection_uuid: "conn-1",
       build_token_uuid: "token-1",
-      trigger_name: "Deploy from Dyad",
+      trigger_name: "Deploy from wewebplus",
       build_command: "npm run build",
       deploy_command: "npx wrangler deploy --name orders-api",
       root_directory: "/",

@@ -141,7 +141,7 @@ export default function SettingsPage() {
           <SettingsSection
             id={SECTION_IDS.providers}
             title="Model Providers"
-            description="Connect the AI providers Dyad uses to build and run your apps."
+            description="Connect the AI providers wewebplus uses to build and run your apps."
           >
             <ProviderSettingsGrid />
           </SettingsSection>
@@ -149,7 +149,7 @@ export default function SettingsPage() {
           <SettingsSection
             id={SECTION_IDS.telemetry}
             title="Telemetry"
-            description="Anonymous usage data that helps improve Dyad."
+            description="Anonymous usage data that helps improve wewebplus."
           >
             <div id={SETTING_IDS.telemetry} className="space-y-1.5">
               <TelemetrySwitch />
@@ -169,7 +169,7 @@ export default function SettingsPage() {
           <SettingsSection
             id={SECTION_IDS.integrations}
             title="Integrations"
-            description="Link Dyad to the services you deploy and store data with."
+            description="Link wewebplus to the services you deploy and store data with."
           >
             <div id={SETTING_IDS.github}>
               <GitHubIntegration />
@@ -444,7 +444,7 @@ export function GeneralSettings({ appVersion }: { appVersion: string | null }) {
     <SettingsSection
       id={SECTION_IDS.general}
       title="General"
-      description="Appearance, language, and how Dyad runs on your machine."
+      description="Appearance, language, and how wewebplus runs on your machine."
     >
       <div id={SETTING_IDS.theme} className="flex items-center gap-4">
         <label className="text-sm font-medium text-foreground">Theme</label>
@@ -510,7 +510,7 @@ export function WorkflowSettings() {
     <SettingsSection
       id={SECTION_IDS.workflow}
       title="Workflow"
-      description="How Dyad handles code changes, previews, and notifications."
+      description="How wewebplus handles code changes, previews, and notifications."
     >
       <div id={SETTING_IDS.defaultChatMode}>
         <DefaultChatModeSelector />

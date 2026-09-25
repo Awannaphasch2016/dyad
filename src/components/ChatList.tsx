@@ -16,6 +16,7 @@ import {
   Search,
   ArrowLeft,
   Star,
+  BookOpen,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAtom, useSetAtom } from "jotai";
@@ -53,6 +54,7 @@ import { useLoadApps } from "@/hooks/useLoadApps";
 import { useSetChatFavorite } from "@/hooks/useSetChatFavorite";
 import { useReducedMotionPref } from "@/hooks/useReducedMotion";
 import { cn } from "@/lib/utils";
+import { hasFactoryPhases, orderedFactoryPhaseChats } from "@/lib/factoryPhase";
 
 const CHAT_ACTION_SPRING = {
   type: "spring" as const,
@@ -80,7 +82,18 @@ export function ChatList({
   const { apps } = useLoadApps();
   const selectedApp = apps.find((app) => app.id === selectedAppId);
 
+  const isFactoryApp = hasFactoryPhases(chats);
+
   const chatGroups = useMemo(() => {
+    if (hasFactoryPhases(chats)) {
+      return [
+        {
+          key: "factory-phases",
+          label: "Phases",
+          chats: orderedFactoryPhaseChats(chats),
+        },
+      ];
+    }
     const favorites: typeof chats = [];
     const today: typeof chats = [];
     const yesterday: typeof chats = [];
@@ -110,6 +123,19 @@ export function ChatList({
   }, [chats, t]);
   const routerState = useRouterState();
   const isChatRoute = routerState.location.pathname === "/chat";
+  const isContentsRoute =
+    routerState.location.pathname === "/app-details" &&
+    (routerState.location.search as { section?: string } | null)?.section ===
+      "contents";
+
+  const handleContentsClick = () => {
+    if (selectedAppId == null) return;
+    setSelectedChatId(null);
+    navigate({
+      to: "/app-details",
+      search: { appId: selectedAppId, section: "contents" },
+    });
+  };
 
   // Rename dialog state
   const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
@@ -387,16 +413,23 @@ export function ChatList({
         )}
         <SidebarGroupContent>
           <div className="flex flex-col space-y-4">
-            <div className="mx-2 flex items-center gap-2">
-              <Button
-                onClick={handleNewChat}
-                variant="outline"
-                className="flex flex-1 items-center justify-start gap-2 py-3"
-                data-testid="new-chat-button"
-              >
-                <PlusCircle size={16} />
-                <span>{t("newChat")}</span>
-              </Button>
+            <div
+              className={cn(
+                "mx-2 flex items-center gap-2",
+                isFactoryApp && "justify-end",
+              )}
+            >
+              {!isFactoryApp && (
+                <Button
+                  onClick={handleNewChat}
+                  variant="outline"
+                  className="flex flex-1 items-center justify-start gap-2 py-3"
+                  data-testid="new-chat-button"
+                >
+                  <PlusCircle size={16} />
+                  <span>{t("newChat")}</span>
+                </Button>
+              )}
               <Button
                 onClick={() => setIsSearchDialogOpen(!isSearchDialogOpen)}
                 variant="outline"
@@ -655,6 +688,30 @@ export function ChatList({
                     </SidebarMenu>
                   </div>
                 ))}
+                {selectedAppId != null && (
+                  <div data-testid="chat-group-knowledge-base">
+                    <div className="px-3 pb-1 text-xs font-medium text-muted-foreground">
+                      Knowledge base
+                    </div>
+                    <SidebarMenu className="space-y-1">
+                      <SidebarMenuItem className="mb-1">
+                        <Button
+                          variant="ghost"
+                          onClick={handleContentsClick}
+                          className={`justify-start w-full text-left py-3 hover:bg-sidebar-accent/80 ${
+                            isContentsRoute
+                              ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                              : ""
+                          }`}
+                          data-testid="knowledge-base-contents-button"
+                        >
+                          <BookOpen size={16} className="mr-2 shrink-0" />
+                          <span className="truncate">Contents</span>
+                        </Button>
+                      </SidebarMenuItem>
+                    </SidebarMenu>
+                  </div>
+                )}
               </div>
             )}
           </div>

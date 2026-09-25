@@ -1,9 +1,9 @@
 import { Route } from "@tanstack/react-router";
 import { rootRoute } from "./root";
-import LibraryHomePage from "@/pages/library-home";
+import AdminAccessPage from "@/pages/admin-access";
 
 export const libraryRoute = new Route({
   getParentRoute: () => rootRoute,
   path: "/library",
-  component: LibraryHomePage,
+  component: AdminAccessPage,
 });

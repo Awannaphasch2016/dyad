@@ -63,7 +63,7 @@ export async function startExternalModelUsage(
   const key = apiKey ?? settings?.providerSettings?.auto?.apiKey?.value;
   if (!key)
     throw new DyadError(
-      "Add your Dyad Pro key before using Pro with an external model.",
+      "Add your wewebplus Pro key before using Pro with an external model.",
       DyadErrorKind.Auth,
     );
   if (!consumeExternalModelAdmission(admission, key))

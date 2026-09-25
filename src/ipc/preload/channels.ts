@@ -39,6 +39,8 @@ import { systemContracts, systemEvents } from "../types/system";
 import { versionContracts, versionEvents } from "../types/version";
 import { languageModelContracts } from "../types/language-model";
 import { promptContracts } from "../types/prompts";
+import { clerkContracts } from "../types/clerk";
+import { knowledgeContracts } from "../types/knowledge";
 import { templateContracts } from "../types/templates";
 import { proposalContracts } from "../types/proposals";
 import { importContracts } from "../types/import";
@@ -131,6 +133,8 @@ export const VALID_INVOKE_CHANNELS = [
   ...getInvokeChannels(versionContracts),
   ...getInvokeChannels(languageModelContracts),
   ...getInvokeChannels(promptContracts),
+  ...getInvokeChannels(clerkContracts),
+  ...getInvokeChannels(knowledgeContracts),
   ...getInvokeChannels(templateContracts),
   ...getInvokeChannels(proposalContracts),
   ...getInvokeChannels(importContracts),

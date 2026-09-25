@@ -102,6 +102,8 @@ import {
 } from "../../supabase_admin/supabase_context";
 import { SUMMARIZE_CHAT_SYSTEM_PROMPT } from "../../prompts/summarize_chat_system_prompt";
 import { SECURITY_REVIEW_SYSTEM_PROMPT } from "../../prompts/security_review_prompt";
+import { appendFactoryPhaseSystemPrompt } from "../../prompts/factory_phase_prompt";
+import { phaseFromTitle } from "@/lib/factoryPhase";
 import fs from "node:fs";
 import * as path from "path";
 import * as crypto from "crypto";
@@ -2335,6 +2337,11 @@ ${componentSnippet}
           reinstallAndRestartAppToolAvailable,
           runBuildToolAvailable,
         });
+        const factoryPhase = phaseFromTitle(updatedChat.title);
+        systemPrompt = appendFactoryPhaseSystemPrompt(
+          systemPrompt,
+          factoryPhase,
+        );
 
         // Add information for any legacy caller that still injects full
         // referenced-app codebases.
@@ -2764,6 +2771,10 @@ This conversation includes one or more image attachments. When the user uploads 
           } else if (rootDatabasePromptState === "neon-disconnected") {
             readOnlySystemPrompt += "\n\n" + NEON_DISCONNECTED_SYSTEM_PROMPT;
           }
+          readOnlySystemPrompt = appendFactoryPhaseSystemPrompt(
+            readOnlySystemPrompt,
+            factoryPhase,
+          );
 
           // Return value indicates success/failure for quota tracking.
           // Ask mode doesn't consume quota, but we still capture it for
@@ -2783,6 +2794,7 @@ This conversation includes one or more image attachments. When the user uploads 
               systemPrompt: readOnlySystemPrompt,
               dyadRequestId: dyadRequestId ?? "[no-request-id]",
               readOnly: true,
+              factoryDiscoveryQuestionnaire: factoryPhase === "discovery",
               messageOverride: isSummarizeIntent ? chatMessages : undefined,
               settingsOverride: settings,
               modelSelectionOverride: selectedModel,
@@ -2823,6 +2835,10 @@ This conversation includes one or more image attachments. When the user uploads 
           } else if (rootDatabasePromptState === "neon-disconnected") {
             planModeSystemPrompt += "\n\n" + NEON_DISCONNECTED_SYSTEM_PROMPT;
           }
+          planModeSystemPrompt = appendFactoryPhaseSystemPrompt(
+            planModeSystemPrompt,
+            factoryPhase,
+          );
 
           finishedNaturally = await handleLocalAgentStream(
             event,

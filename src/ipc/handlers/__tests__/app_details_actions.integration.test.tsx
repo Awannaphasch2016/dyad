@@ -120,6 +120,40 @@ describe("app details actions (integration)", () => {
     });
   }
 
+  it("hides path, chat, and integrations on a factory app", async () => {
+    const app = await createFixtureApp("factory-details");
+    await harness.db
+      .update(chats)
+      .set({ title: "Discovery" })
+      .where(eq(chats.id, app.chatId));
+    await harness.db.insert(chats).values([
+      { appId: app.appId, title: "Implementation" },
+      { appId: app.appId, title: "Delivery" },
+    ]);
+
+    await mountAppDetails(app);
+    await waitFor(() => {
+      expect(
+        screen
+          .getByTestId("app-details-page")
+          .getAttribute("data-details-mode"),
+      ).toBe("factory");
+    });
+
+    expect(screen.getByText("Created")).toBeTruthy();
+    expect(screen.getByText("Last Updated")).toBeTruthy();
+    expect(screen.queryByText("Path")).toBeNull();
+    expect(screen.queryByText("Collection")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Open in Chat" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Connect to GitHub" }),
+    ).toBeNull();
+    expect(screen.queryByTestId("connect-supabase-button")).toBeNull();
+    expect(screen.queryByTestId("connect-neon-button")).toBeNull();
+    expect(screen.queryByText("App Upgrades")).toBeNull();
+    expect(screen.queryByText(/hybrid mobile app with Capacitor/)).toBeNull();
+  });
+
   it("copies an app with history and opens the copied app chat", async () => {
     const source = await createFixtureApp("copy-with-history-source");
     addGitCommit(source.appDir, "history.txt", "copied with history");
@@ -164,7 +198,9 @@ describe("app details actions (integration)", () => {
     expect(gitCommitCount(copiedPath)).toBe(2);
     expect(fs.existsSync(path.join(copiedPath, "history.txt"))).toBe(true);
 
-    fireEvent.click(screen.getByRole("button", { name: "Open in Chat" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Open in Chat" }),
+    );
     await waitFor(() => {
       const location = harness.currentLocation();
       expect(location.pathname).toBe("/chat");

@@ -121,7 +121,7 @@ export function ScreenshotField({
             {t("home:report.screenshotFailed")}{" "}
             {t("home:report.screenshotStillFile")}
           </p>
-          {/* Not translated: usually the OS's own words, sometimes Dyad's for
+          {/* Not translated: usually the OS's own words, sometimes wewebplus's for
               a failure only the maintainer's copy of the report can explain.
               Either way it sits on its own rather than being read as part of
               the translated sentence above. */}

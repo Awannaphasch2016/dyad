@@ -35,7 +35,7 @@ const PROVIDER_DISPLAY_NAMES: Record<ProviderApiKeyValidationProvider, string> =
   {
     google: "Google",
     openrouter: "OpenRouter",
-    auto: "Dyad",
+    auto: "wewebplus",
   };
 
 export async function validateProviderApiKey({
@@ -216,7 +216,7 @@ function classifyValidationError(
   }
 
   return new DyadError(
-    `Dyad could not verify this ${providerDisplayName} API key: ${errorMessage || "Unknown error"}`,
+    `wewebplus could not verify this ${providerDisplayName} API key: ${errorMessage || "Unknown error"}`,
     DyadErrorKind.External,
   );
 }

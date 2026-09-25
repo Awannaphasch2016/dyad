@@ -134,6 +134,19 @@ export const apps = sqliteTable("apps", {
   }),
 });
 
+export const appKnowledgeItems = sqliteTable("app_knowledge_items", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  appId: integer("app_id")
+    .notNull()
+    .references(() => apps.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  url: text("url").notNull(),
+  addedBy: text("added_by").notNull().default(""),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
 export const chats = sqliteTable("chats", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   appId: integer("app_id")
@@ -621,6 +634,7 @@ export const cloudflareAppConnections = sqliteTable(
 // Define relations
 export const appsRelations = relations(apps, ({ many, one }) => ({
   chats: many(chats),
+  knowledgeItems: many(appKnowledgeItems),
   versions: many(versions),
   securityFixChats: many(security_fix_chats),
   collection: one(appCollections, {
