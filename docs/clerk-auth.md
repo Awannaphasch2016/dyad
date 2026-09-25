@@ -10,7 +10,7 @@ The renderer asks main for the publishable key on `clerk:get-publishable-key`. M
 
 ## Routes
 
-Public: `/`, `/sign-in`, `/sign-up`. Google returns the browser to `/sign-in/sso-callback` (sign-up uses `/sign-up/sso-callback`). Those paths render the same Clerk component. The widget mounts only after Clerk is ready; until then the page says it is finishing sign-in.
+Public: `/`, `/sign-in`, `/sign-up`. Sign-in and sign-up are their own page: no title bar, sidebar, or chat tabs. Google returns the browser to `/sign-in/sso-callback` (sign-up uses `/sign-up/sso-callback`). Those paths render the same Clerk component. The widget mounts only after Clerk is ready; until then the page says it is finishing sign-in.
 
 The packaged Electron renderer loads scripts from relative `./assets` URLs. A static HTTP server that falls back to `index.html` has to rewrite those to `/assets` in the document it sends. Otherwise a full load of `/sign-in/sso-callback` requests `/sign-in/assets`, gets HTML back, and the page stays blank.
 

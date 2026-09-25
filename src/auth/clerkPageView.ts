@@ -7,6 +7,16 @@ import type { ClerkSessionState } from "./session";
  * script is still loading, so the callback route must wait instead of
  * mounting the widget early.
  */
+/** Sign-in and sign-up, including /sign-in/sso-callback, are a page of their own. */
+export function isClerkAuthPath(pathname: string): boolean {
+  return (
+    pathname === "/sign-in" ||
+    pathname.startsWith("/sign-in/") ||
+    pathname === "/sign-up" ||
+    pathname.startsWith("/sign-up/")
+  );
+}
+
 export function clerkPageView(
   status: ClerkSessionState["status"],
 ): "unconfigured" | "unavailable" | "pending" | "form" {
