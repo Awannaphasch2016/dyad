@@ -79,6 +79,15 @@ export function adminRoleById(roleId: AdminRoleId): AdminRole {
   return role;
 }
 
+function decodeBase64(value: string): string {
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(value, "base64").toString("utf8");
+  }
+  const binary = atob(value);
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
 /** Clerk publishable keys encode the Account Portal host after the prefix. */
 export function clerkAccountPortalUrls(publishableKey: string | undefined): {
   signInUrl: string | null;
@@ -105,7 +114,7 @@ export function clerkFrontendHost(
   try {
     const encoded = publishableKey.slice(prefix.length);
     const padded = encoded + "=".repeat((4 - (encoded.length % 4)) % 4);
-    const decoded = Buffer.from(padded, "base64").toString("utf8");
+    const decoded = decodeBase64(padded);
     const host = decoded.replace(/\$$/, "").trim();
     if (!/^[a-z0-9.-]+$/i.test(host) || !host.includes(".")) return null;
     return host;

@@ -5,6 +5,7 @@ import { roleHasPermission, type ClerkAuthStatus } from "./permissions";
 export type ClerkSessionState =
   | { status: "unconfigured" }
   | { status: "loading" }
+  | { status: "unavailable" }
   | { status: "signed-out" }
   | {
       status: "signed-in";

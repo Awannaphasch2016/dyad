@@ -1,10 +1,11 @@
 import { ClerkProvider, useAuth, useUser } from "@clerk/clerk-react";
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { roleFromMetadata } from "@/lib/adminAccess";
 import { queryKeys } from "@/lib/queryKeys";
 import { ipc } from "@/ipc/types";
+import { loadClerkBrowser } from "./loadClerkBrowser";
 import { ClerkSessionProvider, type ClerkSessionState } from "./session";
 
 const clerkAppearance = {
@@ -45,6 +46,54 @@ export function ClerkAuthProvider({ children }: { children: ReactNode }) {
 }
 
 function ConfiguredClerkProvider({
+  publishableKey,
+  children,
+}: {
+  publishableKey: string;
+  children: ReactNode;
+}) {
+  const [script, setScript] = useState<"loading" | "ready" | "failed">(
+    "loading",
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    loadClerkBrowser(publishableKey).then(
+      () => {
+        if (!cancelled) setScript("ready");
+      },
+      () => {
+        if (!cancelled) setScript("failed");
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [publishableKey]);
+
+  if (script === "failed") {
+    return (
+      <ClerkSessionProvider value={{ status: "unavailable" }}>
+        {children}
+      </ClerkSessionProvider>
+    );
+  }
+  if (script !== "ready") {
+    return (
+      <ClerkSessionProvider value={{ status: "loading" }}>
+        {children}
+      </ClerkSessionProvider>
+    );
+  }
+
+  return (
+    <ClerkProviderWithRouter publishableKey={publishableKey}>
+      {children}
+    </ClerkProviderWithRouter>
+  );
+}
+
+function ClerkProviderWithRouter({
   publishableKey,
   children,
 }: {

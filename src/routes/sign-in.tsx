@@ -40,6 +40,14 @@ function SignInPage() {
     );
   }
 
+  if (session.status === "unavailable") {
+    return (
+      <p className="px-6 py-6 text-sm text-muted-foreground">
+        Sign-in didn't load. Reload the page.
+      </p>
+    );
+  }
+
   if (session.status !== "signed-out") {
     return (
       <p className="px-6 py-6 text-sm text-muted-foreground">

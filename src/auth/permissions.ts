@@ -5,6 +5,7 @@ import type { FactoryPhase } from "@/lib/factoryPhase";
 export type ClerkAuthStatus =
   | "unconfigured"
   | "loading"
+  | "unavailable"
   | "signed-out"
   | "signed-in";
 

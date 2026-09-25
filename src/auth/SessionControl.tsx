@@ -6,7 +6,7 @@ export function SessionControl() {
   const session = useClerkSession();
   const location = useLocation();
 
-  if (session.status === "unconfigured" || session.status === "loading") {
+  if (session.status !== "signed-in" && session.status !== "signed-out") {
     return null;
   }
 
