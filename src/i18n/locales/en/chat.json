@@ -77,6 +77,7 @@
   },
   "dismissError": "Dismiss error",
   "askDyadToBuild": "Ask wewebplus to build...",
+  "answerTheQuestions": "Answer the questions above",
   "cancelGeneration": "Cancel generation",
   "stoppingGeneration": "Stopping…",
   "cancellationEndingTestRun": "Ending the test run.",

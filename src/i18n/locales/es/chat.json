@@ -77,6 +77,7 @@
   },
   "dismissError": "Descartar error",
   "askDyadToBuild": "Pídele a wewebplus que construya...",
+  "answerTheQuestions": "Responde las preguntas de arriba",
   "cancelGeneration": "Cancelar generación",
   "stoppingGeneration": "Deteniendo…",
   "cancellationEndingTestRun": "Finalizando la ejecución de pruebas.",
