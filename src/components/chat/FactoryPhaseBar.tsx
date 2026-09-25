@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { useAtomValue } from "jotai";
 import { useQueries } from "@tanstack/react-query";
-import { Lock } from "lucide-react";
+import { Download, Lock } from "lucide-react";
 import { selectedAppIdAtom } from "@/atoms/appAtoms";
 import { selectedChatIdAtom } from "@/atoms/chatAtoms";
 import { Button } from "@/components/ui/button";
 import { isStreamActive } from "@/chat_stream/transition";
 import { useChatStreamState } from "@/hooks/useChatStream";
 import { useChats } from "@/hooks/useChats";
+import { useLoadApp } from "@/hooks/useLoadApp";
 import { useSelectChat } from "@/hooks/useSelectChat";
 import { useStreamChat } from "@/hooks/useStreamChat";
 import { ipc } from "@/ipc/types";
@@ -31,6 +32,11 @@ import {
   phaseFromTitle,
   showFactoryPhaseApproval,
 } from "@/lib/factoryPhase";
+import {
+  buildFactoryDocument,
+  canDownloadFactoryDocument,
+  downloadFactoryDocument,
+} from "@/lib/factoryDocuments";
 import { approvalGate } from "@/auth/permissions";
 import { useClerkRole } from "@/auth/session";
 import { queryKeys } from "@/lib/queryKeys";
@@ -71,6 +77,7 @@ export function FactoryPhaseBar() {
   const chatId = useAtomValue(selectedChatIdAtom);
   const role = useClerkRole();
   const { chats } = useChats(appId);
+  const { app } = useLoadApp(appId);
   const { selectChat } = useSelectChat();
   const { streamMessage } = useStreamChat();
   const streamState = useChatStreamState(chatId ?? undefined);
@@ -206,6 +213,27 @@ export function FactoryPhaseBar() {
       hasPhaseSummary: phaseSummary != null,
     });
 
+  const phaseShade = factoryPhaseShade({
+    phase,
+    progress,
+    hasPhaseSummary: phaseSummary != null,
+  });
+  const canDownload = canDownloadFactoryDocument(phaseShade);
+  const downloadDocumentation = () => {
+    const document = buildFactoryDocument({
+      phase,
+      discoverySummary: summaries.get("discovery") ?? null,
+      implementationSummary: summaries.get("implementation") ?? null,
+      deliverySummary: summaries.get("delivery") ?? null,
+      files: app?.files ?? [],
+      githubOrg: app?.githubOrg ?? null,
+      githubRepo: app?.githubRepo ?? null,
+      githubBranch: app?.githubBranch ?? null,
+      generatedOn: new Date().toISOString().slice(0, 10),
+    });
+    downloadFactoryDocument(document);
+  };
+
   const recordApproval = () => {
     const phases = alreadyApproved
       ? approvedPhases
@@ -289,6 +317,19 @@ export function FactoryPhaseBar() {
             onClick={recordApproval}
           >
             Approve delivery
+          </Button>
+        )}
+        {canDownload && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="ml-auto"
+            data-testid="factory-phase-download"
+            onClick={downloadDocumentation}
+          >
+            <Download className="size-3" aria-hidden />
+            Download documentation
           </Button>
         )}
       </div>
