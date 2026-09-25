@@ -96,6 +96,14 @@ export const queryKeys = {
   },
 
   // ─────────────────────────────────────────────────────────────────────────────
+  // Clerk
+  // ─────────────────────────────────────────────────────────────────────────────
+  clerk: {
+    all: ["clerk"] as const,
+    publishableKey: ["clerk", "publishableKey"] as const,
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────────
   // Plans
   // ─────────────────────────────────────────────────────────────────────────────
   plans: {
@@ -535,6 +543,7 @@ export type AppQueryKey =
     >
   | QueryKeyOf<(typeof queryKeys.chats)[keyof typeof queryKeys.chats]>
   | QueryKeyOf<(typeof queryKeys.knowledge)[keyof typeof queryKeys.knowledge]>
+  | QueryKeyOf<(typeof queryKeys.clerk)[keyof typeof queryKeys.clerk]>
   | QueryKeyOf<(typeof queryKeys.plans)[keyof typeof queryKeys.plans]>
   | QueryKeyOf<(typeof queryKeys.proposals)[keyof typeof queryKeys.proposals]>
   | QueryKeyOf<(typeof queryKeys.versions)[keyof typeof queryKeys.versions]>

@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
+import { ClerkSessionProvider } from "@/auth/session";
 import { ADMIN_ROLES } from "@/lib/adminAccess";
 import AdminAccessPage from "./admin-access";
 
@@ -58,4 +59,34 @@ it("shows members and a roles-permissions table", async () => {
   );
   expect(screen.queryByText("Themes")).toBeNull();
   expect(screen.queryByText("Prompts")).toBeNull();
+  expect(screen.getByTestId("admin-invite-form")).toBeTruthy();
+});
+
+it("hides member changes for a signed-in reviewer", async () => {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <ClerkSessionProvider
+        value={{
+          status: "signed-in",
+          roleId: "reviewer",
+          userId: "user_2",
+          email: "reviewer@example.com",
+        }}
+      >
+        <AdminAccessPage />
+      </ClerkSessionProvider>
+    </QueryClientProvider>,
+  );
+  expect(await screen.findByText("Ada Lovelace")).toBeTruthy();
+  expect(screen.queryByTestId("admin-invite-form")).toBeNull();
+  expect(screen.getByTestId("admin-manage-note").textContent).toContain(
+    "Only admins can invite members or change roles.",
+  );
+  const roleSelect = screen.getByLabelText(
+    "Role for ada@example.com",
+  ) as HTMLSelectElement;
+  expect(roleSelect.disabled).toBe(true);
 });

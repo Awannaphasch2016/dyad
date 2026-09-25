@@ -31,6 +31,8 @@ import {
   phaseFromTitle,
   showFactoryPhaseApproval,
 } from "@/lib/factoryPhase";
+import { approvalGate } from "@/auth/permissions";
+import { useClerkRole } from "@/auth/session";
 import { queryKeys } from "@/lib/queryKeys";
 import { cn } from "@/lib/utils";
 
@@ -67,6 +69,7 @@ function writeApprovals(appId: number, approvals: FactoryPhase[]): void {
 export function FactoryPhaseBar() {
   const appId = useAtomValue(selectedAppIdAtom);
   const chatId = useAtomValue(selectedChatIdAtom);
+  const role = useClerkRole();
   const { chats } = useChats(appId);
   const { selectChat } = useSelectChat();
   const { streamMessage } = useStreamChat();
@@ -184,10 +187,16 @@ export function FactoryPhaseBar() {
   const next = nextFactoryPhase(phase);
   const nextChat = next ? byPhase[next] : undefined;
   const phaseSummary = summaries.get(phase) ?? null;
-  const canApprove = canContinueFactoryPhase({
-    hasPhaseSummary: phaseSummary != null,
-    isStreaming,
+  const gate = approvalGate({
+    status: role.status,
+    roleId: role.roleId,
+    phase,
   });
+  const canApprove =
+    canContinueFactoryPhase({
+      hasPhaseSummary: phaseSummary != null,
+      isStreaming,
+    }) && gate.allowed;
   const alreadyApproved = isFactoryPhaseApproved(phase, progress);
   const showApproval =
     progressLoaded &&
@@ -285,7 +294,8 @@ export function FactoryPhaseBar() {
       </div>
       <p className={cn("mt-2 text-xs text-muted-foreground")}>
         {factoryPhaseHint(phase)}
-        {showApproval && !canApprove && (
+        {showApproval && !gate.allowed && <> {gate.reason}</>}
+        {showApproval && gate.allowed && !canApprove && (
           <>
             {" "}
             {isStreaming

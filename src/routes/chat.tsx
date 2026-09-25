@@ -1,4 +1,5 @@
 import { createRoute } from "@tanstack/react-router";
+import { RequireSignedIn } from "@/auth/RequireSignedIn";
 import { rootRoute } from "./root";
 import ChatPage from "../pages/chat";
 import { chatSearchSchema } from "./chatSearchSchema";
@@ -8,9 +9,17 @@ import { chatSearchSchema } from "./chatSearchSchema";
 // ./chatSearchSchema.
 export { chatSearchSchema };
 
+function GuardedChatPage() {
+  return (
+    <RequireSignedIn>
+      <ChatPage />
+    </RequireSignedIn>
+  );
+}
+
 export const chatRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/chat",
-  component: ChatPage,
+  component: GuardedChatPage,
   validateSearch: chatSearchSchema,
 });

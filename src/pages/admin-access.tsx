@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { canManageMembers } from "@/auth/permissions";
+import { useClerkRole } from "@/auth/session";
 import { ipc } from "@/ipc/types";
 import type { AdminRoleId } from "@/lib/adminAccess";
 import { Button } from "@/components/ui/button";
@@ -13,6 +15,9 @@ const tableCellClass = "border-b px-3 py-3 align-top text-sm";
 
 export default function AdminAccessPage() {
   const queryClient = useQueryClient();
+  const clerkRole = useClerkRole();
+  // UX only. Main still accepts invite and role changes with the secret key.
+  const manageMembers = canManageMembers(clerkRole.status, clerkRole.roleId);
   const access = useQuery({
     queryKey: ["admin-access"],
     queryFn: () => ipc.clerk.getAccess(),
@@ -91,7 +96,9 @@ export default function AdminAccessPage() {
                       colSpan={2}
                       className="px-3 py-4 text-sm text-muted-foreground"
                     >
-                      No members yet. Invite someone by email below.
+                      {manageMembers
+                        ? "No members yet. Invite someone by email below."
+                        : "No members yet."}
                     </td>
                   </tr>
                 )}
@@ -118,7 +125,7 @@ export default function AdminAccessPage() {
                           aria-label={`Role for ${member.email}`}
                           className="h-9 w-full rounded-md border bg-transparent px-2"
                           value={member.roleId}
-                          disabled={pending}
+                          disabled={pending || !manageMembers}
                           onChange={(event) =>
                             void changeRole(
                               member.id,
@@ -141,46 +148,66 @@ export default function AdminAccessPage() {
                     </td>
                   </tr>
                 ))}
-                <tr>
-                  <td colSpan={2} className={cn(tableCellClass, "border-b-0")}>
-                    <form
-                      className="flex flex-wrap items-center gap-2"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void invite();
-                      }}
+                {!manageMembers && (
+                  <tr>
+                    <td
+                      colSpan={2}
+                      className={cn(
+                        tableCellClass,
+                        "border-b-0 text-muted-foreground",
+                      )}
+                      data-testid="admin-manage-note"
                     >
-                      <Input
-                        aria-label="Member email"
-                        type="email"
-                        placeholder="name@example.com"
-                        value={email}
-                        onChange={(event) => setEmail(event.target.value)}
-                        className="max-w-sm flex-1"
-                      />
-                      <select
-                        aria-label="Role for new member"
-                        className="h-9 rounded-md border bg-transparent px-2"
-                        value={roleId}
-                        onChange={(event) =>
-                          setRoleId(event.target.value as AdminRoleId)
-                        }
+                      Only admins can invite members or change roles.
+                    </td>
+                  </tr>
+                )}
+                {manageMembers && (
+                  <tr>
+                    <td
+                      colSpan={2}
+                      className={cn(tableCellClass, "border-b-0")}
+                    >
+                      <form
+                        data-testid="admin-invite-form"
+                        className="flex flex-wrap items-center gap-2"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          void invite();
+                        }}
                       >
-                        {data.roles.map((role) => (
-                          <option key={role.id} value={role.id}>
-                            {role.name}
-                          </option>
-                        ))}
-                      </select>
-                      <Button
-                        type="submit"
-                        disabled={pending || !data.configured}
-                      >
-                        Add member
-                      </Button>
-                    </form>
-                  </td>
-                </tr>
+                        <Input
+                          aria-label="Member email"
+                          type="email"
+                          placeholder="name@example.com"
+                          value={email}
+                          onChange={(event) => setEmail(event.target.value)}
+                          className="max-w-sm flex-1"
+                        />
+                        <select
+                          aria-label="Role for new member"
+                          className="h-9 rounded-md border bg-transparent px-2"
+                          value={roleId}
+                          onChange={(event) =>
+                            setRoleId(event.target.value as AdminRoleId)
+                          }
+                        >
+                          {data.roles.map((role) => (
+                            <option key={role.id} value={role.id}>
+                              {role.name}
+                            </option>
+                          ))}
+                        </select>
+                        <Button
+                          type="submit"
+                          disabled={pending || !data.configured}
+                        >
+                          Add member
+                        </Button>
+                      </form>
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </section>
