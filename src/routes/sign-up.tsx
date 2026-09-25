@@ -1,16 +1,29 @@
 import { SignUp } from "@clerk/clerk-react";
-import { createRoute, Link, useNavigate } from "@tanstack/react-router";
+import {
+  createRoute,
+  Link,
+  useLocation,
+  useNavigate,
+  useSearch,
+} from "@tanstack/react-router";
 import { useEffect } from "react";
+import { clerkPageView } from "@/auth/clerkPageView";
 import { safeRedirect } from "@/auth/redirect";
 import { useClerkSession } from "@/auth/session";
 import { rootRoute } from "./root";
 import { clerkAuthSearchSchema } from "./clerkAuthSearchSchema";
 
 function SignUpPage() {
-  const search = signUpRoute.useSearch();
+  const search = useSearch({ strict: false });
+  const location = useLocation();
   const session = useClerkSession();
   const navigate = useNavigate();
-  const redirect = safeRedirect(search.redirect);
+  const redirect = safeRedirect(
+    search && typeof search === "object" && "redirect" in search
+      ? search.redirect
+      : undefined,
+  );
+  const finishingCallback = location.pathname.startsWith("/sign-up/");
 
   useEffect(() => {
     if (session.status !== "signed-in") return;
@@ -48,10 +61,10 @@ function SignUpPage() {
     );
   }
 
-  if (session.status !== "signed-out") {
+  if (clerkPageView(session.status) !== "form") {
     return (
       <p className="px-6 py-6 text-sm text-muted-foreground">
-        Loading sign-up…
+        {finishingCallback ? "Finishing sign-up…" : "Loading sign-up…"}
       </p>
     );
   }
@@ -71,6 +84,13 @@ function SignUpPage() {
 export const signUpRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/sign-up",
+  component: SignUpPage,
+  validateSearch: clerkAuthSearchSchema,
+});
+
+export const signUpCallbackRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sign-up/$",
   component: SignUpPage,
   validateSearch: clerkAuthSearchSchema,
 });

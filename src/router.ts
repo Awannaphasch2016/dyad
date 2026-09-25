@@ -13,13 +13,15 @@ import { appsRoute } from "./routes/apps";
 import { themesRoute } from "./routes/themes";
 import { promptsRoute } from "./routes/prompts";
 import { mediaRoute } from "./routes/media";
-import { signInRoute } from "./routes/sign-in";
-import { signUpRoute } from "./routes/sign-up";
+import { signInCallbackRoute, signInRoute } from "./routes/sign-in";
+import { signUpCallbackRoute, signUpRoute } from "./routes/sign-up";
 
 const routeTree = rootRoute.addChildren([
   homeRoute,
   signInRoute,
+  signInCallbackRoute,
   signUpRoute,
+  signUpCallbackRoute,
   templatesRoute,
   pluginsRoute,
   pluginDetailRoute,

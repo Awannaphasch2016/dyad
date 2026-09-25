@@ -1,16 +1,29 @@
 import { SignIn } from "@clerk/clerk-react";
-import { createRoute, Link, useNavigate } from "@tanstack/react-router";
+import {
+  createRoute,
+  Link,
+  useLocation,
+  useNavigate,
+  useSearch,
+} from "@tanstack/react-router";
 import { useEffect } from "react";
+import { clerkPageView } from "@/auth/clerkPageView";
 import { safeRedirect } from "@/auth/redirect";
 import { useClerkSession } from "@/auth/session";
 import { rootRoute } from "./root";
 import { clerkAuthSearchSchema } from "./clerkAuthSearchSchema";
 
 function SignInPage() {
-  const search = signInRoute.useSearch();
+  const search = useSearch({ strict: false });
+  const location = useLocation();
   const session = useClerkSession();
   const navigate = useNavigate();
-  const redirect = safeRedirect(search.redirect);
+  const redirect = safeRedirect(
+    search && typeof search === "object" && "redirect" in search
+      ? search.redirect
+      : undefined,
+  );
+  const finishingCallback = location.pathname.startsWith("/sign-in/");
 
   useEffect(() => {
     if (session.status !== "signed-in") return;
@@ -48,10 +61,10 @@ function SignInPage() {
     );
   }
 
-  if (session.status !== "signed-out") {
+  if (clerkPageView(session.status) !== "form") {
     return (
       <p className="px-6 py-6 text-sm text-muted-foreground">
-        Loading sign-in…
+        {finishingCallback ? "Finishing sign-in…" : "Loading sign-in…"}
       </p>
     );
   }
@@ -71,6 +84,14 @@ function SignInPage() {
 export const signInRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/sign-in",
+  component: SignInPage,
+  validateSearch: clerkAuthSearchSchema,
+});
+
+/** Google returns to /sign-in/sso-callback. That path has to keep rendering SignIn. */
+export const signInCallbackRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sign-in/$",
   component: SignInPage,
   validateSearch: clerkAuthSearchSchema,
 });
