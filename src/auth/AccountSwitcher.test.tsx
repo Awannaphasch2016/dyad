@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -12,10 +12,51 @@ import {
 
 const getContext = vi.fn(async () => ({ kind: "organization" }));
 
+const {
+  organizationList,
+  defaultOrganizationList,
+  createOrganization,
+  fetchNext,
+  revalidate,
+  stampOrganizationAdmin,
+} = vi.hoisted(() => {
+  const fetchNext = vi.fn();
+  const revalidate = vi.fn(async () => undefined);
+  const createOrganization = vi.fn(async () => ({ id: "org_new" }));
+  const stampOrganizationAdmin = vi.fn(async () => undefined);
+  const memberships = [
+    { organization: { id: "org_anak", name: "Anak's Organization" } },
+    { organization: { id: "org_studio", name: "Studio" } },
+  ];
+  const defaultOrganizationList = () => ({
+    isLoaded: true,
+    setActive: vi.fn(async () => undefined),
+    createOrganization,
+    userMemberships: {
+      isLoading: false,
+      isFetching: false,
+      hasNextPage: false,
+      count: memberships.length,
+      data: memberships,
+      fetchNext,
+      revalidate,
+    },
+  });
+  const organizationList = vi.fn(defaultOrganizationList);
+  return {
+    organizationList,
+    defaultOrganizationList,
+    createOrganization,
+    fetchNext,
+    revalidate,
+    stampOrganizationAdmin,
+  };
+});
+
 vi.mock("@/ipc/types", () => ({
   ipc: {
     account: { getContext: () => getContext() },
-    clerk: { stampOrganizationAdmin: vi.fn() },
+    clerk: { stampOrganizationAdmin: () => stampOrganizationAdmin() },
   },
 }));
 
@@ -29,18 +70,7 @@ vi.mock("@clerk/clerk-react", () => ({
   useOrganization: () => ({
     organization: { id: "org_anak", name: "Anak's Organization" },
   }),
-  useOrganizationList: () => ({
-    isLoaded: true,
-    setActive: vi.fn(),
-    createOrganization: vi.fn(),
-    userMemberships: {
-      isLoading: false,
-      data: [
-        { organization: { id: "org_anak", name: "Anak's Organization" } },
-        { organization: { id: "org_studio", name: "Studio" } },
-      ],
-    },
-  }),
+  useOrganizationList: () => organizationList(),
 }));
 
 function renderSwitcher(ui: ReactNode) {
@@ -66,6 +96,12 @@ function renderSwitcher(ui: ReactNode) {
 
 beforeEach(() => {
   getContext.mockClear();
+  fetchNext.mockClear();
+  revalidate.mockClear();
+  createOrganization.mockClear();
+  stampOrganizationAdmin.mockClear();
+  organizationList.mockReset();
+  organizationList.mockImplementation(defaultOrganizationList);
 });
 
 it("puts the organization list in the picker and leaves create outside it", async () => {
@@ -89,4 +125,44 @@ it("puts the organization list in the picker and leaves create outside it", asyn
   expect(menu.textContent).toContain("Private");
   expect(menu.textContent).toContain("Studio");
   expect(menu.textContent).not.toContain("Create organization");
+});
+
+it("loads the next page of organizations", async () => {
+  organizationList.mockReturnValue({
+    isLoaded: true,
+    setActive: vi.fn(async () => undefined),
+    createOrganization,
+    userMemberships: {
+      isLoading: false,
+      isFetching: false,
+      hasNextPage: true,
+      count: 11,
+      data: [{ organization: { id: "org_anak", name: "Anak's Organization" } }],
+      fetchNext,
+      revalidate,
+    },
+  });
+
+  renderSwitcher(<OrganizationPicker />);
+
+  await waitFor(() => expect(fetchNext).toHaveBeenCalled());
+});
+
+it("shows an organization in the list as soon as it is created", async () => {
+  const user = userEvent.setup();
+  renderSwitcher(
+    <>
+      <OrganizationPicker />
+      <CreateOrganizationButton />
+    </>,
+  );
+
+  await user.click(screen.getByTestId("create-organization"));
+  await user.type(screen.getByLabelText("Organization name"), "Yo");
+  await user.click(screen.getByRole("button", { name: "Create" }));
+
+  await waitFor(() => expect(revalidate).toHaveBeenCalled());
+  await user.click(screen.getByTestId("organization-picker"));
+  const menu = await screen.findByTestId("organization-picker-menu");
+  expect(menu.textContent).toContain("Yo");
 });

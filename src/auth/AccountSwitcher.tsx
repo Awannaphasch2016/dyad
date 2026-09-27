@@ -67,7 +67,9 @@ function SignedInAccountSwitcher({ children }: { children: ReactNode }) {
   const { organization } = useOrganization();
   const { isLoaded, setActive, createOrganization, userMemberships } =
     useOrganizationList({
-      userMemberships: { infinite: true, pageSize: 20 },
+      // Clerk returns 10 memberships per page. A larger page size makes the
+      // next offset skip the organizations that did not fit on the first page.
+      userMemberships: { infinite: true, pageSize: 10 },
     });
   const queryClient = useQueryClient();
   const context = useQuery({
@@ -79,7 +81,23 @@ function SignedInAccountSwitcher({ children }: { children: ReactNode }) {
   const restored = useRef(false);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
+  const [createdAccounts, setCreatedAccounts] = useState<AccountOption[]>([]);
   const memberships = userMemberships.data;
+
+  useEffect(() => {
+    if (
+      !userMemberships.hasNextPage ||
+      userMemberships.isFetching ||
+      !userMemberships.fetchNext
+    ) {
+      return;
+    }
+    userMemberships.fetchNext();
+  }, [
+    userMemberships.hasNextPage,
+    userMemberships.isFetching,
+    userMemberships.fetchNext,
+  ]);
 
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: queryKeys.apps.all });
@@ -105,6 +123,7 @@ function SignedInAccountSwitcher({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (session.status !== "signed-in") return;
     if (!isLoaded || !setActive || !user || userMemberships.isLoading) return;
+    if (userMemberships.hasNextPage || userMemberships.isFetching) return;
     if (!memberships || restored.current || context.isError) return;
     const decision = restoreLastAccount({
       saved: readLastAccount(user.unsafeMetadata),
@@ -124,6 +143,8 @@ function SignedInAccountSwitcher({ children }: { children: ReactNode }) {
     setActive,
     user,
     userMemberships.isLoading,
+    userMemberships.hasNextPage,
+    userMemberships.isFetching,
     organization?.id,
     memberships,
     context.isError,
@@ -145,7 +166,17 @@ function SignedInAccountSwitcher({ children }: { children: ReactNode }) {
     if (!trimmed || !createOrganization || !setActive) return;
     try {
       const created = await createOrganization({ name: trimmed });
-      await ipc.clerk.stampOrganizationAdmin({ organizationId: created.id });
+      setCreatedAccounts((current) =>
+        current.some((account) => account.id === created.id)
+          ? current
+          : [...current, { id: created.id, name: trimmed }],
+      );
+      try {
+        await ipc.clerk.stampOrganizationAdmin({ organizationId: created.id });
+      } catch (error) {
+        showError(error);
+      }
+      await userMemberships.revalidate?.();
       await setActive({ organization: created.id });
       await remember(created.id);
       setName("");
@@ -157,8 +188,14 @@ function SignedInAccountSwitcher({ children }: { children: ReactNode }) {
   };
 
   const ready = session.status === "signed-in" && isLoaded;
+  const listedIds = new Set(
+    (memberships ?? []).map((membership) => membership.organization.id),
+  );
   const options: AccountOption[] = [
     { id: null, name: "Private" },
+    ...createdAccounts.filter(
+      (account) => account.id && !listedIds.has(account.id),
+    ),
     ...(memberships ?? []).map((membership) => ({
       id: membership.organization.id,
       name: membership.organization.name,
