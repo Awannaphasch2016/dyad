@@ -1,6 +1,6 @@
 import { verifyToken } from "@clerk/backend";
 import type { AdminRoleId } from "@/lib/adminAccess";
-import { roleFromMetadata } from "@/lib/adminAccess";
+import { roleFromClerkMembership } from "@/lib/adminAccess";
 import { roleHasPermission } from "@/auth/permissions";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import type { AccountOwner } from "./owner";
@@ -54,16 +54,7 @@ export function roleFromMembership(
   metadata: unknown,
   clerkRole: unknown,
 ): AdminRoleId {
-  if (
-    metadata &&
-    typeof metadata === "object" &&
-    "role" in metadata &&
-    (metadata as { role?: unknown }).role != null
-  ) {
-    return roleFromMetadata(metadata);
-  }
-  if (clerkRole === "org:admin" || clerkRole === "admin") return "admin";
-  return "reviewer";
+  return roleFromClerkMembership(metadata, clerkRole);
 }
 
 export async function defaultVerifySessionToken(
