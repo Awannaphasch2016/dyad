@@ -70,6 +70,10 @@ export const apps = sqliteTable("apps", {
   githubOrg: text("github_org"),
   githubRepo: text("github_repo"),
   githubBranch: text("github_branch"),
+  factoryHostManaged: integer("factory_host_managed", { mode: "boolean" })
+    .notNull()
+    .default(sql`0`),
+  gasCityProjectId: text("gas_city_project_id"),
   supabaseProjectId: text("supabase_project_id"),
   // If supabaseProjectId is a branch, then the parent project id set.
   // This is because there's no way to retrieve ALL the branches for ALL projects
@@ -234,6 +238,93 @@ export const messages = sqliteTable(
       table.chatId,
       table.chatTurnIntentId,
     ),
+  ],
+);
+
+export const factoryPhaseApprovals = sqliteTable(
+  "factory_phase_approvals",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    appId: integer("app_id")
+      .notNull()
+      .references(() => apps.id, { onDelete: "cascade" }),
+    phase: text("phase", {
+      enum: ["discovery", "implementation", "delivery"],
+    }).notNull(),
+    approvedAt: integer("approved_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => [
+    uniqueIndex("factory_phase_approvals_app_phase_unique").on(
+      table.appId,
+      table.phase,
+    ),
+  ],
+);
+
+export const factoryHostMessages = sqliteTable(
+  "factory_host_messages",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    chatId: integer("chat_id")
+      .notNull()
+      .references(() => chats.id, { onDelete: "cascade" }),
+    idempotencyKey: text("idempotency_key").notNull(),
+    requestedRole: text("requested_role", {
+      enum: ["assistant", "system"],
+    }).notNull(),
+    messageId: integer("message_id")
+      .notNull()
+      .references(() => messages.id, { onDelete: "cascade" }),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => [
+    uniqueIndex("factory_host_messages_chat_key_unique").on(
+      table.chatId,
+      table.idempotencyKey,
+    ),
+    uniqueIndex("factory_host_messages_message_unique").on(table.messageId),
+  ],
+);
+
+export const factoryHostRuns = sqliteTable(
+  "factory_host_runs",
+  {
+    runId: text("run_id").primaryKey(),
+    appId: integer("app_id")
+      .notNull()
+      .references(() => apps.id, { onDelete: "cascade" }),
+    chatId: integer("chat_id")
+      .notNull()
+      .references(() => chats.id, { onDelete: "cascade" }),
+    phase: text("phase", {
+      enum: ["discovery", "implementation", "delivery"],
+    }).notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    promptHash: text("prompt_hash").notNull(),
+    intentId: text("intent_id").notNull(),
+    acceptance: text("acceptance", {
+      enum: ["queued", "accepted", "rejected"],
+    })
+      .notNull()
+      .default("queued"),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => [
+    uniqueIndex("factory_host_runs_app_phase_key_unique").on(
+      table.appId,
+      table.phase,
+      table.idempotencyKey,
+    ),
+    uniqueIndex("factory_host_runs_intent_unique").on(table.intentId),
   ],
 );
 

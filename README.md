@@ -28,6 +28,11 @@ Join our growing community of AI app builders on **Reddit**: [r/dyadbuilders](ht
 
 If you're interested in contributing to dyad, please read our [contributing](./CONTRIBUTING.md) doc.
 
+## Gas City Docker deployment
+
+For the interim Linux Electron/noVNC deployment, see
+[the Gas City Docker guide](./docs/gascity-docker.md).
+
 ## License
 
 - All the code in this repo outside of `src/pro` is open-source and licensed under Apache 2.0 - see [LICENSE](./LICENSE).

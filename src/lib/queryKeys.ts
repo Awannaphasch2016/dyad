@@ -74,6 +74,11 @@ export const queryKeys = {
     all: ["appCollections"] as const,
   },
 
+  factoryHost: {
+    state: ({ appId }: { appId: number | null }) =>
+      ["factoryHost", "state", appId] as const,
+  },
+
   // ─────────────────────────────────────────────────────────────────────────────
   // Chats
   // ─────────────────────────────────────────────────────────────────────────────
