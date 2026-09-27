@@ -77,6 +77,7 @@
   },
   "dismissError": "Hatayı yoksay",
   "askDyadToBuild": "wewebplus'dan oluşturmasını isteyin...",
+  "answerTheQuestions": "Yukarıdaki soruları yanıtlayın",
   "cancelGeneration": "Üretimi iptal et",
   "stoppingGeneration": "Durduruluyor…",
   "cancellationEndingTestRun": "Test çalışması bitiriliyor.",

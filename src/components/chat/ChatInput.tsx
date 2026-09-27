@@ -71,6 +71,8 @@ import { CancellationBanner } from "./CancellationBanner";
 import { useCancellationRequestLatch } from "./useCancellationRequestLatch";
 import { TodoList } from "./TodoList";
 import { QuestionnaireInput } from "./QuestionnaireInput";
+import { isChatLockedByQuestionnaire } from "./questionnaireComposerLock";
+import { usePendingQuestionnaires } from "@/user_input/hooks";
 import { QueuedMessagesList } from "./QueuedMessagesList";
 import { TestAssertionsInput } from "./TestAssertionsInput";
 import {
@@ -532,8 +534,15 @@ export function ChatInput({ chatId }: { chatId?: number }) {
     [editingQueuedMessageId, removeQueuedMessage, resetEditingState],
   );
 
+  const pendingQuestionnaires = usePendingQuestionnaires();
+  const questionnaireLocked = isChatLockedByQuestionnaire(
+    chatId,
+    pendingQuestionnaires,
+  );
+
   const handleSubmit = async () => {
     if (
+      questionnaireLocked ||
       !hasComposerPayload ||
       !chatId ||
       pendingFiles ||
@@ -918,9 +927,9 @@ export function ChatInput({ chatId }: { chatId?: number }) {
             (showBanner || showPromo || isCancellationRequested) &&
               "rounded-t-none border-t-0",
           )}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
+          onDragOver={questionnaireLocked ? undefined : handleDragOver}
+          onDragLeave={questionnaireLocked ? undefined : handleDragLeave}
+          onDrop={questionnaireLocked ? undefined : handleDrop}
         >
           {/* Show active questionnaire if exists */}
           <QuestionnaireInput />
@@ -1068,15 +1077,24 @@ export function ChatInput({ chatId }: { chatId?: number }) {
             onCancel={cancelPendingFiles}
           />
 
-          <div className="flex items-end gap-1">
+          <div
+            className="flex items-end gap-1"
+            data-testid={
+              questionnaireLocked ? "chat-composer-locked" : undefined
+            }
+          >
             {factoryComposer && (
               <div className="mb-0.5 ml-1">
                 <AuxiliaryActionsMenu
-                  onFileSelect={handleFileSelect}
+                  onFileSelect={
+                    questionnaireLocked ? () => {} : handleFileSelect
+                  }
                   showTokenBar={showTokenBar}
                   toggleShowTokenBar={toggleShowTokenBar}
                   appId={appId ?? undefined}
-                  onGenerateImage={handleOpenImageGenerator}
+                  onGenerateImage={
+                    questionnaireLocked ? undefined : handleOpenImageGenerator
+                  }
                 />
               </div>
             )}
@@ -1084,10 +1102,15 @@ export function ChatInput({ chatId }: { chatId?: number }) {
               value={inputValue}
               onChange={setInputValue}
               onSubmit={handleSubmit}
-              onPaste={handlePaste}
-              placeholder={t("askDyadToBuild")}
+              onPaste={questionnaireLocked ? undefined : handlePaste}
+              placeholder={
+                questionnaireLocked
+                  ? t("answerTheQuestions")
+                  : t("askDyadToBuild")
+              }
+              disabled={questionnaireLocked}
               excludeCurrentApp={true}
-              disableSendButton={disableSendButton}
+              disableSendButton={disableSendButton || questionnaireLocked}
               messageHistory={userMessageHistory}
             />
 
@@ -1098,7 +1121,7 @@ export function ChatInput({ chatId }: { chatId?: number }) {
                   render={
                     <button
                       onClick={toggleRecording}
-                      disabled={isTranscribing}
+                      disabled={isTranscribing || questionnaireLocked}
                       aria-label={
                         isRecording
                           ? t("stopRecording", "Stop recording")
@@ -1220,11 +1243,13 @@ export function ChatInput({ chatId }: { chatId?: number }) {
               </div>
 
               <AuxiliaryActionsMenu
-                onFileSelect={handleFileSelect}
+                onFileSelect={questionnaireLocked ? () => {} : handleFileSelect}
                 showTokenBar={showTokenBar}
                 toggleShowTokenBar={toggleShowTokenBar}
                 appId={appId ?? undefined}
-                onGenerateImage={handleOpenImageGenerator}
+                onGenerateImage={
+                  questionnaireLocked ? undefined : handleOpenImageGenerator
+                }
               />
             </div>
           )}

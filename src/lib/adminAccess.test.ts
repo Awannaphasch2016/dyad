@@ -48,6 +48,21 @@ describe("admin access", () => {
     });
   });
 
+  it("builds Account Portal links in the renderer, where Buffer is missing", () => {
+    const host = "example.clerk.accounts.dev";
+    const key = `pk_test_${Buffer.from(`${host}$`).toString("base64").replace(/=+$/, "")}`;
+    const buffer = globalThis.Buffer;
+    // @ts-expect-error The renderer page does not provide Node's Buffer.
+    delete globalThis.Buffer;
+    try {
+      expect(clerkAccountPortalUrls(key).signInUrl).toBe(
+        `https://${host}/sign-in`,
+      );
+    } finally {
+      globalThis.Buffer = buffer;
+    }
+  });
+
   it("lists active people and pending invitations with their roles", () => {
     const members = clerkDirectoryFromApi(
       [

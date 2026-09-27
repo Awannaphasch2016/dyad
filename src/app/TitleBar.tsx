@@ -22,6 +22,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { SessionControl } from "@/auth/SessionControl";
 import { ChatTabs } from "@/components/chat/ChatTabs";
 import { selectedChatIdAtom } from "@/atoms/chatAtoms";
 import { useQueryClient } from "@tanstack/react-query";
@@ -146,6 +147,8 @@ export const TitleBar = () => {
         <div className="flex-1 min-w-0 overflow-hidden self-end">
           <ChatTabs selectedChatId={selectedChatId} />
         </div>
+
+        <SessionControl />
 
         {showWindowControls && <WindowsControls />}
       </div>

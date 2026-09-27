@@ -10,7 +10,27 @@ import { createTypedHandler } from "./base";
 
 const logger = log.scope("clerk_handlers");
 
+/**
+ * Only a Clerk publishable key may cross into the renderer.
+ * A secret key pasted into this env var stays in main and the app stays ungated.
+ */
+export function clerkPublishableKeyFromEnv(
+  value: string | undefined,
+): string | null {
+  const key = value?.trim() ?? "";
+  if (!key.startsWith("pk_test_") && !key.startsWith("pk_live_")) return null;
+  return key;
+}
+
 export function registerClerkHandlers() {
+  createTypedHandler(clerkContracts.getPublishableKey, async () => {
+    return {
+      publishableKey: clerkPublishableKeyFromEnv(
+        process.env.CLERK_PUBLISHABLE_KEY,
+      ),
+    };
+  });
+
   createTypedHandler(clerkContracts.getAccess, async () => {
     const publishableKey = process.env.CLERK_PUBLISHABLE_KEY;
     const secretKey = process.env.CLERK_SECRET_KEY;

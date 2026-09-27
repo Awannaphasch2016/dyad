@@ -40,7 +40,16 @@ export const SetAdminMemberRoleParamsSchema = z.object({
   roleId: AdminRoleIdSchema,
 });
 
+export const ClerkPublishableKeySchema = z.object({
+  publishableKey: z.string().nullable(),
+});
+
 export const clerkContracts = {
+  getPublishableKey: defineContract({
+    channel: "clerk:get-publishable-key",
+    input: z.void(),
+    output: ClerkPublishableKeySchema,
+  }),
   getAccess: defineContract({
     channel: "clerk:get-access",
     input: z.void(),

@@ -1,9 +1,11 @@
+import { isClerkAuthPath } from "@/auth/clerkPageView";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ThemeProvider } from "../contexts/ThemeContext";
 import { DeepLinkProvider } from "../contexts/DeepLinkContext";
 import { Toaster } from "sonner";
 import { TitleBar } from "./TitleBar";
+import { useRouterState } from "@tanstack/react-router";
 import { useEffect, useMemo, type ReactNode } from "react";
 import { useAppOutputSubscription } from "@/hooks/useRunApp";
 import { useAtomValue, useSetAtom } from "jotai";
@@ -188,6 +190,22 @@ function RootLayoutContent({ children }: { children: ReactNode }) {
   useEffect(() => {
     setSelectedComponentsPreview([]);
   }, [selectedAppId, setSelectedComponentsPreview]);
+
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  });
+  if (isClerkAuthPath(pathname)) {
+    return (
+      <ThemeProvider>
+        <div
+          className="flex min-h-dvh w-full items-center justify-center bg-background"
+          data-testid="clerk-auth-page"
+        >
+          {children}
+        </div>
+      </ThemeProvider>
+    );
+  }
 
   return (
     <>
