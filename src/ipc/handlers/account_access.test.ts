@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DyadErrorKind } from "@/errors/dyad_error";
-import { setSessionVerifierForTesting } from "@/control_plane/access";
+import {
+  resolveAccountSession,
+  setSessionVerifierForTesting,
+} from "@/control_plane/access";
 import {
   clearSessionTokensForTesting,
   rememberSessionToken,
@@ -44,5 +47,115 @@ describe("organization member changes", () => {
       name: "DyadError",
       kind: DyadErrorKind.Auth,
     });
+  });
+
+  it("keeps the iPad session after the Electron window signs out", async () => {
+    process.env.CLERK_PUBLISHABLE_KEY = "pk_test_example";
+    process.env.CLERK_SECRET_KEY = "sk_test_example";
+    registerClerkHandlers();
+    const setToken = getRegisteredHandlerForTesting("clerk:set-session-token");
+    await setToken(event, { token: "ipad-token", bridge: true });
+    await setToken(event, { token: null });
+    setSessionVerifierForTesting(async (token) => {
+      expect(token).toBe("ipad-token");
+      return {
+        userId: "user_owner",
+        orgId: null,
+        roleId: "admin",
+        displayName: "Anak",
+        member: true,
+      };
+    });
+    await expect(resolveAccountSession(event)).resolves.toMatchObject({
+      mode: "signed-in",
+      userId: "user_owner",
+    });
+  });
+
+  it("prefers the Electron window token when that window is signed in", async () => {
+    process.env.CLERK_PUBLISHABLE_KEY = "pk_test_example";
+    process.env.CLERK_SECRET_KEY = "sk_test_example";
+    registerClerkHandlers();
+    const setToken = getRegisteredHandlerForTesting("clerk:set-session-token");
+    await setToken(event, { token: "ipad-token", bridge: true });
+    await setToken(event, { token: "electron-token" });
+    setSessionVerifierForTesting(async (token) => {
+      expect(token).toBe("electron-token");
+      return {
+        userId: "user_desktop",
+        orgId: null,
+        roleId: "admin",
+        displayName: "Desktop",
+        member: true,
+      };
+    });
+    await expect(resolveAccountSession(event)).resolves.toMatchObject({
+      userId: "user_desktop",
+    });
+  });
+
+  it("stamps the organization creator as owner and admin", async () => {
+    process.env.CLERK_PUBLISHABLE_KEY = "pk_test_example";
+    process.env.CLERK_SECRET_KEY = "sk_test_example";
+    rememberSessionToken(7, "session-token");
+    setSessionVerifierForTesting(async () => ({
+      userId: "user_owner",
+      orgId: null,
+      roleId: "admin",
+      displayName: "Anak",
+      member: true,
+    }));
+    const calls: Array<{ method: string; body: string | undefined }> = [];
+    vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
+      calls.push({ method: init?.method ?? "GET", body: init?.body as string });
+      if ((init?.method ?? "GET") === "GET") {
+        return new Response(JSON.stringify({ role: "org:admin" }), {
+          status: 200,
+        });
+      }
+      return new Response("{}", { status: 200 });
+    });
+    registerClerkHandlers();
+    const handler = getRegisteredHandlerForTesting(
+      "clerk:stamp-organization-admin",
+    );
+    await handler(event, { organizationId: "org_created" });
+    expect(calls.map((call) => call.method)).toEqual(["GET", "PATCH"]);
+    expect(JSON.parse(calls[1]?.body ?? "{}")).toEqual({
+      role: "org:admin",
+      public_metadata: { role: "admin" },
+    });
+  });
+
+  it("does not let an invited member stamp themselves admin", async () => {
+    process.env.CLERK_PUBLISHABLE_KEY = "pk_test_example";
+    process.env.CLERK_SECRET_KEY = "sk_test_example";
+    rememberSessionToken(7, "session-token");
+    setSessionVerifierForTesting(async () => ({
+      userId: "user_member",
+      orgId: "org_created",
+      roleId: "reviewer",
+      displayName: "Member",
+      member: true,
+    }));
+    const methods: string[] = [];
+    vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
+      methods.push(init?.method ?? "GET");
+      return new Response(JSON.stringify({ role: "org:member" }), {
+        status: 200,
+      });
+    });
+    registerClerkHandlers();
+    const handler = getRegisteredHandlerForTesting(
+      "clerk:stamp-organization-admin",
+    );
+    await expect(
+      handler(event, { organizationId: "org_created" }),
+    ).rejects.toMatchObject({
+      name: "DyadError",
+      kind: DyadErrorKind.Auth,
+      message: "Only the person who created the organization is its admin.",
+    });
+    expect(methods).toEqual(["GET"]);
   });
 });

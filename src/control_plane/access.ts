@@ -5,7 +5,7 @@ import { roleHasPermission } from "@/auth/permissions";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import type { AccountOwner } from "./owner";
 import { privateOwner, sameOwner } from "./owner";
-import { sessionTokenFor } from "./session_store";
+import { sessionTokenForRequest } from "./session_store";
 
 export interface VerifiedAccount {
   userId: string;
@@ -169,7 +169,7 @@ export async function resolveAccountSession(event: {
   sender: { id: number };
 }): Promise<AccountSession> {
   if (!clerkEnforced()) return { mode: "unconfigured" };
-  const token = sessionTokenFor(event.sender.id);
+  const token = sessionTokenForRequest(event.sender.id);
   if (!token) {
     throw new DyadError("Sign in to continue.", DyadErrorKind.Auth);
   }

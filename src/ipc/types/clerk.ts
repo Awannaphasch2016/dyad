@@ -47,6 +47,8 @@ export const ClerkPublishableKeySchema = z.object({
 
 export const SetSessionTokenParamsSchema = z.object({
   token: z.string().nullable(),
+  /** Safari bridge only. Keeps that token off the Electron window slot. */
+  bridge: z.boolean().optional(),
 });
 
 export const RemoveAdminMemberParamsSchema = z.object({

@@ -15,7 +15,10 @@ import {
 } from "@/control_plane/access";
 import { getControlPlaneDb } from "@/control_plane/db";
 import { recordAudit } from "@/control_plane/repository";
-import { rememberSessionToken } from "@/control_plane/session_store";
+import {
+  rememberSessionToken,
+  WEB_BRIDGE_SENDER_ID,
+} from "@/control_plane/session_store";
 import { clerkContracts } from "../types/clerk";
 import { createTypedHandler } from "./base";
 
@@ -207,18 +210,41 @@ export function registerClerkHandlers() {
       if (session.mode !== "signed-in") {
         throw new DyadError("Sign in to continue.", DyadErrorKind.Auth);
       }
-      await clerkRequest(
-        `/v1/organizations/${params.organizationId}/memberships/${session.userId}`,
-        {
-          method: "PATCH",
-          body: JSON.stringify({ public_metadata: { role: "admin" } }),
-        },
-      );
+      if (!/^org_[A-Za-z0-9]+$/.test(params.organizationId)) {
+        throw new DyadError(
+          "Choose an organization to continue.",
+          DyadErrorKind.Validation,
+        );
+      }
+      const membershipPath = `/v1/organizations/${params.organizationId}/memberships/${session.userId}`;
+      const membership = await clerkRequest(membershipPath);
+      const role =
+        membership && typeof membership === "object"
+          ? (membership as { role?: unknown }).role
+          : null;
+      // Clerk makes the creator org:admin. Invited members stay org:member
+      // until an admin changes them, so they cannot stamp themselves.
+      if (role !== "org:admin" && role !== "admin") {
+        throw new DyadError(
+          "Only the person who created the organization is its admin.",
+          DyadErrorKind.Auth,
+        );
+      }
+      await clerkRequest(membershipPath, {
+        method: "PATCH",
+        body: JSON.stringify({
+          role: "org:admin",
+          public_metadata: { role: "admin" },
+        }),
+      });
     },
   );
 
   createTypedHandler(clerkContracts.setSessionToken, async (event, params) => {
-    rememberSessionToken(event.sender.id, params.token);
+    rememberSessionToken(
+      params.bridge ? WEB_BRIDGE_SENDER_ID : event.sender.id,
+      params.token,
+    );
   });
 }
 
