@@ -1,0 +1,14 @@
+.git
+.github
+.cursor
+.env
+.env.*
+!.env.example
+.vite
+node_modules
+out
+userData
+coverage
+test-results
+playwright-report
+*.log

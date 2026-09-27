@@ -1,6 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { useAtomValue } from "jotai";
-import { useQueries } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { Download, Lock } from "lucide-react";
 import { selectedAppIdAtom } from "@/atoms/appAtoms";
 import { selectedChatIdAtom } from "@/atoms/chatAtoms";
@@ -42,36 +47,6 @@ import { useClerkRole } from "@/auth/session";
 import { queryKeys } from "@/lib/queryKeys";
 import { cn } from "@/lib/utils";
 
-function approvalsStorageKey(appId: number): string {
-  return `dyad:factory-phase-approvals:${appId}`;
-}
-
-function readApprovals(appId: number | null): FactoryPhase[] {
-  if (appId == null) return [];
-  try {
-    const raw = window.localStorage.getItem(approvalsStorageKey(appId));
-    const parsed: unknown = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed)
-      ? parsed.filter((value): value is FactoryPhase =>
-          FACTORY_PHASES.includes(value as FactoryPhase),
-        )
-      : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeApprovals(appId: number, approvals: FactoryPhase[]): void {
-  try {
-    window.localStorage.setItem(
-      approvalsStorageKey(appId),
-      JSON.stringify(approvals),
-    );
-  } catch {
-    // Storage can be unavailable; approval then lasts only for this page.
-  }
-}
-
 export function FactoryPhaseBar() {
   const appId = useAtomValue(selectedAppIdAtom);
   const chatId = useAtomValue(selectedChatIdAtom);
@@ -82,14 +57,27 @@ export function FactoryPhaseBar() {
   const { streamMessage } = useStreamChat();
   const streamState = useChatStreamState(chatId ?? undefined);
   const kickedOffChatIds = useRef(new Set<number>());
-  const [approvals, setApprovals] = useState<{
-    appId: number | null;
-    phases: FactoryPhase[];
-  }>(() => ({ appId, phases: readApprovals(appId) }));
-  const approvedPhases =
-    approvals.appId === appId ? approvals.phases : readApprovals(appId);
-
   const enabled = hasFactoryPhases(chats) && appId != null;
+  const queryClient = useQueryClient();
+  const factoryStateQuery = useQuery({
+    queryKey: queryKeys.factoryHost.state({ appId }),
+    queryFn: () => ipc.factoryHost.getState({ appId: appId! }),
+    enabled,
+    refetchInterval: (query) =>
+      query.state.data?.factoryHostManaged ? 1_000 : false,
+  });
+  const approvePhaseMutation = useMutation({
+    mutationFn: (phase: FactoryPhase) =>
+      ipc.factoryHost.approvePhase({ appId: appId!, phase }),
+    onSuccess: (state) => {
+      queryClient.setQueryData(
+        queryKeys.factoryHost.state({ appId: state.appId }),
+        state,
+      );
+    },
+  });
+  const approvedPhases = factoryStateQuery.data?.approvedPhases ?? [];
+
   const byPhase = enabled ? factoryPhaseChats(chats) : {};
   const phaseChatQueries = useQueries({
     queries: FACTORY_PHASES.map((item) => {
@@ -98,6 +86,9 @@ export function FactoryPhaseBar() {
         queryKey: queryKeys.chats.detail({ chatId: phaseChatId }),
         queryFn: () => ipc.chat.getChat(phaseChatId!),
         enabled: phaseChatId !== null,
+        refetchInterval: factoryStateQuery.data?.factoryHostManaged
+          ? 1_000
+          : false,
       };
     }),
   });
@@ -116,9 +107,9 @@ export function FactoryPhaseBar() {
     if (summary) summaries.set(item, summary);
   });
   const progress = { approved: new Set(approvedPhases), started };
-  const progressLoaded = phaseChatQueries.every(
-    (query) => query.data !== undefined,
-  );
+  const progressLoaded =
+    factoryStateQuery.data !== undefined &&
+    phaseChatQueries.every((query) => query.data !== undefined);
 
   const current = chats.find((chat) => chat.id === chatId);
   const phase = enabled ? phaseFromTitle(current?.title) : null;
@@ -166,6 +157,7 @@ export function FactoryPhaseBar() {
   useEffect(() => {
     if (
       kickoff == null ||
+      factoryStateQuery.data?.factoryHostManaged === true ||
       chatId == null ||
       appId == null ||
       !phaseUnlocked ||
@@ -180,6 +172,7 @@ export function FactoryPhaseBar() {
     void streamMessage({ prompt: kickoff, chatId, appId });
   }, [
     kickoff,
+    factoryStateQuery.data?.factoryHostManaged,
     chatId,
     appId,
     phaseUnlocked,
@@ -234,17 +227,14 @@ export function FactoryPhaseBar() {
     downloadFactoryDocument(document);
   };
 
-  const recordApproval = () => {
-    const phases = alreadyApproved
-      ? approvedPhases
-      : [...approvedPhases, phase];
-    writeApprovals(appId, phases);
-    setApprovals({ appId, phases });
+  const recordApproval = async () => {
+    if (alreadyApproved) return;
+    await approvePhaseMutation.mutateAsync(phase);
   };
 
-  const approveAndContinue = () => {
+  const approveAndContinue = async () => {
     if (!next || !nextChat) return;
-    recordApproval();
+    await recordApproval();
     selectChat({
       chatId: nextChat.id,
       appId,
@@ -300,9 +290,9 @@ export function FactoryPhaseBar() {
             type="button"
             size="sm"
             className="ml-auto"
-            disabled={!canApprove}
+            disabled={!canApprove || approvePhaseMutation.isPending}
             data-testid="factory-phase-continue"
-            onClick={approveAndContinue}
+            onClick={() => void approveAndContinue()}
           >
             Approve and continue to {factoryPhaseLabel(next)}
           </Button>
@@ -312,9 +302,9 @@ export function FactoryPhaseBar() {
             type="button"
             size="sm"
             className="ml-auto"
-            disabled={!canApprove}
+            disabled={!canApprove || approvePhaseMutation.isPending}
             data-testid="factory-phase-continue"
-            onClick={recordApproval}
+            onClick={() => void recordApproval()}
           >
             Approve delivery
           </Button>

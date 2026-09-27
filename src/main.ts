@@ -16,6 +16,10 @@ import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { registerIpcHandlers } from "./ipc/ipc_host";
+import {
+  startFactoryHostBridgeFromEnv,
+  stopFactoryHostBridge,
+} from "./main/factory_host_bridge_server";
 import dotenv from "dotenv";
 import { updateElectronApp, UpdateSourceType } from "update-electron-app";
 import log from "electron-log";
@@ -456,6 +460,17 @@ export async function onReady() {
     dialog.showErrorBox(
       "Database Migration Failed",
       `Dyad could not initialize its local database. ${message}`,
+    );
+    app.quit();
+    return;
+  }
+  try {
+    await startFactoryHostBridgeFromEnv();
+  } catch (error) {
+    logger.error("Failed to start Gas City host bridge", error);
+    dialog.showErrorBox(
+      "Gas City Host Bridge Failed",
+      error instanceof Error ? error.message : String(error),
     );
     app.quit();
     return;
@@ -1777,6 +1792,7 @@ app.on("before-quit", (event) => {
 // IMPORTANT: This handler must be synchronous because Electron's EventEmitter
 // does not await async callbacks — the returned Promise would be silently ignored.
 app.on("will-quit", () => {
+  stopFactoryHostBridge();
   stopClaudeProcesses();
   logLifecycle("app:will-quit");
   logger.info("App is quitting");

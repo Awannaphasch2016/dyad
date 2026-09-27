@@ -1,0 +1,71 @@
+FROM node:24-bookworm
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        curl \
+        dbus-x11 \
+        fonts-dejavu-core \
+        git \
+        libasound2 \
+        libatspi2.0-0 \
+        libdrm2 \
+        libgbm1 \
+        libgtk-3-0 \
+        libnotify4 \
+        libnss3 \
+        libsecret-1-0 \
+        libx11-xcb1 \
+        libxcb-dri3-0 \
+        libxss1 \
+        libxtst6 \
+        novnc \
+        openbox \
+        procps \
+        python3 \
+        websockify \
+        x11-utils \
+        x11vnc \
+        xdg-utils \
+        xvfb \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --uid 10001 --shell /bin/bash weaver \
+    && mkdir -p /app /home/weaver/.config/weaver-plus /home/weaver/dyad-apps \
+    && chown weaver:weaver /app \
+    && chown -R weaver:weaver /home/weaver
+
+WORKDIR /app
+
+COPY --chown=weaver:weaver package.json package-lock.json ./
+COPY --chown=weaver:weaver native ./native
+COPY --chown=weaver:weaver packages ./packages
+USER weaver
+RUN npm ci
+
+COPY --chown=weaver:weaver . .
+RUN npm run package
+
+USER root
+RUN chmod 755 /app/docker/gascity-entrypoint.sh
+
+ENV DISPLAY=:99 \
+    GAS_CITY_HOST_BRIDGE_PORT=32100 \
+    HOME=/home/weaver \
+    NOVNC_PORT=6080 \
+    NOVNC_GEOMETRY=1600x900 \
+    DYAD_DEV_USER_DATA_DIR=/home/weaver/.config/weaver-plus
+
+VOLUME ["/home/weaver/.config", "/home/weaver/dyad-apps"]
+EXPOSE 6080
+
+USER weaver
+
+HEALTHCHECK --interval=10s --timeout=3s --start-period=90s --retries=6 \
+  CMD curl --fail --silent "http://127.0.0.1:${NOVNC_PORT}/vnc.html" >/dev/null \
+    && test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
+      "http://127.0.0.1:${GAS_CITY_HOST_BRIDGE_PORT}/v1/apps/0/factory-state")" = "401"
+
+ENTRYPOINT ["/app/docker/gascity-entrypoint.sh"]
