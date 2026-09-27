@@ -1,5 +1,8 @@
 import { and, desc, eq } from "drizzle-orm";
-import { appKnowledgeItems, apps } from "@/db/schema";
+import { resolveAccountSession } from "@/control_plane/access";
+import { assertAppVisible } from "@/control_plane/guard";
+import { syncOneApp } from "@/control_plane/sync_local";
+import { appKnowledgeItems } from "@/db/schema";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import { createTypedHandler } from "./base";
 import { getHandlerContext } from "./handler_context";
@@ -32,18 +35,10 @@ function requireHttpUrl(raw: string): string {
   }
 }
 
-async function requireApp(appId: number) {
-  const { db } = getHandlerContext();
-  const app = db.select().from(apps).where(eq(apps.id, appId)).get();
-  if (!app) {
-    throw new DyadError("App not found", DyadErrorKind.NotFound);
-  }
-  return app;
-}
-
 export function registerKnowledgeHandlers() {
-  createTypedHandler(knowledgeContracts.list, async (_, params) => {
-    await requireApp(params.appId);
+  createTypedHandler(knowledgeContracts.list, async (event, params) => {
+    await assertAppVisible(event, params.appId);
+    await syncOneApp(params.appId);
     const { db } = getHandlerContext();
     const rows = db
       .select()
@@ -54,14 +49,19 @@ export function registerKnowledgeHandlers() {
     return rows.map(toDto);
   });
 
-  createTypedHandler(knowledgeContracts.create, async (_, params) => {
-    await requireApp(params.appId);
+  createTypedHandler(knowledgeContracts.create, async (event, params) => {
+    await assertAppVisible(event, params.appId);
     const title = params.title.trim();
     if (!title) {
       throw new DyadError("Give this item a name.", DyadErrorKind.Validation);
     }
     const url = requireHttpUrl(params.url);
-    const addedBy = (params.addedBy ?? "").trim();
+    const session = await resolveAccountSession(event);
+    const addedBy =
+      (params.addedBy ?? "").trim() ||
+      (session.mode === "signed-in"
+        ? session.displayName || session.userId
+        : "");
     const { db } = getHandlerContext();
     const result = db
       .insert(appKnowledgeItems)
@@ -78,11 +78,12 @@ export function registerKnowledgeHandlers() {
         DyadErrorKind.External,
       );
     }
+    await syncOneApp(params.appId);
     return toDto(row);
   });
 
-  createTypedHandler(knowledgeContracts.delete, async (_, params) => {
-    await requireApp(params.appId);
+  createTypedHandler(knowledgeContracts.delete, async (event, params) => {
+    await assertAppVisible(event, params.appId);
     const { db } = getHandlerContext();
     const existing = db
       .select()

@@ -22,6 +22,7 @@ import {
   Star,
   Trash2,
 } from "lucide-react";
+import { AccountAppActions } from "@/components/AccountAppActions";
 import { BackButton } from "@/components/ui/back-button";
 import {
   Popover,
@@ -638,6 +639,7 @@ export default function AppDetailsPage() {
               <MessageCircle className="h-4 w-4" />
             </Button>
             <div className="border border-gray-200 rounded-md p-4">
+              {appId != null && <AccountAppActions appId={appId} />}
               <GitHubConnector appId={appId} folderName={selectedApp.path} />
               {selectedApp.githubOrg && selectedApp.githubRepo && appId && (
                 <div className="pt-4 border-t border-gray-100 dark:border-gray-800">

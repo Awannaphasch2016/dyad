@@ -22,6 +22,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { AccountSwitcher } from "@/auth/AccountSwitcher";
 import { SessionControl } from "@/auth/SessionControl";
 import { ChatTabs } from "@/components/chat/ChatTabs";
 import { selectedChatIdAtom } from "@/atoms/chatAtoms";
@@ -148,6 +149,7 @@ export const TitleBar = () => {
           <ChatTabs selectedChatId={selectedChatId} />
         </div>
 
+        <AccountSwitcher />
         <SessionControl />
 
         {showWindowControls && <WindowsControls />}

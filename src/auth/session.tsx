@@ -12,6 +12,12 @@ export type ClerkSessionState =
       roleId: AdminRoleId;
       userId: string;
       email: string | null;
+      displayName?: string | null;
+      account?: {
+        type: "user" | "org";
+        id: string;
+        name: string;
+      };
     };
 
 const ClerkSessionContext = createContext<ClerkSessionState>({

@@ -63,6 +63,8 @@ import { registerNativeThemeHandlers } from "./handlers/native_theme_handlers";
 import { registerCoolifySetupHandlers } from "./handlers/coolify_setup_handlers";
 import { registerClerkHandlers } from "./handlers/clerk_handlers";
 import { registerKnowledgeHandlers } from "./handlers/knowledge_handlers";
+import { registerAccountHandlers } from "./handlers/account_handlers";
+import { registerFactoryHandlers } from "./handlers/factory_handlers";
 
 export function registerIpcHandlers() {
   // Register all IPC handlers by category
@@ -131,4 +133,6 @@ export function registerIpcHandlers() {
   registerCoolifySetupHandlers();
   registerClerkHandlers();
   registerKnowledgeHandlers();
+  registerAccountHandlers();
+  registerFactoryHandlers();
 }

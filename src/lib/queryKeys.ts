@@ -58,6 +58,7 @@ export const queryKeys = {
   // ─────────────────────────────────────────────────────────────────────────────
   apps: {
     all: ["apps"] as const,
+    list: (accountId: string | null) => ["apps", "list", accountId] as const,
     detail: ({ appId }: { appId: number | null }) =>
       ["apps", "detail", appId] as const,
     screenshots: ({ appId }: { appId: number | null }) =>
@@ -101,6 +102,20 @@ export const queryKeys = {
   clerk: {
     all: ["clerk"] as const,
     publishableKey: ["clerk", "publishableKey"] as const,
+  },
+
+  factory: {
+    all: ["factory"] as const,
+    approvals: (appId: number | null) =>
+      ["factory", "approvals", appId] as const,
+    comments: (appId: number | null) => ["factory", "comments", appId] as const,
+    answerLock: (chatId: number | null) =>
+      ["factory", "answer-lock", chatId] as const,
+  },
+
+  account: {
+    all: ["account"] as const,
+    context: ["account", "context"] as const,
   },
 
   // ─────────────────────────────────────────────────────────────────────────────

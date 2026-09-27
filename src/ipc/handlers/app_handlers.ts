@@ -1,6 +1,10 @@
 import { deleteChatJournals } from "@/ipc/services/chat_journal_cleanup";
 import { initialChatExecution } from "@/ipc/utils/chat_execution_selection";
 import { app, dialog } from "electron";
+import { sharingScope } from "@/control_plane/access";
+import { ensureProjectFiles } from "@/control_plane/file_sync";
+import { syncActiveAccount } from "@/control_plane/sync_local";
+import { selectVisibleApps } from "@/control_plane/visibility";
 import { closeDatabase, db, getDatabaseFilePaths } from "../../db";
 import {
   apps,
@@ -1154,7 +1158,15 @@ export function registerAppHandlers() {
     );
   });
 
-  createTypedHandler(appContracts.getApp, async (_, appId) => {
+  createTypedHandler(appContracts.getApp, async (event, appId) => {
+    let scope = await sharingScope(event);
+    if (scope) {
+      const synced = await syncActiveAccount(
+        scope.session.userId,
+        scope.session.account,
+      );
+      if (!synced) scope = null;
+    }
     const app = await db.query.apps.findFirst({
       where: eq(apps.id, appId),
     });
@@ -1162,10 +1174,22 @@ export function registerAppHandlers() {
     if (!app) {
       throw new DyadError("App not found", DyadErrorKind.NotFound);
     }
+    if (scope && !selectVisibleApps([app], scope.session.account).length) {
+      throw new DyadError("App not found", DyadErrorKind.NotFound);
+    }
 
     // Get app files
     const appPath = getDyadAppPath(app.path);
     let files: string[] = [];
+    let projectFilesOnThisMachine = fs.existsSync(appPath);
+    if (!projectFilesOnThisMachine) {
+      try {
+        projectFilesOnThisMachine = await ensureProjectFiles(app);
+      } catch (error) {
+        logger.warn(`Could not clone files for app ${appId}`, error);
+        projectFilesOnThisMachine = false;
+      }
+    }
 
     try {
       files = getFilesRecursively(appPath, appPath);
@@ -1224,6 +1248,7 @@ export function registerAppHandlers() {
       resolvedPath: appPath,
       supabaseProjectName,
       vercelTeamSlug,
+      projectFilesOnThisMachine,
       deploymentProvidersInUse: {
         vercel: Boolean(app.vercelProjectId),
         cloudflare: cloudflareConnection !== undefined,
@@ -1232,11 +1257,23 @@ export function registerAppHandlers() {
     };
   });
 
-  createTypedHandler(appContracts.listApps, async () => {
+  createTypedHandler(appContracts.listApps, async (event) => {
+    let scope = await sharingScope(event);
+    if (scope) {
+      const synced = await syncActiveAccount(
+        scope.session.userId,
+        scope.session.account,
+      );
+      if (!synced) scope = null;
+    }
     const allApps = await db.query.apps.findMany({
       orderBy: [desc(apps.createdAt)],
     });
-    const appsWithResolvedPath = allApps.map((app) => ({
+    const visibleApps = selectVisibleApps(
+      allApps,
+      scope ? scope.session.account : null,
+    );
+    const appsWithResolvedPath = visibleApps.map((app) => ({
       ...app,
       resolvedPath: getDyadAppPath(app.path),
     }));

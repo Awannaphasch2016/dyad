@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import type React from "react";
 import { useCallback, useEffect, useRef, useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { getNpmPackagePageUrl } from "./npmPackageUrl";
 
@@ -72,6 +73,7 @@ import { useCancellationRequestLatch } from "./useCancellationRequestLatch";
 import { TodoList } from "./TodoList";
 import { QuestionnaireInput } from "./QuestionnaireInput";
 import { isChatLockedByQuestionnaire } from "./questionnaireComposerLock";
+import { useClerkSession } from "@/auth/session";
 import { usePendingQuestionnaires } from "@/user_input/hooks";
 import { QueuedMessagesList } from "./QueuedMessagesList";
 import { TestAssertionsInput } from "./TestAssertionsInput";
@@ -535,10 +537,34 @@ export function ChatInput({ chatId }: { chatId?: number }) {
   );
 
   const pendingQuestionnaires = usePendingQuestionnaires();
+  const session = useClerkSession();
   const questionnaireLocked = isChatLockedByQuestionnaire(
     chatId,
     pendingQuestionnaires,
   );
+  const answerLock = useQuery({
+    queryKey: queryKeys.factory.answerLock(chatId ?? null),
+    enabled: chatId != null,
+    queryFn: () => ipc.factory.getAnswerLock({ chatId: chatId! }),
+    refetchInterval: 5000,
+  });
+  useEffect(() => {
+    if (chatId == null) return;
+    void ipc.factory
+      .setAnswerLock({
+        chatId,
+        active: questionnaireLocked,
+      })
+      .catch(() => {
+        // The composer stays locked locally when the shared lock cannot be saved.
+      });
+  }, [chatId, questionnaireLocked]);
+  const someoneElseAnswering =
+    answerLock.data != null &&
+    session.status === "signed-in" &&
+    answerLock.data.memberId !== session.userId
+      ? answerLock.data.memberName
+      : null;
 
   const handleSubmit = async () => {
     if (
@@ -1077,6 +1103,14 @@ export function ChatInput({ chatId }: { chatId?: number }) {
             onCancel={cancelPendingFiles}
           />
 
+          {someoneElseAnswering && (
+            <p
+              className="px-2 pb-1 text-xs text-muted-foreground"
+              data-testid="answer-lock-holder"
+            >
+              {someoneElseAnswering} is answering
+            </p>
+          )}
           <div
             className="flex items-end gap-1"
             data-testid={

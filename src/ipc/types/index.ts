@@ -73,6 +73,8 @@ export {
 export { languageModelContracts } from "./language-model";
 export { promptContracts } from "./prompts";
 export { clerkContracts } from "./clerk";
+export { accountContracts } from "./account";
+export { factoryContracts } from "./factory";
 export { knowledgeContracts } from "./knowledge";
 export { templateContracts } from "./templates";
 export { proposalContracts } from "./proposals";
@@ -559,6 +561,8 @@ import { versionClient } from "./version";
 import { languageModelClient } from "./language-model";
 import { promptClient } from "./prompts";
 import { clerkClient } from "./clerk";
+import { accountClient } from "./account";
+import { factoryClient } from "./factory";
 import { knowledgeClient } from "./knowledge";
 import { templateClient } from "./templates";
 import { proposalClient } from "./proposals";
@@ -648,6 +652,8 @@ export const ipc = {
   languageModel: languageModelClient,
   prompt: promptClient,
   clerk: clerkClient,
+  account: accountClient,
+  factory: factoryClient,
   knowledge: knowledgeClient,
   template: templateClient,
   proposal: proposalClient,

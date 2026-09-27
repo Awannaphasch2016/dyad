@@ -14,6 +14,8 @@ export interface FactoryDocumentSource {
   githubRepo: string | null;
   githubBranch: string | null;
   generatedOn: string;
+  accountName?: string | null;
+  approvedBy?: readonly { phase: string; memberName: string }[];
 }
 
 export interface FactoryDocument {
@@ -71,6 +73,8 @@ export function buildFactoryDocument(
     siteName: discovery.pageName,
     status,
     generatedOn: source.generatedOn,
+    accountName: source.accountName ?? null,
+    approvedBy: source.approvedBy ?? [],
     body,
   });
   return {
@@ -440,6 +444,8 @@ function renderDocument({
   siteName,
   status,
   generatedOn,
+  accountName,
+  approvedBy,
   body,
 }: {
   title: string;
@@ -447,8 +453,14 @@ function renderDocument({
   siteName: string;
   status: string;
   generatedOn: string;
+  accountName: string | null;
+  approvedBy: readonly { phase: string; memberName: string }[];
   body: string;
 }): string {
+  const approvalLine = approvedBy
+    .filter((item) => item.memberName)
+    .map((item) => `${item.phase}: ${item.memberName}`)
+    .join("; ");
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -476,6 +488,8 @@ function renderDocument({
 <tr><th>Version</th><td>1</td></tr>
 <tr><th>Status</th><td>${escapeHtml(status)}</td></tr>
 <tr><th>Phase</th><td>${escapeHtml(factoryPhaseLabel(phase))}</td></tr>
+${accountName ? `<tr><th>Account</th><td>${escapeHtml(accountName)}</td></tr>` : ""}
+${approvalLine ? `<tr><th>Approved by</th><td>${escapeHtml(approvalLine)}</td></tr>` : ""}
 </table>
 ${body}
 </body>

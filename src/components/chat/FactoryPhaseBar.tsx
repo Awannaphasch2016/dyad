@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useAtomValue } from "jotai";
-import { useQueries } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Lock } from "lucide-react";
 import { selectedAppIdAtom } from "@/atoms/appAtoms";
 import { selectedChatIdAtom } from "@/atoms/chatAtoms";
@@ -38,7 +38,7 @@ import {
   downloadFactoryDocument,
 } from "@/lib/factoryDocuments";
 import { approvalGate } from "@/auth/permissions";
-import { useClerkRole } from "@/auth/session";
+import { useClerkRole, useClerkSession } from "@/auth/session";
 import { queryKeys } from "@/lib/queryKeys";
 import { cn } from "@/lib/utils";
 
@@ -61,34 +61,51 @@ function readApprovals(appId: number | null): FactoryPhase[] {
   }
 }
 
-function writeApprovals(appId: number, approvals: FactoryPhase[]): void {
-  try {
-    window.localStorage.setItem(
-      approvalsStorageKey(appId),
-      JSON.stringify(approvals),
-    );
-  } catch {
-    // Storage can be unavailable; approval then lasts only for this page.
-  }
-}
-
 export function FactoryPhaseBar() {
   const appId = useAtomValue(selectedAppIdAtom);
   const chatId = useAtomValue(selectedChatIdAtom);
   const role = useClerkRole();
+  const session = useClerkSession();
+  const queryClient = useQueryClient();
+  const [comment, setComment] = useState("");
+  const approvalsQuery = useQuery({
+    queryKey: queryKeys.factory.approvals(appId),
+    enabled: appId != null,
+    queryFn: async () => {
+      if (appId == null) return [];
+      const stored = readApprovals(appId);
+      if (stored.length > 0) {
+        try {
+          await ipc.factory.importApprovals({ appId, phases: stored });
+          window.localStorage.removeItem(approvalsStorageKey(appId));
+        } catch {
+          // Keep the browser copy until the signed-in role can record it.
+        }
+      }
+      const result = await ipc.factory.listApprovals({ appId });
+      return result.approvals;
+    },
+  });
+  const commentsQuery = useQuery({
+    queryKey: queryKeys.factory.comments(appId),
+    enabled: appId != null,
+    queryFn: async () => {
+      if (appId == null) return [];
+      const result = await ipc.factory.listComments({ appId });
+      return result.comments;
+    },
+  });
+  const approvedPhases = (approvalsQuery.data ?? [])
+    .map((approval) => approval.phase)
+    .filter((phase): phase is FactoryPhase =>
+      FACTORY_PHASES.includes(phase as FactoryPhase),
+    );
   const { chats } = useChats(appId);
   const { app } = useLoadApp(appId);
   const { selectChat } = useSelectChat();
   const { streamMessage } = useStreamChat();
   const streamState = useChatStreamState(chatId ?? undefined);
   const kickedOffChatIds = useRef(new Set<number>());
-  const [approvals, setApprovals] = useState<{
-    appId: number | null;
-    phases: FactoryPhase[];
-  }>(() => ({ appId, phases: readApprovals(appId) }));
-  const approvedPhases =
-    approvals.appId === appId ? approvals.phases : readApprovals(appId);
-
   const enabled = hasFactoryPhases(chats) && appId != null;
   const byPhase = enabled ? factoryPhaseChats(chats) : {};
   const phaseChatQueries = useQueries({
@@ -116,9 +133,9 @@ export function FactoryPhaseBar() {
     if (summary) summaries.set(item, summary);
   });
   const progress = { approved: new Set(approvedPhases), started };
-  const progressLoaded = phaseChatQueries.every(
-    (query) => query.data !== undefined,
-  );
+  const progressLoaded =
+    phaseChatQueries.every((query) => query.data !== undefined) &&
+    (appId == null || approvalsQuery.isFetched);
 
   const current = chats.find((chat) => chat.id === chatId);
   const phase = enabled ? phaseFromTitle(current?.title) : null;
@@ -230,16 +247,23 @@ export function FactoryPhaseBar() {
       githubRepo: app?.githubRepo ?? null,
       githubBranch: app?.githubBranch ?? null,
       generatedOn: new Date().toISOString().slice(0, 10),
+      accountName:
+        session.status === "signed-in" ? (session.account?.name ?? null) : null,
+      approvedBy: (approvalsQuery.data ?? []).map((approval) => ({
+        phase: approval.phase,
+        memberName: approval.memberName || approval.memberId,
+      })),
     });
     downloadFactoryDocument(document);
   };
 
   const recordApproval = () => {
-    const phases = alreadyApproved
-      ? approvedPhases
-      : [...approvedPhases, phase];
-    writeApprovals(appId, phases);
-    setApprovals({ appId, phases });
+    if (alreadyApproved) return;
+    void ipc.factory.approve({ appId, phase }).then(() =>
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.factory.approvals(appId),
+      }),
+    );
   };
 
   const approveAndContinue = () => {
@@ -333,6 +357,41 @@ export function FactoryPhaseBar() {
           </Button>
         )}
       </div>
+      {phase && (
+        <form
+          className="mt-2 flex flex-wrap items-center gap-2"
+          data-testid="factory-phase-comments"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const body = comment.trim();
+            if (!body) return;
+            void ipc.factory.addComment({ appId, phase, body }).then(() => {
+              setComment("");
+              return queryClient.invalidateQueries({
+                queryKey: queryKeys.factory.comments(appId),
+              });
+            });
+          }}
+        >
+          {(commentsQuery.data ?? [])
+            .filter((item) => item.phase === phase)
+            .map((item) => (
+              <p key={item.id} className="w-full text-xs text-muted-foreground">
+                {item.memberName || "Member"}: {item.body}
+              </p>
+            ))}
+          <input
+            aria-label="Phase comment"
+            className="h-8 min-w-0 flex-1 rounded-md border bg-transparent px-2 text-sm"
+            value={comment}
+            onChange={(event) => setComment(event.target.value)}
+            placeholder="Comment on this phase"
+          />
+          <Button type="submit" size="sm" variant="outline">
+            Comment
+          </Button>
+        </form>
+      )}
       <p className={cn("mt-2 text-xs text-muted-foreground")}>
         {factoryPhaseHint(phase)}
         {showApproval && !gate.allowed && <> {gate.reason}</>}
