@@ -217,11 +217,11 @@ export function registerClerkHandlers() {
         );
       }
       const membershipPath = `/v1/organizations/${params.organizationId}/memberships/${session.userId}`;
-      const membership = await clerkRequest(membershipPath);
-      const role =
-        membership && typeof membership === "object"
-          ? (membership as { role?: unknown }).role
-          : null;
+      // Clerk has no GET for one membership. Listing is the read that exists.
+      const listed = await clerkRequest(
+        `/v1/organizations/${params.organizationId}/memberships?user_id=${encodeURIComponent(session.userId)}`,
+      );
+      const role = membershipRoleForUser(listed, session.userId);
       // Clerk makes the creator org:admin. Invited members stay org:member
       // until an admin changes them, so they cannot stamp themselves.
       if (role !== "org:admin" && role !== "admin") {
@@ -316,6 +316,26 @@ async function writeMemberAudit(
     action,
     subject,
   });
+}
+
+function membershipRoleForUser(body: unknown, userId: string): string | null {
+  const rows = Array.isArray(body)
+    ? body
+    : body &&
+        typeof body === "object" &&
+        Array.isArray((body as { data?: unknown }).data)
+      ? (body as { data: unknown[] }).data
+      : [];
+  for (const row of rows) {
+    if (!row || typeof row !== "object") continue;
+    const record = row as {
+      role?: unknown;
+      public_user_data?: { user_id?: unknown };
+    };
+    if (record.public_user_data?.user_id !== userId) continue;
+    return typeof record.role === "string" ? record.role : null;
+  }
+  return null;
 }
 
 function orgDirectoryFromApi(memberships: unknown, invitations: unknown) {

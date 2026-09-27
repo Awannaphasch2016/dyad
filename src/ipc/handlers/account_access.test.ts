@@ -105,13 +105,29 @@ describe("organization member changes", () => {
       displayName: "Anak",
       member: true,
     }));
-    const calls: Array<{ method: string; body: string | undefined }> = [];
-    vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
-      calls.push({ method: init?.method ?? "GET", body: init?.body as string });
+    const calls: Array<{
+      url: string;
+      method: string;
+      body: string | undefined;
+    }> = [];
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      calls.push({
+        url: String(url),
+        method: init?.method ?? "GET",
+        body: init?.body as string,
+      });
       if ((init?.method ?? "GET") === "GET") {
-        return new Response(JSON.stringify({ role: "org:admin" }), {
-          status: 200,
-        });
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                role: "org:admin",
+                public_user_data: { user_id: "user_owner" },
+              },
+            ],
+          }),
+          { status: 200 },
+        );
       }
       return new Response("{}", { status: 200 });
     });
@@ -121,6 +137,12 @@ describe("organization member changes", () => {
     );
     await handler(event, { organizationId: "org_created" });
     expect(calls.map((call) => call.method)).toEqual(["GET", "PATCH"]);
+    expect(calls[0]?.url).toContain(
+      "/v1/organizations/org_created/memberships?user_id=user_owner",
+    );
+    expect(calls[1]?.url).toContain(
+      "/v1/organizations/org_created/memberships/user_owner",
+    );
     expect(JSON.parse(calls[1]?.body ?? "{}")).toEqual({
       role: "org:admin",
       public_metadata: { role: "admin" },
@@ -141,9 +163,17 @@ describe("organization member changes", () => {
     const methods: string[] = [];
     vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
       methods.push(init?.method ?? "GET");
-      return new Response(JSON.stringify({ role: "org:member" }), {
-        status: 200,
-      });
+      return new Response(
+        JSON.stringify({
+          data: [
+            {
+              role: "org:member",
+              public_user_data: { user_id: "user_member" },
+            },
+          ],
+        }),
+        { status: 200 },
+      );
     });
     registerClerkHandlers();
     const handler = getRegisteredHandlerForTesting(

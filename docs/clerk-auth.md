@@ -24,7 +24,7 @@ Enable Organizations in the Clerk dashboard. Each signed-in person has a private
 
 Set `WEWEBPLUS_DATABASE_URL` to the Postgres control plane and `WEWEBPLUS_SECRETS_KEY` to encrypt GitHub and Supabase tokens saved for an account. Control-plane tables live in the `wewebplus` schema, so they can share a database that already has other tables. Both the URL and the key stay in the main process. If either Clerk key or the database URL is missing, wewebplus keeps the current ungated local app.
 
-The person who creates an organization is its owner and admin. Other people join only when that admin invites them by email. The iPad bridge keeps its Clerk session apart from the Electron window, so a signed-out desktop window does not clear the Safari sign-in.
+Every signed-in person can create an organization, including a member of another organization. The creator is that organization's owner and admin. Other people join only when that admin invites them by email. The iPad bridge keeps its Clerk session apart from the Electron window, so a signed-out desktop window does not clear the Safari sign-in.
 
 Private rows are visible only to that user. Organization rows are the same rows for every member. A private account and an organization do not share apps: an app stays in the account that created it. Deleting it removes that shared row. The switcher saves the last account on the Clerk user, so the next sign-in on iPad or Electron restores it. Signing out ends the session. App folders stay on the device. A second device clones them when the account has a GitHub connection; otherwise the files panel says the project files are on the machine that created them. Chat text and the tool transcript follow the app after a turn finishes.
 
