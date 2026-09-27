@@ -3,7 +3,17 @@ import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { describe, expect, it } from "vitest";
 import type { ControlPlaneDb } from "./db";
-import { insertControlApp, listControlApps } from "./repository";
+import {
+  deleteControlApp,
+  insertControlApp,
+  insertControlChat,
+  insertControlMessage,
+  listControlApps,
+  listControlChats,
+  listControlMessages,
+  updateControlAppDetails,
+  updateControlMessageContent,
+} from "./repository";
 import * as schema from "./schema";
 
 describe("control plane apps", () => {
@@ -40,5 +50,53 @@ describe("control plane apps", () => {
     expect(ada.map((app) => app.name)).toEqual(["Private page"]);
     expect(other).toEqual([]);
     expect(org.map((app) => app.name)).toEqual(["Shared page"]);
+  });
+
+  it("updates chat text and drops a deleted app", async () => {
+    const client = new PGlite();
+    const plane = drizzle(client, { schema });
+    await migrate(plane, { migrationsFolder: "control-plane/drizzle" });
+    const db = plane as unknown as ControlPlaneDb;
+    await insertControlApp(db, {
+      id: "app-1",
+      owner: { type: "org", id: "org_1" },
+      name: "Page",
+      slug: "page",
+      githubOrg: null,
+      githubRepo: null,
+      githubBranch: null,
+      supabaseProjectId: null,
+    });
+    await insertControlChat(db, {
+      id: "chat-1",
+      appId: "app-1",
+      title: "Discovery",
+    });
+    await insertControlMessage(db, {
+      id: "message-1",
+      chatId: "chat-1",
+      role: "assistant",
+      content: "",
+    });
+    await updateControlMessageContent(db, "message-1", "The finished answer");
+    await updateControlAppDetails(db, "app-1", {
+      name: "Page",
+      slug: "page",
+      githubOrg: "bakery",
+      githubRepo: "page",
+      githubBranch: "main",
+      supabaseProjectId: null,
+    });
+
+    const messages = await listControlMessages(db, "chat-1");
+    expect(messages.map((message) => message.content)).toEqual([
+      "The finished answer",
+    ]);
+    const listed = await listControlApps(db, { type: "org", id: "org_1" });
+    expect(listed[0]?.githubRepo).toBe("page");
+
+    await deleteControlApp(db, "app-1");
+    expect(await listControlApps(db, { type: "org", id: "org_1" })).toEqual([]);
+    expect(await listControlChats(db, "app-1")).toEqual([]);
   });
 });

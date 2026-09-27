@@ -55,6 +55,50 @@ export async function listControlApps(plane: Plane, owner: AccountOwner) {
     );
 }
 
+export async function updateControlAppDetails(
+  plane: Plane,
+  appId: string,
+  fields: {
+    name: string;
+    slug: string;
+    githubOrg: string | null;
+    githubRepo: string | null;
+    githubBranch: string | null;
+    supabaseProjectId: string | null;
+  },
+): Promise<void> {
+  await plane.update(controlApps).set(fields).where(eq(controlApps.id, appId));
+}
+
+export async function deleteControlApp(
+  plane: Plane,
+  appId: string,
+): Promise<void> {
+  await plane.delete(controlApps).where(eq(controlApps.id, appId));
+}
+
+export async function updateControlChatTitle(
+  plane: Plane,
+  chatId: string,
+  title: string | null,
+): Promise<void> {
+  await plane
+    .update(controlChats)
+    .set({ title })
+    .where(eq(controlChats.id, chatId));
+}
+
+export async function updateControlMessageContent(
+  plane: Plane,
+  messageId: string,
+  content: string,
+): Promise<void> {
+  await plane
+    .update(controlMessages)
+    .set({ content })
+    .where(eq(controlMessages.id, messageId));
+}
+
 export async function updateControlAppOwner(
   plane: Plane,
   appId: string,

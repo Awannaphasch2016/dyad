@@ -2,9 +2,18 @@ import { deleteChatJournals } from "@/ipc/services/chat_journal_cleanup";
 import { initialChatExecution } from "@/ipc/utils/chat_execution_selection";
 import { app, dialog } from "electron";
 import { sharingScope } from "@/control_plane/access";
+import { assertAppVisible } from "@/control_plane/guard";
 import { ensureProjectFiles } from "@/control_plane/file_sync";
-import { syncActiveAccount } from "@/control_plane/sync_local";
-import { selectVisibleApps } from "@/control_plane/visibility";
+import {
+  forgetSharedApp,
+  publishLocalApp,
+  refreshSharedApp,
+  syncActiveAccount,
+} from "@/control_plane/sync_local";
+import {
+  displayNameTaken,
+  selectVisibleApps,
+} from "@/control_plane/visibility";
 import { closeDatabase, db, getDatabaseFilePaths } from "../../db";
 import {
   apps,
@@ -592,6 +601,10 @@ async function deleteAppById(
   // branch became unreachable without a word. `deleteTempTestBranch` reports
   // that state as a failure, which is what reaches the user below.
   const strandedMarker = deletedRow?.neonTestBranchId ?? null;
+  if (deletedRow?.remoteId) {
+    await forgetSharedApp(deletedRow.remoteId);
+  }
+
   if (strandedMarker && deletedRow) {
     // The row is gone, so nothing can reconcile this later. Logged loudly
     // rather than failing a deletion that has already happened — and named by
@@ -845,6 +858,22 @@ async function deleteAppByIdExclusive(
   return deletedRow;
 }
 
+async function displayNameConflicts(
+  event: { sender: { id: number } },
+  name: string,
+  excludeAppId?: number,
+): Promise<boolean> {
+  const scope = await sharingScope(event);
+  const rows = await db.query.apps.findMany({
+    where: eq(apps.name, name),
+  });
+  return displayNameTaken(
+    rows,
+    scope ? scope.session.account : null,
+    excludeAppId,
+  );
+}
+
 export function registerAppHandlers() {
   registerCloudSandboxSyncUpdateListener();
 
@@ -867,10 +896,7 @@ export function registerAppHandlers() {
 
       // The display name the user typed conflicting is a hard error (they can
       // pick another); folder collisions below auto-resolve with a suffix.
-      const nameConflict = await db.query.apps.findFirst({
-        where: eq(apps.name, appName),
-      });
-      if (nameConflict) {
+      if (await displayNameConflicts(event, appName)) {
         throw new DyadError(
           `An app named "${appName}" already exists.`,
           DyadErrorKind.Conflict,
@@ -961,6 +987,11 @@ export function registerAppHandlers() {
         })
         .where(eq(chats.id, chat.id));
 
+      const scope = await sharingScope(event);
+      if (scope) {
+        await publishLocalApp(app.id, scope.session.account);
+      }
+
       const result = {
         app: { ...app, resolvedPath: fullAppPath },
         chatId: chat.id,
@@ -976,9 +1007,10 @@ export function registerAppHandlers() {
     }
   });
 
-  createTypedHandler(appContracts.copyApp, async (_, params) => {
+  createTypedHandler(appContracts.copyApp, async (event, params) => {
     const { appId, withHistory } = params;
     const newAppName = sanitizeAppDisplayName(params.newAppName);
+    await assertAppVisible(event, appId);
 
     // The copy waits on the app's runtime-config claim so a recording's isolated
     // `.env.local` is never what gets copied. A recording holds that claim for
@@ -1020,18 +1052,14 @@ export function registerAppHandlers() {
     // 1. Check if an app with the new name already exists. The user typed
     // this name, so a conflict is a hard error; folder collisions below
     // auto-resolve with a suffix (two distinct names can share a slug).
-    const existingApp = await db.query.apps.findFirst({
-      where: eq(apps.name, newAppName),
-    });
-
-    if (existingApp) {
+    if (await displayNameConflicts(event, newAppName)) {
       throw new DyadError(
         `An app named "${newAppName}" already exists.`,
         DyadErrorKind.Conflict,
       );
     }
 
-    return appOperationCoordinator.run(
+    const copied = await appOperationCoordinator.run(
       {
         appId,
         operation: "copy-app",
@@ -1156,6 +1184,11 @@ export function registerAppHandlers() {
         return { app: newDbApp };
       },
     );
+    const scope = await sharingScope(event);
+    if (scope) {
+      await publishLocalApp(copied.app.id, scope.session.account);
+    }
+    return copied;
   });
 
   createTypedHandler(appContracts.getApp, async (event, appId) => {
@@ -1282,8 +1315,9 @@ export function registerAppHandlers() {
     };
   });
 
-  createTypedHandler(appContracts.readAppFile, async (_, params) => {
+  createTypedHandler(appContracts.readAppFile, async (event, params) => {
     const { appId, filePath } = params;
+    await assertAppVisible(event, appId);
     const app = await db.query.apps.findFirst({
       where: eq(apps.id, appId),
     });
@@ -1589,11 +1623,12 @@ export function registerAppHandlers() {
     return {};
   });
 
-  createTypedHandler(appContracts.deleteApp, async (_, params) => {
+  createTypedHandler(appContracts.deleteApp, async (event, params) => {
+    await assertAppVisible(event, params.appId);
     await deleteAppById(params.appId);
   });
 
-  createTypedHandler(appContracts.deleteApps, async (_, params) => {
+  createTypedHandler(appContracts.deleteApps, async (event, params) => {
     const results: {
       appId: number;
       success: boolean;
@@ -1603,6 +1638,7 @@ export function registerAppHandlers() {
     await Promise.all(
       params.appIds.map(async (appId) => {
         try {
+          await assertAppVisible(event, appId);
           await deleteAppById(appId);
           results.push({ appId, success: true });
         } catch (error: any) {
@@ -1701,7 +1737,8 @@ export function registerAppHandlers() {
     );
   });
 
-  createTypedHandler(appContracts.renameApp, async (_, params) => {
+  createTypedHandler(appContracts.renameApp, async (event, params) => {
+    await assertAppVisible(event, params.appId);
     const { appId, autoResolveConflicts } = params;
     return appOperationCoordinator.run(
       {
@@ -1767,11 +1804,7 @@ export function registerAppHandlers() {
           });
         } else {
           // Check for conflicts with existing apps
-          const nameConflict = await db.query.apps.findFirst({
-            where: eq(apps.name, appName),
-          });
-
-          if (nameConflict && nameConflict.id !== appId) {
+          if (await displayNameConflicts(event, appName, appId)) {
             throw new DyadError(
               `An app with the name '${appName}' already exists`,
               DyadErrorKind.Conflict,
@@ -1918,6 +1951,7 @@ export function registerAppHandlers() {
             .where(eq(apps.id, appId))
             .returning();
 
+          await refreshSharedApp(appId);
           return { name: appName, path: pathToStore };
         } catch (error: any) {
           // Attempt to rollback the file move

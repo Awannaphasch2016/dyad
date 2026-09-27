@@ -1,9 +1,18 @@
-import { useOrganization, useOrganizationList } from "@clerk/clerk-react";
+import {
+  useOrganization,
+  useOrganizationList,
+  useUser,
+} from "@clerk/clerk-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ipc } from "@/ipc/types";
 import { queryKeys } from "@/lib/queryKeys";
 import { showError } from "@/lib/toast";
+import {
+  readLastAccount,
+  restoreLastAccount,
+  withLastAccount,
+} from "./lastAccount";
 import { useClerkSession } from "./session";
 
 export function AccountSwitcher() {
@@ -13,6 +22,7 @@ export function AccountSwitcher() {
 }
 
 function AccountSwitcherMenu() {
+  const { user } = useUser();
   const { organization } = useOrganization();
   const { isLoaded, setActive, createOrganization, userMemberships } =
     useOrganizationList({
@@ -24,24 +34,62 @@ function AccountSwitcherMenu() {
     queryFn: () => ipc.account.getContext(),
     retry: false,
   });
-  useEffect(() => {
-    if (!setActive) return;
-    const message = context.error instanceof Error ? context.error.message : "";
-    if (message.includes("no longer a member")) {
-      void setActive({ organization: null });
-    }
-  }, [context.error, setActive]);
+  const restored = useRef(false);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
-  const memberships = userMemberships.data ?? [];
+  const memberships = userMemberships.data;
 
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: queryKeys.apps.all });
+
+  const remember = async (organizationId: string | null) => {
+    if (!user) return;
+    const current = user.unsafeMetadata;
+    await user.update({
+      unsafeMetadata: withLastAccount(
+        current && typeof current === "object" ? { ...current } : undefined,
+        organizationId,
+      ),
+    });
+  };
+
+  useEffect(() => {
+    if (!setActive || !user) return;
+    const message = context.error instanceof Error ? context.error.message : "";
+    if (!message.includes("no longer a member")) return;
+    void setActive({ organization: null }).then(() => remember(null));
+  }, [context.error, setActive, user]);
+
+  useEffect(() => {
+    if (!isLoaded || !setActive || !user || userMemberships.isLoading) return;
+    if (!memberships || restored.current || context.isError) return;
+    const decision = restoreLastAccount({
+      saved: readLastAccount(user.unsafeMetadata),
+      activeOrganizationId: organization?.id ?? null,
+      membershipOrganizationIds: memberships.map(
+        (membership) => membership.organization.id,
+      ),
+    });
+    restored.current = true;
+    if (decision.kind === "keep") return;
+    void setActive({
+      organization: decision.kind === "private" ? null : decision.id,
+    }).then(() => refresh());
+  }, [
+    isLoaded,
+    setActive,
+    user,
+    userMemberships.isLoading,
+    organization?.id,
+    memberships,
+    context.isError,
+  ]);
 
   const selectAccount = async (organizationId: string | null) => {
     if (!setActive) return;
     try {
       await setActive({ organization: organizationId });
+      await remember(organizationId);
       await refresh();
     } catch (error) {
       showError(error);
@@ -55,6 +103,7 @@ function AccountSwitcherMenu() {
       const created = await createOrganization({ name: trimmed });
       await ipc.clerk.stampOrganizationAdmin({ organizationId: created.id });
       await setActive({ organization: created.id });
+      await remember(created.id);
       setName("");
       setCreating(false);
       await refresh();
@@ -80,7 +129,7 @@ function AccountSwitcherMenu() {
         }}
       >
         <option value="private">Private</option>
-        {memberships.map((membership) => (
+        {(memberships ?? []).map((membership) => (
           <option
             key={membership.organization.id}
             value={membership.organization.id}

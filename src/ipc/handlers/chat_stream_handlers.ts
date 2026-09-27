@@ -3129,6 +3129,9 @@ This conversation includes one or more image attachments. When the user uploads 
               logger.log(
                 `Updated cancelled response for placeholder message ${placeholderAssistantMessage.id} in chat ${chatId}`,
               );
+              void import("@/control_plane/sync_local").then(
+                ({ syncChatToAccount }) => syncChatToAccount(chatId),
+              );
             } catch (error) {
               logger.error(
                 `Error saving partial response for chat ${chatId}:`,
@@ -3154,6 +3157,9 @@ This conversation includes one or more image attachments. When the user uploads 
             .where(eq(messages.id, placeholderAssistantMessage.id));
           // Settled (cancelled): index this turn's messages for chat search
           scheduleChatSearchIndexing();
+          void import("@/control_plane/sync_local").then(
+            ({ syncChatToAccount }) => syncChatToAccount(req.chatId),
+          );
         } catch (error) {
           logger.error(
             `Error saving cancelled response for chat ${req.chatId}:`,
@@ -3186,6 +3192,9 @@ This conversation includes one or more image attachments. When the user uploads 
           .where(eq(messages.id, placeholderAssistantMessage.id));
         // Settled: index this turn's messages for chat search
         scheduleChatSearchIndexing();
+        void import("@/control_plane/sync_local").then(
+          ({ syncChatToAccount }) => syncChatToAccount(req.chatId),
+        );
         const latestSettings = readSettings();
         const shouldAutoApply =
           latestSettings.autoApproveChanges && selectedChatMode !== "ask";

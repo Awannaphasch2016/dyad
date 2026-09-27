@@ -8,6 +8,7 @@ import { getControlPlaneDb } from "./db";
 import type { AccountOwner } from "./owner";
 import { privateOwner } from "./owner";
 import {
+  deleteControlApp,
   insertControlApp,
   insertControlChat,
   insertControlKnowledge,
@@ -16,6 +17,9 @@ import {
   listControlChats,
   listControlKnowledge,
   listControlMessages,
+  updateControlAppDetails,
+  updateControlChatTitle,
+  updateControlMessageContent,
 } from "./repository";
 
 const logger = log.scope("control_plane_sync");
@@ -90,6 +94,8 @@ export async function pushAppChildren(
         .set({ remoteId: remoteChatId })
         .where(eq(chats.id, chat.id))
         .run();
+    } else {
+      await updateControlChatTitle(plane, remoteChatId, chat.title);
     }
     const localMessages = db
       .select()
@@ -97,7 +103,14 @@ export async function pushAppChildren(
       .where(eq(messages.chatId, chat.id))
       .all();
     for (const message of localMessages) {
-      if (message.remoteId) continue;
+      if (message.remoteId) {
+        await updateControlMessageContent(
+          plane,
+          message.remoteId,
+          message.content,
+        );
+        continue;
+      }
       const remoteMessageId = randomUUID();
       await insertControlMessage(plane, {
         id: remoteMessageId,
@@ -158,9 +171,17 @@ async function mirrorAccount(plane: Plane, owner: AccountOwner): Promise<void> {
         .returning({ id: apps.id })
         .get();
       local = db.select().from(apps).where(eq(apps.id, inserted.id)).get();
-    } else if (local.ownerType !== owner.type || local.ownerId !== owner.id) {
+    } else {
       db.update(apps)
-        .set({ ownerType: owner.type, ownerId: owner.id })
+        .set({
+          ownerType: owner.type,
+          ownerId: owner.id,
+          name: remote.name,
+          githubOrg: remote.githubOrg,
+          githubRepo: remote.githubRepo,
+          githubBranch: remote.githubBranch,
+          supabaseProjectId: remote.supabaseProjectId,
+        })
         .where(eq(apps.id, local.id))
         .run();
     }
@@ -197,6 +218,11 @@ async function pullAppChildren(
         .from(chats)
         .where(eq(chats.id, inserted.id))
         .get();
+    } else if (localChat.title !== remoteChat.title) {
+      db.update(chats)
+        .set({ title: remoteChat.title })
+        .where(eq(chats.id, localChat.id))
+        .run();
     }
     if (!localChat) continue;
     const remoteMessages = await listControlMessages(plane, remoteChat.id);
@@ -206,7 +232,15 @@ async function pullAppChildren(
         .from(messages)
         .where(eq(messages.remoteId, remoteMessage.id))
         .get();
-      if (existing) continue;
+      if (existing) {
+        if (existing.content !== remoteMessage.content) {
+          db.update(messages)
+            .set({ content: remoteMessage.content })
+            .where(eq(messages.id, existing.id))
+            .run();
+        }
+        continue;
+      }
       db.insert(messages)
         .values({
           chatId: localChat.id,
@@ -235,6 +269,78 @@ async function pullAppChildren(
       })
       .run();
   }
+}
+
+function sharedAppFields(app: typeof apps.$inferSelect) {
+  return {
+    name: app.name,
+    slug: app.path,
+    githubOrg: app.githubOrg,
+    githubRepo: app.githubRepo,
+    githubBranch: app.githubBranch,
+    supabaseProjectId: app.supabaseProjectId,
+  };
+}
+
+/** A new or still-local app joins the account that is active right now. */
+export async function publishLocalApp(
+  localAppId: number,
+  owner: AccountOwner,
+): Promise<void> {
+  try {
+    const plane = await getControlPlaneDb();
+    if (!plane) return;
+    const app = db.select().from(apps).where(eq(apps.id, localAppId)).get();
+    if (!app || app.remoteId) return;
+    const remoteId = randomUUID();
+    await insertControlApp(plane, {
+      id: remoteId,
+      owner,
+      ...sharedAppFields(app),
+    });
+    db.update(apps)
+      .set({ remoteId, ownerType: owner.type, ownerId: owner.id })
+      .where(eq(apps.id, app.id))
+      .run();
+    await pushAppChildren(plane, app.id, remoteId);
+  } catch (error) {
+    logger.warn("Shared app publish skipped", error);
+  }
+}
+
+/** Pushes name, git connection, and chat text for an app that already has a remote id. */
+export async function refreshSharedApp(localAppId: number): Promise<void> {
+  try {
+    const plane = await getControlPlaneDb();
+    if (!plane) return;
+    const app = db.select().from(apps).where(eq(apps.id, localAppId)).get();
+    if (!app?.remoteId) return;
+    await updateControlAppDetails(plane, app.remoteId, sharedAppFields(app));
+    await pushAppChildren(plane, app.id, app.remoteId);
+  } catch (error) {
+    logger.warn("Shared app refresh skipped", error);
+  }
+}
+
+/** Drops the shared row after this device deletes the app, so the next sync does not recreate it. */
+export async function forgetSharedApp(remoteId: string): Promise<void> {
+  try {
+    const plane = await getControlPlaneDb();
+    if (!plane) return;
+    await deleteControlApp(plane, remoteId);
+  } catch (error) {
+    logger.warn("Shared app delete skipped", error);
+  }
+}
+
+export async function syncChatToAccount(chatId: number): Promise<void> {
+  const chat = db
+    .select({ appId: chats.appId })
+    .from(chats)
+    .where(eq(chats.id, chatId))
+    .get();
+  if (!chat) return;
+  await syncOneApp(chat.appId);
 }
 
 export async function syncOneApp(localAppId: number): Promise<void> {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { selectVisibleApps } from "./visibility";
+import { displayNameTaken, selectVisibleApps } from "./visibility";
 
 describe("selectVisibleApps", () => {
   const apps = [
@@ -24,5 +24,23 @@ describe("selectVisibleApps", () => {
 
   it("returns every app when sharing is off", () => {
     expect(selectVisibleApps(apps, null)).toHaveLength(4);
+  });
+
+  it("lets another account reuse a display name", () => {
+    expect(
+      displayNameTaken([{ id: 1, ownerType: "user", ownerId: "user_a" }], {
+        type: "org",
+        id: "org_1",
+      }),
+    ).toBe(false);
+  });
+
+  it("still blocks a name that this device has not claimed yet", () => {
+    expect(
+      displayNameTaken([{ id: 4, ownerType: null, ownerId: null }], {
+        type: "org",
+        id: "org_1",
+      }),
+    ).toBe(true);
   });
 });
