@@ -19,18 +19,22 @@ const {
   fetchNext,
   revalidate,
   stampOrganizationAdmin,
+  setActive,
+  updateUser,
 } = vi.hoisted(() => {
   const fetchNext = vi.fn();
   const revalidate = vi.fn(async () => undefined);
   const createOrganization = vi.fn(async () => ({ id: "org_new" }));
   const stampOrganizationAdmin = vi.fn(async () => undefined);
+  const setActive = vi.fn(async () => undefined);
+  const updateUser = vi.fn(async () => undefined);
   const memberships = [
     { organization: { id: "org_anak", name: "Anak's Organization" } },
     { organization: { id: "org_studio", name: "Studio" } },
   ];
   const defaultOrganizationList = () => ({
     isLoaded: true,
-    setActive: vi.fn(async () => undefined),
+    setActive,
     createOrganization,
     userMemberships: {
       isLoading: false,
@@ -50,6 +54,8 @@ const {
     fetchNext,
     revalidate,
     stampOrganizationAdmin,
+    setActive,
+    updateUser,
   };
 });
 
@@ -64,7 +70,7 @@ vi.mock("@clerk/clerk-react", () => ({
   useUser: () => ({
     user: {
       unsafeMetadata: {},
-      update: vi.fn(),
+      update: updateUser,
     },
   }),
   useOrganization: () => ({
@@ -100,6 +106,8 @@ beforeEach(() => {
   revalidate.mockClear();
   createOrganization.mockClear();
   stampOrganizationAdmin.mockClear();
+  setActive.mockClear();
+  updateUser.mockClear();
   organizationList.mockReset();
   organizationList.mockImplementation(defaultOrganizationList);
 });
@@ -165,4 +173,55 @@ it("shows an organization in the list as soon as it is created", async () => {
   await user.click(screen.getByTestId("organization-picker"));
   const menu = await screen.findByTestId("organization-picker-menu");
   expect(menu.textContent).toContain("Yo");
+});
+
+it("shows Private as soon as it is clicked and keeps it while the session token refreshes", async () => {
+  const user = userEvent.setup();
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const signedIn = {
+    status: "signed-in" as const,
+    roleId: "admin" as const,
+    userId: "user_anak",
+    email: "anak@example.com",
+    account: {
+      type: "org" as const,
+      id: "org_anak",
+      name: "Anak's Organization",
+    },
+  };
+  function Harness({ loading }: { loading: boolean }) {
+    return (
+      <QueryClientProvider client={client}>
+        <ClerkSessionProvider
+          value={loading ? { status: "loading" } : signedIn}
+        >
+          <AccountSwitcherProvider>
+            <OrganizationPicker />
+          </AccountSwitcherProvider>
+        </ClerkSessionProvider>
+      </QueryClientProvider>
+    );
+  }
+
+  const view = render(<Harness loading={false} />);
+  await user.click(screen.getByTestId("organization-picker"));
+  await screen.findByTestId("organization-picker-menu");
+  await user.click(screen.getByText("Private"));
+
+  await waitFor(() =>
+    expect(screen.getByTestId("organization-picker").textContent).toContain(
+      "Private",
+    ),
+  );
+  expect(setActive).toHaveBeenCalledWith({ organization: null });
+  expect(updateUser.mock.invocationCallOrder[0]).toBeLessThan(
+    setActive.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+  );
+
+  view.rerender(<Harness loading={true} />);
+  expect(screen.getByTestId("organization-picker").textContent).toContain(
+    "Private",
+  );
 });
