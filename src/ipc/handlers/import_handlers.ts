@@ -21,9 +21,23 @@ import {
 } from "@/shared/app_names";
 import { resolveUniqueFolderName } from "../utils/app_name_resolution";
 import { queryInvalidationBus } from "@/window_infrastructure/main/query_invalidation_bus";
+import { sharingScope } from "@/control_plane/access";
+import { publishLocalApp } from "@/control_plane/sync_local";
+import { displayNameTaken } from "@/control_plane/visibility";
 
 const logger = log.scope("import-handlers");
 const handle = createLoggedHandler(logger);
+
+async function displayNameConflicts(
+  event: { sender: { id: number } },
+  name: string,
+): Promise<boolean> {
+  const scope = await sharingScope(event);
+  const rows = await db.query.apps.findMany({
+    where: eq(apps.name, name),
+  });
+  return displayNameTaken(rows, scope ? scope.session.account : null);
+}
 
 export function registerImportHandlers() {
   // Handler for selecting an app folder
@@ -56,12 +70,13 @@ export function registerImportHandlers() {
   // Handler for checking if an app name is already taken. Only the display
   // name can hard-conflict — folder names are derived slugs that auto-suffix
   // past filesystem collisions.
-  handle("check-app-name", async (_, { appName }: { appName: string }) => {
-    const existingApp = await db.query.apps.findFirst({
-      where: eq(apps.name, sanitizeAppDisplayName(appName)),
-    });
-
-    return { exists: !!existingApp };
+  handle("check-app-name", async (event, { appName }: { appName: string }) => {
+    return {
+      exists: await displayNameConflicts(
+        event,
+        sanitizeAppDisplayName(appName),
+      ),
+    };
   });
 
   // Handler for importing an app
@@ -90,10 +105,8 @@ export function registerImportHandlers() {
 
       // The display name conflicting is a hard error (the import dialog
       // pre-checks it); folder collisions auto-resolve with a suffix.
-      const existingApp = await db.query.apps.findFirst({
-        where: eq(apps.name, appName),
-      });
-      if (existingApp) {
+      // Another account's cached name does not block this account.
+      if (await displayNameConflicts(event, appName)) {
         throw new DyadError(
           "An app with this name already exists",
           DyadErrorKind.Conflict,
@@ -144,6 +157,11 @@ export function registerImportHandlers() {
           startCommand: startCommand ?? null,
         })
         .returning();
+
+      const scope = await sharingScope(event);
+      if (scope) {
+        await publishLocalApp(app.id, scope.session.account);
+      }
 
       const initialChatMode = await getInitialChatModeForNewChat();
 

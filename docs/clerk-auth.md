@@ -22,9 +22,9 @@ A signed-in reviewer or dev can open Admin read-only. Only the admin role can in
 
 Enable Organizations in the Clerk dashboard. Each signed-in person has a private account and can belong to organizations. The title-bar switcher chooses the active account. A role (`admin`, `reviewer`, or `dev`) is stored on the organization membership, not on the user. The private account's owner is an admin and has no member list.
 
-Set `WEWEBPLUS_DATABASE_URL` to the Postgres control plane and `WEWEBPLUS_SECRETS_KEY` to encrypt GitHub and Supabase tokens saved for an account. Both stay in the main process. If either Clerk key or the database URL is missing, wewebplus keeps the current ungated local app.
+Set `WEWEBPLUS_DATABASE_URL` to the Postgres control plane and `WEWEBPLUS_SECRETS_KEY` to encrypt GitHub and Supabase tokens saved for an account. Control-plane tables live in the `wewebplus` schema, so they can share a database that already has other tables. Both the URL and the key stay in the main process. If either Clerk key or the database URL is missing, wewebplus keeps the current ungated local app.
 
-Private rows are visible only to that user. Organization rows are the same rows for every member. A new app belongs to the account that is active when it is created. Deleting it removes that shared row. The switcher saves the last account on the Clerk user, so the next sign-in on iPad or Electron restores it. Signing out ends the session. App folders stay on the device. A second device clones them when the account has a GitHub connection; otherwise the files panel says the project files are on the machine that created them. Chat text follows the app after a turn finishes.
+Private rows are visible only to that user. Organization rows are the same rows for every member. A private account and an organization do not share apps: an app stays in the account that created it. Deleting it removes that shared row. The switcher saves the last account on the Clerk user, so the next sign-in on iPad or Electron restores it. Signing out ends the session. App folders stay on the device. A second device clones them when the account has a GitHub connection; otherwise the files panel says the project files are on the machine that created them. Chat text and the tool transcript follow the app after a turn finishes.
 
 ## Safari tunnel
 

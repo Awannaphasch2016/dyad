@@ -29,6 +29,7 @@ export async function getControlPlaneDb(): Promise<ControlPlaneDb | null> {
 
 async function openControlPlane(): Promise<ControlPlaneDb> {
   const client = postgres(process.env.WEWEBPLUS_DATABASE_URL!, { max: 4 });
+  await client`CREATE SCHEMA IF NOT EXISTS wewebplus`;
   const db = drizzlePostgres(client, { schema });
   await migratePostgres(db, { migrationsFolder });
   cached = db;

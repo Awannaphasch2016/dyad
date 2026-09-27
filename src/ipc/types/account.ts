@@ -12,12 +12,6 @@ export const AccountContextSchema = z.object({
   account: AccountRefSchema.nullable(),
 });
 
-export const MoveAppParamsSchema = z.object({
-  appId: z.number(),
-  ownerType: z.enum(["user", "org"]),
-  ownerId: z.string(),
-});
-
 export const SetAccountConnectionParamsSchema = z.object({
   provider: z.enum(["github", "supabase"]),
   token: z.string(),
@@ -34,16 +28,6 @@ export const accountContracts = {
     channel: "account:get-context",
     input: z.void(),
     output: AccountContextSchema,
-  }),
-  moveApp: defineContract({
-    channel: "account:move-app",
-    input: MoveAppParamsSchema,
-    output: z.void(),
-  }),
-  copyApp: defineContract({
-    channel: "account:copy-app",
-    input: MoveAppParamsSchema,
-    output: z.object({ appId: z.number() }),
   }),
   setConnection: defineContract({
     channel: "account:set-connection",

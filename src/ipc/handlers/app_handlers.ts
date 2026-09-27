@@ -168,6 +168,11 @@ import {
   trackedBranchId,
 } from "../utils/neon_test_branch";
 import type { AppSearchResult } from "@/lib/schemas";
+
+type OwnedSearchResult = AppSearchResult & {
+  ownerType: "user" | "org" | null;
+  ownerId: string | null;
+};
 import { endTestsForApp } from "./tests_handlers";
 import { removeE2eTestArtifactsForApp } from "../services/e2e_test_workspace";
 
@@ -2275,7 +2280,7 @@ export function registerAppHandlers() {
   // search-app is not in app contracts - keep using handle
   handle(
     "search-app",
-    async (_, searchQuery: string): Promise<AppSearchResult[]> => {
+    async (event, searchQuery: string): Promise<AppSearchResult[]> => {
       // Use parameterized query to prevent SQL injection
       const pattern = `%${searchQuery.replace(/[%_]/g, "\\$&")}%`;
 
@@ -2285,16 +2290,20 @@ export function registerAppHandlers() {
           id: apps.id,
           name: apps.name,
           createdAt: apps.createdAt,
+          ownerType: apps.ownerType,
+          ownerId: apps.ownerId,
         })
         .from(apps)
         .where(like(apps.name, pattern))
         .orderBy(desc(apps.createdAt));
 
-      const appNameMatchesResult: AppSearchResult[] = appNameMatches.map(
+      const appNameMatchesResult: OwnedSearchResult[] = appNameMatches.map(
         (r) => ({
           id: r.id,
           name: r.name,
           createdAt: r.createdAt,
+          ownerType: r.ownerType,
+          ownerId: r.ownerId,
           matchedChatTitle: null,
           matchedChatMessage: null,
         }),
@@ -2306,6 +2315,8 @@ export function registerAppHandlers() {
           id: apps.id,
           name: apps.name,
           createdAt: apps.createdAt,
+          ownerType: apps.ownerType,
+          ownerId: apps.ownerId,
           matchedChatTitle: chats.title,
         })
         .from(apps)
@@ -2313,11 +2324,13 @@ export function registerAppHandlers() {
         .where(like(chats.title, pattern))
         .orderBy(desc(apps.createdAt));
 
-      const chatTitleMatchesResult: AppSearchResult[] = chatTitleMatches.map(
+      const chatTitleMatchesResult: OwnedSearchResult[] = chatTitleMatches.map(
         (r) => ({
           id: r.id,
           name: r.name,
           createdAt: r.createdAt,
+          ownerType: r.ownerType,
+          ownerId: r.ownerId,
           matchedChatTitle: r.matchedChatTitle,
           matchedChatMessage: null,
         }),
@@ -2329,6 +2342,8 @@ export function registerAppHandlers() {
           id: apps.id,
           name: apps.name,
           createdAt: apps.createdAt,
+          ownerType: apps.ownerType,
+          ownerId: apps.ownerId,
           matchedChatTitle: chats.title,
           matchedChatMessage: messages.content,
         })
@@ -2339,7 +2354,7 @@ export function registerAppHandlers() {
         .orderBy(desc(apps.createdAt));
 
       // Flatten and dedupe by app id
-      const allMatches: AppSearchResult[] = [
+      const allMatches: OwnedSearchResult[] = [
         ...appNameMatchesResult,
         ...chatTitleMatchesResult,
         ...chatMessageMatches,
@@ -2354,7 +2369,18 @@ export function registerAppHandlers() {
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
       );
 
-      return uniqueApps;
+      const scope = await sharingScope(event);
+      const visible = selectVisibleApps(
+        uniqueApps,
+        scope ? scope.session.account : null,
+      );
+      return visible.map((app) => ({
+        id: app.id,
+        name: app.name,
+        createdAt: app.createdAt,
+        matchedChatTitle: app.matchedChatTitle,
+        matchedChatMessage: app.matchedChatMessage,
+      }));
     },
   );
 

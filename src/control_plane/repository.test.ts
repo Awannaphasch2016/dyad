@@ -72,13 +72,22 @@ describe("control plane apps", () => {
       appId: "app-1",
       title: "Discovery",
     });
+    const transcript = {
+      messages: [{ role: "assistant", content: "tool result" }],
+      sdkVersion: "ai@v6",
+    };
     await insertControlMessage(db, {
       id: "message-1",
       chatId: "chat-1",
       role: "assistant",
       content: "",
     });
-    await updateControlMessageContent(db, "message-1", "The finished answer");
+    await updateControlMessageContent(
+      db,
+      "message-1",
+      "The finished answer",
+      transcript,
+    );
     await updateControlAppDetails(db, "app-1", {
       name: "Page",
       slug: "page",
@@ -92,6 +101,7 @@ describe("control plane apps", () => {
     expect(messages.map((message) => message.content)).toEqual([
       "The finished answer",
     ]);
+    expect(messages[0]?.aiMessagesJson).toEqual(transcript);
     const listed = await listControlApps(db, { type: "org", id: "org_1" });
     expect(listed[0]?.githubRepo).toBe("page");
 

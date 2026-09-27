@@ -8,6 +8,7 @@ import {
 import { sendTelemetryException } from "../utils/telemetry";
 import { IS_TEST_BUILD } from "../utils/test_utils";
 import { registerTrustedIpcHandler } from "./trusted_handle";
+import { enforceSharedAccount } from "@/control_plane/guard";
 
 export function createLoggedHandler(logger: log.LogFunctions) {
   return (
@@ -31,6 +32,7 @@ export function createLoggedHandler(logger: log.LogFunctions) {
           `IPC: ${channel} called with args: ${JSON.stringify(args)}`,
         );
         try {
+          await enforceSharedAccount(event, channel, args[0]);
           const result = await fn(event, ...args);
           logger.debug(
             `IPC: ${channel} returned: ${JSON.stringify(result)?.slice(0, 100)}...`,

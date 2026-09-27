@@ -1,6 +1,7 @@
 import {
   index,
-  pgTable,
+  jsonb,
+  pgSchema,
   primaryKey,
   text,
   timestamp,
@@ -9,9 +10,13 @@ import {
 
 /**
  * Shared store for private accounts and organizations.
- * This database is separate from the device SQLite cache.
+ * Tables live in their own schema so they do not collide with other tables
+ * in the same Postgres database. This database is separate from the device
+ * SQLite cache.
  */
-export const controlApps = pgTable(
+const controlPlane = pgSchema("wewebplus");
+
+export const controlApps = controlPlane.table(
   "apps",
   {
     id: text("id").primaryKey(),
@@ -30,7 +35,7 @@ export const controlApps = pgTable(
   (table) => [index("apps_owner_idx").on(table.ownerType, table.ownerId)],
 );
 
-export const controlChats = pgTable("chats", {
+export const controlChats = controlPlane.table("chats", {
   id: text("id").primaryKey(),
   appId: text("app_id")
     .notNull()
@@ -41,19 +46,20 @@ export const controlChats = pgTable("chats", {
     .defaultNow(),
 });
 
-export const controlMessages = pgTable("messages", {
+export const controlMessages = controlPlane.table("messages", {
   id: text("id").primaryKey(),
   chatId: text("chat_id")
     .notNull()
     .references(() => controlChats.id, { onDelete: "cascade" }),
   role: text("role").notNull(),
   content: text("content").notNull(),
+  aiMessagesJson: jsonb("ai_messages_json"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
 });
 
-export const controlKnowledgeItems = pgTable("knowledge_items", {
+export const controlKnowledgeItems = controlPlane.table("knowledge_items", {
   id: text("id").primaryKey(),
   appId: text("app_id")
     .notNull()
@@ -66,7 +72,7 @@ export const controlKnowledgeItems = pgTable("knowledge_items", {
     .defaultNow(),
 });
 
-export const controlPhaseApprovals = pgTable(
+export const controlPhaseApprovals = controlPlane.table(
   "phase_approvals",
   {
     id: text("id").primaryKey(),
@@ -89,7 +95,7 @@ export const controlPhaseApprovals = pgTable(
   ],
 );
 
-export const controlPhaseComments = pgTable("phase_comments", {
+export const controlPhaseComments = controlPlane.table("phase_comments", {
   id: text("id").primaryKey(),
   appId: text("app_id")
     .notNull()
@@ -103,7 +109,7 @@ export const controlPhaseComments = pgTable("phase_comments", {
     .defaultNow(),
 });
 
-export const controlAnswerLocks = pgTable("answer_locks", {
+export const controlAnswerLocks = controlPlane.table("answer_locks", {
   chatId: text("chat_id")
     .primaryKey()
     .references(() => controlChats.id, { onDelete: "cascade" }),
@@ -112,7 +118,7 @@ export const controlAnswerLocks = pgTable("answer_locks", {
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 });
 
-export const controlAccountConnections = pgTable(
+export const controlAccountConnections = controlPlane.table(
   "account_connections",
   {
     ownerType: text("owner_type").notNull(),
@@ -128,7 +134,7 @@ export const controlAccountConnections = pgTable(
   ],
 );
 
-export const controlAuditEvents = pgTable("audit_events", {
+export const controlAuditEvents = controlPlane.table("audit_events", {
   id: text("id").primaryKey(),
   ownerType: text("owner_type").notNull(),
   ownerId: text("owner_id").notNull(),

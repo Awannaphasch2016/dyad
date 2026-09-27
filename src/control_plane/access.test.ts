@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decideAccess, destinationAllowed, roleFromMembership } from "./access";
+import { decideAccess, roleFromMembership } from "./access";
 import { privateOwner } from "./owner";
 
 describe("account access", () => {
@@ -59,37 +59,6 @@ describe("account access", () => {
         owner: privateOwner("user_a"),
       }).kind,
     ).toBe("not-found");
-  });
-
-  it("lets a private admin move an app into an organization they admin", () => {
-    const session = {
-      mode: "signed-in" as const,
-      userId: "user_a",
-      account: privateOwner("user_a"),
-      roleId: "admin" as const,
-      displayName: "Ada",
-    };
-    expect(
-      destinationAllowed({
-        session,
-        destination: { type: "org", id: "org_1" },
-        destinationRole: "admin",
-      }),
-    ).toBe(true);
-    expect(
-      destinationAllowed({
-        session,
-        destination: { type: "org", id: "org_1" },
-        destinationRole: "reviewer",
-      }),
-    ).toBe(false);
-    expect(
-      destinationAllowed({
-        session,
-        destination: privateOwner("user_b"),
-        destinationRole: null,
-      }),
-    ).toBe(false);
   });
 
   it("reads the membership role and falls back to the Clerk org role", () => {

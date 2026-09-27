@@ -1074,6 +1074,8 @@ export function registerChatStreamHandlers() {
           DyadErrorKind.NotFound,
         );
       }
+      const { assertAppVisible } = await import("@/control_plane/guard");
+      await assertAppVisible(event, chat.app.id);
 
       // PROTOCOL-GROUNDED REGION: admission barrier loop and atomic admission.
       // Keep in sync with src/chat_stream/host_transition.ts.

@@ -92,10 +92,11 @@ export async function updateControlMessageContent(
   plane: Plane,
   messageId: string,
   content: string,
+  aiMessagesJson?: unknown,
 ): Promise<void> {
   await plane
     .update(controlMessages)
-    .set({ content })
+    .set({ content, aiMessagesJson: aiMessagesJson ?? null })
     .where(eq(controlMessages.id, messageId));
 }
 
@@ -133,9 +134,21 @@ export async function listControlChats(plane: Plane, appId: string) {
 
 export async function insertControlMessage(
   plane: Plane,
-  input: { id: string; chatId: string; role: string; content: string },
+  input: {
+    id: string;
+    chatId: string;
+    role: string;
+    content: string;
+    aiMessagesJson?: unknown;
+  },
 ): Promise<void> {
-  await plane.insert(controlMessages).values(input);
+  await plane.insert(controlMessages).values({
+    id: input.id,
+    chatId: input.chatId,
+    role: input.role,
+    content: input.content,
+    aiMessagesJson: input.aiMessagesJson ?? null,
+  });
 }
 
 export async function listControlMessages(plane: Plane, chatId: string) {

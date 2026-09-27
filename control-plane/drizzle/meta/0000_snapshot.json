@@ -1,12 +1,12 @@
 {
-  "id": "bc2295c9-9f4b-49ba-8174-0f8133541309",
+  "id": "3ffcd167-fb79-4cbb-b9d5-dc745f3930e9",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "public.account_connections": {
+    "wewebplus.account_connections": {
       "name": "account_connections",
-      "schema": "",
+      "schema": "wewebplus",
       "columns": {
         "owner_type": {
           "name": "owner_type",
@@ -56,9 +56,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.answer_locks": {
+    "wewebplus.answer_locks": {
       "name": "answer_locks",
-      "schema": "",
+      "schema": "wewebplus",
       "columns": {
         "chat_id": {
           "name": "chat_id",
@@ -92,6 +92,7 @@
           "name": "answer_locks_chat_id_chats_id_fk",
           "tableFrom": "answer_locks",
           "tableTo": "chats",
+          "schemaTo": "wewebplus",
           "columnsFrom": [
             "chat_id"
           ],
@@ -108,9 +109,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.apps": {
+    "wewebplus.apps": {
       "name": "apps",
-      "schema": "",
+      "schema": "wewebplus",
       "columns": {
         "id": {
           "name": "id",
@@ -204,9 +205,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.audit_events": {
+    "wewebplus.audit_events": {
       "name": "audit_events",
-      "schema": "",
+      "schema": "wewebplus",
       "columns": {
         "id": {
           "name": "id",
@@ -261,9 +262,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.chats": {
+    "wewebplus.chats": {
       "name": "chats",
-      "schema": "",
+      "schema": "wewebplus",
       "columns": {
         "id": {
           "name": "id",
@@ -297,6 +298,7 @@
           "name": "chats_app_id_apps_id_fk",
           "tableFrom": "chats",
           "tableTo": "apps",
+          "schemaTo": "wewebplus",
           "columnsFrom": [
             "app_id"
           ],
@@ -313,9 +315,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.knowledge_items": {
+    "wewebplus.knowledge_items": {
       "name": "knowledge_items",
-      "schema": "",
+      "schema": "wewebplus",
       "columns": {
         "id": {
           "name": "id",
@@ -362,6 +364,7 @@
           "name": "knowledge_items_app_id_apps_id_fk",
           "tableFrom": "knowledge_items",
           "tableTo": "apps",
+          "schemaTo": "wewebplus",
           "columnsFrom": [
             "app_id"
           ],
@@ -378,9 +381,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.messages": {
+    "wewebplus.messages": {
       "name": "messages",
-      "schema": "",
+      "schema": "wewebplus",
       "columns": {
         "id": {
           "name": "id",
@@ -406,6 +409,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "ai_messages_json": {
+          "name": "ai_messages_json",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -420,6 +429,7 @@
           "name": "messages_chat_id_chats_id_fk",
           "tableFrom": "messages",
           "tableTo": "chats",
+          "schemaTo": "wewebplus",
           "columnsFrom": [
             "chat_id"
           ],
@@ -436,9 +446,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.phase_approvals": {
+    "wewebplus.phase_approvals": {
       "name": "phase_approvals",
-      "schema": "",
+      "schema": "wewebplus",
       "columns": {
         "id": {
           "name": "id",
@@ -515,6 +525,7 @@
           "name": "phase_approvals_app_id_apps_id_fk",
           "tableFrom": "phase_approvals",
           "tableTo": "apps",
+          "schemaTo": "wewebplus",
           "columnsFrom": [
             "app_id"
           ],
@@ -531,9 +542,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.phase_comments": {
+    "wewebplus.phase_comments": {
       "name": "phase_comments",
-      "schema": "",
+      "schema": "wewebplus",
       "columns": {
         "id": {
           "name": "id",
@@ -587,6 +598,7 @@
           "name": "phase_comments_app_id_apps_id_fk",
           "tableFrom": "phase_comments",
           "tableTo": "apps",
+          "schemaTo": "wewebplus",
           "columnsFrom": [
             "app_id"
           ],

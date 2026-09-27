@@ -1,7 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
-import { appKnowledgeItems, apps, chats, messages } from "@/db/schema";
+import {
+  AI_MESSAGES_SDK_VERSION,
+  appKnowledgeItems,
+  apps,
+  chats,
+  messages,
+  type AiMessagesJsonV6,
+} from "@/db/schema";
 import log from "electron-log";
 import { withLock } from "@/ipc/utils/lock_utils";
 import { getControlPlaneDb } from "./db";
@@ -23,6 +30,18 @@ import {
 } from "./repository";
 
 const logger = log.scope("control_plane_sync");
+
+function storedTranscript(value: unknown): AiMessagesJsonV6 | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as { messages?: unknown; sdkVersion?: unknown };
+  if (
+    record.sdkVersion !== AI_MESSAGES_SDK_VERSION ||
+    !Array.isArray(record.messages)
+  ) {
+    return null;
+  }
+  return value as AiMessagesJsonV6;
+}
 
 type Plane = NonNullable<Awaited<ReturnType<typeof getControlPlaneDb>>>;
 
@@ -108,6 +127,7 @@ export async function pushAppChildren(
           plane,
           message.remoteId,
           message.content,
+          message.aiMessagesJson,
         );
         continue;
       }
@@ -117,6 +137,7 @@ export async function pushAppChildren(
         chatId: remoteChatId,
         role: message.role,
         content: message.content,
+        aiMessagesJson: message.aiMessagesJson,
       });
       db.update(messages)
         .set({ remoteId: remoteMessageId })
@@ -233,9 +254,15 @@ async function pullAppChildren(
         .where(eq(messages.remoteId, remoteMessage.id))
         .get();
       if (existing) {
-        if (existing.content !== remoteMessage.content) {
+        const sameTranscript =
+          JSON.stringify(existing.aiMessagesJson ?? null) ===
+          JSON.stringify(remoteMessage.aiMessagesJson ?? null);
+        if (existing.content !== remoteMessage.content || !sameTranscript) {
           db.update(messages)
-            .set({ content: remoteMessage.content })
+            .set({
+              content: remoteMessage.content,
+              aiMessagesJson: storedTranscript(remoteMessage.aiMessagesJson),
+            })
             .where(eq(messages.id, existing.id))
             .run();
         }
@@ -246,6 +273,7 @@ async function pullAppChildren(
           chatId: localChat.id,
           role: remoteMessage.role === "assistant" ? "assistant" : "user",
           content: remoteMessage.content,
+          aiMessagesJson: storedTranscript(remoteMessage.aiMessagesJson),
           remoteId: remoteMessage.id,
         })
         .run();

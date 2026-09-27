@@ -6,7 +6,6 @@ import {
   upsertAccountConnection,
 } from "@/control_plane/repository";
 import { encryptSecret } from "@/control_plane/secrets";
-import { copyAppToAccount, moveAppToAccount } from "@/control_plane/transfer";
 import { accountContracts } from "../types/account";
 import { createTypedHandler } from "./base";
 
@@ -30,21 +29,6 @@ export function registerAccountHandlers() {
         name: session.account.type === "user" ? "Private" : session.account.id,
       },
     };
-  });
-
-  createTypedHandler(accountContracts.moveApp, async (event, params) => {
-    await moveAppToAccount(event, params.appId, {
-      type: params.ownerType,
-      id: params.ownerId,
-    });
-  });
-
-  createTypedHandler(accountContracts.copyApp, async (event, params) => {
-    const appId = await copyAppToAccount(event, params.appId, {
-      type: params.ownerType,
-      id: params.ownerId,
-    });
-    return { appId };
   });
 
   createTypedHandler(accountContracts.setConnection, async (event, params) => {

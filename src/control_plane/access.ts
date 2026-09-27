@@ -193,9 +193,7 @@ export async function resolveAccountSession(event: {
   };
 }
 
-export async function sharingScope(event: {
-  sender: { id: number };
-}): Promise<{
+export async function sharingScope(event: { sender: { id: number } }): Promise<{
   session: Extract<AccountSession, { mode: "signed-in" }>;
 } | null> {
   if (!sharingEnabled()) return null;
@@ -237,32 +235,6 @@ export function decideAccess(input: {
     };
   }
   return { kind: "allow" };
-}
-
-/** An app can move into the signed-in user's private account, or into an organization they admin. */
-export function destinationAllowed(input: {
-  session: AccountSession;
-  destination: AccountOwner;
-  destinationRole: AdminRoleId | null;
-}): boolean {
-  if (input.session.mode === "unconfigured") return true;
-  if (input.session.mode !== "signed-in") return false;
-  if (input.destination.type === "user") {
-    return input.destination.id === input.session.userId;
-  }
-  const role = sameOwner(input.session.account, input.destination)
-    ? input.session.roleId
-    : input.destinationRole;
-  return role === "admin";
-}
-
-export async function organizationRoleForUser(
-  userId: string,
-  orgId: string,
-): Promise<AdminRoleId | null> {
-  const membership = await fetchOrgMembership(orgId, userId);
-  if (!membership) return null;
-  return roleFromMembership(membership.metadata, membership.clerkRole);
 }
 
 export function assertDecision(decision: AccessDecision): void {
