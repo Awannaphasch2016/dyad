@@ -118,6 +118,7 @@ export {
   distributedMachineContracts,
   distributedMachineEvents,
 } from "./distributed_machines";
+export { factoryHostContracts } from "./factory_host";
 
 // =============================================================================
 // Client Exports
@@ -181,6 +182,7 @@ export {
   distributedMachineClient,
   distributedMachineEventClient,
 } from "./distributed_machines";
+export { factoryHostClient } from "./factory_host";
 export {
   recordingClient,
   recordingContracts,
@@ -602,6 +604,7 @@ import {
   distributedMachineClient,
   distributedMachineEventClient,
 } from "./distributed_machines";
+import { factoryHostClient } from "./factory_host";
 
 /**
  * Unified IPC client with all domains organized by namespace.
@@ -678,6 +681,7 @@ export const ipc = {
   firstPrompt: firstPromptClient,
   windowInfrastructure: windowInfrastructureClient,
   distributedMachine: distributedMachineClient,
+  factoryHost: factoryHostClient,
   imageGeneration: imageGenerationClient,
   previewView: {
     ...previewViewClient,

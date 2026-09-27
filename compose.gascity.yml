@@ -1,0 +1,23 @@
+services:
+  weaver-plus:
+    build:
+      context: .
+      dockerfile: Dockerfile.gascity
+    image: weaver-plus:gascity
+    network_mode: host
+    shm_size: 1gb
+    environment:
+      NOVNC_PORT: "${NOVNC_PORT:-6080}"
+      NOVNC_PASSWORD: "${NOVNC_PASSWORD:?Set NOVNC_PASSWORD in the shell}"
+      NOVNC_GEOMETRY: "${NOVNC_GEOMETRY:-1600x900}"
+      GAS_CITY_HOST_BRIDGE_ENABLED: "${GAS_CITY_HOST_BRIDGE_ENABLED:-true}"
+      GAS_CITY_HOST_BRIDGE_PORT: "${GAS_CITY_HOST_BRIDGE_PORT:-32100}"
+      GAS_CITY_HOST_BRIDGE_TOKEN: "${GAS_CITY_HOST_BRIDGE_TOKEN:?Set GAS_CITY_HOST_BRIDGE_TOKEN in the shell}"
+    volumes:
+      - weaver-plus-user-data:/home/weaver/.config
+      - "${WEAVER_PROJECTS_DIR:-weaver-plus-projects}:/home/weaver/dyad-apps"
+    restart: unless-stopped
+
+volumes:
+  weaver-plus-user-data:
+  weaver-plus-projects:

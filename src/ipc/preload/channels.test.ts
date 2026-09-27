@@ -13,6 +13,7 @@ import {
 import { cloudflareContracts } from "../types/cloudflare";
 import { clerkContracts } from "../types/clerk";
 import { knowledgeContracts } from "../types/knowledge";
+import { factoryHostContracts } from "../types/factory_host";
 import {
   VALID_INVOKE_CHANNELS,
   VALID_RECEIVE_CHANNELS,
@@ -82,6 +83,14 @@ describe("clerk preload channels", () => {
 describe("knowledge preload channels", () => {
   it("allows every knowledge invoke contract", () => {
     for (const contract of Object.values(knowledgeContracts)) {
+      expect(VALID_INVOKE_CHANNELS).toContain(contract.channel);
+    }
+  });
+});
+
+describe("factory-host preload channels", () => {
+  it("allows every factory-host invoke contract", () => {
+    for (const contract of Object.values(factoryHostContracts)) {
       expect(VALID_INVOKE_CHANNELS).toContain(contract.channel);
     }
   });
