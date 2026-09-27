@@ -22,7 +22,11 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { AccountSwitcher } from "@/auth/AccountSwitcher";
+import {
+  AccountSwitcherProvider,
+  CreateOrganizationButton,
+  OrganizationPicker,
+} from "@/auth/AccountSwitcher";
 import { SessionControl } from "@/auth/SessionControl";
 import { ChatTabs } from "@/components/chat/ChatTabs";
 import { selectedChatIdAtom } from "@/atoms/chatAtoms";
@@ -87,7 +91,7 @@ export const TitleBar = () => {
   const isDyadProEnabled = Boolean(settings?.enableDyadPro);
 
   return (
-    <>
+    <AccountSwitcherProvider>
       <div className="@container z-11 w-full h-[calc(var(--layout-title-bar-offset)+1px)] pt-1 bg-(--sidebar) absolute top-0 left-0 app-region-drag flex items-center">
         {/*
          * Left region matches the sidebar's expanded width so chat tabs always
@@ -103,6 +107,8 @@ export const TitleBar = () => {
             alt="wewebplus"
             className="ml-1.5 h-7 w-auto shrink-0 object-contain"
           />
+
+          <OrganizationPicker />
 
           <Tooltip>
             <TooltipTrigger
@@ -149,7 +155,7 @@ export const TitleBar = () => {
           <ChatTabs selectedChatId={selectedChatId} />
         </div>
 
-        <AccountSwitcher />
+        <CreateOrganizationButton />
         <SessionControl />
 
         {showWindowControls && <WindowsControls />}
@@ -160,7 +166,7 @@ export const TitleBar = () => {
         isOpen={isSuccessDialogOpen}
         onClose={() => setIsSuccessDialogOpen(false)}
       />
-    </>
+    </AccountSwitcherProvider>
   );
 };
 

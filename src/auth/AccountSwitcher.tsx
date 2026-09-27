@@ -4,10 +4,25 @@ import {
   useUser,
 } from "@clerk/clerk-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ipc } from "@/ipc/types";
 import { queryKeys } from "@/lib/queryKeys";
 import { showError } from "@/lib/toast";
+import { OrganizationMark } from "./OrganizationMark";
 import {
   readLastAccount,
   restoreLastAccount,
@@ -15,13 +30,39 @@ import {
 } from "./lastAccount";
 import { useClerkSession } from "./session";
 
-export function AccountSwitcher() {
-  const session = useClerkSession();
-  if (session.status !== "signed-in") return null;
-  return <AccountSwitcherMenu />;
+type AccountOption = { id: string | null; name: string };
+
+type AccountSwitcherState = {
+  active: AccountOption;
+  options: AccountOption[];
+  creating: boolean;
+  name: string;
+  setName: (name: string) => void;
+  setCreating: (creating: boolean) => void;
+  selectAccount: (organizationId: string | null) => Promise<void>;
+  create: () => Promise<void>;
+};
+
+const AccountSwitcherContext = createContext<AccountSwitcherState | null>(null);
+
+function useAccountSwitcherState(): AccountSwitcherState | null {
+  return useContext(AccountSwitcherContext);
 }
 
-function AccountSwitcherMenu() {
+export function AccountSwitcherProvider({ children }: { children: ReactNode }) {
+  const session = useClerkSession();
+  if (session.status !== "signed-in") {
+    return (
+      <AccountSwitcherContext.Provider value={null}>
+        {children}
+      </AccountSwitcherContext.Provider>
+    );
+  }
+  return <SignedInAccountSwitcher>{children}</SignedInAccountSwitcher>;
+}
+
+function SignedInAccountSwitcher({ children }: { children: ReactNode }) {
+  const session = useClerkSession();
   const { user } = useUser();
   const { organization } = useOrganization();
   const { isLoaded, setActive, createOrganization, userMemberships } =
@@ -33,6 +74,7 @@ function AccountSwitcherMenu() {
     queryKey: queryKeys.account.context,
     queryFn: () => ipc.account.getContext(),
     retry: false,
+    enabled: session.status === "signed-in",
   });
   const restored = useRef(false);
   const [creating, setCreating] = useState(false);
@@ -54,13 +96,14 @@ function AccountSwitcherMenu() {
   };
 
   useEffect(() => {
-    if (!setActive || !user) return;
+    if (session.status !== "signed-in" || !setActive || !user) return;
     const message = context.error instanceof Error ? context.error.message : "";
     if (!message.includes("no longer a member")) return;
     void setActive({ organization: null }).then(() => remember(null));
-  }, [context.error, setActive, user]);
+  }, [context.error, session.status, setActive, user]);
 
   useEffect(() => {
+    if (session.status !== "signed-in") return;
     if (!isLoaded || !setActive || !user || userMemberships.isLoading) return;
     if (!memberships || restored.current || context.isError) return;
     const decision = restoreLastAccount({
@@ -76,6 +119,7 @@ function AccountSwitcherMenu() {
       organization: decision.kind === "private" ? null : decision.id,
     }).then(() => refresh());
   }, [
+    session.status,
     isLoaded,
     setActive,
     user,
@@ -112,59 +156,109 @@ function AccountSwitcherMenu() {
     }
   };
 
-  if (!isLoaded) return null;
+  const ready = session.status === "signed-in" && isLoaded;
+  const options: AccountOption[] = [
+    { id: null, name: "Private" },
+    ...(memberships ?? []).map((membership) => ({
+      id: membership.organization.id,
+      name: membership.organization.name,
+    })),
+  ];
+  const value: AccountSwitcherState | null = ready
+    ? {
+        active: {
+          id: organization?.id ?? null,
+          name: organization?.name ?? "Private",
+        },
+        options,
+        creating,
+        name,
+        setName,
+        setCreating,
+        selectAccount,
+        create,
+      }
+    : null;
 
   return (
-    <div
-      className="no-app-region-drag mr-3 flex shrink-0 items-center gap-2"
-      data-testid="account-switcher"
-    >
-      <select
+    <AccountSwitcherContext.Provider value={value}>
+      {children}
+    </AccountSwitcherContext.Provider>
+  );
+}
+
+export function OrganizationPicker() {
+  const state = useAccountSwitcherState();
+  if (!state) return null;
+  const current = state.active.id ?? "private";
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        className="no-app-region-drag ml-1.5 inline-flex h-7 max-w-[10rem] items-center gap-1.5 rounded-md border bg-transparent px-2 text-xs font-medium"
         aria-label="Account"
-        className="h-8 max-w-[10rem] rounded-md border bg-transparent px-2 text-sm"
-        value={organization?.id ?? "private"}
-        onChange={(event) => {
-          const value = event.target.value;
-          void selectAccount(value === "private" ? null : value);
-        }}
+        data-testid="organization-picker"
       >
-        <option value="private">Private</option>
-        {(memberships ?? []).map((membership) => (
-          <option
-            key={membership.organization.id}
-            value={membership.organization.id}
-          >
-            {membership.organization.name}
-          </option>
-        ))}
-      </select>
-      {creating ? (
-        <form
-          className="flex items-center gap-1"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void create();
+        <OrganizationMark
+          name={state.active.name}
+          accountId={state.active.id}
+        />
+        <span className="truncate">{state.active.name}</span>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent data-testid="organization-picker-menu">
+        <DropdownMenuRadioGroup
+          value={current}
+          onValueChange={(value) => {
+            void state.selectAccount(value === "private" ? null : value);
           }}
         >
-          <input
-            aria-label="Organization name"
-            className="h-8 w-32 rounded-md border bg-transparent px-2 text-sm"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-          />
-          <button type="submit" className="text-sm text-primary">
-            Create
-          </button>
-        </form>
-      ) : (
-        <button
-          type="button"
-          className="text-sm text-primary"
-          onClick={() => setCreating(true)}
-        >
-          Create organization
+          {state.options.map((option) => (
+            <DropdownMenuRadioItem
+              key={option.id ?? "private"}
+              value={option.id ?? "private"}
+            >
+              <OrganizationMark name={option.name} accountId={option.id} />
+              <span className="truncate">{option.name}</span>
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+export function CreateOrganizationButton() {
+  const state = useAccountSwitcherState();
+  if (!state) return null;
+  if (state.creating) {
+    return (
+      <form
+        className="no-app-region-drag mr-3 flex shrink-0 items-center gap-1"
+        data-testid="create-organization-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void state.create();
+        }}
+      >
+        <input
+          aria-label="Organization name"
+          className="h-8 w-32 rounded-md border bg-transparent px-2 text-sm"
+          value={state.name}
+          onChange={(event) => state.setName(event.target.value)}
+        />
+        <button type="submit" className="text-sm text-primary">
+          Create
         </button>
-      )}
-    </div>
+      </form>
+    );
+  }
+  return (
+    <button
+      type="button"
+      className="no-app-region-drag mr-3 shrink-0 text-sm text-primary"
+      data-testid="create-organization"
+      onClick={() => state.setCreating(true)}
+    >
+      Create organization
+    </button>
   );
 }

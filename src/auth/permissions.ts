@@ -59,3 +59,17 @@ export function canManageMembers(
   if (status !== "signed-in" || roleId == null) return false;
   return roleHasPermission(roleId, "manage-members");
 }
+
+/**
+ * Admin is organization management. It shows for an admin of the active
+ * organization. Private, reviewer, and dev do not see it. Unconfigured stays open.
+ */
+export function canSeeOrganizationAdmin(input: {
+  status: ClerkAuthStatus;
+  roleId: AdminRoleId | null;
+  accountType: "user" | "org" | null;
+}): boolean {
+  if (input.status === "unconfigured") return true;
+  if (input.status !== "signed-in" || input.accountType !== "org") return false;
+  return canManageMembers(input.status, input.roleId);
+}

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   approvalGate,
   canManageMembers,
+  canSeeOrganizationAdmin,
   roleHasPermission,
 } from "./permissions";
 
@@ -50,5 +51,43 @@ describe("clerk role gates", () => {
     expect(canManageMembers("loading", null)).toBe(false);
     expect(canManageMembers("signed-in", "reviewer")).toBe(false);
     expect(canManageMembers("signed-in", "admin")).toBe(true);
+  });
+
+  it("shows Admin only to an admin of the active organization", () => {
+    expect(
+      canSeeOrganizationAdmin({
+        status: "unconfigured",
+        roleId: null,
+        accountType: null,
+      }),
+    ).toBe(true);
+    expect(
+      canSeeOrganizationAdmin({
+        status: "signed-in",
+        roleId: "admin",
+        accountType: "org",
+      }),
+    ).toBe(true);
+    expect(
+      canSeeOrganizationAdmin({
+        status: "signed-in",
+        roleId: "admin",
+        accountType: "user",
+      }),
+    ).toBe(false);
+    expect(
+      canSeeOrganizationAdmin({
+        status: "signed-in",
+        roleId: "reviewer",
+        accountType: "org",
+      }),
+    ).toBe(false);
+    expect(
+      canSeeOrganizationAdmin({
+        status: "signed-in",
+        roleId: "dev",
+        accountType: "org",
+      }),
+    ).toBe(false);
   });
 });
