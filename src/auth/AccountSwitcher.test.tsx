@@ -1,14 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { ClerkSessionProvider } from "./session";
-import {
-  AccountSwitcherProvider,
-  CreateOrganizationButton,
-  OrganizationPicker,
-} from "./AccountSwitcher";
+import { AccountSwitcherProvider, OrganizationPicker } from "./AccountSwitcher";
 
 const getContext = vi.fn(async () => ({ kind: "organization" }));
 
@@ -112,27 +108,22 @@ beforeEach(() => {
   organizationList.mockImplementation(defaultOrganizationList);
 });
 
-it("puts the organization list in the picker and leaves create outside it", async () => {
+it("puts Create organization before Private in the account list", async () => {
   const user = userEvent.setup();
-  renderSwitcher(
-    <>
-      <OrganizationPicker />
-      <CreateOrganizationButton />
-    </>,
-  );
+  renderSwitcher(<OrganizationPicker />);
 
   const picker = screen.getByTestId("organization-picker");
   expect(picker.textContent).toContain("Anak's Organization");
   expect(picker.textContent).not.toContain("Create organization");
-  expect(screen.getByTestId("create-organization").textContent).toBe(
-    "Create organization",
-  );
 
   await user.click(picker);
   const menu = await screen.findByTestId("organization-picker-menu");
-  expect(menu.textContent).toContain("Private");
-  expect(menu.textContent).toContain("Studio");
-  expect(menu.textContent).not.toContain("Create organization");
+  const text = menu.textContent ?? "";
+  expect(text.indexOf("Create organization")).toBeGreaterThanOrEqual(0);
+  expect(text.indexOf("Create organization")).toBeLessThan(
+    text.indexOf("Private"),
+  );
+  expect(text).toContain("Studio");
 });
 
 it("loads the next page of organizations", async () => {
@@ -158,16 +149,13 @@ it("loads the next page of organizations", async () => {
 
 it("shows an organization in the list as soon as it is created", async () => {
   const user = userEvent.setup();
-  renderSwitcher(
-    <>
-      <OrganizationPicker />
-      <CreateOrganizationButton />
-    </>,
-  );
+  renderSwitcher(<OrganizationPicker />);
 
+  await user.click(screen.getByTestId("organization-picker"));
   await user.click(screen.getByTestId("create-organization"));
-  await user.type(screen.getByLabelText("Organization name"), "Yo");
-  await user.click(screen.getByRole("button", { name: "Create" }));
+  const name = await screen.findByLabelText("Organization name");
+  fireEvent.change(name, { target: { value: "Yo" } });
+  fireEvent.submit(name.closest("form")!);
 
   await waitFor(() => expect(revalidate).toHaveBeenCalled());
   await user.click(screen.getByTestId("organization-picker"));

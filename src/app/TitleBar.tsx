@@ -24,7 +24,6 @@ import {
 } from "@/components/ui/tooltip";
 import {
   AccountSwitcherProvider,
-  CreateOrganizationButton,
   OrganizationPicker,
 } from "@/auth/AccountSwitcher";
 import { SessionControl } from "@/auth/SessionControl";
@@ -155,7 +154,6 @@ export const TitleBar = () => {
           <ChatTabs selectedChatId={selectedChatId} />
         </div>
 
-        <CreateOrganizationButton />
         <SessionControl />
 
         {showWindowControls && <WindowsControls />}

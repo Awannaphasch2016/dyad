@@ -15,8 +15,10 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ipc } from "@/ipc/types";
@@ -40,7 +42,7 @@ type AccountSwitcherState = {
   setName: (name: string) => void;
   setCreating: (creating: boolean) => void;
   selectAccount: (organizationId: string | null) => Promise<void>;
-  create: () => Promise<void>;
+  create: () => Promise<boolean>;
 };
 
 const AccountSwitcherContext = createContext<AccountSwitcherState | null>(null);
@@ -190,7 +192,7 @@ function SignedInAccountSwitcher({ children }: { children: ReactNode }) {
 
   const create = async () => {
     const trimmed = name.trim();
-    if (!trimmed || !createOrganization || !setActive) return;
+    if (!trimmed || !createOrganization || !setActive) return false;
     try {
       const created = await createOrganization({ name: trimmed });
       setCreatedAccounts((current) =>
@@ -210,9 +212,11 @@ function SignedInAccountSwitcher({ children }: { children: ReactNode }) {
       setName("");
       setCreating(false);
       await refresh();
+      return true;
     } catch (error) {
       setPendingAccountId(undefined);
       showError(error);
+      return false;
     }
   };
 
@@ -266,10 +270,17 @@ function SignedInAccountSwitcher({ children }: { children: ReactNode }) {
 
 export function OrganizationPicker() {
   const state = useAccountSwitcherState();
+  const [open, setOpen] = useState(false);
   if (!state) return null;
   const current = state.active.id ?? "private";
   return (
-    <DropdownMenu>
+    <DropdownMenu
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) state.setCreating(false);
+      }}
+    >
       <DropdownMenuTrigger
         className="no-app-region-drag ml-1.5 inline-flex h-7 max-w-[10rem] items-center gap-1.5 rounded-md border bg-transparent px-2 text-xs font-medium"
         aria-label="Account"
@@ -282,6 +293,38 @@ export function OrganizationPicker() {
         <span className="truncate">{state.active.name}</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent data-testid="organization-picker-menu">
+        {state.creating ? (
+          <form
+            className="flex items-center gap-1 px-2 py-1.5"
+            data-testid="create-organization-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void state.create().then((created) => {
+                if (created) setOpen(false);
+              });
+            }}
+          >
+            <input
+              aria-label="Organization name"
+              autoFocus
+              className="h-8 min-w-0 flex-1 rounded-md border bg-transparent px-2 text-sm"
+              value={state.name}
+              onChange={(event) => state.setName(event.target.value)}
+            />
+            <button type="submit" className="shrink-0 text-sm text-primary">
+              Create
+            </button>
+          </form>
+        ) : (
+          <DropdownMenuItem
+            closeOnClick={false}
+            data-testid="create-organization"
+            onClick={() => state.setCreating(true)}
+          >
+            Create organization
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuSeparator />
         <DropdownMenuRadioGroup
           value={current}
           onValueChange={(value) => {
@@ -300,42 +343,5 @@ export function OrganizationPicker() {
         </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
-  );
-}
-
-export function CreateOrganizationButton() {
-  const state = useAccountSwitcherState();
-  if (!state) return null;
-  if (state.creating) {
-    return (
-      <form
-        className="no-app-region-drag mr-3 flex shrink-0 items-center gap-1"
-        data-testid="create-organization-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void state.create();
-        }}
-      >
-        <input
-          aria-label="Organization name"
-          className="h-8 w-32 rounded-md border bg-transparent px-2 text-sm"
-          value={state.name}
-          onChange={(event) => state.setName(event.target.value)}
-        />
-        <button type="submit" className="text-sm text-primary">
-          Create
-        </button>
-      </form>
-    );
-  }
-  return (
-    <button
-      type="button"
-      className="no-app-region-drag mr-3 shrink-0 text-sm text-primary"
-      data-testid="create-organization"
-      onClick={() => state.setCreating(true)}
-    >
-      Create organization
-    </button>
   );
 }
