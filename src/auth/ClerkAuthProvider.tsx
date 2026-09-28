@@ -11,6 +11,7 @@ import { roleFromClerkMembership } from "@/lib/adminAccess";
 import { queryKeys } from "@/lib/queryKeys";
 import { ipc } from "@/ipc/types";
 import { loadClerkBrowser } from "./loadClerkBrowser";
+import { publishSessionToken } from "./publish_session_token";
 import { ClerkSessionProvider, type ClerkSessionState } from "./session";
 
 const clerkAppearance = {
@@ -131,15 +132,17 @@ function ClerkSessionBridge({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!auth.isLoaded) return;
-    let cancelled = false;
+    let active = true;
     setTokenReady(false);
-    void (async () => {
-      const token = auth.isSignedIn ? await auth.getToken() : null;
-      await ipc.clerk.setSessionToken({ token: token ?? null });
-      if (!cancelled) setTokenReady(true);
-    })();
+    void publishSessionToken(async () =>
+      auth.isSignedIn ? await auth.getToken({ skipCache: true }) : null,
+    )
+      .then(() => {
+        if (active) setTokenReady(true);
+      })
+      .catch(() => undefined);
     return () => {
-      cancelled = true;
+      active = false;
     };
   }, [auth.isLoaded, auth.isSignedIn, auth.orgId, auth.userId, auth.getToken]);
 

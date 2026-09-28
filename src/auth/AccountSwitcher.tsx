@@ -1,4 +1,5 @@
 import {
+  useAuth,
   useOrganization,
   useOrganizationList,
   useUser,
@@ -34,9 +35,14 @@ import {
   restoreLastAccount,
   withLastAccount,
 } from "./lastAccount";
+import { publishSessionToken } from "./publish_session_token";
 import { useClerkSession } from "./session";
 
-type AccountOption = { id: string | null; name: string };
+type AccountOption = {
+  id: string;
+  name: string;
+  clerkOrganizationId: string | null;
+};
 
 type AccountSwitcherState = {
   active: AccountOption;
@@ -45,7 +51,7 @@ type AccountSwitcherState = {
   name: string;
   setName: (name: string) => void;
   setCreating: (creating: boolean) => void;
-  selectAccount: (organizationId: string | null) => Promise<void>;
+  selectAccount: (accountId: string) => Promise<void>;
   create: () => Promise<boolean>;
 };
 
@@ -80,6 +86,7 @@ export function AccountSwitcherProvider({ children }: { children: ReactNode }) {
 
 function SignedInAccountSwitcher({ children }: { children: ReactNode }) {
   const session = useClerkSession();
+  const { getToken } = useAuth();
   const { user } = useUser();
   const { organization } = useOrganization();
   const { isLoaded, setActive, createOrganization, userMemberships } =
@@ -101,11 +108,8 @@ function SignedInAccountSwitcher({ children }: { children: ReactNode }) {
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [createdAccounts, setCreatedAccounts] = useState<AccountOption[]>([]);
-  // null is Private. undefined means the label follows Clerk's active organization.
-  const [pendingAccountId, setPendingAccountId] = useState<
-    string | null | undefined
-  >(undefined);
   const memberships = userMemberships.data;
+  const userId = user?.id ?? null;
 
   useEffect(() => {
     if (
@@ -124,6 +128,9 @@ function SignedInAccountSwitcher({ children }: { children: ReactNode }) {
 
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: queryKeys.apps.all });
+
+  const storeSessionToken = () =>
+    publishSessionToken(() => getToken({ skipCache: true }));
 
   const leaveOpenApp = () => {
     if (store.get(selectedAppIdAtom) == null) return;
@@ -147,14 +154,19 @@ function SignedInAccountSwitcher({ children }: { children: ReactNode }) {
     if (session.status !== "signed-in" || !setActive || !user) return;
     const message = context.error instanceof Error ? context.error.message : "";
     if (!message.includes("no longer a member")) return;
-    void setActive({ organization: null }).then(() => remember(null));
+    void (async () => {
+      await setActive({ organization: null });
+      await remember(null);
+      await storeSessionToken();
+      leaveOpenApp();
+      await refresh();
+    })();
   }, [context.error, session.status, setActive, user]);
 
   useEffect(() => {
     if (session.status !== "signed-in") return;
     if (!isLoaded || !setActive || !user || userMemberships.isLoading) return;
     if (userMemberships.hasNextPage || userMemberships.isFetching) return;
-    if (pendingAccountId !== undefined) return;
     if (!memberships || restored.current || context.isError) return;
     const decision = restoreLastAccount({
       saved: readLastAccount(user.unsafeMetadata),
@@ -165,9 +177,13 @@ function SignedInAccountSwitcher({ children }: { children: ReactNode }) {
     });
     restored.current = true;
     if (decision.kind === "keep") return;
-    void setActive({
-      organization: decision.kind === "private" ? null : decision.id,
-    }).then(() => refresh());
+    void (async () => {
+      await setActive({
+        organization: decision.kind === "private" ? null : decision.id,
+      });
+      await storeSessionToken();
+      await refresh();
+    })();
   }, [
     session.status,
     isLoaded,
@@ -176,30 +192,29 @@ function SignedInAccountSwitcher({ children }: { children: ReactNode }) {
     userMemberships.isLoading,
     userMemberships.hasNextPage,
     userMemberships.isFetching,
-    pendingAccountId,
     organization?.id,
     memberships,
     context.isError,
   ]);
 
-  const selectAccount = async (organizationId: string | null) => {
-    if (!setActive) return;
-    const previous = organization?.id ?? null;
-    if (previous === organizationId) return;
-    setPendingAccountId(organizationId);
+  const selectAccount = async (accountId: string) => {
+    if (!setActive || !userId) return;
+    const displayedId = organization?.id ?? userId;
+    if (accountId === displayedId) return;
+    const organizationId = accountId === userId ? null : accountId;
     try {
-      // Save first. The token refresh remounts this tree, and restore would
-      // otherwise put the previous organization back before Private sticks.
+      // Save first. A token refresh remounts this tree, and restore would
+      // otherwise put the previous organization back.
       await remember(organizationId);
       await setActive({ organization: organizationId });
+      await storeSessionToken();
       leaveOpenApp();
       await refresh();
     } catch (error) {
-      setPendingAccountId(previous);
       try {
-        await remember(previous);
+        await remember(organization?.id ?? null);
       } catch {
-        // The label is already back on the previous account.
+        // The label still follows Clerk.
       }
       showError(error);
     }
@@ -213,9 +228,15 @@ function SignedInAccountSwitcher({ children }: { children: ReactNode }) {
       setCreatedAccounts((current) =>
         current.some((account) => account.id === created.id)
           ? current
-          : [...current, { id: created.id, name: trimmed }],
+          : [
+              ...current,
+              {
+                id: created.id,
+                name: trimmed,
+                clerkOrganizationId: created.id,
+              },
+            ],
       );
-      setPendingAccountId(created.id);
       try {
         await ipc.clerk.stampOrganizationAdmin({ organizationId: created.id });
       } catch (error) {
@@ -224,21 +245,19 @@ function SignedInAccountSwitcher({ children }: { children: ReactNode }) {
       await userMemberships.revalidate?.();
       await remember(created.id);
       await setActive({ organization: created.id });
+      await storeSessionToken();
       leaveOpenApp();
       setName("");
       setCreating(false);
       await refresh();
       return true;
     } catch (error) {
-      setPendingAccountId(undefined);
       showError(error);
       return false;
     }
   };
 
-  const clerkActiveId = organization?.id ?? null;
-  const activeId =
-    pendingAccountId !== undefined ? pendingAccountId : clerkActiveId;
+  const activeId = organization?.id ?? userId;
   const ready =
     isLoaded &&
     (session.status === "signed-in" || session.status === "loading");
@@ -246,36 +265,34 @@ function SignedInAccountSwitcher({ children }: { children: ReactNode }) {
     (memberships ?? []).map((membership) => membership.organization.id),
   );
   const options: AccountOption[] = [
-    { id: null, name: "Private" },
-    ...createdAccounts.filter(
-      (account) => account.id && !listedIds.has(account.id),
-    ),
+    ...(userId
+      ? [{ id: userId, name: "Private", clerkOrganizationId: null }]
+      : []),
+    ...createdAccounts.filter((account) => !listedIds.has(account.id)),
     ...(memberships ?? []).map((membership) => ({
       id: membership.organization.id,
       name: membership.organization.name,
+      clerkOrganizationId: membership.organization.id,
     })),
   ];
-  const activeName =
-    activeId == null
-      ? "Private"
-      : (options.find((option) => option.id === activeId)?.name ??
-        (organization?.id === activeId ? organization.name : null) ??
-        "Private");
-  const value: AccountSwitcherState | null = ready
-    ? {
-        active: {
-          id: activeId,
-          name: activeName,
-        },
-        options,
-        creating,
-        name,
-        setName,
-        setCreating,
-        selectAccount,
-        create,
-      }
-    : null;
+  const activeName = organization ? organization.name : userId ? "Private" : "";
+  const value: AccountSwitcherState | null =
+    ready && activeId
+      ? {
+          active: {
+            id: activeId,
+            name: activeName,
+            clerkOrganizationId: organization?.id ?? null,
+          },
+          options,
+          creating,
+          name,
+          setName,
+          setCreating,
+          selectAccount,
+          create,
+        }
+      : null;
 
   return (
     <AccountSwitcherContext.Provider value={value}>
@@ -288,7 +305,7 @@ export function OrganizationPicker() {
   const state = useAccountSwitcherState();
   const [open, setOpen] = useState(false);
   if (!state) return null;
-  const current = state.active.id ?? "private";
+  const current = state.active.id;
   return (
     <DropdownMenu
       open={open}
@@ -304,7 +321,7 @@ export function OrganizationPicker() {
       >
         <OrganizationMark
           name={state.active.name}
-          accountId={state.active.id}
+          accountId={state.active.clerkOrganizationId}
         />
         <span className="truncate">{state.active.name}</span>
       </DropdownMenuTrigger>
@@ -344,15 +361,19 @@ export function OrganizationPicker() {
         <DropdownMenuRadioGroup
           value={current}
           onValueChange={(value) => {
-            void state.selectAccount(value === "private" ? null : value);
+            void state.selectAccount(value);
           }}
         >
           {state.options.map((option) => (
             <DropdownMenuRadioItem
-              key={option.id ?? "private"}
-              value={option.id ?? "private"}
+              key={option.id}
+              value={option.id}
+              closeOnClick
             >
-              <OrganizationMark name={option.name} accountId={option.id} />
+              <OrganizationMark
+                name={option.name}
+                accountId={option.clerkOrganizationId}
+              />
               <span className="truncate">{option.name}</span>
             </DropdownMenuRadioItem>
           ))}
