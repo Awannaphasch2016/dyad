@@ -863,6 +863,14 @@ async function deleteAppByIdExclusive(
   return deletedRow;
 }
 
+function throwIfAccountSyncFailed(synced: boolean): void {
+  if (synced) return;
+  throw new DyadError(
+    "Couldn't load this account's apps.",
+    DyadErrorKind.External,
+  );
+}
+
 async function displayNameConflicts(
   event: { sender: { id: number } },
   name: string,
@@ -897,6 +905,7 @@ export function registerAppHandlers() {
     let app!: typeof apps.$inferSelect;
     let fullAppPath!: string;
     let chatId!: number;
+    let accountScope: Awaited<ReturnType<typeof sharingScope>> = null;
     try {
       const appName = sanitizeAppDisplayName(params.name);
 
@@ -920,9 +929,11 @@ export function registerAppHandlers() {
         );
       }
 
-      // Create a new app
+      // Create a new app. The owner is on the row before the template and
+      // git awaits, so a list refresh cannot claim this app into Private.
       const settings = readSettings();
       const execution = await initialChatExecution();
+      accountScope = await sharingScope(event);
       [app] = await db
         .insert(apps)
         .values({
@@ -933,6 +944,8 @@ export function registerAppHandlers() {
           // the "testing for new apps" setting. Otherwise fall back to the
           // column default (off).
           testingEnabled: settings.enableTestingForNewApps ?? false,
+          ownerType: accountScope?.session.account.type,
+          ownerId: accountScope?.session.account.id,
         })
         .returning();
       // The three phase chats commit before the next await, so a list refresh
@@ -960,6 +973,14 @@ export function registerAppHandlers() {
     };
 
     try {
+      if (accountScope) {
+        await publishLocalApp(
+          app.id,
+          accountScope.session.account,
+          accountScope.session.userId,
+        );
+      }
+
       await createFromTemplate({
         fullAppPath,
       });
@@ -981,11 +1002,6 @@ export function registerAppHandlers() {
           initialCommitHash: commitHash,
         })
         .where(eq(chats.appId, app.id));
-
-      const scope = await sharingScope(event);
-      if (scope) {
-        await publishLocalApp(app.id, scope.session.account);
-      }
 
       const result = {
         app: { ...app, resolvedPath: fullAppPath },
@@ -1053,6 +1069,7 @@ export function registerAppHandlers() {
         DyadErrorKind.Conflict,
       );
     }
+    const scope = await sharingScope(event);
 
     const copied = await appOperationCoordinator.run(
       {
@@ -1153,6 +1170,8 @@ export function registerAppHandlers() {
             githubRepo: null,
             installCommand: originalApp.installCommand,
             startCommand: originalApp.startCommand,
+            ownerType: scope?.session.account.type,
+            ownerId: scope?.session.account.id,
           })
           .returning();
         insertFactoryPhaseChats(newDbApp.id, execution);
@@ -1181,21 +1200,22 @@ export function registerAppHandlers() {
         return { app: newDbApp };
       },
     );
-    const scope = await sharingScope(event);
     if (scope) {
-      await publishLocalApp(copied.app.id, scope.session.account);
+      await publishLocalApp(
+        copied.app.id,
+        scope.session.account,
+        scope.session.userId,
+      );
     }
     return copied;
   });
 
   createTypedHandler(appContracts.getApp, async (event, appId) => {
-    let scope = await sharingScope(event);
+    const scope = await sharingScope(event);
     if (scope) {
-      const synced = await syncActiveAccount(
-        scope.session.userId,
-        scope.session.account,
+      throwIfAccountSyncFailed(
+        await syncActiveAccount(scope.session.userId, scope.session.account),
       );
-      if (!synced) scope = null;
     }
     const app = await db.query.apps.findFirst({
       where: eq(apps.id, appId),
@@ -1288,13 +1308,11 @@ export function registerAppHandlers() {
   });
 
   createTypedHandler(appContracts.listApps, async (event) => {
-    let scope = await sharingScope(event);
+    const scope = await sharingScope(event);
     if (scope) {
-      const synced = await syncActiveAccount(
-        scope.session.userId,
-        scope.session.account,
+      throwIfAccountSyncFailed(
+        await syncActiveAccount(scope.session.userId, scope.session.account),
       );
-      if (!synced) scope = null;
     }
     const allApps = await db.query.apps.findMany({
       orderBy: [desc(apps.createdAt)],

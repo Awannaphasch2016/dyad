@@ -13,7 +13,7 @@ import log from "electron-log";
 import { withLock } from "@/ipc/utils/lock_utils";
 import { getControlPlaneDb } from "./db";
 import type { AccountOwner } from "./owner";
-import { privateOwner } from "./owner";
+import { isLegacyUnownedApp, privateOwner } from "./owner";
 import {
   deleteControlApp,
   insertControlApp,
@@ -69,7 +69,12 @@ export async function syncActiveAccount(
 
 async function claimUnownedApps(plane: Plane, userId: string): Promise<void> {
   const owner = privateOwner(userId);
-  const unowned = db.select().from(apps).where(isNull(apps.remoteId)).all();
+  const unowned = db
+    .select()
+    .from(apps)
+    .where(isNull(apps.remoteId))
+    .all()
+    .filter(isLegacyUnownedApp);
   for (const app of unowned) {
     const remoteId = randomUUID();
     await insertControlApp(plane, {
@@ -314,23 +319,34 @@ function sharedAppFields(app: typeof apps.$inferSelect) {
 export async function publishLocalApp(
   localAppId: number,
   owner: AccountOwner,
+  userId: string,
 ): Promise<void> {
   try {
-    const plane = await getControlPlaneDb();
-    if (!plane) return;
-    const app = db.select().from(apps).where(eq(apps.id, localAppId)).get();
-    if (!app || app.remoteId) return;
-    const remoteId = randomUUID();
-    await insertControlApp(plane, {
-      id: remoteId,
-      owner,
-      ...sharedAppFields(app),
+    await withLock(`control-plane-claim:${userId}`, async () => {
+      const plane = await getControlPlaneDb();
+      if (!plane) return;
+      const app = db.select().from(apps).where(eq(apps.id, localAppId)).get();
+      if (!app || app.remoteId) return;
+      const stamped =
+        app.ownerType && app.ownerId
+          ? { type: app.ownerType, id: app.ownerId }
+          : owner;
+      const remoteId = randomUUID();
+      await insertControlApp(plane, {
+        id: remoteId,
+        owner: stamped,
+        ...sharedAppFields(app),
+      });
+      db.update(apps)
+        .set({
+          remoteId,
+          ownerType: stamped.type,
+          ownerId: stamped.id,
+        })
+        .where(eq(apps.id, app.id))
+        .run();
+      await pushAppChildren(plane, app.id, remoteId);
     });
-    db.update(apps)
-      .set({ remoteId, ownerType: owner.type, ownerId: owner.id })
-      .where(eq(apps.id, app.id))
-      .run();
-    await pushAppChildren(plane, app.id, remoteId);
   } catch (error) {
     logger.warn("Shared app publish skipped", error);
   }

@@ -148,6 +148,7 @@ export function registerImportHandlers() {
       // the derived folder name.
       // Imported apps don't need an app blueprint — the schema default (false) is correct.
       const execution = await initialChatExecution();
+      const scope = await sharingScope(event);
       const [app] = await db
         .insert(apps)
         .values({
@@ -155,13 +156,18 @@ export function registerImportHandlers() {
           path: skipCopy ? sourcePath : folderName!,
           installCommand: installCommand ?? null,
           startCommand: startCommand ?? null,
+          ownerType: scope?.session.account.type,
+          ownerId: scope?.session.account.id,
         })
         .returning();
       const chatId = insertFactoryPhaseChats(app.id, execution);
 
-      const scope = await sharingScope(event);
       if (scope) {
-        await publishLocalApp(app.id, scope.session.account);
+        await publishLocalApp(
+          app.id,
+          scope.session.account,
+          scope.session.userId,
+        );
       }
 
       queryInvalidationBus.publish([{ family: "apps" }, { family: "chats" }], {
