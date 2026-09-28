@@ -35,6 +35,10 @@ import {
 } from "@/shared/execution_backend";
 import { createChatForApp } from "../utils/chat_creation_utils";
 import {
+  assertFactoryChatCreationOpen,
+  retainStartedFactoryPhaseChats,
+} from "../utils/factory_phase_chats";
+import {
   getReferencedAppsForDisplay,
   readStoredReferencedAppIds,
 } from "../utils/mention_apps";
@@ -149,6 +153,7 @@ export function registerChatHandlers() {
     }
     let chatId: number | undefined;
     try {
+      await assertFactoryChatCreationOpen(appId);
       chatId = await createChatForApp({
         appId,
         initialChatMode,
@@ -292,6 +297,7 @@ export function registerChatHandlers() {
     if (appId != null) {
       await assertAppVisible(event, appId);
       await syncOneApp(appId);
+      await retainStartedFactoryPhaseChats(appId);
     }
     const scope = await sharingScope(event);
     // If appId is provided, filter chats for that app

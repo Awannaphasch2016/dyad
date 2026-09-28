@@ -4,6 +4,8 @@ import {
   useUser,
 } from "@clerk/clerk-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
+import { useStore } from "jotai";
 import {
   createContext,
   useContext,
@@ -12,6 +14,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { selectedAppIdAtom } from "@/atoms/appAtoms";
+import { selectedChatIdAtom } from "@/atoms/chatAtoms";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -85,6 +89,8 @@ function SignedInAccountSwitcher({ children }: { children: ReactNode }) {
       userMemberships: { infinite: true, pageSize: 10 },
     });
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const store = useStore();
   const context = useQuery({
     queryKey: queryKeys.account.context,
     queryFn: () => ipc.account.getContext(),
@@ -118,6 +124,13 @@ function SignedInAccountSwitcher({ children }: { children: ReactNode }) {
 
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: queryKeys.apps.all });
+
+  const leaveOpenApp = () => {
+    if (store.get(selectedAppIdAtom) == null) return;
+    store.set(selectedAppIdAtom, null);
+    store.set(selectedChatIdAtom, null);
+    void navigate({ to: "/" });
+  };
 
   const remember = async (organizationId: string | null) => {
     if (!user) return;
@@ -172,12 +185,14 @@ function SignedInAccountSwitcher({ children }: { children: ReactNode }) {
   const selectAccount = async (organizationId: string | null) => {
     if (!setActive) return;
     const previous = organization?.id ?? null;
+    if (previous === organizationId) return;
     setPendingAccountId(organizationId);
     try {
       // Save first. The token refresh remounts this tree, and restore would
       // otherwise put the previous organization back before Private sticks.
       await remember(organizationId);
       await setActive({ organization: organizationId });
+      leaveOpenApp();
       await refresh();
     } catch (error) {
       setPendingAccountId(previous);
@@ -209,6 +224,7 @@ function SignedInAccountSwitcher({ children }: { children: ReactNode }) {
       await userMemberships.revalidate?.();
       await remember(created.id);
       await setActive({ organization: created.id });
+      leaveOpenApp();
       setName("");
       setCreating(false);
       await refresh();

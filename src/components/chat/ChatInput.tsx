@@ -113,7 +113,6 @@ import { PromoMessage, usePromoMessage } from "./PromoMessage";
 import { useCountTokens } from "@/hooks/useCountTokens";
 import { useChats } from "@/hooks/useChats";
 import { hasFactoryPhases, visibleComposerActions } from "@/lib/factoryPhase";
-import { useRouter } from "@tanstack/react-router";
 import { showError as showErrorToast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { useVoiceToText } from "@/hooks/useVoiceToText";
@@ -251,9 +250,7 @@ export function ChatInput({ chatId }: { chatId?: number }) {
   const agentTodosByChatId = useAtomValue(agentTodosByChatIdAtom);
   const chatTodos = chatId ? (agentTodosByChatId.get(chatId) ?? []) : [];
   const { refreshAppIframe } = useRunApp();
-  const { navigate } = useRouter();
-  const setSelectedChatId = useSetAtom(selectedChatIdAtom);
-  const { chats, invalidateChats } = useChats(appId);
+  const { chats } = useChats(appId);
   const factoryComposer = hasFactoryPhases(chats);
   const [imageGeneratorOpen, setImageGeneratorOpen] = useState(false);
   const handleOpenImageGenerator = useCallback(() => {
@@ -809,26 +806,6 @@ export function ChatInput({ chatId }: { chatId?: number }) {
     setShowError(false);
   };
 
-  const handleNewChat = async () => {
-    if (appId) {
-      try {
-        const newChatId = await ipc.chat.createChat({ appId });
-        setSelectedChatId(newChatId);
-        navigate({
-          to: "/chat",
-          search: { id: newChatId },
-        });
-        await invalidateChats();
-      } catch (err) {
-        showErrorToast(
-          `Failed to create new chat: ${(err as Error).toString()}`,
-        );
-      }
-    } else {
-      navigate({ to: "/" });
-    }
-  };
-
   const handleApprove = async () => {
     if (!chatId || !messageId || isApproving || isRejecting || isStreaming)
       return;
@@ -906,7 +883,6 @@ export function ChatInput({ chatId }: { chatId?: number }) {
           onDismiss={dismissError}
           error={error}
           isDyadProEnabled={isProEnabled}
-          onStartNewChat={handleNewChat}
           onSwitchToBuildMode={
             isFreeProModel(selectedModel)
               ? undefined

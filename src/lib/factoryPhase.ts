@@ -41,7 +41,7 @@ export function nextFactoryPhase(phase: FactoryPhase): FactoryPhase | null {
 }
 
 export function factoryPhaseChats<T extends { title: string | null }>(
-  chats: T[],
+  chats: readonly T[],
 ): Partial<Record<FactoryPhase, T>> {
   const found: Partial<Record<FactoryPhase, T>> = {};
   for (const chat of chats) {
@@ -63,7 +63,7 @@ export function orderedFactoryPhaseChats<T extends { title: string | null }>(
 }
 
 export function hasFactoryPhases<T extends { title: string | null }>(
-  chats: T[],
+  chats: readonly T[],
 ): boolean {
   const found = factoryPhaseChats(chats);
   return FACTORY_PHASES.every((phase) => found[phase] != null);
@@ -287,4 +287,28 @@ export function showMessageRevisionActions(factory: boolean): boolean {
 /** Factory phase chats hide the assistant model name under each reply. */
 export function showAssistantModelAttribution(factory: boolean): boolean {
   return !factory;
+}
+
+/**
+ * Chats to delete once an app has a phase chat.
+ * The full Discovery, Implementation, and Delivery set stays. When only some
+ * phases exist, an empty phase is removed after another phase has messages.
+ * Any other chat is removed. An app with no phase chat is left alone.
+ */
+export function factoryChatIdsToDrop<
+  T extends { id: number; title: string | null; started: boolean },
+>(chats: readonly T[]): number[] {
+  const present = FACTORY_PHASES.flatMap((phase) => {
+    const chat = factoryPhaseChats(chats)[phase];
+    return chat ? [chat] : [];
+  });
+  if (present.length === 0) return [];
+  const started = present.filter((chat) => chat.started);
+  const keepSource = hasFactoryPhases(chats)
+    ? present
+    : started.length > 0
+      ? started
+      : present;
+  const keep = new Set(keepSource.map((chat) => chat.id));
+  return chats.filter((chat) => !keep.has(chat.id)).map((chat) => chat.id);
 }

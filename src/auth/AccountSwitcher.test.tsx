@@ -1,10 +1,15 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { getDefaultStore } from "jotai";
 import type { ReactNode } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
+import { selectedAppIdAtom } from "@/atoms/appAtoms";
+import { selectedChatIdAtom } from "@/atoms/chatAtoms";
 import { ClerkSessionProvider } from "./session";
 import { AccountSwitcherProvider, OrganizationPicker } from "./AccountSwitcher";
+
+const navigate = vi.hoisted(() => vi.fn());
 
 const getContext = vi.fn(async () => ({ kind: "organization" }));
 
@@ -62,6 +67,10 @@ vi.mock("@/ipc/types", () => ({
   },
 }));
 
+vi.mock("@tanstack/react-router", () => ({
+  useNavigate: () => navigate,
+}));
+
 vi.mock("@clerk/clerk-react", () => ({
   useUser: () => ({
     user: {
@@ -97,6 +106,9 @@ function renderSwitcher(ui: ReactNode) {
 }
 
 beforeEach(() => {
+  navigate.mockClear();
+  getDefaultStore().set(selectedAppIdAtom, null);
+  getDefaultStore().set(selectedChatIdAtom, null);
   getContext.mockClear();
   fetchNext.mockClear();
   revalidate.mockClear();
@@ -212,4 +224,22 @@ it("shows Private as soon as it is clicked and keeps it while the session token 
   expect(screen.getByTestId("organization-picker").textContent).toContain(
     "Private",
   );
+});
+
+it("leaves the open app when switching from an organization to Private", async () => {
+  const user = userEvent.setup();
+  getDefaultStore().set(selectedAppIdAtom, 10);
+  getDefaultStore().set(selectedChatIdAtom, 28);
+  renderSwitcher(<OrganizationPicker />);
+
+  await user.click(screen.getByTestId("organization-picker"));
+  await screen.findByTestId("organization-picker-menu");
+  await user.click(screen.getByText("Private"));
+
+  await waitFor(() => {
+    expect(getDefaultStore().get(selectedAppIdAtom)).toBeNull();
+    expect(getDefaultStore().get(selectedChatIdAtom)).toBeNull();
+  });
+  expect(navigate).toHaveBeenCalledWith({ to: "/" });
+  expect(setActive).toHaveBeenCalledWith({ organization: null });
 });

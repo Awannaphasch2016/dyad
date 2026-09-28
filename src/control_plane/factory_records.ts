@@ -10,6 +10,7 @@ import {
 } from "@/db/schema";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import type { AdminRoleId } from "@/lib/adminAccess";
+import type { FactoryPhase } from "@/lib/factoryPhase";
 import { assertCan, type AccountSession } from "./access";
 import { getControlPlaneDb } from "./db";
 import {
@@ -23,6 +24,17 @@ import {
 } from "./repository";
 
 const LOCK_MS = 2 * 60 * 1000;
+
+function approvalPhase(phase: string): FactoryPhase | null {
+  if (
+    phase === "discovery" ||
+    phase === "implementation" ||
+    phase === "delivery"
+  ) {
+    return phase;
+  }
+  return null;
+}
 
 export interface PhaseApprovalRecord {
   phase: string;
@@ -75,13 +87,15 @@ export async function listPhaseApprovals(
   if (plane && app.remoteId) {
     const remote = await listControlApprovals(plane, app.remoteId);
     for (const row of remote) {
+      const phase = approvalPhase(row.phase);
+      if (!phase) continue;
       const existing = db
         .select()
         .from(factoryPhaseApprovals)
         .where(
           and(
             eq(factoryPhaseApprovals.appId, appId),
-            eq(factoryPhaseApprovals.phase, row.phase),
+            eq(factoryPhaseApprovals.phase, phase),
           ),
         )
         .get();
@@ -89,7 +103,7 @@ export async function listPhaseApprovals(
       db.insert(factoryPhaseApprovals)
         .values({
           appId,
-          phase: row.phase,
+          phase,
           memberId: row.memberId,
           memberName: row.memberName,
           roleId: row.roleId,
@@ -125,13 +139,17 @@ export async function approvePhase(
         ? "approve-implementation"
         : "approve-delivery";
   const { app, session } = await requireOwnedApp(event, appId, permission);
+  const factoryPhase = approvalPhase(phase);
+  if (!factoryPhase) {
+    throw new DyadError("Unknown factory phase.", DyadErrorKind.Validation);
+  }
   const existing = db
     .select()
     .from(factoryPhaseApprovals)
     .where(
       and(
         eq(factoryPhaseApprovals.appId, appId),
-        eq(factoryPhaseApprovals.phase, phase),
+        eq(factoryPhaseApprovals.phase, factoryPhase),
       ),
     )
     .get();
@@ -141,7 +159,7 @@ export async function approvePhase(
   db.insert(factoryPhaseApprovals)
     .values({
       appId,
-      phase,
+      phase: factoryPhase,
       memberId: member.memberId,
       memberName: member.memberName,
       roleId: member.roleId,

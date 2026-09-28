@@ -345,6 +345,65 @@ describe("registerChatHandlers", () => {
     ).resolves.toEqual({ isFavorite: false });
   });
 
+  it("refuses another chat once the three phase titles exist", async () => {
+    const appId = Number(
+      harness.db.insert(apps).values({ name: "phased", path: "phased" }).run()
+        .lastInsertRowid,
+    );
+    for (const title of ["Discovery", "Implementation", "Delivery"]) {
+      harness.db.insert(chats).values({ appId, title }).run();
+    }
+
+    await expect(
+      harness.invokeHandler("create-chat", { appId }),
+    ).rejects.toMatchObject({
+      kind: DyadErrorKind.Validation,
+      message: "This app already has its three phases.",
+    });
+  });
+
+  it("deletes older chats and keeps the phase that has started", async () => {
+    const appId = Number(
+      harness.db
+        .insert(apps)
+        .values({ name: "partial-phases", path: "partial-phases" })
+        .run().lastInsertRowid,
+    );
+    const implementationId = Number(
+      harness.db.insert(chats).values({ appId, title: "Implementation" }).run()
+        .lastInsertRowid,
+    );
+    harness.db
+      .insert(messages)
+      .values({
+        chatId: implementationId,
+        role: "user",
+        content: "Build the page",
+      })
+      .run();
+    const websiteId = Number(
+      harness.db
+        .insert(chats)
+        .values({ appId, title: "Anime University Club Website" })
+        .run().lastInsertRowid,
+    );
+    const discoveryId = Number(
+      harness.db.insert(chats).values({ appId, title: "Discovery" }).run()
+        .lastInsertRowid,
+    );
+
+    const summaries = await harness.invokeHandler<
+      Array<{ id: number; title: string | null }>
+    >("get-chats", appId);
+    expect(summaries.map((chat) => chat.title)).toEqual(["Implementation"]);
+    expect(
+      harness.db.select().from(chats).where(eq(chats.id, websiteId)).get(),
+    ).toBeUndefined();
+    expect(
+      harness.db.select().from(chats).where(eq(chats.id, discoveryId)).get(),
+    ).toBeUndefined();
+  });
+
   it("throws NotFound when favoriting a missing chat", async () => {
     await expect(
       harness.invokeHandler("set-chat-favorite", {
