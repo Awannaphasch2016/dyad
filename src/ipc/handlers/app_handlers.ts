@@ -142,7 +142,6 @@ import {
   reconcileCloudSandboxes,
 } from "../utils/cloud_sandbox_provider";
 import { createFromTemplate } from "./createFromTemplate";
-import { appIdsMissingFactoryPhases } from "@/lib/factoryPhase";
 import { insertFactoryPhaseChats } from "../utils/factory_phase_chats";
 import { ensureDyadGitignored } from "./gitignoreUtils";
 import {
@@ -512,7 +511,7 @@ async function ensureAppOffTestBranch(appId: number): Promise<void> {
   );
 }
 
-async function deleteAppById(
+export async function deleteAppById(
   appId: number,
   options: DeleteAppByIdOptions = {},
 ): Promise<void> {
@@ -878,28 +877,6 @@ async function displayNameConflicts(
     scope ? scope.session.account : null,
     excludeAppId,
   );
-}
-
-/** A web builder is Discovery, Implementation, and Delivery. Anything else is removed. */
-async function deleteAppsMissingFactoryPhases(): Promise<void> {
-  const appRows = await db.query.apps.findMany({ columns: { id: true } });
-  const chatRows = await db.query.chats.findMany({
-    columns: { appId: true, title: true },
-  });
-  const missing = appIdsMissingFactoryPhases(
-    appRows.map((app) => app.id),
-    chatRows,
-  );
-  for (const appId of missing) {
-    try {
-      await deleteAppById(appId);
-    } catch (error) {
-      logger.warn(
-        `App ${appId} is missing its three phases and could not be removed`,
-        error,
-      );
-    }
-  }
 }
 
 export function registerAppHandlers() {
@@ -1318,11 +1295,6 @@ export function registerAppHandlers() {
         scope.session.account,
       );
       if (!synced) scope = null;
-    }
-    // Test fixtures open the older project page. A normal session removes
-    // every app that is not a three-phase web builder.
-    if (!readSettings().isTestMode) {
-      await deleteAppsMissingFactoryPhases();
     }
     const allApps = await db.query.apps.findMany({
       orderBy: [desc(apps.createdAt)],

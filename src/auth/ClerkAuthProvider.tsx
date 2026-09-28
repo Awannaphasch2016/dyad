@@ -139,8 +139,8 @@ function ClerkSessionBridge({ children }: { children: ReactNode }) {
       const token = await auth.getToken({ skipCache: true });
       return token || undefined;
     })
-      .then(() => {
-        if (active) setTokenReady(true);
+      .then((stored) => {
+        if (active && stored) setTokenReady(true);
       })
       .catch(() => undefined);
     return () => {

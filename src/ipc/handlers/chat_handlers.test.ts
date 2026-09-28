@@ -58,9 +58,11 @@ vi.mock("@/ipc/services/chat_actor_deletion_service", () => ({
     deletionOrder.push("actor-barrier");
     return () => deletionOrder.push("actor-release");
   }),
+  beginChatActorDeletion: vi.fn(() => () => undefined),
   settleChatActorsForDeletion: vi.fn(async () => {
     deletionOrder.push("settle-actors");
   }),
+  waitForChatActorIdle: vi.fn(async () => undefined),
 }));
 
 vi.mock("@/ipc/services/chat_actor_service", () => ({
@@ -293,7 +295,7 @@ describe("registerChatHandlers", () => {
       .insert(chats)
       .values({
         appId,
-        title: "Older chat",
+        title: "Discovery",
         createdAt: new Date("2025-01-01T00:00:00Z"),
       })
       .run();
@@ -302,16 +304,27 @@ describe("registerChatHandlers", () => {
       .insert(chats)
       .values({
         appId,
-        title: "Newer chat",
+        title: "Implementation",
         createdAt: new Date("2025-01-02T00:00:00Z"),
       })
       .run();
     const newerChatId = Number(newerChatResult.lastInsertRowid);
+    const deliveryChatId = Number(
+      harness.db
+        .insert(chats)
+        .values({
+          appId,
+          title: "Delivery",
+          createdAt: new Date("2025-01-03T00:00:00Z"),
+        })
+        .run().lastInsertRowid,
+    );
 
     const initialSummaries = await harness.invokeHandler<
       Array<{ id: number; isFavorite: boolean }>
     >("get-chats", appId);
     expect(initialSummaries).toEqual([
+      expect.objectContaining({ id: deliveryChatId, isFavorite: false }),
       expect.objectContaining({ id: newerChatId, isFavorite: false }),
       expect.objectContaining({ id: olderChatId, isFavorite: false }),
     ]);
@@ -327,6 +340,7 @@ describe("registerChatHandlers", () => {
       Array<{ id: number; isFavorite: boolean }>
     >("get-chats", appId);
     expect(favoritedSummaries).toEqual([
+      expect.objectContaining({ id: deliveryChatId, isFavorite: false }),
       expect.objectContaining({ id: newerChatId, isFavorite: false }),
       expect.objectContaining({ id: olderChatId, isFavorite: true }),
     ]);
@@ -362,7 +376,7 @@ describe("registerChatHandlers", () => {
     });
   });
 
-  it("deletes older chats and keeps the phase that has started", async () => {
+  it("deletes an app whose chats are not the three phase titles", async () => {
     const appId = Number(
       harness.db
         .insert(apps)
@@ -381,27 +395,22 @@ describe("registerChatHandlers", () => {
         content: "Build the page",
       })
       .run();
-    const websiteId = Number(
-      harness.db
-        .insert(chats)
-        .values({ appId, title: "Anime University Club Website" })
-        .run().lastInsertRowid,
-    );
-    const discoveryId = Number(
-      harness.db.insert(chats).values({ appId, title: "Discovery" }).run()
-        .lastInsertRowid,
-    );
+    harness.db
+      .insert(chats)
+      .values({ appId, title: "Anime University Club Website" })
+      .run();
+    harness.db.insert(chats).values({ appId, title: "Discovery" }).run();
 
     const summaries = await harness.invokeHandler<
       Array<{ id: number; title: string | null }>
     >("get-chats", appId);
-    expect(summaries.map((chat) => chat.title)).toEqual(["Implementation"]);
+    expect(summaries).toEqual([]);
     expect(
-      harness.db.select().from(chats).where(eq(chats.id, websiteId)).get(),
+      harness.db.select().from(apps).where(eq(apps.id, appId)).get(),
     ).toBeUndefined();
     expect(
-      harness.db.select().from(chats).where(eq(chats.id, discoveryId)).get(),
-    ).toBeUndefined();
+      harness.db.select().from(chats).where(eq(chats.appId, appId)).all(),
+    ).toEqual([]);
   });
 
   it("throws NotFound when favoriting a missing chat", async () => {

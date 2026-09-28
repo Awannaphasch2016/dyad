@@ -27,6 +27,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import { ipc } from "@/ipc/types";
 import { queryKeys } from "@/lib/queryKeys";
 import { showError } from "@/lib/toast";
@@ -206,17 +207,26 @@ function SignedInAccountSwitcher({ children }: { children: ReactNode }) {
     const displayedId = organization?.id ?? userId;
     if (accountId === displayedId) return;
     const organizationId = accountId === userId ? null : accountId;
+    const previousOrganizationId = organization?.id ?? null;
     try {
       // Save first. A token refresh remounts this tree, and restore would
       // otherwise put the previous organization back.
       await remember(organizationId);
       await setActive({ organization: organizationId });
-      await storeSessionToken();
+      const token = await getToken({ skipCache: true });
+      if (!token) {
+        throw new DyadError("Sign in to continue.", DyadErrorKind.Auth);
+      }
+      const stored = await publishSessionToken(async () => token);
+      if (!stored) {
+        throw new DyadError("Sign in to continue.", DyadErrorKind.Auth);
+      }
       leaveOpenApp();
       await refresh();
     } catch (error) {
       try {
-        await remember(organization?.id ?? null);
+        await setActive({ organization: previousOrganizationId });
+        await remember(previousOrganizationId);
       } catch {
         // The label still follows Clerk.
       }

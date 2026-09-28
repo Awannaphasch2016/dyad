@@ -153,7 +153,8 @@ beforeEach(() => {
     return undefined;
   });
   updateUser.mockClear();
-  getToken.mockClear();
+  getToken.mockReset();
+  getToken.mockResolvedValue("session-token");
   setSessionToken.mockReset();
   setSessionToken.mockResolvedValue(undefined);
   organizationRef.current = { id: "org_anak", name: "Anak's Organization" };
@@ -377,6 +378,35 @@ it("loads apps only after the session token is stored", async () => {
     expect(navigate).toHaveBeenCalledWith({ to: "/" });
   } finally {
     releaseToken();
+    invalidate.mockRestore();
+  }
+});
+
+it("keeps the organization when Private has no session token", async () => {
+  getToken.mockResolvedValue(null as unknown as string);
+  const invalidate = vi.spyOn(QueryClient.prototype, "invalidateQueries");
+  const user = userEvent.setup();
+  getDefaultStore().set(selectedAppIdAtom, 10);
+  getDefaultStore().set(selectedChatIdAtom, 28);
+  renderSwitcher(<OrganizationPicker />);
+
+  try {
+    await user.click(screen.getByTestId("organization-picker"));
+    await user.click(await screen.findByText("Private"));
+
+    await waitFor(() => {
+      expect(setActive).toHaveBeenNthCalledWith(1, { organization: null });
+      expect(setActive).toHaveBeenLastCalledWith({ organization: "org_anak" });
+    });
+    expect(invalidate).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+    expect(getDefaultStore().get(selectedAppIdAtom)).toBe(10);
+    expect(getDefaultStore().get(selectedChatIdAtom)).toBe(28);
+    expect(setSessionToken).not.toHaveBeenCalled();
+    expect(screen.getByTestId("organization-picker").textContent).toContain(
+      "Anak's Organization",
+    );
+  } finally {
     invalidate.mockRestore();
   }
 });

@@ -31,9 +31,18 @@ it("drops a token read that started for the previous account", async () => {
 });
 
 it("does not clear the stored token when the signed-in session has none yet", async () => {
-  await publishSessionToken(async () => undefined);
+  await expect(publishSessionToken(async () => undefined)).resolves.toBe(false);
 
   expect(setSessionToken).not.toHaveBeenCalled();
+});
+
+it("reports that a session token was stored", async () => {
+  await expect(publishSessionToken(async () => "session-token")).resolves.toBe(
+    true,
+  );
+
+  expect(setSessionToken).toHaveBeenCalledTimes(1);
+  expect(setSessionToken).toHaveBeenCalledWith({ token: "session-token" });
 });
 
 it("clears the stored token on sign-out", async () => {
