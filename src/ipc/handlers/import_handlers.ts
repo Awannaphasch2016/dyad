@@ -7,14 +7,13 @@ import log from "electron-log";
 import { getDyadAppPath, isAppLocationAccessible } from "../../paths/paths";
 import { apps } from "@/db/schema";
 import { db } from "@/db";
-import { chats } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { insertFactoryPhaseChats } from "../utils/factory_phase_chats";
 
 import { ImportAppParams, ImportAppResult } from "@/ipc/types";
 import { copyDirectoryRecursive } from "../utils/file_utils";
 import { gitService } from "../services/git_service";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
-import { getInitialChatModeForNewChat } from "./chat_mode_resolution";
 import {
   sanitizeAppDisplayName,
   slugifyAppFolderName,
@@ -148,6 +147,7 @@ export function registerImportHandlers() {
       // Store the full absolute path when skipCopy is true, otherwise store
       // the derived folder name.
       // Imported apps don't need an app blueprint — the schema default (false) is correct.
+      const execution = await initialChatExecution();
       const [app] = await db
         .insert(apps)
         .values({
@@ -157,27 +157,17 @@ export function registerImportHandlers() {
           startCommand: startCommand ?? null,
         })
         .returning();
+      const chatId = insertFactoryPhaseChats(app.id, execution);
 
       const scope = await sharingScope(event);
       if (scope) {
         await publishLocalApp(app.id, scope.session.account);
       }
 
-      const initialChatMode = await getInitialChatModeForNewChat();
-
-      // Create an initial chat for this app
-      const [chat] = await db
-        .insert(chats)
-        .values({
-          appId: app.id,
-          chatMode: initialChatMode,
-          ...(await initialChatExecution()),
-        })
-        .returning();
       queryInvalidationBus.publish([{ family: "apps" }, { family: "chats" }], {
         originEndpoint: event.sender,
       });
-      return { appId: app.id, chatId: chat.id };
+      return { appId: app.id, chatId };
     },
   );
 

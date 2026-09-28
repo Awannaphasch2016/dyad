@@ -69,6 +69,20 @@ export function hasFactoryPhases<T extends { title: string | null }>(
   return FACTORY_PHASES.every((phase) => found[phase] != null);
 }
 
+/** Every web builder has Discovery, Implementation, and Delivery. */
+export function appIdsMissingFactoryPhases(
+  appIds: readonly number[],
+  chats: readonly { appId: number; title: string | null }[],
+): number[] {
+  const byApp = new Map<number, { title: string | null }[]>();
+  for (const appId of appIds) byApp.set(appId, []);
+  for (const chat of chats) {
+    const rows = byApp.get(chat.appId);
+    if (rows) rows.push(chat);
+  }
+  return appIds.filter((appId) => !hasFactoryPhases(byApp.get(appId) ?? []));
+}
+
 export function factoryPhaseHint(phase: FactoryPhase): string {
   if (phase === "discovery") {
     return "wewebplus asks about the page name, one sentence, and what goes on the page. Approve once its Discovery summary looks right.";

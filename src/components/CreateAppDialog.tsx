@@ -21,6 +21,7 @@ import { useSelectChat } from "@/hooks/useSelectChat";
 import { Loader2 } from "lucide-react";
 import { neonTemplateHook } from "@/client_logic/template_hook";
 import { ensureFactoryPhaseChats } from "@/first_prompt/ensure_factory_phase_chats";
+import { hasFactoryPhases } from "@/lib/factoryPhase";
 import { ipc } from "@/ipc/types";
 import { showError } from "@/lib/toast";
 
@@ -59,13 +60,16 @@ export function CreateAppDialog({
     setIsSubmitting(true);
     try {
       const result = await createApp({ name: appName.trim() });
-      await ensureFactoryPhaseChats({
-        appId: result.app.id,
-        discoveryChatId: result.chatId,
-        createChat: async ({ appId, initialChatMode }) =>
-          ipc.chat.createChat({ appId, initialChatMode }),
-        updateChat: (params) => ipc.chat.updateChat(params),
-      });
+      const chats = await ipc.chat.getChats(result.app.id);
+      if (!hasFactoryPhases(chats)) {
+        await ensureFactoryPhaseChats({
+          appId: result.app.id,
+          discoveryChatId: result.chatId,
+          createChat: async ({ appId, initialChatMode }) =>
+            ipc.chat.createChat({ appId, initialChatMode }),
+          updateChat: (params) => ipc.chat.updateChat(params),
+        });
+      }
       if (template && NEON_TEMPLATE_IDS.has(template.id)) {
         await neonTemplateHook({
           appId: result.app.id,

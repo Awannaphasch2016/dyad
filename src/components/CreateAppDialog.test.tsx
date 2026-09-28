@@ -18,6 +18,13 @@ const updateChat = vi.hoisted(() =>
       undefined,
   ),
 );
+const getChats = vi.hoisted(() =>
+  vi.fn(async (_appId: number) => [
+    { id: 9, title: "Discovery" },
+    { id: 10, title: "Implementation" },
+    { id: 11, title: "Delivery" },
+  ]),
+);
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -46,6 +53,7 @@ vi.mock("@/lib/toast", () => ({
 vi.mock("@/ipc/types", () => ({
   ipc: {
     chat: {
+      getChats: (appId: number) => getChats(appId),
       createChat: (params: { appId: number; initialChatMode: string }) =>
         createChat(params),
       updateChat: (params: {
@@ -62,10 +70,10 @@ beforeEach(() => {
   selectChat.mockClear();
   updateChat.mockClear();
   createChat.mockReset();
-  createChat.mockResolvedValueOnce(10).mockResolvedValueOnce(11);
+  getChats.mockClear();
 });
 
-it("creates Discovery, Implementation, and Delivery from the new app dialog", async () => {
+it("opens the new app after its three phases already exist", async () => {
   const onOpenChange = vi.fn();
   render(
     <CreateAppDialog open onOpenChange={onOpenChange} template={undefined} />,
@@ -80,28 +88,8 @@ it("creates Discovery, Implementation, and Delivery from the new app dialog", as
     expect(selectChat).toHaveBeenCalledWith({ chatId: 9, appId: 3 }),
   );
   expect(createApp).toHaveBeenCalledWith({ name: "Campus" });
-  expect(updateChat).toHaveBeenNthCalledWith(1, {
-    chatId: 9,
-    title: "Discovery",
-    chatMode: "ask",
-  });
-  expect(createChat).toHaveBeenNthCalledWith(1, {
-    appId: 3,
-    initialChatMode: "build",
-  });
-  expect(updateChat).toHaveBeenNthCalledWith(2, {
-    chatId: 10,
-    title: "Implementation",
-    chatMode: "build",
-  });
-  expect(createChat).toHaveBeenNthCalledWith(2, {
-    appId: 3,
-    initialChatMode: "ask",
-  });
-  expect(updateChat).toHaveBeenNthCalledWith(3, {
-    chatId: 11,
-    title: "Delivery",
-    chatMode: "ask",
-  });
+  expect(getChats).toHaveBeenCalledWith(3);
+  expect(createChat).not.toHaveBeenCalled();
+  expect(updateChat).not.toHaveBeenCalled();
   expect(onOpenChange).toHaveBeenCalledWith(false);
 });

@@ -142,7 +142,8 @@ import {
   reconcileCloudSandboxes,
 } from "../utils/cloud_sandbox_provider";
 import { createFromTemplate } from "./createFromTemplate";
-import { getInitialChatModeForNewChat } from "./chat_mode_resolution";
+import { appIdsMissingFactoryPhases } from "@/lib/factoryPhase";
+import { insertFactoryPhaseChats } from "../utils/factory_phase_chats";
 import { ensureDyadGitignored } from "./gitignoreUtils";
 import {
   gitListBranches,
@@ -879,6 +880,28 @@ async function displayNameConflicts(
   );
 }
 
+/** A web builder is Discovery, Implementation, and Delivery. Anything else is removed. */
+async function deleteAppsMissingFactoryPhases(): Promise<void> {
+  const appRows = await db.query.apps.findMany({ columns: { id: true } });
+  const chatRows = await db.query.chats.findMany({
+    columns: { appId: true, title: true },
+  });
+  const missing = appIdsMissingFactoryPhases(
+    appRows.map((app) => app.id),
+    chatRows,
+  );
+  for (const appId of missing) {
+    try {
+      await deleteAppById(appId);
+    } catch (error) {
+      logger.warn(
+        `App ${appId} is missing its three phases and could not be removed`,
+        error,
+      );
+    }
+  }
+}
+
 export function registerAppHandlers() {
   registerCloudSandboxSyncUpdateListener();
 
@@ -896,6 +919,7 @@ export function registerAppHandlers() {
     }
     let app!: typeof apps.$inferSelect;
     let fullAppPath!: string;
+    let chatId!: number;
     try {
       const appName = sanitizeAppDisplayName(params.name);
 
@@ -921,6 +945,7 @@ export function registerAppHandlers() {
 
       // Create a new app
       const settings = readSettings();
+      const execution = await initialChatExecution();
       [app] = await db
         .insert(apps)
         .values({
@@ -933,6 +958,9 @@ export function registerAppHandlers() {
           testingEnabled: settings.enableTestingForNewApps ?? false,
         })
         .returning();
+      // The three phase chats commit before the next await, so a list refresh
+      // cannot remove this app for missing Discovery, Implementation, or Delivery.
+      chatId = insertFactoryPhaseChats(app.id, execution);
     } catch (error) {
       if (params.firstPromptCreationOperationId) {
         firstPromptCreationRegistry.commit(
@@ -955,20 +983,6 @@ export function registerAppHandlers() {
     };
 
     try {
-      const initialChatMode = await getInitialChatModeForNewChat(
-        params.initialChatMode,
-      );
-
-      // Create an initial chat for this app
-      const [chat] = await db
-        .insert(chats)
-        .values({
-          appId: app.id,
-          chatMode: initialChatMode,
-          ...(await initialChatExecution()),
-        })
-        .returning();
-
       await createFromTemplate({
         fullAppPath,
       });
@@ -984,13 +998,12 @@ export function registerAppHandlers() {
         path: fullAppPath,
       });
 
-      // Update chat with initial commit hash
       await db
         .update(chats)
         .set({
           initialCommitHash: commitHash,
         })
-        .where(eq(chats.id, chat.id));
+        .where(eq(chats.appId, app.id));
 
       const scope = await sharingScope(event);
       if (scope) {
@@ -999,7 +1012,7 @@ export function registerAppHandlers() {
 
       const result = {
         app: { ...app, resolvedPath: fullAppPath },
-        chatId: chat.id,
+        chatId,
       };
       return result;
     } finally {
@@ -1149,6 +1162,7 @@ export function registerAppHandlers() {
         }
 
         // 4. Create a new app entry in the database
+        const execution = await initialChatExecution();
         const [newDbApp] = await db
           .insert(apps)
           .values({
@@ -1164,6 +1178,7 @@ export function registerAppHandlers() {
             startCommand: originalApp.startCommand,
           })
           .returning();
+        insertFactoryPhaseChats(newDbApp.id, execution);
 
         if (withHistory) {
           const originalVersionMetadata = await db.query.versions.findMany({
@@ -1303,6 +1318,11 @@ export function registerAppHandlers() {
         scope.session.account,
       );
       if (!synced) scope = null;
+    }
+    // Test fixtures open the older project page. A normal session removes
+    // every app that is not a three-phase web builder.
+    if (!readSettings().isTestMode) {
+      await deleteAppsMissingFactoryPhases();
     }
     const allApps = await db.query.apps.findMany({
       orderBy: [desc(apps.createdAt)],

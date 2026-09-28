@@ -10,6 +10,7 @@ import {
   factoryPhaseChats,
   factoryPhaseKickoff,
   latestFactoryPhaseSummary,
+  appIdsMissingFactoryPhases,
   hasFactoryPhases,
   isFactoryPhaseApproved,
   isFactoryPhaseUnlocked,
@@ -62,6 +63,24 @@ describe("factoryPhase", () => {
     expect(hasFactoryPhases(chats)).toBe(true);
     expect(factoryPhaseChats(chats).discovery?.id).toBe(1);
     expect(factoryPhaseChats(chats).implementation?.id).toBe(3);
+  });
+
+  it("selects an app that does not have all three phases", () => {
+    expect(
+      appIdsMissingFactoryPhases(
+        [3, 10],
+        [
+          { appId: 3, title: "Discovery" },
+          { appId: 3, title: "Implementation" },
+          { appId: 3, title: "Delivery" },
+          { appId: 10, title: "Implementation" },
+        ],
+      ),
+    ).toEqual([10]);
+  });
+
+  it("selects an app with no chats", () => {
+    expect(appIdsMissingFactoryPhases([4], [])).toEqual([4]);
   });
 
   it("leaves an app alone until it has a phase chat", () => {
