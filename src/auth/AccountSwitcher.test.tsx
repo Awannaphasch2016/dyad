@@ -322,6 +322,19 @@ it("switches back to the organization after Private", async () => {
   expect(setActive).toHaveBeenNthCalledWith(1, { organization: null });
 });
 
+it("closes the account menu when the page outside it is tapped", async () => {
+  const user = userEvent.setup();
+  renderSwitcher(<OrganizationPicker />);
+
+  await user.click(screen.getByTestId("organization-picker"));
+  await screen.findByTestId("organization-picker-menu");
+  await user.click(screen.getByRole("button", { name: "Close account menu" }));
+
+  await waitFor(() =>
+    expect(screen.queryByTestId("organization-picker-menu")).toBeNull(),
+  );
+});
+
 it("closes the menu and does not switch when the active account is chosen again", async () => {
   const user = userEvent.setup();
   renderSwitcher(<OrganizationPicker />);

@@ -134,9 +134,11 @@ function ClerkSessionBridge({ children }: { children: ReactNode }) {
     if (!auth.isLoaded) return;
     let active = true;
     setTokenReady(false);
-    void publishSessionToken(async () =>
-      auth.isSignedIn ? await auth.getToken({ skipCache: true }) : null,
-    )
+    void publishSessionToken(async () => {
+      if (!auth.isSignedIn) return null;
+      const token = await auth.getToken({ skipCache: true });
+      return token || undefined;
+    })
       .then(() => {
         if (active) setTokenReady(true);
       })

@@ -21,6 +21,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuPortal,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
@@ -130,7 +131,10 @@ function SignedInAccountSwitcher({ children }: { children: ReactNode }) {
     queryClient.invalidateQueries({ queryKey: queryKeys.apps.all });
 
   const storeSessionToken = () =>
-    publishSessionToken(() => getToken({ skipCache: true }));
+    publishSessionToken(async () => {
+      const token = await getToken({ skipCache: true });
+      return token || undefined;
+    });
 
   const leaveOpenApp = () => {
     if (store.get(selectedAppIdAtom) == null) return;
@@ -325,6 +329,17 @@ export function OrganizationPicker() {
         />
         <span className="truncate">{state.active.name}</span>
       </DropdownMenuTrigger>
+      {open ? (
+        <DropdownMenuPortal>
+          <button
+            type="button"
+            aria-label="Close account menu"
+            tabIndex={-1}
+            className="fixed inset-0 z-40 cursor-default border-0 bg-transparent p-0"
+            onClick={() => setOpen(false)}
+          />
+        </DropdownMenuPortal>
+      ) : null}
       <DropdownMenuContent data-testid="organization-picker-menu">
         {state.creating ? (
           <form

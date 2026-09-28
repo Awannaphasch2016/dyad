@@ -29,3 +29,28 @@ it("drops a token read that started for the previous account", async () => {
   expect(setSessionToken).toHaveBeenCalledTimes(1);
   expect(setSessionToken).toHaveBeenCalledWith({ token: "current-token" });
 });
+
+it("does not clear the stored token when the signed-in session has none yet", async () => {
+  await publishSessionToken(async () => undefined);
+
+  expect(setSessionToken).not.toHaveBeenCalled();
+});
+
+it("clears the stored token on sign-out", async () => {
+  await publishSessionToken(async () => null);
+
+  expect(setSessionToken).toHaveBeenCalledTimes(1);
+  expect(setSessionToken).toHaveBeenCalledWith({ token: null });
+});
+
+it("keeps a newer signed-in token ahead of a sign-out flicker", async () => {
+  const flicker = publishSessionToken(async () => null);
+  await Promise.resolve();
+  await Promise.resolve();
+  const current = publishSessionToken(async () => "current-token");
+
+  await Promise.all([flicker, current]);
+
+  expect(setSessionToken).toHaveBeenCalledTimes(1);
+  expect(setSessionToken).toHaveBeenCalledWith({ token: "current-token" });
+});
