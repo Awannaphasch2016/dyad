@@ -63,6 +63,8 @@ vi.mock("@/ipc/types", () => ({
       approve: (...args: unknown[]) => approveAccountPhase(...args),
       listComments: vi.fn(async () => ({ comments: [] })),
       addComment: vi.fn(),
+      listQuestions: vi.fn(async () => ({ questions: [] })),
+      answerQuestion: vi.fn(),
     },
     chat: {
       getChat: (...args: unknown[]) => getChat(...args),

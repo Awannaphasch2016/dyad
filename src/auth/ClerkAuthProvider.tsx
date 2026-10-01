@@ -7,7 +7,10 @@ import {
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { roleFromClerkMembership } from "@/lib/adminAccess";
+import {
+  clerkCanInvite,
+  roleFromClerkMembership,
+} from "@/lib/adminAccess";
 import { queryKeys } from "@/lib/queryKeys";
 import { ipc } from "@/ipc/types";
 import { loadClerkBrowser } from "./loadClerkBrowser";
@@ -165,7 +168,8 @@ function ClerkSessionBridge({ children }: { children: ReactNode }) {
       userId: auth.userId,
       roleId: organization
         ? roleFromClerkMembership(membership?.publicMetadata, membership?.role)
-        : "admin",
+        : null,
+      canInvite: organization ? clerkCanInvite(membership?.role) : false,
       email: user?.primaryEmailAddress?.emailAddress ?? null,
       displayName: user?.fullName ?? user?.primaryEmailAddress?.emailAddress,
       account,

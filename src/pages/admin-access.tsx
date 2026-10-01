@@ -17,13 +17,13 @@ export default function AdminAccessPage() {
   const queryClient = useQueryClient();
   const clerkRole = useClerkRole();
   const session = useClerkSession();
-  const manageMembers = canManageMembers(clerkRole.status, clerkRole.roleId);
+  const manageMembers = canManageMembers(clerkRole.status, clerkRole.canInvite);
   const access = useQuery({
     queryKey: ["admin-access"],
     queryFn: () => ipc.clerk.getAccess(),
   });
   const [email, setEmail] = useState("");
-  const [roleId, setRoleId] = useState<AdminRoleId>("reviewer");
+  const [roleId, setRoleId] = useState<AdminRoleId>("project-manager");
   const [pending, setPending] = useState(false);
 
   const refresh = () =>
@@ -130,7 +130,7 @@ export default function AdminAccessPage() {
                         <select
                           aria-label={`Role for ${member.email}`}
                           className="h-9 w-full rounded-md border bg-transparent px-2"
-                          value={member.roleId}
+                          value={member.roleId ?? ""}
                           disabled={pending || !canEditMembers}
                           onChange={(event) =>
                             void changeRole(

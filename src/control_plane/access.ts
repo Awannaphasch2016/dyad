@@ -1,6 +1,9 @@
 import { verifyToken } from "@clerk/backend";
 import type { AdminRoleId } from "@/lib/adminAccess";
-import { roleFromClerkMembership } from "@/lib/adminAccess";
+import {
+  clerkCanInvite,
+  roleFromClerkMembership,
+} from "@/lib/adminAccess";
 import { roleHasPermission } from "@/auth/permissions";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import type { AccountOwner } from "./owner";
@@ -10,7 +13,8 @@ import { sessionTokenForRequest } from "./session_store";
 export interface VerifiedAccount {
   userId: string;
   orgId: string | null;
-  roleId: AdminRoleId;
+  roleId: AdminRoleId | null;
+  canInvite: boolean;
   displayName: string | null;
   member: boolean;
 }
@@ -21,7 +25,8 @@ export type AccountSession =
       mode: "signed-in";
       userId: string;
       account: AccountOwner;
-      roleId: AdminRoleId;
+      roleId: AdminRoleId | null;
+      canInvite: boolean;
       displayName: string | null;
     };
 
@@ -53,7 +58,7 @@ export function sharingEnabled(): boolean {
 export function roleFromMembership(
   metadata: unknown,
   clerkRole: unknown,
-): AdminRoleId {
+): AdminRoleId | null {
   return roleFromClerkMembership(metadata, clerkRole);
 }
 
@@ -83,7 +88,8 @@ export async function defaultVerifySessionToken(
     return {
       userId,
       orgId: null,
-      roleId: "admin",
+      roleId: null,
+      canInvite: false,
       displayName: null,
       member: true,
     };
@@ -93,18 +99,40 @@ export async function defaultVerifySessionToken(
     return {
       userId,
       orgId,
-      roleId: "reviewer",
+      roleId: null,
+      canInvite: false,
       displayName: null,
       member: false,
     };
   }
+  const metadataRole = roleFromMembership(
+    membership.metadata,
+    membership.clerkRole,
+  );
+  const storedRole = await membershipRoleFromControlPlane(orgId, userId);
   return {
     userId,
     orgId,
-    roleId: roleFromMembership(membership.metadata, membership.clerkRole),
+    roleId: storedRole ?? metadataRole,
+    canInvite: clerkCanInvite(membership.clerkRole),
     displayName: membership.displayName,
     member: true,
   };
+}
+
+async function membershipRoleFromControlPlane(
+  orgId: string,
+  userId: string,
+): Promise<AdminRoleId | null> {
+  try {
+    const { getControlPlaneDb } = await import("./db");
+    const { readMembershipRole } = await import("./hitl_store");
+    const plane = await getControlPlaneDb();
+    if (!plane) return null;
+    return await readMembershipRole(plane, orgId, userId);
+  } catch {
+    return null;
+  }
 }
 
 async function fetchOrgMembership(
@@ -179,7 +207,8 @@ export async function resolveAccountSession(event: {
     mode: "signed-in",
     userId: verified.userId,
     account,
-    roleId: verified.orgId ? verified.roleId : "admin",
+    roleId: verified.roleId,
+    canInvite: verified.canInvite,
     displayName: verified.displayName,
   };
 }
@@ -216,9 +245,16 @@ export function decideAccess(input: {
       message: "This account has no members.",
     };
   }
-  const allowed =
-    input.session.roleId === "admin" ||
-    roleHasPermission(input.session.roleId, input.permission);
+  if (input.session.account.type === "user") return { kind: "allow" };
+  if (input.permission === "manage-members") {
+    return input.session.canInvite
+      ? { kind: "allow" }
+      : { kind: "forbidden", message: "Your role can't do that." };
+  }
+  if (input.permission === "view-page" || input.permission === "comment") {
+    return { kind: "allow" };
+  }
+  const allowed = roleHasPermission(input.session.roleId, input.permission);
   if (!allowed) {
     return {
       kind: "forbidden",

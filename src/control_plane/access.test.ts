@@ -8,7 +8,8 @@ describe("account access", () => {
       mode: "signed-in" as const,
       userId: "user_a",
       account: privateOwner("user_a"),
-      roleId: "admin" as const,
+      roleId: null,
+      canInvite: false,
       displayName: "Ada",
     };
     expect(
@@ -33,7 +34,8 @@ describe("account access", () => {
       mode: "signed-in" as const,
       userId: "user_a",
       account: { type: "org" as const, id: "org_1" },
-      roleId: "reviewer" as const,
+      roleId: "developer" as const,
+      canInvite: false,
       displayName: "Ada",
     };
     expect(
@@ -46,7 +48,7 @@ describe("account access", () => {
     ).toBe("forbidden");
     expect(
       decideAccess({
-        session: { ...reviewer, roleId: "admin" },
+        session: { ...reviewer, canInvite: true },
         permission: "manage-members",
         owner: { type: "org", id: "org_1" },
         organizationOnly: true,
@@ -62,8 +64,10 @@ describe("account access", () => {
   });
 
   it("reads the membership role and falls back to the Clerk org role", () => {
-    expect(roleFromMembership({ role: "dev" }, "org:member")).toBe("dev");
-    expect(roleFromMembership({}, "org:admin")).toBe("admin");
-    expect(roleFromMembership({}, "org:member")).toBe("reviewer");
+    expect(roleFromMembership({ role: "developer" }, "org:member")).toBe(
+      "developer",
+    );
+    expect(roleFromMembership({}, "org:admin")).toBeNull();
+    expect(roleFromMembership({}, "org:member")).toBeNull();
   });
 });

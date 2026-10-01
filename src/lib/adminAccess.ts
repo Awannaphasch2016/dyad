@@ -1,4 +1,4 @@
-export const ADMIN_ROLE_IDS = ["admin", "reviewer", "dev"] as const;
+export const ADMIN_ROLE_IDS = ["project-manager", "developer"] as const;
 
 export type AdminRoleId = (typeof ADMIN_ROLE_IDS)[number];
 
@@ -17,24 +17,14 @@ export interface AdminMember {
   id: string;
   name: string;
   email: string;
-  roleId: AdminRoleId;
+  roleId: AdminRoleId | null;
   status: "active" | "invited";
 }
 
 export const ADMIN_ROLES: readonly AdminRole[] = [
   {
-    id: "admin",
-    name: "Admin",
-    permissions: [
-      { id: "approve-discovery", label: "Approve discovery" },
-      { id: "approve-implementation", label: "Approve implementation" },
-      { id: "approve-delivery", label: "Approve delivery" },
-      { id: "manage-members", label: "Manage members" },
-    ],
-  },
-  {
-    id: "reviewer",
-    name: "Reviewer",
+    id: "project-manager",
+    name: "Project Manager",
     permissions: [
       { id: "approve-discovery", label: "Approve discovery" },
       { id: "approve-implementation", label: "Approve implementation" },
@@ -44,8 +34,8 @@ export const ADMIN_ROLES: readonly AdminRole[] = [
     ],
   },
   {
-    id: "dev",
-    name: "Dev",
+    id: "developer",
+    name: "Developer",
     permissions: [
       { id: "view-page", label: "View the page" },
       { id: "comment", label: "Comment on a phase" },
@@ -55,35 +45,32 @@ export const ADMIN_ROLES: readonly AdminRole[] = [
 ];
 
 export function isAdminRoleId(value: unknown): value is AdminRoleId {
-  return value === "admin" || value === "reviewer" || value === "dev";
-}
-
-/** Legacy Clerk metadata used `member` before reviewer/dev existed. */
-export function roleFromMetadata(metadata: unknown): AdminRoleId {
-  if (!metadata || typeof metadata !== "object") return "reviewer";
-  const role = (metadata as { role?: unknown }).role;
-  if (role === "member") return "reviewer";
-  return isAdminRoleId(role) ? role : "reviewer";
+  return value === "project-manager" || value === "developer";
 }
 
 /**
- * Membership metadata wins when it names a role. The person who created the
- * organization is Clerk's org:admin even when that metadata is still empty.
+ * Only project-manager and developer can answer a gate. An unknown value,
+ * including the old admin/reviewer/dev names, is not a gate role.
+ */
+export function roleFromMetadata(metadata: unknown): AdminRoleId | null {
+  if (!metadata || typeof metadata !== "object") return null;
+  const role = (metadata as { role?: unknown }).role;
+  return isAdminRoleId(role) ? role : null;
+}
+
+/**
+ * Gate role comes from membership metadata. Clerk org:admin stays an
+ * invitation flag and does not become a role that can answer a gate.
  */
 export function roleFromClerkMembership(
   metadata: unknown,
-  clerkRole: unknown,
-): AdminRoleId {
-  if (
-    metadata &&
-    typeof metadata === "object" &&
-    "role" in metadata &&
-    (metadata as { role?: unknown }).role != null
-  ) {
-    return roleFromMetadata(metadata);
-  }
-  if (clerkRole === "org:admin" || clerkRole === "admin") return "admin";
-  return "reviewer";
+  _clerkRole: unknown,
+): AdminRoleId | null {
+  return roleFromMetadata(metadata);
+}
+
+export function clerkCanInvite(clerkRole: unknown): boolean {
+  return clerkRole === "org:admin" || clerkRole === "admin";
 }
 
 export function copyAdminRoles(): AdminRole[] {
@@ -95,7 +82,13 @@ export function copyAdminRoles(): AdminRole[] {
 
 export function adminRoleById(roleId: AdminRoleId): AdminRole {
   const role = ADMIN_ROLES.find((item) => item.id === roleId);
-  if (!role) return ADMIN_ROLES[1]!;
+  if (!role) {
+    return {
+      id: roleId,
+      name: roleId,
+      permissions: [],
+    };
+  }
   return role;
 }
 

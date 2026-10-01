@@ -32,6 +32,8 @@ async function openControlPlane(): Promise<ControlPlaneDb> {
   await client`CREATE SCHEMA IF NOT EXISTS wewebplus`;
   const db = drizzlePostgres(client, { schema });
   await migratePostgres(db, { migrationsFolder });
+  const { seedWewebplusMemberships } = await import("./hitl_store");
+  await seedWewebplusMemberships(db);
   cached = db;
   return db;
 }

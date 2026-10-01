@@ -13,10 +13,10 @@ function RequireOrganizationAdmin({ children }: { children: ReactNode }) {
     session.status === "signed-in"
       ? {
           status: "signed-in",
-          roleId: session.roleId,
+          canInvite: session.canInvite,
           accountType: session.account?.type ?? null,
         }
-      : { status: session.status, roleId: null, accountType: null },
+      : { status: session.status, canInvite: false, accountType: null },
   );
 
   useEffect(() => {

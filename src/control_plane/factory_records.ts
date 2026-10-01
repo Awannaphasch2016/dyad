@@ -9,7 +9,6 @@ import {
   factoryPhaseComments,
 } from "@/db/schema";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
-import type { AdminRoleId } from "@/lib/adminAccess";
 import type { FactoryPhase } from "@/lib/factoryPhase";
 import { assertCan, type AccountSession } from "./access";
 import { getControlPlaneDb } from "./db";
@@ -47,7 +46,7 @@ export interface PhaseApprovalRecord {
 function memberLabel(session: AccountSession): {
   memberId: string;
   memberName: string;
-  roleId: AdminRoleId | "";
+  roleId: string;
 } {
   if (session.mode !== "signed-in") {
     return { memberId: "", memberName: "", roleId: "" };
@@ -55,7 +54,7 @@ function memberLabel(session: AccountSession): {
   return {
     memberId: session.userId,
     memberName: session.displayName || session.userId,
-    roleId: session.roleId,
+    roleId: session.roleId ?? "",
   };
 }
 

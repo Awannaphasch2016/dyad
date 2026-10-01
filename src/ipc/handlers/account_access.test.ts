@@ -35,14 +35,15 @@ describe("organization member changes", () => {
     setSessionVerifierForTesting(async () => ({
       userId: "user_dev",
       orgId: "org_1",
-      roleId: "dev",
+      roleId: "developer",
+      canInvite: false,
       displayName: "Dev",
       member: true,
     }));
     registerClerkHandlers();
     const handler = getRegisteredHandlerForTesting("clerk:invite-member");
     await expect(
-      handler(event, { email: "new@example.com", roleId: "reviewer" }),
+      handler(event, { email: "new@example.com", roleId: "developer" }),
     ).rejects.toMatchObject({
       name: "DyadError",
       kind: DyadErrorKind.Auth,
@@ -61,7 +62,8 @@ describe("organization member changes", () => {
       return {
         userId: "user_owner",
         orgId: null,
-        roleId: "admin",
+        roleId: null,
+        canInvite: false,
         displayName: "Anak",
         member: true,
       };
@@ -84,7 +86,8 @@ describe("organization member changes", () => {
       return {
         userId: "user_desktop",
         orgId: null,
-        roleId: "admin",
+        roleId: null,
+        canInvite: false,
         displayName: "Desktop",
         member: true,
       };
@@ -101,7 +104,8 @@ describe("organization member changes", () => {
     setSessionVerifierForTesting(async () => ({
       userId: "user_owner",
       orgId: null,
-      roleId: "admin",
+      roleId: null,
+      canInvite: true,
       displayName: "Anak",
       member: true,
     }));
@@ -145,7 +149,6 @@ describe("organization member changes", () => {
     );
     expect(JSON.parse(calls[1]?.body ?? "{}")).toEqual({
       role: "org:admin",
-      public_metadata: { role: "admin" },
     });
   });
 
@@ -156,7 +159,8 @@ describe("organization member changes", () => {
     setSessionVerifierForTesting(async () => ({
       userId: "user_member",
       orgId: "org_created",
-      roleId: "reviewer",
+      roleId: null,
+      canInvite: false,
       displayName: "Member",
       member: true,
     }));

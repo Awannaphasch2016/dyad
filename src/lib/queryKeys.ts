@@ -114,6 +114,8 @@ export const queryKeys = {
     approvals: (appId: number | null) =>
       ["factory", "approvals", appId] as const,
     comments: (appId: number | null) => ["factory", "comments", appId] as const,
+    questions: (appId: number | null, phase: string | null) =>
+      ["factory", "questions", appId, phase] as const,
     answerLock: (chatId: number | null) =>
       ["factory", "answer-lock", chatId] as const,
   },

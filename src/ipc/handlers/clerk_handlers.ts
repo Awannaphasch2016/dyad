@@ -234,7 +234,6 @@ export function registerClerkHandlers() {
         method: "PATCH",
         body: JSON.stringify({
           role: "org:admin",
-          public_metadata: { role: "admin" },
         }),
       });
     },

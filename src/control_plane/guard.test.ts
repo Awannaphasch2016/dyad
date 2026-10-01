@@ -136,7 +136,8 @@ function enableSharing() {
   setSessionVerifierForTesting(async () => ({
     userId: "user_a",
     orgId: "org_1",
-    roleId: "admin",
+    roleId: "project-manager",
+    canInvite: true,
     displayName: "A",
     member: true,
   }));

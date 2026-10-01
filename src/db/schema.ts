@@ -294,6 +294,57 @@ export const factoryPhaseComments = sqliteTable("factory_phase_comments", {
   remoteId: text("remote_id"),
 });
 
+export const hitlQuestions = sqliteTable(
+  "hitl_questions",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id").notNull(),
+    appId: integer("app_id")
+      .notNull()
+      .references(() => apps.id, { onDelete: "cascade" }),
+    phase: text("phase").notNull(),
+    chatId: integer("chat_id").references(() => chats.id, {
+      onDelete: "set null",
+    }),
+    runId: text("run_id").notNull(),
+    stepId: text("step_id").notNull(),
+    targetRoleId: text("target_role_id").notNull(),
+    visibility: text("visibility").notNull().default("role"),
+    status: text("status", { enum: ["open", "answered"] }).notNull(),
+    body: text("body").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    beadId: text("bead_id"),
+    answeredByUserId: text("answered_by_user_id"),
+    answeredByName: text("answered_by_name"),
+    answeredAt: integer("answered_at", { mode: "timestamp" }),
+  },
+  (table) => [
+    uniqueIndex("hitl_questions_idempotency_unique").on(
+      table.orgId,
+      table.idempotencyKey,
+    ),
+  ],
+);
+
+export const hitlAnswers = sqliteTable(
+  "hitl_answers",
+  {
+    id: text("id").primaryKey(),
+    questionId: text("question_id")
+      .notNull()
+      .references(() => hitlQuestions.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(),
+    body: text("body").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => [uniqueIndex("hitl_answers_question_unique").on(table.questionId)],
+);
+
 export const answerLocks = sqliteTable("answer_locks", {
   chatId: integer("chat_id")
     .primaryKey()

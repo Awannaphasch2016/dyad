@@ -26,6 +26,20 @@ export const AnswerLockSchema = z
   })
   .nullable();
 
+export const HitlQuestionViewSchema = z.object({
+  id: z.string(),
+  stepId: z.string(),
+  targetRoleId: z.enum(["project-manager", "developer"]),
+  status: z.enum(["open", "answered"]),
+  createdAt: z.string(),
+  answeredByUserId: z.string().nullable(),
+  answeredByName: z.string().nullable(),
+  answeredAt: z.string().nullable(),
+  beadId: z.string().nullable(),
+  body: z.string().nullable(),
+  canAnswer: z.boolean(),
+});
+
 export const factoryContracts = {
   listApprovals: defineContract({
     channel: "factory:list-approvals",
@@ -65,6 +79,26 @@ export const factoryContracts = {
     channel: "factory:get-answer-lock",
     input: z.object({ chatId: z.number() }),
     output: AnswerLockSchema,
+  }),
+  listQuestions: defineContract({
+    channel: "factory:list-questions",
+    input: z.object({
+      appId: z.number(),
+      phase: z.enum(["discovery", "implementation", "delivery"]),
+    }),
+    output: z.object({ questions: z.array(HitlQuestionViewSchema) }),
+  }),
+  answerQuestion: defineContract({
+    channel: "factory:answer-question",
+    input: z.object({
+      appId: z.number(),
+      questionId: z.string(),
+      body: z.string(),
+    }),
+    output: z.object({
+      question: HitlQuestionViewSchema,
+      resolved: z.boolean(),
+    }),
   }),
 } as const;
 

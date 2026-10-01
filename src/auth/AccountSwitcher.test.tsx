@@ -120,7 +120,8 @@ function renderSwitcher(ui: ReactNode) {
       <ClerkSessionProvider
         value={{
           status: "signed-in",
-          roleId: "admin",
+          roleId: "project-manager",
+          canInvite: true,
           userId: "user_anak",
           email: "anak@example.com",
           account: { type: "org", id: "org_anak", name: "Anak's Organization" },
@@ -229,7 +230,8 @@ it("keeps Private while the session token for that user is loading", async () =>
   });
   const signedIn = {
     status: "signed-in" as const,
-    roleId: "admin" as const,
+    roleId: "project-manager" as const,
+    canInvite: true,
     userId: "user_anak",
     email: "anak@example.com",
     account: {
@@ -285,7 +287,8 @@ it("switches back to the organization after Private", async () => {
         <ClerkSessionProvider
           value={{
             status: "signed-in",
-            roleId: "admin",
+            roleId: "project-manager",
+          canInvite: true,
             userId: "user_anak",
             email: "anak@example.com",
             account: {
