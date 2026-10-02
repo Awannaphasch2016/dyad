@@ -88,7 +88,7 @@ describe("browser bridge", () => {
     const html = injectBrowserBridgeScript(
       "<head><title>wewebplus</title></head>",
     );
-    expect(html.startsWith("<head><script")).toBe(true);
+    expect(html.startsWith('<head><base href="/"><script')).toBe(true);
     expect(html.indexOf("window.electron")).toBeLessThan(
       html.indexOf("<title>"),
     );
@@ -328,7 +328,9 @@ describe("browser bridge", () => {
     expect(homeHtml).toContain("<title>wewebplus</title>");
 
     const route = await fetch(`${origin}/apps/12`);
-    expect(await route.text()).toContain("data-dyad-browser-bridge");
+    const routeHtml = await route.text();
+    expect(routeHtml).toContain("data-dyad-browser-bridge");
+    expect(routeHtml).toContain('<base href="/">');
 
     const asset = await fetch(`${origin}/assets/app.js`);
     expect(asset.status).toBe(200);

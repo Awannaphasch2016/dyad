@@ -221,10 +221,14 @@ export function browserBridgeClientScript(): string {
 export function injectBrowserBridgeScript(html: string): string {
   if (html.includes(BRIDGE_MARKER)) return html;
   const tag = `<script ${BRIDGE_MARKER}>${browserBridgeClientScript()}</script>`;
+  // The packaged renderer uses relative asset URLs for Electron's file load.
+  // A <base> of / keeps those URLs on the site root when the browser is on a
+  // nested route such as /sign-in/sso-callback.
+  const base = /<base\s/i.test(html) ? "" : '<base href="/">';
   const match = /<head[^>]*>/i.exec(html);
-  if (!match) return tag + html;
+  if (!match) return base + tag + html;
   const index = match.index + match[0].length;
-  return html.slice(0, index) + tag + html.slice(index);
+  return html.slice(0, index) + base + tag + html.slice(index);
 }
 
 function bridgeEvent(
