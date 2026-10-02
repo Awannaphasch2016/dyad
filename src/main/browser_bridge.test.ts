@@ -88,7 +88,12 @@ describe("browser bridge", () => {
     const html = injectBrowserBridgeScript(
       "<head><title>wewebplus</title></head>",
     );
-    expect(html.startsWith('<head><base href="/"><script')).toBe(true);
+    expect(html.startsWith("<head><script")).toBe(true);
+    expect(html).not.toContain("<base ");
+    const nested = injectBrowserBridgeScript(
+      '<head><script type="module" src="./assets/index.js"></script></head>',
+    );
+    expect(nested).toContain('src="/assets/index.js"');
     expect(html.indexOf("window.electron")).toBeLessThan(
       html.indexOf("<title>"),
     );
@@ -330,7 +335,8 @@ describe("browser bridge", () => {
     const route = await fetch(`${origin}/apps/12`);
     const routeHtml = await route.text();
     expect(routeHtml).toContain("data-dyad-browser-bridge");
-    expect(routeHtml).toContain('<base href="/">');
+    expect(routeHtml).toContain('src="/assets/app.js"');
+    expect(routeHtml).not.toContain("<base ");
 
     const asset = await fetch(`${origin}/assets/app.js`);
     expect(asset.status).toBe(200);

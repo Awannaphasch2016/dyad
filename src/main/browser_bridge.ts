@@ -218,17 +218,23 @@ export function browserBridgeClientScript(): string {
   })();`;
 }
 
+/**
+ * The packaged renderer uses relative asset URLs so Electron can open it
+ * from disk. A `<base href>` would also retarget Clerk's OAuth return and
+ * leave the sign-in card spinning, so only the asset URLs are made root-relative.
+ */
+export function rootRelativeAssetUrls(html: string): string {
+  return html.replace(/(\s(?:src|href)=["'])\.\/([^"']+)(["'])/gi, "$1/$2$3");
+}
+
 export function injectBrowserBridgeScript(html: string): string {
-  if (html.includes(BRIDGE_MARKER)) return html;
+  const rooted = rootRelativeAssetUrls(html);
+  if (rooted.includes(BRIDGE_MARKER)) return rooted;
   const tag = `<script ${BRIDGE_MARKER}>${browserBridgeClientScript()}</script>`;
-  // The packaged renderer uses relative asset URLs for Electron's file load.
-  // A <base> of / keeps those URLs on the site root when the browser is on a
-  // nested route such as /sign-in/sso-callback.
-  const base = /<base\s/i.test(html) ? "" : '<base href="/">';
-  const match = /<head[^>]*>/i.exec(html);
-  if (!match) return base + tag + html;
+  const match = /<head[^>]*>/i.exec(rooted);
+  if (!match) return tag + rooted;
   const index = match.index + match[0].length;
-  return html.slice(0, index) + base + tag + html.slice(index);
+  return rooted.slice(0, index) + tag + rooted.slice(index);
 }
 
 function bridgeEvent(
