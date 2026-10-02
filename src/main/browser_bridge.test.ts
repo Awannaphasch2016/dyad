@@ -131,6 +131,12 @@ describe("browser bridge", () => {
     expect(sent.some((payload) => payload.includes('"bridge":true'))).toBe(
       true,
     );
+    void sandbox.window.electron?.ipcRenderer.invoke(
+      "get-user-settings",
+      undefined,
+    );
+    const last = JSON.parse(sent[sent.length - 1]) as { args: unknown[] };
+    expect(last.args).toEqual([]);
   });
 
   it("returns a handler result and pushes sender.send to the listener", async () => {

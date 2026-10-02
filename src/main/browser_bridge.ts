@@ -153,7 +153,12 @@ export function browserBridgeClientScript(): string {
       return new Promise((resolve, reject) => {
         const id = nextId++;
         pending.set(id, { resolve, reject });
-        const payload = JSON.stringify({ id, type, channel, args });
+        // JSON turns a trailing undefined into null, which void inputs reject.
+        const trimmed = args.slice();
+        while (trimmed.length > 0 && trimmed[trimmed.length - 1] === undefined) {
+          trimmed.pop();
+        }
+        const payload = JSON.stringify({ id, type, channel, args: trimmed });
         ensure();
         if (socket && socket.readyState === 1) socket.send(payload);
         else queue.push(payload);
