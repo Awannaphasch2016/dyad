@@ -13,6 +13,7 @@ import { appsRoute } from "./routes/apps";
 import { themesRoute } from "./routes/themes";
 import { promptsRoute } from "./routes/prompts";
 import { mediaRoute } from "./routes/media";
+import { workflowRoute } from "./routes/workflow";
 import { signInCallbackRoute, signInRoute } from "./routes/sign-in";
 import { signUpCallbackRoute, signUpRoute } from "./routes/sign-up";
 
@@ -31,6 +32,7 @@ const routeTree = rootRoute.addChildren([
   promptsRoute,
   mediaRoute,
   chatRoute,
+  workflowRoute,
   appDetailsRoute,
   settingsRoute.addChildren([providerSettingsRoute]),
 ]);
