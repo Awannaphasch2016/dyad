@@ -19,7 +19,7 @@ Copy `hitl-web/` from this branch into `Awannaphasch2016/dyad` and push it. Do n
 
 Leave the existing ai-pilot Vercel project untouched. Do not add a repo-root multi-service `vercel.json`.
 
-The app reads `WEWEBPLUS_DATABASE_URL`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in`, and `NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up`. Use the Wewebplus Clerk keys and the Wewebplus Postgres URL from the Dyad Doppler config. The Doppler project `ai-pilot` config `dev` holds a Vercel token, and its Supabase URL is a different database.
+The app reads `WEWEBPLUS_DATABASE_URL`, `CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in`, and `NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up`. `@clerk/nextjs` still looks up `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` internally; `hitl-web/next.config.ts` copies `CLERK_PUBLISHABLE_KEY` into that name at build time. Do not set the Next.js name in Doppler or Vercel. Use the Wewebplus Clerk keys and the Wewebplus Postgres URL from the Dyad Doppler config. The Doppler project `ai-pilot` config `dev` holds a Vercel token, and its Supabase URL is a different database.
 
 ## Goal
 
@@ -67,7 +67,7 @@ API routes, session required:
 
 Vercel env:
 
-- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`
+- `CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`
 - `WEWEBPLUS_DATABASE_URL` for the Wewebplus schema
 - `NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in`
 - `NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up`

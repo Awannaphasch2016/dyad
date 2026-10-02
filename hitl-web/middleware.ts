@@ -1,4 +1,5 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { clerkPublishableKey } from "./lib/clerk_env";
 
 const isPublicRoute = createRouteMatcher([
   "/sign-in(.*)",
@@ -6,11 +7,14 @@ const isPublicRoute = createRouteMatcher([
   "/api/(.*)",
 ]);
 
-export default clerkMiddleware(async (auth, request) => {
-  if (!isPublicRoute(request)) {
-    await auth.protect();
-  }
-});
+export default clerkMiddleware(
+  async (auth, request) => {
+    if (!isPublicRoute(request)) {
+      await auth.protect();
+    }
+  },
+  { publishableKey: clerkPublishableKey() },
+);
 
 export const config = {
   matcher: [
