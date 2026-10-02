@@ -74,10 +74,12 @@ Unit coverage:
 - [x] Change the builtin Bedrock Claude 4.5 Sonnet id to `global.anthropic.claude-sonnet-4-5-20250929-v1:0`.
 - [x] Pass `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION` through compose and `write_rollout_env.py`.
 - [x] Download Doppler `aws`/`dev` from `/etc/doppler/aws-dev.token` in the host wrapper.
-- [ ] Install that token on the host, mode 600, without writing it to git.
-- [ ] Update the volume settings: global model id, remove the stored bearer.
-- [ ] Free dangling image space, then roll the container forward.
-- [ ] Send one live chat message and confirm Bedrock replies.
+- [x] Install that token on the host, mode 600, without writing it to git.
+- [x] Update the volume settings: global model id, remove the stored bearer.
+- [x] Free dangling image space, then roll the container forward.
+- [x] Send one live chat message and confirm Bedrock replies.
+
+The `dyad`/`preview` service token on the host now returns `Invalid Auth token`, so the GitHub image rebuild stops before `compose up`. The running container is still the previous image. It was recreated with the Singapore IAM environment and the saved model id `global.anthropic.claude-sonnet-4-5-20250929-v1:0`. A Discovery message on hopping-quokka-buzz returned `pong` at 22:38Z, and the main log recorded token use with no `AI_APICallError`. The next image build needs a valid `dyad`/`preview` token so the new client code, which ignores a saved bearer when IAM env is set, is what the container runs.
 
 ## Risks
 
