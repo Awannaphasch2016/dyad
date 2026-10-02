@@ -69,3 +69,13 @@ docker compose -f compose.gascity.yml down
 ```
 
 Omit `-v` to retain user data and projects.
+
+## Continuous delivery
+
+Pushes to `cursor/browser-dyad-ui-bbea` run `.github/workflows/gascity-rollout.yml` after `ci.yml` succeeds for that commit. The workflow can also be started with `workflow_dispatch`. GitHub Actions only SSHs to the host, using the `EC2_SSH_KEY` secret synced from Doppler project `dyad`, config `preview`. It does not copy the rest of that config.
+
+On the host, `/usr/local/sbin/gascity-rollout` reads a Doppler service token from `/etc/doppler/dyad-preview.token`, writes a root-only env file, and calls the Dagger module in `deploy/gascity`. Dagger uses the host Docker socket to run `scripts/gascity/rollout.sh` in the host namespaces. That script fast-forwards `/opt/gascity/weaver-plus`, tags the running `weaver-plus:gascity` image as `weaver-plus:gascity-previous`, then runs `docker compose -f compose.gascity.yml up --build -d` with project name `weaver-plus`. There is no `-v` and no container registry.
+
+The bridge settings are fixed in that env file: `DYAD_BROWSER_BRIDGE=1`, `DYAD_BROWSER_BRIDGE_PORT=8373`, and `WEAVER_PROJECTS_DIR=/opt/gascity/projects`. `/opt/gascity/projects` stays bind-mounted at `/home/weaver/dyad-apps`. The named volume `weaver-plus_weaver-plus-user-data` stays mounted at `/home/weaver/.config`.
+
+If the new container does not become healthy, listen on `8373`, or show both organization members their existing apps on `main`, the script tags `weaver-plus:gascity-previous` back to `weaver-plus:gascity` and runs `docker compose up -d --no-build --force-recreate`. A later rollout does not create an app.
