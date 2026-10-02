@@ -1231,13 +1231,13 @@ export function registerAppHandlers() {
     // Get app files
     const appPath = getDyadAppPath(app.path);
     let files: string[] = [];
-    let projectFilesOnThisMachine = fs.existsSync(appPath);
+    let projectFilesOnThisMachine = fs.existsSync(path.join(appPath, ".git"));
     if (!projectFilesOnThisMachine) {
       try {
         projectFilesOnThisMachine = await ensureProjectFiles(app);
       } catch (error) {
-        logger.warn(`Could not clone files for app ${appId}`, error);
-        projectFilesOnThisMachine = false;
+        logger.warn(`Could not prepare files for app ${appId}`, error);
+        projectFilesOnThisMachine = fs.existsSync(appPath);
       }
     }
 
