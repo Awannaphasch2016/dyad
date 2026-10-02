@@ -10,6 +10,7 @@
  * unchanged. The preview pane, the terminal, and one-way ipcMain.on sends
  * stay desktop-only.
  */
+import { EventEmitter } from "node:events";
 import {
   createServer,
   request as httpRequest,
@@ -237,22 +238,58 @@ export function injectBrowserBridgeScript(html: string): string {
   return rooted.slice(0, index) + tag + rooted.slice(index);
 }
 
-function bridgeEvent(
-  push: (event: BrowserBridgePush) => void,
-): IpcMainInvokeEvent {
-  const sender = {
-    id: WEB_BRIDGE_SENDER_ID,
-    isDestroyed: () => false,
-    isCrashed: () => false,
-    send: (channel: string, ...args: unknown[]) => push({ channel, args }),
-  };
-  return { sender } as IpcMainInvokeEvent;
+/**
+ * One stand-in WebContents for every browser tab. Desktop handlers call
+ * `sender.once("destroyed")` and `sender.removeListener`. This object has
+ * those methods. `destroyed` fires when the last tab disconnects, so one tab
+ * closing does not cancel another tab's in-flight create.
+ */
+class BridgeSender extends EventEmitter {
+  readonly id = WEB_BRIDGE_SENDER_ID;
+  private destroyed: boolean;
+
+  constructor(
+    private readonly pushEvent: (event: BrowserBridgePush) => void,
+    destroyedUntilSocket = false,
+  ) {
+    super();
+    this.destroyed = destroyedUntilSocket;
+    // Every browser tab shares this object for the life of the process.
+    this.setMaxListeners(0);
+  }
+
+  isDestroyed(): boolean {
+    return this.destroyed;
+  }
+
+  isCrashed(): boolean {
+    return false;
+  }
+
+  send(channel: string, ...args: unknown[]): void {
+    this.pushEvent({ channel, args });
+  }
+
+  noteSocketOpened(): void {
+    this.destroyed = false;
+  }
+
+  noteSocketClosed(remainingSockets: number): void {
+    if (remainingSockets > 0 || this.destroyed) return;
+    this.destroyed = true;
+    this.emit("destroyed");
+  }
+}
+
+function bridgeEvent(sender: BridgeSender): IpcMainInvokeEvent {
+  return { sender } as unknown as IpcMainInvokeEvent;
 }
 
 export async function dispatchBrowserInvoke(
   channel: string,
   args: readonly unknown[],
   push: (event: BrowserBridgePush) => void,
+  sender: BridgeSender = new BridgeSender(push),
 ): Promise<unknown> {
   if (!invokeChannels.has(channel)) {
     throw new Error(`Invalid channel: ${channel}`);
@@ -261,7 +298,10 @@ export async function dispatchBrowserInvoke(
   if (!handler) {
     throw new Error(`No handler registered for channel: ${channel}`);
   }
-  return handler(bridgeEvent(push), ...browserBridgeInvokeArgs(channel, args));
+  return handler(
+    bridgeEvent(sender),
+    ...browserBridgeInvokeArgs(channel, args),
+  );
 }
 
 export function dispatchBrowserSend(channel: string): void {
@@ -304,6 +344,7 @@ function messageText(raw: unknown): string {
 async function handleSocketMessage(
   raw: unknown,
   push: (event: BrowserBridgePush) => void,
+  sender: BridgeSender,
 ): Promise<BridgeSocketMessage | null> {
   let parsed: unknown;
   try {
@@ -322,6 +363,7 @@ async function handleSocketMessage(
       message.channel,
       message.args,
       push,
+      sender,
     );
     return { id: message.id, type: "result", result };
   } catch (error) {
@@ -561,6 +603,7 @@ export function startBrowserBridge(
     };
     for (const socket of sockets) sendSocketMessage(socket, message);
   };
+  const sender = new BridgeSender(push, true);
   const socketServer = new WebSocketServer({ noServer: true });
   const server: Server = createServer((req, res) => {
     if (devServerUrl) {
@@ -585,12 +628,16 @@ export function startBrowserBridge(
   });
   socketServer.on("connection", (socket) => {
     sockets.add(socket);
+    sender.noteSocketOpened();
     socket.on("message", (data) => {
-      void handleSocketMessage(data, push).then((response) => {
+      void handleSocketMessage(data, push, sender).then((response) => {
         if (response) sendSocketMessage(socket, response);
       });
     });
-    socket.on("close", () => sockets.delete(socket));
+    socket.on("close", () => {
+      sockets.delete(socket);
+      sender.noteSocketClosed(sockets.size);
+    });
   });
 
   return new Promise((resolve, reject) => {

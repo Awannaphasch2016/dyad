@@ -25,6 +25,7 @@ import {
   clearTrustedIpcHandlersForTesting,
   registerTrustedIpcHandler,
 } from "@/ipc/handlers/trusted_handle";
+import { FirstPromptCreationRegistry } from "@/ipc/services/first_prompt_creation_service";
 import {
   BROWSER_BRIDGE_SOCKET_PATH,
   browserBridgeClientScript,
@@ -58,6 +59,62 @@ function listen(server: Server): Promise<number> {
       resolve(address.port);
     });
   });
+}
+
+function openBridgeSocket(port: number): Promise<WebSocket> {
+  const socket = new WebSocket(
+    `ws://127.0.0.1:${port}${BROWSER_BRIDGE_SOCKET_PATH}`,
+  );
+  return new Promise((resolve, reject) => {
+    socket.once("open", () => resolve(socket));
+    socket.once("error", reject);
+  });
+}
+
+function invokeOnSocket(socket: WebSocket, id: number): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const onMessage = (data: { toString(): string }) => {
+      const message = JSON.parse(data.toString()) as {
+        id?: number;
+        type?: string;
+        result?: unknown;
+        message?: string;
+      };
+      if (message.id !== id) return;
+      socket.off("message", onMessage);
+      if (message.type === "error") {
+        reject(new Error(message.message ?? "IPC failed"));
+        return;
+      }
+      resolve(message.result);
+    };
+    socket.on("message", onMessage);
+    socket.send(
+      JSON.stringify({
+        id,
+        type: "invoke",
+        channel: "get-user-settings",
+        args: [],
+      }),
+    );
+  });
+}
+
+async function waitForSocketClose(socket: WebSocket): Promise<void> {
+  if (socket.readyState !== WebSocket.CLOSED) {
+    await new Promise<void>((resolve) => {
+      socket.once("close", () => resolve());
+    });
+  }
+  await new Promise((resolve) => setImmediate(resolve));
+}
+
+async function startSocketBridge(): Promise<BrowserBridge> {
+  const rendererDir = await mkdtemp(path.join(tmpdir(), "dyad-bridge-"));
+  closers.push(() => rm(rendererDir, { recursive: true, force: true }));
+  const bridge = await startBrowserBridge({ rendererDir, port: 0 });
+  closers.push(() => bridge.close());
+  return bridge;
 }
 
 async function waitFor(predicate: () => boolean): Promise<void> {
@@ -354,5 +411,61 @@ describe("browser bridge", () => {
       socket.once("error", reject);
     });
     socket.close();
+  });
+
+  it("lets first-prompt tracking register once on the bridge sender", async () => {
+    const registry = new FirstPromptCreationRegistry();
+    registerTrustedIpcHandler("get-user-settings", async (event) => {
+      registry.track("create-1", event.sender);
+      return { tracked: true };
+    });
+    await expect(
+      dispatchBrowserInvoke("get-user-settings", [], () => {}),
+    ).resolves.toEqual({ tracked: true });
+    registry.commit("create-1");
+  });
+
+  it("cancels a first-prompt create when the last browser socket closes", async () => {
+    const bridge = await startSocketBridge();
+    const registry = new FirstPromptCreationRegistry();
+    let destroyed = false;
+    registerTrustedIpcHandler("get-user-settings", async (event) => {
+      registry.track("create-1", event.sender);
+      destroyed = event.sender.isDestroyed();
+      return { ok: true };
+    });
+    const socket = await openBridgeSocket(bridge.port);
+    await invokeOnSocket(socket, 1);
+    expect(destroyed).toBe(false);
+    socket.close();
+    await waitForSocketClose(socket);
+    const cleanup = vi.fn(async () => {});
+    await registry.complete("create-1", cleanup);
+    expect(cleanup).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a first-prompt create running while another browser socket is open", async () => {
+    const bridge = await startSocketBridge();
+    const registry = new FirstPromptCreationRegistry();
+    const senders: object[] = [];
+    registerTrustedIpcHandler("get-user-settings", async (event) => {
+      senders.push(event.sender);
+      if (senders.length === 1) registry.track("create-1", event.sender);
+      return { open: !event.sender.isDestroyed() };
+    });
+    const first = await openBridgeSocket(bridge.port);
+    const second = await openBridgeSocket(bridge.port);
+    closers.push(async () => {
+      first.close();
+      second.close();
+    });
+    await invokeOnSocket(first, 1);
+    first.close();
+    await waitForSocketClose(first);
+    await expect(invokeOnSocket(second, 2)).resolves.toEqual({ open: true });
+    expect(senders[0]).toBe(senders[1]);
+    const cleanup = vi.fn(async () => {});
+    await registry.complete("create-1", cleanup);
+    expect(cleanup).not.toHaveBeenCalled();
   });
 });
