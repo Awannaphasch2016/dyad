@@ -98,6 +98,13 @@ vi.mock("../shared/language_model_helpers", () => ({
       gatewayPrefix: "openrouter/",
       type: "cloud",
     },
+    {
+      id: "bedrock",
+      name: "AWS Bedrock",
+      gatewayPrefix: "bedrock/",
+      type: "cloud",
+      envVarName: "AWS_BEARER_TOKEN_BEDROCK",
+    },
   ]),
 }));
 
@@ -986,5 +993,74 @@ describe("getModelClient", () => {
     expect(capturedHeaders?.get("X-OpenRouter-Categories")).toBe(
       OPENROUTER_APP_CATEGORIES,
     );
+  });
+
+  test("bedrock IAM env signs with SigV4 and does not send the stored bearer", async () => {
+    vi.stubEnv("AWS_ACCESS_KEY_ID", "AKIA_TEST");
+    vi.stubEnv("AWS_SECRET_ACCESS_KEY", "aws-secret");
+    vi.stubEnv("AWS_REGION", "ap-southeast-1");
+    let capturedUrl = "";
+    let authorization = "";
+    setModelClientFetchForTesting(async (url, init) => {
+      capturedUrl = String(url);
+      const headers = new Headers(init?.headers);
+      authorization = headers.get("Authorization") ?? "";
+      return new Response("{}", { status: 400 });
+    });
+    const { modelClient } = await getModelClient(
+      {
+        provider: "bedrock",
+        name: "global.anthropic.claude-sonnet-4-5-20250929-v1:0",
+      },
+      {
+        providerSettings: {
+          bedrock: { apiKey: { value: "expired-bearer" } },
+        },
+      } as unknown as UserSettings,
+    );
+    await generateText({
+      model: modelClient.model,
+      prompt: "hi",
+      maxRetries: 0,
+    }).catch(() => undefined);
+    expect(capturedUrl).toContain(
+      "https://bedrock-runtime.ap-southeast-1.amazonaws.com/",
+    );
+    expect(authorization.startsWith("AWS4-HMAC-SHA256")).toBe(true);
+    expect(authorization).not.toContain("expired-bearer");
+  });
+
+  test("bedrock without IAM env still sends the stored bearer token", async () => {
+    vi.stubEnv("AWS_ACCESS_KEY_ID", "");
+    vi.stubEnv("AWS_SECRET_ACCESS_KEY", "");
+    vi.stubEnv("AWS_REGION", "");
+    let capturedUrl = "";
+    let authorization = "";
+    setModelClientFetchForTesting(async (url, init) => {
+      capturedUrl = String(url);
+      const headers = new Headers(init?.headers);
+      authorization = headers.get("Authorization") ?? "";
+      return new Response("{}", { status: 400 });
+    });
+    const { modelClient } = await getModelClient(
+      {
+        provider: "bedrock",
+        name: "global.anthropic.claude-sonnet-4-5-20250929-v1:0",
+      },
+      {
+        providerSettings: {
+          bedrock: { apiKey: { value: "stored-bearer" } },
+        },
+      } as unknown as UserSettings,
+    );
+    await generateText({
+      model: modelClient.model,
+      prompt: "hi",
+      maxRetries: 0,
+    }).catch(() => undefined);
+    expect(capturedUrl).toContain(
+      "https://bedrock-runtime.us-east-1.amazonaws.com/",
+    );
+    expect(authorization).toBe("Bearer stored-bearer");
   });
 });

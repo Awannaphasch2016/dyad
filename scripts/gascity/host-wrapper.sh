@@ -20,10 +20,15 @@ fi
 REPO=/opt/gascity/weaver-plus
 BRANCH=cursor/browser-dyad-ui-bbea
 TOKEN_FILE=/etc/doppler/dyad-preview.token
+AWS_TOKEN_FILE=/etc/doppler/aws-dev.token
 ENV_FILE=/run/gascity-rollout.env
 
 if [[ ! -f "$TOKEN_FILE" ]]; then
   echo "Missing Doppler token file $TOKEN_FILE" >&2
+  exit 2
+fi
+if [[ ! -f "$AWS_TOKEN_FILE" ]]; then
+  echo "Missing Doppler token file $AWS_TOKEN_FILE" >&2
   exit 2
 fi
 
@@ -40,14 +45,33 @@ if [[ "${GAS_CITY_WRAPPER_INNER:-}" != 1 ]]; then
   exec "$REPO/scripts/gascity/host-wrapper.sh" "$COMMIT"
 fi
 
-download="$(mktemp)"
-trap 'rm -f "$download" "$ENV_FILE"' EXIT
+preview="$(mktemp)"
+aws_json="$(mktemp)"
+merged="$(mktemp)"
+trap 'rm -f "$preview" "$aws_json" "$merged" "$ENV_FILE"' EXIT
 DOPPLER_TOKEN="$(<"$TOKEN_FILE")"
 DOPPLER_PROJECT=dyad DOPPLER_CONFIG=preview DOPPLER_TOKEN="$DOPPLER_TOKEN" \
-  /usr/bin/doppler secrets download --no-file --format json > "$download"
+  /usr/bin/doppler secrets download --no-file --format json > "$preview"
 unset DOPPLER_TOKEN
-python3 "$REPO/scripts/gascity/write_rollout_env.py" "$ENV_FILE" < "$download"
-rm -f "$download"
+DOPPLER_TOKEN="$(<"$AWS_TOKEN_FILE")"
+DOPPLER_PROJECT=aws DOPPLER_CONFIG=dev DOPPLER_TOKEN="$DOPPLER_TOKEN" \
+  /usr/bin/doppler secrets download --no-file --format json > "$aws_json"
+unset DOPPLER_TOKEN
+python3 - "$preview" "$aws_json" "$merged" << 'PY'
+import json
+import sys
+
+preview = json.load(open(sys.argv[1], encoding="utf-8"))
+aws = json.load(open(sys.argv[2], encoding="utf-8"))
+if not isinstance(preview, dict) or not isinstance(aws, dict):
+    raise SystemExit("Doppler JSON must be an object of string values")
+for name in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION"):
+    preview[name] = aws.get(name, "")
+with open(sys.argv[3], "w", encoding="utf-8") as handle:
+    json.dump(preview, handle)
+PY
+python3 "$REPO/scripts/gascity/write_rollout_env.py" "$ENV_FILE" < "$merged"
+rm -f "$preview" "$aws_json" "$merged"
 chmod 600 "$ENV_FILE"
 
 cd "$REPO"

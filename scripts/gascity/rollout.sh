@@ -46,6 +46,9 @@ require_env CLERK_SECRET_KEY
 require_env CLERK_PUBLISHABLE_KEY
 require_env WEWEBPLUS_DATABASE_URL
 require_env WEWEBPLUS_SECRETS_KEY
+require_env AWS_ACCESS_KEY_ID
+require_env AWS_SECRET_ACCESS_KEY
+require_env AWS_REGION
 
 export DYAD_BROWSER_BRIDGE=1
 export DYAD_BROWSER_BRIDGE_PORT=8373
@@ -104,6 +107,9 @@ rollback() {
 }
 trap rollback ERR
 
+echo "Removing dangling images before the build"
+docker image prune -f >/dev/null
+
 echo "Building and starting $IMAGE"
 docker compose --env-file "$ENV_FILE" -p "$PROJECT" -f "$COMPOSE_FILE" up --build -d
 
@@ -149,6 +155,10 @@ import socket
 sock = socket.create_connection(("127.0.0.1", 8373), 5)
 sock.close()
 PY
+
+echo "Pointing saved Bedrock settings at the Singapore profile"
+docker exec -i -u weaver "$CID" python3 - /home/weaver/.config/weaver-plus/user-settings.json \
+  < "$REPO/scripts/gascity/use_singapore_bedrock_settings.py"
 
 echo "Verifying org apps for both members"
 docker exec -i "$CID" node --input-type=module - < "$REPO/scripts/gascity/verify_bridge.mjs"

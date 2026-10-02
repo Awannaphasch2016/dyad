@@ -36,6 +36,9 @@ cat > "$tmp/secrets.json" << 'EOF'
   "CLERK_SECRET_KEY": "sk_test",
   "WEWEBPLUS_DATABASE_URL": "postgres://example",
   "WEWEBPLUS_SECRETS_KEY": "secrets-key",
+  "AWS_ACCESS_KEY_ID": "AKIA_TEST",
+  "AWS_SECRET_ACCESS_KEY": "aws-secret",
+  "AWS_REGION": "ap-southeast-1",
   "EC2_SSH_KEY": "should-not-be-copied",
   "VERCEL_TOKEN": "should-not-be-copied"
 }
@@ -54,6 +57,9 @@ required = [
     "NOVNC_PORT=6080\n",
     "GAS_CITY_HOST_BRIDGE_ENABLED=true\n",
     "GAS_CITY_HOST_BRIDGE_PORT=32100\n",
+    "AWS_ACCESS_KEY_ID=",
+    "AWS_SECRET_ACCESS_KEY=",
+    "AWS_REGION=ap-southeast-1\n",
 ]
 missing = [item for item in required if item not in text]
 if missing:
@@ -71,6 +77,48 @@ if [[ "$status" -ne 2 ]]; then
   echo "write_rollout_env.py accepted an empty secret (status $status)" >&2
   exit 1
 fi
+
+python3 - "$tmp/secrets.json" "$tmp/blank-aws.json" << 'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+data["AWS_REGION"] = ""
+json.dump(data, open(sys.argv[2], "w", encoding="utf-8"))
+PY
+set +e
+python3 scripts/gascity/write_rollout_env.py "$tmp/blank-aws.env" < "$tmp/blank-aws.json"
+status=$?
+set -e
+if [[ "$status" -ne 2 ]]; then
+  echo "write_rollout_env.py accepted an empty AWS region (status $status)" >&2
+  exit 1
+fi
+
+python3 - "$tmp/settings.json" << 'PY'
+import json, sys
+json.dump({
+    "selectedModel": {
+        "provider": "bedrock",
+        "name": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    },
+    "providerSettings": {
+        "bedrock": {"apiKey": {"encryptionType": "plaintext", "value": "expired-bearer-value"}}
+    },
+}, open(sys.argv[1], "w", encoding="utf-8"))
+PY
+python3 scripts/gascity/use_singapore_bedrock_settings.py "$tmp/settings.json"
+python3 - "$tmp/settings.json" << 'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+text = open(sys.argv[1], encoding="utf-8").read()
+if data["selectedModel"]["name"] != "global.anthropic.claude-sonnet-4-5-20250929-v1:0":
+    raise SystemExit("model id was not rewritten")
+bedrock = data.get("providerSettings", {}).get("bedrock", {})
+if isinstance(bedrock, dict) and "apiKey" in bedrock:
+    raise SystemExit("stored bearer key remains")
+if "expired-bearer-value" in text:
+    raise SystemExit("bearer value was left in the file")
+print("bedrock settings ok")
+PY
 
 EC2_SSH_KEY='line-one\nline-two' python3 scripts/gascity/write_ssh_key.py "$tmp/key"
 python3 - "$tmp/key" << 'PY'

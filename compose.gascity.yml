@@ -21,6 +21,10 @@ services:
       # Same renderer on a loopback HTTP port for a tunnel (DYAD_BROWSER_BRIDGE=1).
       DYAD_BROWSER_BRIDGE: "${DYAD_BROWSER_BRIDGE:-0}"
       DYAD_BROWSER_BRIDGE_PORT: "${DYAD_BROWSER_BRIDGE_PORT:-8372}"
+      # Singapore Bedrock. IAM keys replace a saved bearer token when both are set.
+      AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID:-}"
+      AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY:-}"
+      AWS_REGION: "${AWS_REGION:-ap-southeast-1}"
     volumes:
       - weaver-plus-user-data:/home/weaver/.config
       - "${WEAVER_PROJECTS_DIR:-weaver-plus-projects}:/home/weaver/dyad-apps"

@@ -70,10 +70,10 @@ Unit coverage:
 
 ## Implementation checklist
 
-- [ ] Prefer IAM env over the stored Bedrock bearer in `get_model_client.ts`.
-- [ ] Change the builtin Bedrock Claude 4.5 Sonnet id to `global.anthropic.claude-sonnet-4-5-20250929-v1:0`.
-- [ ] Pass `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION` through compose and `write_rollout_env.py`.
-- [ ] Download Doppler `aws`/`dev` from `/etc/doppler/aws-dev.token` in the host wrapper.
+- [x] Prefer IAM env over the stored Bedrock bearer in `get_model_client.ts`.
+- [x] Change the builtin Bedrock Claude 4.5 Sonnet id to `global.anthropic.claude-sonnet-4-5-20250929-v1:0`.
+- [x] Pass `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION` through compose and `write_rollout_env.py`.
+- [x] Download Doppler `aws`/`dev` from `/etc/doppler/aws-dev.token` in the host wrapper.
 - [ ] Install that token on the host, mode 600, without writing it to git.
 - [ ] Update the volume settings: global model id, remove the stored bearer.
 - [ ] Free dangling image space, then roll the container forward.
