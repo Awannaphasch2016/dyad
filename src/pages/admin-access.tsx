@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { canManageMembers } from "@/auth/permissions";
-import { useClerkRole } from "@/auth/session";
+import { useClerkRole, useClerkSession } from "@/auth/session";
 import { ipc } from "@/ipc/types";
 import type { AdminRoleId } from "@/lib/adminAccess";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,7 @@ const tableCellClass = "border-b px-3 py-3 align-top text-sm";
 export default function AdminAccessPage() {
   const queryClient = useQueryClient();
   const clerkRole = useClerkRole();
-  // UX only. Main still accepts invite and role changes with the secret key.
+  const session = useClerkSession();
   const manageMembers = canManageMembers(clerkRole.status, clerkRole.roleId);
   const access = useQuery({
     queryKey: ["admin-access"],
@@ -55,6 +55,10 @@ export default function AdminAccessPage() {
   };
 
   const data = access.data;
+  const isPrivate =
+    data?.accountKind === "private" ||
+    (session.status === "signed-in" && session.account?.type === "user");
+  const canEditMembers = manageMembers && !isPrivate;
 
   return (
     <div className="min-h-screen w-full px-6 py-6">
@@ -96,9 +100,11 @@ export default function AdminAccessPage() {
                       colSpan={2}
                       className="px-3 py-4 text-sm text-muted-foreground"
                     >
-                      {manageMembers
-                        ? "No members yet. Invite someone by email below."
-                        : "No members yet."}
+                      {isPrivate
+                        ? "This account has no members."
+                        : canEditMembers
+                          ? "No members yet. Invite someone by email below."
+                          : "No members yet."}
                     </td>
                   </tr>
                 )}
@@ -125,7 +131,7 @@ export default function AdminAccessPage() {
                           aria-label={`Role for ${member.email}`}
                           className="h-9 w-full rounded-md border bg-transparent px-2"
                           value={member.roleId}
-                          disabled={pending || !manageMembers}
+                          disabled={pending || !canEditMembers}
                           onChange={(event) =>
                             void changeRole(
                               member.id,
@@ -148,7 +154,7 @@ export default function AdminAccessPage() {
                     </td>
                   </tr>
                 ))}
-                {!manageMembers && (
+                {!canEditMembers && (
                   <tr>
                     <td
                       colSpan={2}
@@ -158,11 +164,13 @@ export default function AdminAccessPage() {
                       )}
                       data-testid="admin-manage-note"
                     >
-                      Only admins can invite members or change roles.
+                      {isPrivate
+                        ? "This account has no members."
+                        : "Only admins can invite members or change roles."}
                     </td>
                   </tr>
                 )}
-                {manageMembers && (
+                {canEditMembers && (
                   <tr>
                     <td
                       colSpan={2}

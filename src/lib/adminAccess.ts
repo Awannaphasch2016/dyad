@@ -66,6 +66,26 @@ export function roleFromMetadata(metadata: unknown): AdminRoleId {
   return isAdminRoleId(role) ? role : "reviewer";
 }
 
+/**
+ * Membership metadata wins when it names a role. The person who created the
+ * organization is Clerk's org:admin even when that metadata is still empty.
+ */
+export function roleFromClerkMembership(
+  metadata: unknown,
+  clerkRole: unknown,
+): AdminRoleId {
+  if (
+    metadata &&
+    typeof metadata === "object" &&
+    "role" in metadata &&
+    (metadata as { role?: unknown }).role != null
+  ) {
+    return roleFromMetadata(metadata);
+  }
+  if (clerkRole === "org:admin" || clerkRole === "admin") return "admin";
+  return "reviewer";
+}
+
 export function copyAdminRoles(): AdminRole[] {
   return ADMIN_ROLES.map((role) => ({
     ...role,

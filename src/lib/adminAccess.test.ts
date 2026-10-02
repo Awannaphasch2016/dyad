@@ -3,6 +3,7 @@ import {
   ADMIN_ROLES,
   clerkAccountPortalUrls,
   clerkDirectoryFromApi,
+  roleFromClerkMembership,
   roleFromMetadata,
 } from "./adminAccess";
 
@@ -33,6 +34,13 @@ describe("admin access", () => {
     expect(roleFromMetadata({ role: "member" })).toBe("reviewer");
     expect(roleFromMetadata({ role: "owner" })).toBe("reviewer");
     expect(roleFromMetadata(null)).toBe("reviewer");
+  });
+
+  it("treats the organization creator as admin when metadata is empty", () => {
+    expect(roleFromClerkMembership({}, "org:admin")).toBe("admin");
+    expect(roleFromClerkMembership(null, "admin")).toBe("admin");
+    expect(roleFromClerkMembership({}, "org:member")).toBe("reviewer");
+    expect(roleFromClerkMembership({ role: "dev" }, "org:admin")).toBe("dev");
   });
 
   it("builds the Account Portal links from a publishable key", () => {

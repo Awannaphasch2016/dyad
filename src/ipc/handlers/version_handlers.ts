@@ -1687,12 +1687,14 @@ export function registerVersionHandlers() {
           //  - `usingFreeAgentModeQuota`: reset to false (see note below).
           //  - `userInputRequestId` / `chatTurnIntentId`: live delivery dedupe
           //    keys, not message data.
+          //  - `remoteId`: the shared account assigns a new id on the next sync.
           type ExcludedMessageColumn =
             | "id"
             | "chatId"
             | "usingFreeAgentModeQuota"
             | "userInputRequestId"
-            | "chatTurnIntentId";
+            | "chatTurnIntentId"
+            | "remoteId";
           // If a column is neither copied nor excluded, this `Exclude` is no
           // longer `never` and the assignment fails to compile, flagging the
           // unclassified column.

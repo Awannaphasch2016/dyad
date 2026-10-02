@@ -58,9 +58,11 @@ vi.mock("@/ipc/services/chat_actor_deletion_service", () => ({
     deletionOrder.push("actor-barrier");
     return () => deletionOrder.push("actor-release");
   }),
+  beginChatActorDeletion: vi.fn(() => () => undefined),
   settleChatActorsForDeletion: vi.fn(async () => {
     deletionOrder.push("settle-actors");
   }),
+  waitForChatActorIdle: vi.fn(async () => undefined),
 }));
 
 vi.mock("@/ipc/services/chat_actor_service", () => ({
@@ -293,7 +295,7 @@ describe("registerChatHandlers", () => {
       .insert(chats)
       .values({
         appId,
-        title: "Older chat",
+        title: "Discovery",
         createdAt: new Date("2025-01-01T00:00:00Z"),
       })
       .run();
@@ -302,16 +304,27 @@ describe("registerChatHandlers", () => {
       .insert(chats)
       .values({
         appId,
-        title: "Newer chat",
+        title: "Implementation",
         createdAt: new Date("2025-01-02T00:00:00Z"),
       })
       .run();
     const newerChatId = Number(newerChatResult.lastInsertRowid);
+    const deliveryChatId = Number(
+      harness.db
+        .insert(chats)
+        .values({
+          appId,
+          title: "Delivery",
+          createdAt: new Date("2025-01-03T00:00:00Z"),
+        })
+        .run().lastInsertRowid,
+    );
 
     const initialSummaries = await harness.invokeHandler<
       Array<{ id: number; isFavorite: boolean }>
     >("get-chats", appId);
     expect(initialSummaries).toEqual([
+      expect.objectContaining({ id: deliveryChatId, isFavorite: false }),
       expect.objectContaining({ id: newerChatId, isFavorite: false }),
       expect.objectContaining({ id: olderChatId, isFavorite: false }),
     ]);
@@ -327,6 +340,7 @@ describe("registerChatHandlers", () => {
       Array<{ id: number; isFavorite: boolean }>
     >("get-chats", appId);
     expect(favoritedSummaries).toEqual([
+      expect.objectContaining({ id: deliveryChatId, isFavorite: false }),
       expect.objectContaining({ id: newerChatId, isFavorite: false }),
       expect.objectContaining({ id: olderChatId, isFavorite: true }),
     ]);
@@ -343,6 +357,60 @@ describe("registerChatHandlers", () => {
         isFavorite: false,
       }),
     ).resolves.toEqual({ isFavorite: false });
+  });
+
+  it("refuses another chat once the three phase titles exist", async () => {
+    const appId = Number(
+      harness.db.insert(apps).values({ name: "phased", path: "phased" }).run()
+        .lastInsertRowid,
+    );
+    for (const title of ["Discovery", "Implementation", "Delivery"]) {
+      harness.db.insert(chats).values({ appId, title }).run();
+    }
+
+    await expect(
+      harness.invokeHandler("create-chat", { appId }),
+    ).rejects.toMatchObject({
+      kind: DyadErrorKind.Validation,
+      message: "This app already has its three phases.",
+    });
+  });
+
+  it("deletes an app whose chats are not the three phase titles", async () => {
+    const appId = Number(
+      harness.db
+        .insert(apps)
+        .values({ name: "partial-phases", path: "partial-phases" })
+        .run().lastInsertRowid,
+    );
+    const implementationId = Number(
+      harness.db.insert(chats).values({ appId, title: "Implementation" }).run()
+        .lastInsertRowid,
+    );
+    harness.db
+      .insert(messages)
+      .values({
+        chatId: implementationId,
+        role: "user",
+        content: "Build the page",
+      })
+      .run();
+    harness.db
+      .insert(chats)
+      .values({ appId, title: "Anime University Club Website" })
+      .run();
+    harness.db.insert(chats).values({ appId, title: "Discovery" }).run();
+
+    const summaries = await harness.invokeHandler<
+      Array<{ id: number; title: string | null }>
+    >("get-chats", appId);
+    expect(summaries).toEqual([]);
+    expect(
+      harness.db.select().from(apps).where(eq(apps.id, appId)).get(),
+    ).toBeUndefined();
+    expect(
+      harness.db.select().from(chats).where(eq(chats.appId, appId)).all(),
+    ).toEqual([]);
   });
 
   it("throws NotFound when favoriting a missing chat", async () => {

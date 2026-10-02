@@ -294,6 +294,7 @@
     "enterFullScreen": "Pantalla completa",
     "selectFileToView": "Selecciona un archivo para ver",
     "noFilesFound": "No se encontraron archivos",
+    "projectFilesOnAnotherMachine": "Los archivos del proyecto están en el equipo que los creó.",
     "searchFileContents": "Buscar contenido en archivos",
     "clearSearch": "Borrar búsqueda",
     "searchingFiles": "Buscando archivos...",

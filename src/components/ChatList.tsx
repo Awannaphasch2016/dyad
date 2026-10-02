@@ -9,7 +9,6 @@ import {
   isYesterday,
 } from "date-fns";
 import {
-  PlusCircle,
   MoreVertical,
   Trash2,
   Edit3,
@@ -232,29 +231,6 @@ export function ChatList({
     setIsSearchDialogOpen(false);
   };
 
-  const handleNewChat = async () => {
-    // Only create a new chat if an app is selected
-    if (selectedAppId) {
-      try {
-        // Create a new chat with an empty title for now
-        const chatId = await ipc.chat.createChat({ appId: selectedAppId });
-
-        // Refresh the chat list first so the new chat is in the cache
-        // before selectChat adds it to the tab bar
-        await invalidateChats();
-
-        // Navigate to the new chat (use selectChat so it appears at front of tab bar)
-        selectChat({ chatId, appId: selectedAppId });
-      } catch (error) {
-        // DO A TOAST
-        showError(t("failedCreateChat", { error: (error as any).toString() }));
-      }
-    } else {
-      // If no app is selected, navigate to home page
-      navigate({ to: "/" });
-    }
-  };
-
   const handleDeleteChat = async (chatId: number) => {
     try {
       await ipc.chat.deleteChat(chatId);
@@ -413,23 +389,7 @@ export function ChatList({
         )}
         <SidebarGroupContent>
           <div className="flex flex-col space-y-4">
-            <div
-              className={cn(
-                "mx-2 flex items-center gap-2",
-                isFactoryApp && "justify-end",
-              )}
-            >
-              {!isFactoryApp && (
-                <Button
-                  onClick={handleNewChat}
-                  variant="outline"
-                  className="flex flex-1 items-center justify-start gap-2 py-3"
-                  data-testid="new-chat-button"
-                >
-                  <PlusCircle size={16} />
-                  <span>{t("newChat")}</span>
-                </Button>
-              )}
+            <div className="mx-2 flex items-center justify-end gap-2">
               <Button
                 onClick={() => setIsSearchDialogOpen(!isSearchDialogOpen)}
                 variant="outline"
@@ -743,7 +703,7 @@ export function ChatList({
         onOpenChange={setIsSearchDialogOpen}
         onSelectChat={handleChatClick}
         appId={selectedAppId}
-        allChats={chats}
+        allChats={isFactoryApp ? orderedFactoryPhaseChats(chats) : chats}
       />
       <p className="sr-only" role="status" aria-live="polite">
         {favoriteAnnouncement}

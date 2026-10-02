@@ -1,6 +1,19 @@
 import { deleteChatJournals } from "@/ipc/services/chat_journal_cleanup";
 import { initialChatExecution } from "@/ipc/utils/chat_execution_selection";
 import { app, dialog } from "electron";
+import { sharingScope } from "@/control_plane/access";
+import { assertAppVisible } from "@/control_plane/guard";
+import { ensureProjectFiles } from "@/control_plane/file_sync";
+import {
+  forgetSharedApp,
+  publishLocalApp,
+  refreshSharedApp,
+  syncActiveAccount,
+} from "@/control_plane/sync_local";
+import {
+  displayNameTaken,
+  selectVisibleApps,
+} from "@/control_plane/visibility";
 import { closeDatabase, db, getDatabaseFilePaths } from "../../db";
 import {
   apps,
@@ -129,7 +142,7 @@ import {
   reconcileCloudSandboxes,
 } from "../utils/cloud_sandbox_provider";
 import { createFromTemplate } from "./createFromTemplate";
-import { getInitialChatModeForNewChat } from "./chat_mode_resolution";
+import { insertFactoryPhaseChats } from "../utils/factory_phase_chats";
 import { ensureDyadGitignored } from "./gitignoreUtils";
 import {
   gitListBranches,
@@ -155,6 +168,11 @@ import {
   trackedBranchId,
 } from "../utils/neon_test_branch";
 import type { AppSearchResult } from "@/lib/schemas";
+
+type OwnedSearchResult = AppSearchResult & {
+  ownerType: "user" | "org" | null;
+  ownerId: string | null;
+};
 import { endTestsForApp } from "./tests_handlers";
 import { removeE2eTestArtifactsForApp } from "../services/e2e_test_workspace";
 
@@ -493,7 +511,7 @@ async function ensureAppOffTestBranch(appId: number): Promise<void> {
   );
 }
 
-async function deleteAppById(
+export async function deleteAppById(
   appId: number,
   options: DeleteAppByIdOptions = {},
 ): Promise<void> {
@@ -588,6 +606,10 @@ async function deleteAppById(
   // branch became unreachable without a word. `deleteTempTestBranch` reports
   // that state as a failure, which is what reaches the user below.
   const strandedMarker = deletedRow?.neonTestBranchId ?? null;
+  if (deletedRow?.remoteId) {
+    await forgetSharedApp(deletedRow.remoteId);
+  }
+
   if (strandedMarker && deletedRow) {
     // The row is gone, so nothing can reconcile this later. Logged loudly
     // rather than failing a deletion that has already happened — and named by
@@ -841,6 +863,30 @@ async function deleteAppByIdExclusive(
   return deletedRow;
 }
 
+function throwIfAccountSyncFailed(synced: boolean): void {
+  if (synced) return;
+  throw new DyadError(
+    "Couldn't load this account's apps.",
+    DyadErrorKind.External,
+  );
+}
+
+async function displayNameConflicts(
+  event: { sender: { id: number } },
+  name: string,
+  excludeAppId?: number,
+): Promise<boolean> {
+  const scope = await sharingScope(event);
+  const rows = await db.query.apps.findMany({
+    where: eq(apps.name, name),
+  });
+  return displayNameTaken(
+    rows,
+    scope ? scope.session.account : null,
+    excludeAppId,
+  );
+}
+
 export function registerAppHandlers() {
   registerCloudSandboxSyncUpdateListener();
 
@@ -858,15 +904,14 @@ export function registerAppHandlers() {
     }
     let app!: typeof apps.$inferSelect;
     let fullAppPath!: string;
+    let chatId!: number;
+    let accountScope: Awaited<ReturnType<typeof sharingScope>> = null;
     try {
       const appName = sanitizeAppDisplayName(params.name);
 
       // The display name the user typed conflicting is a hard error (they can
       // pick another); folder collisions below auto-resolve with a suffix.
-      const nameConflict = await db.query.apps.findFirst({
-        where: eq(apps.name, appName),
-      });
-      if (nameConflict) {
+      if (await displayNameConflicts(event, appName)) {
         throw new DyadError(
           `An app named "${appName}" already exists.`,
           DyadErrorKind.Conflict,
@@ -884,8 +929,11 @@ export function registerAppHandlers() {
         );
       }
 
-      // Create a new app
+      // Create a new app. The owner is on the row before the template and
+      // git awaits, so a list refresh cannot claim this app into Private.
       const settings = readSettings();
+      const execution = await initialChatExecution();
+      accountScope = await sharingScope(event);
       [app] = await db
         .insert(apps)
         .values({
@@ -896,8 +944,13 @@ export function registerAppHandlers() {
           // the "testing for new apps" setting. Otherwise fall back to the
           // column default (off).
           testingEnabled: settings.enableTestingForNewApps ?? false,
+          ownerType: accountScope?.session.account.type,
+          ownerId: accountScope?.session.account.id,
         })
         .returning();
+      // The three phase chats commit before the next await, so a list refresh
+      // cannot remove this app for missing Discovery, Implementation, or Delivery.
+      chatId = insertFactoryPhaseChats(app.id, execution);
     } catch (error) {
       if (params.firstPromptCreationOperationId) {
         firstPromptCreationRegistry.commit(
@@ -920,19 +973,13 @@ export function registerAppHandlers() {
     };
 
     try {
-      const initialChatMode = await getInitialChatModeForNewChat(
-        params.initialChatMode,
-      );
-
-      // Create an initial chat for this app
-      const [chat] = await db
-        .insert(chats)
-        .values({
-          appId: app.id,
-          chatMode: initialChatMode,
-          ...(await initialChatExecution()),
-        })
-        .returning();
+      if (accountScope) {
+        await publishLocalApp(
+          app.id,
+          accountScope.session.account,
+          accountScope.session.userId,
+        );
+      }
 
       await createFromTemplate({
         fullAppPath,
@@ -949,17 +996,16 @@ export function registerAppHandlers() {
         path: fullAppPath,
       });
 
-      // Update chat with initial commit hash
       await db
         .update(chats)
         .set({
           initialCommitHash: commitHash,
         })
-        .where(eq(chats.id, chat.id));
+        .where(eq(chats.appId, app.id));
 
       const result = {
         app: { ...app, resolvedPath: fullAppPath },
-        chatId: chat.id,
+        chatId,
       };
       return result;
     } finally {
@@ -972,9 +1018,10 @@ export function registerAppHandlers() {
     }
   });
 
-  createTypedHandler(appContracts.copyApp, async (_, params) => {
+  createTypedHandler(appContracts.copyApp, async (event, params) => {
     const { appId, withHistory } = params;
     const newAppName = sanitizeAppDisplayName(params.newAppName);
+    await assertAppVisible(event, appId);
 
     // The copy waits on the app's runtime-config claim so a recording's isolated
     // `.env.local` is never what gets copied. A recording holds that claim for
@@ -1016,18 +1063,15 @@ export function registerAppHandlers() {
     // 1. Check if an app with the new name already exists. The user typed
     // this name, so a conflict is a hard error; folder collisions below
     // auto-resolve with a suffix (two distinct names can share a slug).
-    const existingApp = await db.query.apps.findFirst({
-      where: eq(apps.name, newAppName),
-    });
-
-    if (existingApp) {
+    if (await displayNameConflicts(event, newAppName)) {
       throw new DyadError(
         `An app named "${newAppName}" already exists.`,
         DyadErrorKind.Conflict,
       );
     }
+    const scope = await sharingScope(event);
 
-    return appOperationCoordinator.run(
+    const copied = await appOperationCoordinator.run(
       {
         appId,
         operation: "copy-app",
@@ -1112,6 +1156,7 @@ export function registerAppHandlers() {
         }
 
         // 4. Create a new app entry in the database
+        const execution = await initialChatExecution();
         const [newDbApp] = await db
           .insert(apps)
           .values({
@@ -1125,8 +1170,11 @@ export function registerAppHandlers() {
             githubRepo: null,
             installCommand: originalApp.installCommand,
             startCommand: originalApp.startCommand,
+            ownerType: scope?.session.account.type,
+            ownerId: scope?.session.account.id,
           })
           .returning();
+        insertFactoryPhaseChats(newDbApp.id, execution);
 
         if (withHistory) {
           const originalVersionMetadata = await db.query.versions.findMany({
@@ -1152,9 +1200,23 @@ export function registerAppHandlers() {
         return { app: newDbApp };
       },
     );
+    if (scope) {
+      await publishLocalApp(
+        copied.app.id,
+        scope.session.account,
+        scope.session.userId,
+      );
+    }
+    return copied;
   });
 
-  createTypedHandler(appContracts.getApp, async (_, appId) => {
+  createTypedHandler(appContracts.getApp, async (event, appId) => {
+    const scope = await sharingScope(event);
+    if (scope) {
+      throwIfAccountSyncFailed(
+        await syncActiveAccount(scope.session.userId, scope.session.account),
+      );
+    }
     const app = await db.query.apps.findFirst({
       where: eq(apps.id, appId),
     });
@@ -1162,10 +1224,22 @@ export function registerAppHandlers() {
     if (!app) {
       throw new DyadError("App not found", DyadErrorKind.NotFound);
     }
+    if (scope && !selectVisibleApps([app], scope.session.account).length) {
+      throw new DyadError("App not found", DyadErrorKind.NotFound);
+    }
 
     // Get app files
     const appPath = getDyadAppPath(app.path);
     let files: string[] = [];
+    let projectFilesOnThisMachine = fs.existsSync(appPath);
+    if (!projectFilesOnThisMachine) {
+      try {
+        projectFilesOnThisMachine = await ensureProjectFiles(app);
+      } catch (error) {
+        logger.warn(`Could not clone files for app ${appId}`, error);
+        projectFilesOnThisMachine = false;
+      }
+    }
 
     try {
       files = getFilesRecursively(appPath, appPath);
@@ -1224,6 +1298,7 @@ export function registerAppHandlers() {
       resolvedPath: appPath,
       supabaseProjectName,
       vercelTeamSlug,
+      projectFilesOnThisMachine,
       deploymentProvidersInUse: {
         vercel: Boolean(app.vercelProjectId),
         cloudflare: cloudflareConnection !== undefined,
@@ -1232,11 +1307,21 @@ export function registerAppHandlers() {
     };
   });
 
-  createTypedHandler(appContracts.listApps, async () => {
+  createTypedHandler(appContracts.listApps, async (event) => {
+    const scope = await sharingScope(event);
+    if (scope) {
+      throwIfAccountSyncFailed(
+        await syncActiveAccount(scope.session.userId, scope.session.account),
+      );
+    }
     const allApps = await db.query.apps.findMany({
       orderBy: [desc(apps.createdAt)],
     });
-    const appsWithResolvedPath = allApps.map((app) => ({
+    const visibleApps = selectVisibleApps(
+      allApps,
+      scope ? scope.session.account : null,
+    );
+    const appsWithResolvedPath = visibleApps.map((app) => ({
       ...app,
       resolvedPath: getDyadAppPath(app.path),
     }));
@@ -1245,8 +1330,9 @@ export function registerAppHandlers() {
     };
   });
 
-  createTypedHandler(appContracts.readAppFile, async (_, params) => {
+  createTypedHandler(appContracts.readAppFile, async (event, params) => {
     const { appId, filePath } = params;
+    await assertAppVisible(event, appId);
     const app = await db.query.apps.findFirst({
       where: eq(apps.id, appId),
     });
@@ -1552,11 +1638,12 @@ export function registerAppHandlers() {
     return {};
   });
 
-  createTypedHandler(appContracts.deleteApp, async (_, params) => {
+  createTypedHandler(appContracts.deleteApp, async (event, params) => {
+    await assertAppVisible(event, params.appId);
     await deleteAppById(params.appId);
   });
 
-  createTypedHandler(appContracts.deleteApps, async (_, params) => {
+  createTypedHandler(appContracts.deleteApps, async (event, params) => {
     const results: {
       appId: number;
       success: boolean;
@@ -1566,6 +1653,7 @@ export function registerAppHandlers() {
     await Promise.all(
       params.appIds.map(async (appId) => {
         try {
+          await assertAppVisible(event, appId);
           await deleteAppById(appId);
           results.push({ appId, success: true });
         } catch (error: any) {
@@ -1664,7 +1752,8 @@ export function registerAppHandlers() {
     );
   });
 
-  createTypedHandler(appContracts.renameApp, async (_, params) => {
+  createTypedHandler(appContracts.renameApp, async (event, params) => {
+    await assertAppVisible(event, params.appId);
     const { appId, autoResolveConflicts } = params;
     return appOperationCoordinator.run(
       {
@@ -1730,11 +1819,7 @@ export function registerAppHandlers() {
           });
         } else {
           // Check for conflicts with existing apps
-          const nameConflict = await db.query.apps.findFirst({
-            where: eq(apps.name, appName),
-          });
-
-          if (nameConflict && nameConflict.id !== appId) {
+          if (await displayNameConflicts(event, appName, appId)) {
             throw new DyadError(
               `An app with the name '${appName}' already exists`,
               DyadErrorKind.Conflict,
@@ -1881,6 +1966,7 @@ export function registerAppHandlers() {
             .where(eq(apps.id, appId))
             .returning();
 
+          await refreshSharedApp(appId);
           return { name: appName, path: pathToStore };
         } catch (error: any) {
           // Attempt to rollback the file move
@@ -2204,7 +2290,7 @@ export function registerAppHandlers() {
   // search-app is not in app contracts - keep using handle
   handle(
     "search-app",
-    async (_, searchQuery: string): Promise<AppSearchResult[]> => {
+    async (event, searchQuery: string): Promise<AppSearchResult[]> => {
       // Use parameterized query to prevent SQL injection
       const pattern = `%${searchQuery.replace(/[%_]/g, "\\$&")}%`;
 
@@ -2214,16 +2300,20 @@ export function registerAppHandlers() {
           id: apps.id,
           name: apps.name,
           createdAt: apps.createdAt,
+          ownerType: apps.ownerType,
+          ownerId: apps.ownerId,
         })
         .from(apps)
         .where(like(apps.name, pattern))
         .orderBy(desc(apps.createdAt));
 
-      const appNameMatchesResult: AppSearchResult[] = appNameMatches.map(
+      const appNameMatchesResult: OwnedSearchResult[] = appNameMatches.map(
         (r) => ({
           id: r.id,
           name: r.name,
           createdAt: r.createdAt,
+          ownerType: r.ownerType,
+          ownerId: r.ownerId,
           matchedChatTitle: null,
           matchedChatMessage: null,
         }),
@@ -2235,6 +2325,8 @@ export function registerAppHandlers() {
           id: apps.id,
           name: apps.name,
           createdAt: apps.createdAt,
+          ownerType: apps.ownerType,
+          ownerId: apps.ownerId,
           matchedChatTitle: chats.title,
         })
         .from(apps)
@@ -2242,11 +2334,13 @@ export function registerAppHandlers() {
         .where(like(chats.title, pattern))
         .orderBy(desc(apps.createdAt));
 
-      const chatTitleMatchesResult: AppSearchResult[] = chatTitleMatches.map(
+      const chatTitleMatchesResult: OwnedSearchResult[] = chatTitleMatches.map(
         (r) => ({
           id: r.id,
           name: r.name,
           createdAt: r.createdAt,
+          ownerType: r.ownerType,
+          ownerId: r.ownerId,
           matchedChatTitle: r.matchedChatTitle,
           matchedChatMessage: null,
         }),
@@ -2258,6 +2352,8 @@ export function registerAppHandlers() {
           id: apps.id,
           name: apps.name,
           createdAt: apps.createdAt,
+          ownerType: apps.ownerType,
+          ownerId: apps.ownerId,
           matchedChatTitle: chats.title,
           matchedChatMessage: messages.content,
         })
@@ -2268,7 +2364,7 @@ export function registerAppHandlers() {
         .orderBy(desc(apps.createdAt));
 
       // Flatten and dedupe by app id
-      const allMatches: AppSearchResult[] = [
+      const allMatches: OwnedSearchResult[] = [
         ...appNameMatchesResult,
         ...chatTitleMatchesResult,
         ...chatMessageMatches,
@@ -2283,7 +2379,18 @@ export function registerAppHandlers() {
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
       );
 
-      return uniqueApps;
+      const scope = await sharingScope(event);
+      const visible = selectVisibleApps(
+        uniqueApps,
+        scope ? scope.session.account : null,
+      );
+      return visible.map((app) => ({
+        id: app.id,
+        name: app.name,
+        createdAt: app.createdAt,
+        matchedChatTitle: app.matchedChatTitle,
+        matchedChatMessage: app.matchedChatMessage,
+      }));
     },
   );
 
