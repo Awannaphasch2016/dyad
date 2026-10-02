@@ -3,13 +3,19 @@ import {
   listClaudeModels,
 } from "@/ipc/services/claude_code/runtime";
 import { getClaudeUsageLimits } from "@/ipc/services/claude_code/usage_limits";
+import { assertAppVisible } from "@/control_plane/guard";
+import { sharingScope } from "@/control_plane/access";
+import { syncOneApp } from "@/control_plane/sync_local";
+import { selectVisibleApps } from "@/control_plane/visibility";
 import { db } from "../../db";
-import { chats, messages } from "../../db/schema";
+import { apps, chats, messages } from "../../db/schema";
 import { desc, eq, and, like } from "drizzle-orm";
 import type { ChatSearchResult, ChatSummary } from "../../lib/schemas";
 
 import log from "electron-log";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import { hasFactoryPhases } from "@/lib/factoryPhase";
+import { deleteAppById } from "./app_handlers";
 import { createTypedHandler } from "./base";
 import { getHandlerContext } from "./handler_context";
 import { entityDisposalBus } from "@/window_infrastructure/main/entity_disposal_bus";
@@ -30,6 +36,10 @@ import {
   BACKEND_SWITCH_MESSAGE,
 } from "@/shared/execution_backend";
 import { createChatForApp } from "../utils/chat_creation_utils";
+import {
+  assertFactoryChatCreationOpen,
+  retainStartedFactoryPhaseChats,
+} from "../utils/factory_phase_chats";
 import {
   getReferencedAppsForDisplay,
   readStoredReferencedAppIds,
@@ -145,12 +155,14 @@ export function registerChatHandlers() {
     }
     let chatId: number | undefined;
     try {
+      await assertFactoryChatCreationOpen(appId);
       chatId = await createChatForApp({
         appId,
         initialChatMode,
         modelSelection:
           typeof input === "number" ? undefined : input.modelSelection,
       });
+      await syncOneApp(appId);
       return chatId;
     } finally {
       if (firstPromptCreationOperationId) {
@@ -169,7 +181,7 @@ export function registerChatHandlers() {
     }
   });
 
-  createTypedHandler(chatContracts.getChat, async (_, chatId) => {
+  createTypedHandler(chatContracts.getChat, async (event, chatId) => {
     const chat = await db.query.chats.findFirst({
       where: eq(chats.id, chatId),
       columns: {
@@ -196,6 +208,7 @@ export function registerChatHandlers() {
     if (!chat) {
       throw new DyadError("Chat not found", DyadErrorKind.NotFound);
     }
+    await assertAppVisible(event, chat.appId);
 
     return {
       id: chat.id,
@@ -282,7 +295,21 @@ export function registerChatHandlers() {
     };
   });
 
-  createTypedHandler(chatContracts.getChats, async (_, appId) => {
+  createTypedHandler(chatContracts.getChats, async (event, appId) => {
+    if (appId != null) {
+      await assertAppVisible(event, appId);
+      await syncOneApp(appId);
+      await retainStartedFactoryPhaseChats(appId);
+      const phaseRows = await db.query.chats.findMany({
+        where: eq(chats.appId, appId),
+        columns: { id: true, title: true },
+      });
+      if (!hasFactoryPhases(phaseRows)) {
+        await deleteAppById(appId);
+        return [];
+      }
+    }
+    const scope = await sharingScope(event);
     // If appId is provided, filter chats for that app
     const query = appId
       ? db.query.chats.findMany({
@@ -310,7 +337,16 @@ export function registerChatHandlers() {
         });
 
     const allChats = await query;
-    return allChats.map((chat) => ({
+    let visibleChats = allChats;
+    if (scope && appId == null) {
+      const owned = selectVisibleApps(
+        db.select().from(apps).all(),
+        scope.session.account,
+      );
+      const ids = new Set(owned.map((app) => app.id));
+      visibleChats = allChats.filter((chat) => ids.has(chat.appId));
+    }
+    return visibleChats.map((chat) => ({
       ...chat,
       chatMode: normalizeStoredChatMode(chat.chatMode),
     })) satisfies ChatSummary[];

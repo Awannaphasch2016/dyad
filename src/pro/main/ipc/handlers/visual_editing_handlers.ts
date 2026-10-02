@@ -1,9 +1,6 @@
 import fs from "node:fs";
 import { promises as fsPromises } from "node:fs";
 import path from "path";
-import { db } from "../../../../db";
-import { apps } from "../../../../db/schema";
-import { eq } from "drizzle-orm";
 import { getDyadAppPath } from "../../../../paths/paths";
 import {
   stylesToTailwind,
@@ -27,9 +24,9 @@ import {
   analyzeComponent,
 } from "../../utils/visual_editing_utils";
 import { normalizePath } from "../../../../../shared/normalizePath";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import { queueCloudSandboxSnapshotSync } from "@/ipc/utils/cloud_sandbox_provider";
 import { registerTrustedIpcHandler } from "@/ipc/handlers/trusted_handle";
+import { assertAppVisible } from "@/control_plane/guard";
 
 // Client allows 7.5 MB raw; base64 expands by ~4/3 plus data URL prefix
 const MAX_IMAGE_SIZE = Math.ceil((7.5 * 1024 * 1024) / 3) * 4 + 100; // ~10,485,860
@@ -37,25 +34,14 @@ const MAX_IMAGE_SIZE = Math.ceil((7.5 * 1024 * 1024) / 3) * 4 + 100; // ~10,485,
 export function registerVisualEditingHandlers() {
   registerTrustedIpcHandler(
     "apply-visual-editing-changes",
-    async (_event, params: ApplyVisualEditingChangesParams) => {
+    async (event, params: ApplyVisualEditingChangesParams) => {
       const { appId, changes } = params;
+      const { app } = await assertAppVisible(event, appId);
       // Track written image files and staged git paths for cleanup on failure
       const writtenImagePaths: string[] = [];
       const stagedGitPaths: { appPath: string; filepath: string }[] = [];
       try {
         if (changes.length === 0) return;
-
-        // Get the app to find its path
-        const app = await db.query.apps.findFirst({
-          where: eq(apps.id, appId),
-        });
-
-        if (!app) {
-          throw new DyadError(
-            `App not found: ${appId}`,
-            DyadErrorKind.NotFound,
-          );
-        }
 
         const appPath = getDyadAppPath(app.path);
 
@@ -227,26 +213,15 @@ export function registerVisualEditingHandlers() {
 
   registerTrustedIpcHandler(
     "analyze-component",
-    async (_event, analyseComponentParams: AnalyseComponentParams) => {
+    async (event, analyseComponentParams: AnalyseComponentParams) => {
       const { appId, componentId } = analyseComponentParams;
+      const { app } = await assertAppVisible(event, appId);
       try {
         const [filePath, lineStr] = componentId.split(":");
         const line = parseInt(lineStr, 10);
 
         if (!filePath || isNaN(line)) {
           return { isDynamic: false, hasStaticText: false, hasImage: false };
-        }
-
-        // Get the app to find its path
-        const app = await db.query.apps.findFirst({
-          where: eq(apps.id, appId),
-        });
-
-        if (!app) {
-          throw new DyadError(
-            `App not found: ${appId}`,
-            DyadErrorKind.NotFound,
-          );
         }
 
         const appPath = getDyadAppPath(app.path);

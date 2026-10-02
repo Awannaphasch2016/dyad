@@ -285,6 +285,7 @@
     "enterFullScreen": "Tam ekrana geç",
     "selectFileToView": "Görüntülemek için bir dosya seçin",
     "noFilesFound": "Dosya bulunamadı",
+    "projectFilesOnAnotherMachine": "Proje dosyaları, projeyi oluşturan makinede.",
     "searchFileContents": "Dosya içeriklerinde ara",
     "clearSearch": "Aramayı temizle",
     "searchingFiles": "Dosyalar aranıyor...",

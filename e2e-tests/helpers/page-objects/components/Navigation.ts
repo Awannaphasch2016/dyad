@@ -73,12 +73,9 @@ export class Navigation {
     await expect(appListItem.first()).toBeVisible({ timeout: 60000 });
     await appListItem.first().click();
 
-    const openInChatButton = this.page.getByRole("button", {
-      name: "Open in Chat",
-    });
-    await expect(openInChatButton).toBeVisible({ timeout: 60000 });
-    await expect(openInChatButton).toBeEnabled({ timeout: 60000 });
-    await openInChatButton.click();
+    const phaseChat = this.page.locator('[data-testid^="chat-list-item-"]');
+    await expect(phaseChat.first()).toBeVisible({ timeout: 60000 });
+    await phaseChat.first().click();
   }
 
   private async openFirstChatOrCreateNew() {

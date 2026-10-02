@@ -38,6 +38,9 @@ export const AppBaseSchema = z.object({
   isFavorite: z.boolean(),
   testingEnabled: z.boolean(),
   collectionId: z.number().nullable(),
+  remoteId: z.string().nullable().optional(),
+  ownerType: z.enum(["user", "org"]).nullable().optional(),
+  ownerId: z.string().nullable().optional(),
 });
 
 /**
@@ -65,6 +68,7 @@ export const AppSchema = AppBaseSchema.extend({
   vercelTeamSlug: z.string().nullable(),
   resolvedPath: z.string().optional(),
   deploymentProvidersInUse: DeploymentProvidersInUseSchema,
+  projectFilesOnThisMachine: z.boolean().optional(),
 });
 
 export type App = z.infer<typeof AppSchema>;

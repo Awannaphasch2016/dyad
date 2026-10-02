@@ -954,7 +954,17 @@ export async function gitCommit({
         DyadErrorKind.Conflict,
       );
     }
-    return result.stdout.trim();
+    const hash = result.stdout.trim();
+    if (process.env.WEWEBPLUS_DATABASE_URL) {
+      try {
+        const { pushAppAfterCommit } =
+          await import("@/control_plane/file_sync");
+        await pushAppAfterCommit(path);
+      } catch (error) {
+        logger.warn("Account git push skipped", error);
+      }
+    }
+    return hash;
   } finally {
     try {
       await fsPromises.rm(noHooksPath, { recursive: true, force: true });
