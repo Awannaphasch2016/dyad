@@ -16,6 +16,21 @@ type TrustedIpcHandlerOptions = {
   onTrustFailure?: TrustFailureHandler;
 };
 
+const trustedHandlers = new Map<string, IpcHandler>();
+
+/**
+ * The handler passed to {@link registerTrustedIpcHandler}, without the
+ * renderer trust check. The browser bridge calls this with its own sender.
+ * Desktop IPC still goes through `ipcMain` and `assertTrustedRenderer`.
+ */
+export function getTrustedIpcHandler(channel: string): IpcHandler | undefined {
+  return trustedHandlers.get(channel);
+}
+
+export function clearTrustedIpcHandlersForTesting(): void {
+  trustedHandlers.clear();
+}
+
 /**
  * Registers an invoke handler that can only be called by the trusted Dyad
  * renderer. This is the sole production entry point for `ipcMain.handle` so
@@ -29,6 +44,7 @@ export function registerTrustedIpcHandler(
   handler: IpcHandler,
   options: TrustedIpcHandlerOptions = {},
 ): void {
+  trustedHandlers.set(channel, handler);
   // Optional chaining: ipcMain is undefined in some unit-test environments.
   ipcMain?.handle(channel, async (event, ...args) => {
     try {

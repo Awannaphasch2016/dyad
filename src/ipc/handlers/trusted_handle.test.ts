@@ -26,7 +26,8 @@ vi.mock("electron", () => ({
   },
 }));
 
-const { registerTrustedIpcHandler } = await import("./trusted_handle");
+const { getTrustedIpcHandler, registerTrustedIpcHandler } =
+  await import("./trusted_handle");
 
 function eventFor(url: string) {
   const frame = { url };
@@ -98,6 +99,23 @@ describe("registerTrustedIpcHandler", () => {
     expect(result).toEqual({ error: expect.any(Error) });
     expect(mapTrustFailure).toHaveBeenCalledOnce();
     expect(implementation).not.toHaveBeenCalled();
+  });
+
+  it("keeps a handler the browser bridge can call without the trust check", async () => {
+    const implementation = vi.fn(async () => "ok");
+    registerTrustedIpcHandler("browser-bridge", implementation);
+
+    await expect(
+      getTrustedIpcHandler("browser-bridge")?.(
+        eventFor("https://attacker.example/") as never,
+      ),
+    ).resolves.toBe("ok");
+    expect(implementation).toHaveBeenCalledOnce();
+    await expect(
+      mocks.handlers.get("browser-bridge")?.(
+        eventFor("https://attacker.example/"),
+      ),
+    ).rejects.toThrow("trusted Dyad renderer");
   });
 
   it("is the only production entry point for ipcMain invoke handlers", () => {
