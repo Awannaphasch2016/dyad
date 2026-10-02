@@ -9,9 +9,16 @@ export type ClerkSessionState =
   | { status: "signed-out" }
   | {
       status: "signed-in";
-      roleId: AdminRoleId;
+      roleId: AdminRoleId | null;
+      canInvite: boolean;
       userId: string;
       email: string | null;
+      displayName?: string | null;
+      account?: {
+        type: "user" | "org";
+        id: string;
+        name: string;
+      };
     };
 
 const ClerkSessionContext = createContext<ClerkSessionState>({
@@ -43,6 +50,7 @@ export function useClerkSession(): ClerkSessionState {
 export function useClerkRole(): {
   status: ClerkAuthStatus;
   roleId: AdminRoleId | null;
+  canInvite: boolean;
   email: string | null;
   can: (permissionId: string) => boolean;
 } {
@@ -51,6 +59,7 @@ export function useClerkRole(): {
     return {
       status: session.status,
       roleId: null,
+      canInvite: false,
       email: null,
       can: () => session.status === "unconfigured",
     };
@@ -58,6 +67,7 @@ export function useClerkRole(): {
   return {
     status: session.status,
     roleId: session.roleId,
+    canInvite: session.canInvite,
     email: session.email,
     can: (permissionId) => roleHasPermission(session.roleId, permissionId),
   };

@@ -1,11 +1,20 @@
-import { ClerkProvider, useAuth, useUser } from "@clerk/clerk-react";
+import {
+  ClerkProvider,
+  useAuth,
+  useOrganization,
+  useUser,
+} from "@clerk/clerk-react";
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { roleFromMetadata } from "@/lib/adminAccess";
+import {
+  clerkCanInvite,
+  roleFromClerkMembership,
+} from "@/lib/adminAccess";
 import { queryKeys } from "@/lib/queryKeys";
 import { ipc } from "@/ipc/types";
 import { loadClerkBrowser } from "./loadClerkBrowser";
+import { publishSessionToken } from "./publish_session_token";
 import { ClerkSessionProvider, type ClerkSessionState } from "./session";
 
 const clerkAppearance = {
@@ -121,16 +130,61 @@ function ClerkProviderWithRouter({
 function ClerkSessionBridge({ children }: { children: ReactNode }) {
   const auth = useAuth();
   const { isLoaded: userLoaded, user } = useUser();
+  const { organization, membership, isLoaded: orgLoaded } = useOrganization();
+  const [tokenReady, setTokenReady] = useState(false);
+
+  useEffect(() => {
+    if (!auth.isLoaded) return;
+    let active = true;
+    setTokenReady(false);
+    void publishSessionToken(async () => {
+      if (!auth.isSignedIn) return null;
+      const token = await auth.getToken({ skipCache: true });
+      return token || undefined;
+    })
+      .then((stored) => {
+        if (active && stored) setTokenReady(true);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [auth.isLoaded, auth.isSignedIn, auth.orgId, auth.userId, auth.getToken]);
+
   const value = useMemo<ClerkSessionState>(() => {
-    if (!auth.isLoaded || !userLoaded) return { status: "loading" };
+    if (!auth.isLoaded || !userLoaded || !orgLoaded)
+      return { status: "loading" };
     if (!auth.isSignedIn || !auth.userId) return { status: "signed-out" };
+    if (!tokenReady) return { status: "loading" };
+    const account = organization
+      ? {
+          type: "org" as const,
+          id: organization.id,
+          name: organization.name,
+        }
+      : { type: "user" as const, id: auth.userId, name: "Private" };
     return {
       status: "signed-in",
       userId: auth.userId,
-      roleId: roleFromMetadata(user?.publicMetadata),
+      roleId: organization
+        ? roleFromClerkMembership(membership?.publicMetadata, membership?.role)
+        : null,
+      canInvite: organization ? clerkCanInvite(membership?.role) : false,
       email: user?.primaryEmailAddress?.emailAddress ?? null,
+      displayName: user?.fullName ?? user?.primaryEmailAddress?.emailAddress,
+      account,
     };
-  }, [auth.isLoaded, auth.isSignedIn, auth.userId, userLoaded, user]);
+  }, [
+    auth.isLoaded,
+    auth.isSignedIn,
+    auth.userId,
+    userLoaded,
+    orgLoaded,
+    user,
+    organization,
+    membership,
+    tokenReady,
+  ]);
 
   return <ClerkSessionProvider value={value}>{children}</ClerkSessionProvider>;
 }

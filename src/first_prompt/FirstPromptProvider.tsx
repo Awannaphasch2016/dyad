@@ -14,6 +14,7 @@ import { useStore } from "jotai";
 import { useTranslation } from "react-i18next";
 import { usePostHog } from "posthog-js/react";
 import { ipc } from "@/ipc/types";
+import { hasFactoryPhases } from "@/lib/factoryPhase";
 import { ensureFactoryPhaseChats } from "./ensure_factory_phase_chats";
 import { generateCuteAppName } from "@/lib/utils";
 import { NEON_TEMPLATE_IDS } from "@/shared/templates";
@@ -139,13 +140,16 @@ export function FirstPromptProvider({
         initialChatMode: chatMode,
         firstPromptCreationOperationId: operationId,
       });
-      await ensureFactoryPhaseChats({
-        appId: result.app.id,
-        discoveryChatId: result.chatId,
-        createChat: async ({ appId, initialChatMode }) =>
-          ipc.chat.createChat({ appId, initialChatMode }),
-        updateChat: (params) => ipc.chat.updateChat(params),
-      });
+      const chats = await ipc.chat.getChats(result.app.id);
+      if (!hasFactoryPhases(chats)) {
+        await ensureFactoryPhaseChats({
+          appId: result.app.id,
+          discoveryChatId: result.chatId,
+          createChat: async ({ appId, initialChatMode }) =>
+            ipc.chat.createChat({ appId, initialChatMode }),
+          updateChat: (params) => ipc.chat.updateChat(params),
+        });
+      }
       return {
         appId: result.app.id,
         appName: result.app.name,

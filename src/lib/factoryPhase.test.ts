@@ -10,6 +10,7 @@ import {
   factoryPhaseChats,
   factoryPhaseKickoff,
   latestFactoryPhaseSummary,
+  appIdsMissingFactoryPhases,
   hasFactoryPhases,
   isFactoryPhaseApproved,
   isFactoryPhaseUnlocked,
@@ -20,6 +21,7 @@ import {
   nextFactoryPhase,
   orderedFactoryPhaseChats,
   phaseFromTitle,
+  factoryChatIdsToDrop,
   previewOpenForPhase,
 } from "./factoryPhase";
 
@@ -61,6 +63,65 @@ describe("factoryPhase", () => {
     expect(hasFactoryPhases(chats)).toBe(true);
     expect(factoryPhaseChats(chats).discovery?.id).toBe(1);
     expect(factoryPhaseChats(chats).implementation?.id).toBe(3);
+  });
+
+  it("selects an app that does not have all three phases", () => {
+    expect(
+      appIdsMissingFactoryPhases(
+        [3, 10],
+        [
+          { appId: 3, title: "Discovery" },
+          { appId: 3, title: "Implementation" },
+          { appId: 3, title: "Delivery" },
+          { appId: 10, title: "Implementation" },
+        ],
+      ),
+    ).toEqual([10]);
+  });
+
+  it("selects an app with no chats", () => {
+    expect(appIdsMissingFactoryPhases([4], [])).toEqual([4]);
+  });
+
+  it("leaves an app alone until it has a phase chat", () => {
+    expect(
+      factoryChatIdsToDrop([
+        { id: 4, title: null, started: false },
+        { id: 5, title: "Notes", started: true },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("keeps a started phase and deletes every other chat", () => {
+    expect(
+      factoryChatIdsToDrop([
+        { id: 1, title: "Anime University Club Website", started: true },
+        { id: 2, title: "Implementation", started: true },
+        { id: 3, title: null, started: false },
+        { id: 4, title: "Discovery", started: false },
+      ]).sort((left, right) => left - right),
+    ).toEqual([1, 3, 4]);
+  });
+
+  it("keeps an unstarted phase and still deletes the older chat", () => {
+    expect(
+      factoryChatIdsToDrop([
+        { id: 1, title: "Anime University Club Website", started: true },
+        { id: 2, title: "Implementation", started: false },
+      ]),
+    ).toEqual([1]);
+  });
+
+  it("keeps the three phase chats and deletes anything else", () => {
+    expect(
+      factoryChatIdsToDrop([
+        { id: 1, title: "Discovery", started: true },
+        { id: 2, title: "Implementation", started: false },
+        { id: 3, title: "Delivery", started: false },
+        { id: 4, title: "Notes", started: true },
+        { id: 5, title: "Discovery", started: false },
+      ]).sort((left, right) => left - right),
+    ).toEqual([4, 5]);
   });
 
   it("lists only the phase chats, in phase order", () => {

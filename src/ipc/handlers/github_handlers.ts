@@ -37,6 +37,7 @@ import { createTypedHandler } from "./base";
 import { githubContracts } from "../types/github";
 import type { CloneRepoParams, CloneRepoResult } from "../types/github";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import { refreshSharedApp } from "@/control_plane/sync_local";
 import {
   sanitizeAppDisplayName,
   slugifyAppFolderName,
@@ -1432,4 +1433,5 @@ export async function updateAppGithubRepo({
       githubBranch: branch || "main",
     })
     .where(eq(schema.apps.id, appId));
+  await refreshSharedApp(appId);
 }

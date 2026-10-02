@@ -114,4 +114,15 @@ describe("factory documents", () => {
     });
     expect(document.html).toContain("The repository is not connected yet.");
   });
+
+  it("names the account and the member who approved the phase", () => {
+    const document = buildFactoryDocument({
+      ...source,
+      phase: "discovery",
+      accountName: "Bakery Org",
+      approvedBy: [{ phase: "discovery", memberName: "Ada Lovelace" }],
+    });
+    expect(document.html).toContain("Bakery Org");
+    expect(document.html).toContain("Ada Lovelace");
+  });
 });

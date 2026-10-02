@@ -2,17 +2,18 @@ import { describe, expect, it } from "vitest";
 import {
   approvalGate,
   canManageMembers,
+  canSeeOrganizationAdmin,
   roleHasPermission,
 } from "./permissions";
 
 describe("clerk role gates", () => {
   it("maps factory approvals onto role permissions", () => {
-    expect(roleHasPermission("admin", "approve-discovery")).toBe(true);
-    expect(roleHasPermission("reviewer", "approve-delivery")).toBe(true);
-    expect(roleHasPermission("dev", "approve-implementation")).toBe(false);
-    expect(roleHasPermission("dev", "work-implementation")).toBe(true);
-    expect(roleHasPermission("admin", "manage-members")).toBe(true);
-    expect(roleHasPermission("reviewer", "manage-members")).toBe(false);
+    expect(roleHasPermission("project-manager", "approve-discovery")).toBe(true);
+    expect(roleHasPermission("project-manager", "approve-delivery")).toBe(true);
+    expect(roleHasPermission("developer", "approve-implementation")).toBe(false);
+    expect(roleHasPermission("developer", "work-implementation")).toBe(true);
+    expect(roleHasPermission("project-manager", "manage-members")).toBe(false);
+    expect(roleHasPermission(null, "approve-discovery")).toBe(false);
   });
 
   it("keeps approvals open only when Clerk is unconfigured or the role allows them", () => {
@@ -29,7 +30,7 @@ describe("clerk role gates", () => {
     expect(
       approvalGate({
         status: "signed-in",
-        roleId: "dev",
+        roleId: "developer",
         phase: "implementation",
       }),
     ).toEqual({
@@ -39,16 +40,54 @@ describe("clerk role gates", () => {
     expect(
       approvalGate({
         status: "signed-in",
-        roleId: "reviewer",
+        roleId: "project-manager",
         phase: "delivery",
       }),
     ).toEqual({ allowed: true });
   });
 
   it("lets only admins manage members once Clerk is configured", () => {
-    expect(canManageMembers("unconfigured", null)).toBe(true);
-    expect(canManageMembers("loading", null)).toBe(false);
-    expect(canManageMembers("signed-in", "reviewer")).toBe(false);
-    expect(canManageMembers("signed-in", "admin")).toBe(true);
+    expect(canManageMembers("unconfigured", false)).toBe(true);
+    expect(canManageMembers("loading", false)).toBe(false);
+    expect(canManageMembers("signed-in", false)).toBe(false);
+    expect(canManageMembers("signed-in", true)).toBe(true);
+  });
+
+  it("shows Admin only to an admin of the active organization", () => {
+    expect(
+      canSeeOrganizationAdmin({
+        status: "unconfigured",
+        canInvite: false,
+        accountType: null,
+      }),
+    ).toBe(true);
+    expect(
+      canSeeOrganizationAdmin({
+        status: "signed-in",
+        canInvite: true,
+        accountType: "org",
+      }),
+    ).toBe(true);
+    expect(
+      canSeeOrganizationAdmin({
+        status: "signed-in",
+        canInvite: true,
+        accountType: "user",
+      }),
+    ).toBe(false);
+    expect(
+      canSeeOrganizationAdmin({
+        status: "signed-in",
+        canInvite: false,
+        accountType: "org",
+      }),
+    ).toBe(false);
+    expect(
+      canSeeOrganizationAdmin({
+        status: "signed-in",
+        canInvite: false,
+        accountType: "org",
+      }),
+    ).toBe(false);
   });
 });

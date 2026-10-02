@@ -291,6 +291,7 @@
     "enterFullScreen": "Entrar em tela cheia",
     "selectFileToView": "Selecione um arquivo para visualizar",
     "noFilesFound": "Nenhum arquivo encontrado",
+    "projectFilesOnAnotherMachine": "Os arquivos do projeto estão na máquina que os criou.",
     "searchFileContents": "Pesquisar conteúdo dos arquivos",
     "clearSearch": "Limpar pesquisa",
     "searchingFiles": "Pesquisando arquivos...",

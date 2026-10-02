@@ -21,7 +21,8 @@ describe("useClerkRole", () => {
         <ClerkSessionProvider
           value={{
             status: "signed-in",
-            roleId: "dev",
+            roleId: "developer",
+            canInvite: false,
             userId: "user_1",
             email: "dev@example.com",
           }}
@@ -30,7 +31,7 @@ describe("useClerkRole", () => {
         </ClerkSessionProvider>
       ),
     });
-    expect(result.current.roleId).toBe("dev");
+    expect(result.current.roleId).toBe("developer");
     expect(result.current.can("work-implementation")).toBe(true);
     expect(result.current.can("manage-members")).toBe(false);
   });
