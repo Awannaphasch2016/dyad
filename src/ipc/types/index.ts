@@ -117,6 +117,7 @@ export {
   distributedMachineEvents,
 } from "./distributed_machines";
 export { factoryHostContracts } from "./factory_host";
+export { workflowGraphContracts } from "./workflow_graph";
 
 // =============================================================================
 // Client Exports
@@ -181,6 +182,7 @@ export {
   distributedMachineEventClient,
 } from "./distributed_machines";
 export { factoryHostClient } from "./factory_host";
+export { workflowGraphClient } from "./workflow_graph";
 export {
   recordingClient,
   recordingContracts,
@@ -601,6 +603,7 @@ import {
   distributedMachineEventClient,
 } from "./distributed_machines";
 import { factoryHostClient } from "./factory_host";
+import { workflowGraphClient } from "./workflow_graph";
 
 /**
  * Unified IPC client with all domains organized by namespace.
@@ -676,6 +679,7 @@ export const ipc = {
   windowInfrastructure: windowInfrastructureClient,
   distributedMachine: distributedMachineClient,
   factoryHost: factoryHostClient,
+  workflowGraph: workflowGraphClient,
   imageGeneration: imageGenerationClient,
   previewView: {
     ...previewViewClient,

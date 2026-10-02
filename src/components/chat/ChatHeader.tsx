@@ -227,6 +227,19 @@ export function ChatHeader({
             </Button>
           )}
           <Button
+            variant="ghost"
+            className="hidden @6xs:flex cursor-pointer items-center gap-1 text-sm px-2 py-1 rounded-md"
+            disabled={!appId}
+            onClick={() =>
+              navigate({
+                to: "/workflow",
+                search: { appId: appId ?? undefined },
+              })
+            }
+          >
+            Workflow
+          </Button>
+          <Button
             onClick={onVersionClick}
             variant="ghost"
             className="hidden @6xs:flex cursor-pointer items-center gap-1 text-sm px-2 py-1 rounded-md"
