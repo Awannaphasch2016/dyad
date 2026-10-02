@@ -31,6 +31,7 @@ describe("golden single-window: production mutation invalidation", () => {
   it("invalidates each collection once through chat and app mutation UIs", async () => {
     harness.mount({ withChatList: true });
     await screen.findByTestId("chat-list-container");
+    expect(screen.queryByTestId("new-chat-button")).toBeNull();
 
     const queryClient = harness.queryClient();
     const invalidations: QueryKey[] = [];
@@ -40,21 +41,7 @@ describe("golden single-window: production mutation invalidation", () => {
       return originalInvalidate(filters);
     });
 
-    const newChatButtons = await screen.findAllByTestId("new-chat-button");
-    fireEvent.click(newChatButtons[0]);
-    await waitFor(() =>
-      expect(Number(harness.currentLocation().search.id)).not.toBe(
-        harness.chatId,
-      ),
-    );
-    // Protects chat-create deduplication in the Phase B invalidation channel.
-    expect(
-      invalidations.filter((key) => key === queryKeys.chats.all),
-    ).toHaveLength(1);
-
-    invalidations.length = 0;
-    const selectedChatId = Number(harness.currentLocation().search.id);
-    await screen.findByTestId(`chat-list-item-${selectedChatId}`);
+    await screen.findByTestId(`chat-list-item-${harness.chatId}`);
     await harness.openPopover(
       (
         await screen.findAllByRole("button", {

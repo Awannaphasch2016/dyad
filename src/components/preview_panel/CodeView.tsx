@@ -43,6 +43,7 @@ import { showWarning } from "@/lib/toast";
 interface App {
   id?: number;
   files?: string[];
+  projectFilesOnThisMachine?: boolean;
 }
 
 export interface CodeViewProps {
@@ -515,7 +516,9 @@ export const CodeView = ({ loading, app }: CodeViewProps) => {
 
   return (
     <div className="text-center py-4 text-gray-500">
-      {t("preview.noFilesFound")}
+      {app.projectFilesOnThisMachine === false
+        ? t("preview.projectFilesOnAnotherMachine")
+        : t("preview.noFilesFound")}
     </div>
   );
 };

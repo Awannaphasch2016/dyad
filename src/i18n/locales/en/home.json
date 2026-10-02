@@ -294,6 +294,7 @@
     "enterFullScreen": "Enter full screen",
     "selectFileToView": "Select a file to view",
     "noFilesFound": "No files found",
+    "projectFilesOnAnotherMachine": "The project files are on the machine that created them.",
     "searchFileContents": "Search file contents",
     "clearSearch": "Clear search",
     "searchingFiles": "Searching files...",

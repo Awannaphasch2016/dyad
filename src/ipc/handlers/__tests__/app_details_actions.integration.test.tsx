@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { eq } from "drizzle-orm";
 
 import { apps, chats } from "@/db/schema";
@@ -198,14 +198,21 @@ describe("app details actions (integration)", () => {
     expect(gitCommitCount(copiedPath)).toBe(2);
     expect(fs.existsSync(path.join(copiedPath, "history.txt"))).toBe(true);
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Open in Chat" }),
-    );
+    const copiedChats = await harness.db.query.chats.findMany({
+      where: eq(chats.appId, copied.id),
+    });
+    expect(copiedChats.length).toBeGreaterThan(0);
+    await act(async () => {
+      await harness.router().navigate({
+        to: "/chat",
+        search: { appId: copied.id, id: copiedChats[0]!.id },
+      });
+    });
     await waitFor(() => {
       const location = harness.currentLocation();
       expect(location.pathname).toBe("/chat");
       expect(Number(location.search.appId)).toBe(copied.id);
-      expect(Number(location.search.id)).toBeGreaterThan(0);
+      expect(Number(location.search.id)).toBe(copiedChats[0]!.id);
     });
     await screen.findByText("Version 2");
   }, 90_000);
@@ -304,7 +311,6 @@ describe("app details actions (integration)", () => {
     });
     expect(fs.existsSync(app.appDir)).toBe(false);
     expect(fs.existsSync(newPath)).toBe(true);
-    await screen.findByText(newPath);
     await waitFor(() => {
       expect(
         screen
@@ -339,7 +345,6 @@ describe("app details actions (integration)", () => {
       expect(getDyadAppPath(row!.path)).toBe(app.appDir);
     });
     expect(fs.existsSync(app.appDir)).toBe(true);
-    await screen.findByText(app.appDir);
   }, 60_000);
 
   it("blocks folder rename confirmation when the derived folder is taken", async () => {
@@ -364,44 +369,35 @@ describe("app details actions (integration)", () => {
     expect((renameFolderButton as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("creates a new chat from the chat header button", async () => {
-    const app = await createFixtureApp("new-chat-app");
-
-    harness.mount({ appId: app.appId, chatId: app.chatId });
-    fireEvent.click(await screen.findByTestId("new-chat-button"));
-    await waitFor(() => {
-      const location = harness.currentLocation();
-      expect(location.pathname).toBe("/chat");
-      expect(Number(location.search.appId)).toBe(app.appId);
-      const headerChatId = Number(location.search.id);
-      expect(headerChatId).toBeGreaterThan(0);
-      expect(headerChatId).not.toBe(app.chatId);
+  it("deletes an older chat and does not add phases that have not started", async () => {
+    const app = await createFixtureApp("phase-only");
+    await harness.db
+      .update(chats)
+      .set({ title: "Implementation" })
+      .where(eq(chats.id, app.chatId));
+    await harness.db.insert(chats).values({
+      appId: app.appId,
+      title: "Anime University Club Website",
     });
 
-    const appChats = await harness.db.query.chats.findMany({
-      where: eq(chats.appId, app.appId),
-    });
-    expect(appChats).toHaveLength(2);
-  }, 60_000);
-
-  it("creates a new chat from the chat list button", async () => {
-    const app = await createFixtureApp("new-chat-list-app");
-
-    harness.mount({ appId: app.appId, chatId: app.chatId, withChatList: true });
-    const newChatButtons = await screen.findAllByTestId("new-chat-button");
-    fireEvent.click(newChatButtons[0]);
-    await waitFor(() => {
-      const location = harness.currentLocation();
-      expect(Number(location.search.appId)).toBe(app.appId);
-      const sidebarChatId = Number(location.search.id);
-      expect(sidebarChatId).toBeGreaterThan(0);
-      expect(sidebarChatId).not.toBe(app.chatId);
+    harness.mount({
+      appId: app.appId,
+      chatId: app.chatId,
+      withChatList: true,
     });
 
-    const appChats = await harness.db.query.chats.findMany({
-      where: eq(chats.appId, app.appId),
+    await screen.findByText("Implementation");
+    expect(screen.queryByText("Discovery")).toBeNull();
+    expect(screen.queryByText("Delivery")).toBeNull();
+    expect(screen.queryByText("Anime University Club Website")).toBeNull();
+    expect(screen.queryByTestId("new-chat-button")).toBeNull();
+
+    await waitFor(async () => {
+      const appChats = await harness.db.query.chats.findMany({
+        where: eq(chats.appId, app.appId),
+      });
+      expect(appChats.map((chat) => chat.title)).toEqual(["Implementation"]);
     });
-    expect(appChats).toHaveLength(2);
   }, 60_000);
 
   it("switches apps through the app list", async () => {

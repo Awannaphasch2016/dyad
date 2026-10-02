@@ -17,7 +17,7 @@ vi.mock("@/ipc/types", () => ({
             id: "user_1",
             name: "Ada Lovelace",
             email: "ada@example.com",
-            roleId: "admin",
+            roleId: "project-manager",
             status: "active",
           },
         ],
@@ -51,10 +51,9 @@ it("shows members and a roles-permissions table", async () => {
   expect(membersSection.textContent).toContain("Member");
   expect(membersSection.textContent).toContain("Role");
   const rolesTable = screen.getByTestId("admin-roles-table");
-  expect(rolesTable.textContent).toContain("admin");
-  expect(rolesTable.textContent).toContain("reviewer");
-  expect(rolesTable.textContent).toContain("dev");
-  expect(screen.getByTestId("admin-role-dev").textContent).toContain(
+  expect(rolesTable.textContent).toContain("project-manager");
+  expect(rolesTable.textContent).toContain("developer");
+  expect(screen.getByTestId("admin-role-developer").textContent).toContain(
     "Work in implementation",
   );
   expect(screen.queryByText("Themes")).toBeNull();
@@ -71,7 +70,8 @@ it("hides member changes for a signed-in reviewer", async () => {
       <ClerkSessionProvider
         value={{
           status: "signed-in",
-          roleId: "reviewer",
+          roleId: "developer",
+          canInvite: false,
           userId: "user_2",
           email: "reviewer@example.com",
         }}

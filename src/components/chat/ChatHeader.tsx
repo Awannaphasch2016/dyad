@@ -1,7 +1,6 @@
 import {
   PanelRightOpen,
   History,
-  PlusCircle,
   GitBranch,
   Info,
   SquareTerminal,
@@ -18,12 +17,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "../ui/tooltip";
-import { ipc } from "@/ipc/types";
-import { useRouter } from "@tanstack/react-router";
 import { selectedChatIdAtom } from "@/atoms/chatAtoms";
-import { useSelectChat } from "@/hooks/useSelectChat";
-import { useChats } from "@/hooks/useChats";
-import { showError, showSuccess } from "@/lib/toast";
+import { showSuccess } from "@/lib/toast";
 import { useEffect } from "react";
 import { useStreamChat } from "@/hooks/useStreamChat";
 import { useCurrentBranch } from "@/hooks/useCurrentBranch";
@@ -34,7 +29,6 @@ import { LoadingBar } from "../ui/LoadingBar";
 import { UncommittedFilesBanner } from "./UncommittedFilesBanner";
 import { terminalOpenByChatIdAtom } from "@/atoms/terminalAtoms";
 import { cn } from "@/lib/utils";
-import { hasFactoryPhases } from "@/lib/factoryPhase";
 
 interface ChatHeaderProps {
   isVersionPaneOpen: boolean;
@@ -52,14 +46,10 @@ export function ChatHeader({
   const { t } = useTranslation("chat");
   const appId = useAtomValue(selectedAppIdAtom);
   const { versions, loading: versionsLoading } = useVersions(appId);
-  const { navigate } = useRouter();
   const [selectedChatId] = useAtom(selectedChatIdAtom);
   const [terminalOpenByChatId, setTerminalOpenByChatId] = useAtom(
     terminalOpenByChatIdAtom,
   );
-  const { chats, invalidateChats } = useChats(appId);
-  const isFactoryApp = hasFactoryPhases(chats);
-  const { selectChat } = useSelectChat();
   const { isStreaming } = useStreamChat();
   const {
     branchInfo,
@@ -92,20 +82,6 @@ export function ChatHeader({
     await renameBranch({ oldBranchName: "master", newBranchName: "main" });
 
     showSuccess(t("header.masterRenamed"));
-  };
-
-  const handleNewChat = async () => {
-    if (appId) {
-      try {
-        const chatId = await ipc.chat.createChat({ appId });
-        await invalidateChats();
-        selectChat({ chatId, appId });
-      } catch (error) {
-        showError(t("failedCreateChat", { error: (error as any).toString() }));
-      }
-    } else {
-      navigate({ to: "/" });
-    }
   };
 
   // REMINDER: KEEP UP TO DATE WITH app_handlers.ts
@@ -215,17 +191,6 @@ export function ChatHeader({
       {/* Why is this pt-0.5? Because the loading bar is h-1 (it always takes space) and we want the vertical spacing to be consistent.*/}
       <div className="@container flex items-center justify-between pb-1.5 pt-0.5">
         <div className="flex items-center space-x-2">
-          {!isFactoryApp && (
-            <Button
-              onClick={handleNewChat}
-              variant="ghost"
-              className="hidden @2xs:flex items-center justify-start gap-2 mx-2 py-3"
-              data-testid="new-chat-button"
-            >
-              <PlusCircle size={16} />
-              <span>{t("newChat")}</span>
-            </Button>
-          )}
           <Button
             onClick={onVersionClick}
             variant="ghost"

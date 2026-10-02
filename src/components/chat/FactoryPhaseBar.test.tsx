@@ -10,6 +10,8 @@ const streamMessage = vi.hoisted(() => vi.fn());
 const selectChat = vi.hoisted(() => vi.fn());
 const getState = vi.hoisted(() => vi.fn());
 const approvePhase = vi.hoisted(() => vi.fn());
+const approveAccountPhase = vi.hoisted(() => vi.fn());
+const listApprovals = vi.hoisted(() => vi.fn());
 const getChat = vi.hoisted(() => vi.fn());
 const downloadFactoryDocument = vi.hoisted(() => vi.fn());
 
@@ -55,6 +57,15 @@ vi.mock("@/ipc/types", () => ({
       getState: (...args: unknown[]) => getState(...args),
       approvePhase: (...args: unknown[]) => approvePhase(...args),
     },
+    factory: {
+      listApprovals: (...args: unknown[]) => listApprovals(...args),
+      importApprovals: vi.fn(),
+      approve: (...args: unknown[]) => approveAccountPhase(...args),
+      listComments: vi.fn(async () => ({ comments: [] })),
+      addComment: vi.fn(),
+      listQuestions: vi.fn(async () => ({ questions: [] })),
+      answerQuestion: vi.fn(),
+    },
     chat: {
       getChat: (...args: unknown[]) => getChat(...args),
     },
@@ -94,6 +105,10 @@ describe("FactoryPhaseBar", () => {
     selectChat.mockReset();
     getState.mockReset();
     approvePhase.mockReset();
+    approveAccountPhase.mockReset();
+    listApprovals.mockReset();
+    listApprovals.mockResolvedValue({ approvals: [] });
+    approveAccountPhase.mockResolvedValue(undefined);
     getChat.mockReset();
     downloadFactoryDocument.mockReset();
     approvePhase.mockResolvedValue({
@@ -104,7 +119,7 @@ describe("FactoryPhaseBar", () => {
     });
   });
 
-  it("approves through the factory host and downloads documentation when the phase is finished", async () => {
+  it("approves a local phase through the account and downloads documentation when the phase is finished", async () => {
     getState.mockResolvedValue({
       appId: 7,
       factoryHostManaged: false,
@@ -122,18 +137,22 @@ describe("FactoryPhaseBar", () => {
     });
     fireEvent.click(approve);
     await waitFor(() => {
-      expect(approvePhase).toHaveBeenCalledWith({
+      expect(approveAccountPhase).toHaveBeenCalledWith({
         appId: 7,
         phase: "discovery",
       });
     });
+    expect(approvePhase).not.toHaveBeenCalled();
     expect(streamMessage).not.toHaveBeenCalled();
 
-    getState.mockResolvedValue({
-      appId: 7,
-      factoryHostManaged: false,
-      gasCityProjectId: null,
-      approvedPhases: ["discovery"],
+    listApprovals.mockResolvedValue({
+      approvals: [
+        {
+          phase: "discovery",
+          memberId: "user_1",
+          memberName: "Ada",
+        },
+      ],
     });
     renderBar();
     const download = await screen.findByRole("button", {
@@ -175,6 +194,32 @@ describe("FactoryPhaseBar", () => {
     await screen.findByRole("button", {
       name: "Approve and continue to Implementation",
     });
+    expect(streamMessage).not.toHaveBeenCalled();
+  });
+
+  it("approves a Gas City phase through the host bridge", async () => {
+    getState.mockResolvedValue({
+      appId: 7,
+      factoryHostManaged: true,
+      gasCityProjectId: "project-1",
+      approvedPhases: [],
+    });
+    getChat.mockImplementation(async (chatId: number) =>
+      chatId === 1 ? { messages: [discoverySummary] } : { messages: [] },
+    );
+
+    renderBar();
+    const approve = await screen.findByRole("button", {
+      name: "Approve and continue to Implementation",
+    });
+    fireEvent.click(approve);
+    await waitFor(() => {
+      expect(approvePhase).toHaveBeenCalledWith({
+        appId: 7,
+        phase: "discovery",
+      });
+    });
+    expect(approveAccountPhase).not.toHaveBeenCalled();
     expect(streamMessage).not.toHaveBeenCalled();
   });
 });

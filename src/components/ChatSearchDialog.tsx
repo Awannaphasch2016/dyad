@@ -38,8 +38,14 @@ export function ChatSearchDialog({
   const debouncedQuery = useDebouncedValue(searchQuery, 150);
   const { chats: searchResults } = useSearchChats(appId, debouncedQuery);
 
-  // Show all chats if search is empty, otherwise show search results
-  const chatsToShow = debouncedQuery.trim() === "" ? allChats : searchResults;
+  // Show all chats if search is empty, otherwise show search results.
+  // allChats is the phase list once an app has its three phases, so a search
+  // hit on an older chat cannot be opened.
+  const visibleChatIds = new Set(allChats.map((chat) => chat.id));
+  const chatsToShow =
+    debouncedQuery.trim() === ""
+      ? allChats
+      : searchResults.filter((chat) => visibleChatIds.has(chat.id));
 
   const commandFilter = (
     value: string,

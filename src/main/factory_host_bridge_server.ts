@@ -1,7 +1,9 @@
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { timingSafeEqual } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
+import { apps } from "@/db/schema";
 import {
   approveFactoryPhase,
   FactoryHostError,
@@ -15,6 +17,15 @@ import {
 } from "./factory_host_service";
 import { MAX_CHAT_PROMPT_CHARS } from "@/shared/chatAttachmentLimits";
 import type { dispatchChatIntentAndWait } from "@/ipc/services/chat_actor_service";
+import { defaultVerifySessionToken } from "@/control_plane/access";
+import {
+  answerHitlQuestion,
+  createHitlQuestion,
+  getHitlQuestion,
+  listHitlQuestions,
+  syncRemote,
+} from "@/control_plane/hitl_device";
+import type { HitlCaller } from "@/control_plane/hitl";
 
 const MAX_BODY_BYTES = 256 * 1024;
 const LinkBody = z.object({
@@ -28,6 +39,17 @@ const MessageBody = z.object({
 const RunBody = z.object({
   idempotencyKey: z.string().trim().min(1).max(256),
   prompt: z.string().min(1).max(MAX_CHAT_PROMPT_CHARS),
+});
+const QuestionBody = z.object({
+  idempotencyKey: z.string().trim().min(1).max(256),
+  runId: z.string().trim().min(1).max(256),
+  stepId: z.string().trim().min(1).max(128),
+  targetRoleId: z.string().trim().min(1).max(64),
+  body: z.string().min(1).max(20_000),
+  gateBeadId: z.string().trim().min(1).max(128),
+});
+const AnswerBody = z.object({
+  body: z.string().min(1).max(20_000),
 });
 const Phase = z.enum(["discovery", "implementation", "delivery"]);
 
@@ -72,19 +94,125 @@ export function createFactoryHostBridgeServer(options: {
   token: string;
   database?: FactoryHostDatabase;
   dispatchChatIntent?: typeof dispatchChatIntentAndWait;
+  resolveCaller?: (token: string) => Promise<HitlCaller | null>;
 }): Server {
   const database = options.database ?? db;
+  const resolveCaller =
+    options.resolveCaller ??
+    (async (sessionToken: string) => {
+      try {
+        const verified = await defaultVerifySessionToken(sessionToken);
+        if (!verified.orgId || !verified.member) return null;
+        return {
+          orgId: verified.orgId,
+          userId: verified.userId,
+          roleId: verified.roleId,
+          displayName: verified.displayName,
+        };
+      } catch {
+        return null;
+      }
+    });
   return createServer(async (request, response) => {
     try {
       if (request.headers.origin !== undefined) {
         throw new FactoryHostError("Origin requests are not allowed", 403);
       }
-      if (!tokenMatches(request.headers.authorization, options.token)) {
+      const machine = tokenMatches(request.headers.authorization, options.token);
+      const sessionToken = request.headers.authorization?.startsWith("Bearer ")
+        ? request.headers.authorization.slice(7)
+        : "";
+      let caller: HitlCaller | null = null;
+      if (!machine && sessionToken) {
+        caller = await resolveCaller(sessionToken);
+      }
+      if (!machine && !caller) {
         response.setHeader("www-authenticate", "Bearer");
         throw new FactoryHostError("Unauthorized", 401);
       }
 
       const url = new URL(request.url ?? "/", "http://127.0.0.1");
+      const questionMatch = url.pathname.match(
+        /^\/v1\/apps\/(\d+)\/phases\/(discovery|implementation|delivery)\/questions(?:\/([^/]+)(?:\/answers)?)?$/,
+      );
+      if (questionMatch) {
+        const appId = Number(questionMatch[1]);
+        const phase = Phase.parse(questionMatch[2]);
+        const questionId = questionMatch[3] ?? null;
+        const answering = url.pathname.endsWith("/answers");
+        if (request.method === "POST" && !questionId && !answering) {
+          if (!machine) {
+            throw new FactoryHostError("Unauthorized", 401);
+          }
+          const row = database.select().from(apps).where(eq(apps.id, appId)).get();
+          if (!row) throw new FactoryHostError("App not found", 404);
+          if (row.ownerType !== "org" || !row.ownerId) {
+            throw new FactoryHostError("App is not in an organization", 409);
+          }
+          const body = QuestionBody.parse(await readJson(request));
+          const chats = resolveFactoryPhaseChats(database, appId);
+          const created = createHitlQuestion(database, {
+            orgId: row.ownerId,
+            appId,
+            phase,
+            chatId: chats[phase],
+            runId: body.runId,
+            stepId: body.stepId,
+            targetRoleId: body.targetRoleId,
+            body: body.body,
+            idempotencyKey: body.idempotencyKey,
+            gateBeadId: body.gateBeadId,
+          });
+          if (created.created) await syncRemote(created.question);
+          json(response, created.created ? 201 : 200, {
+            id: created.question.id,
+            status: created.question.status,
+            stepId: created.question.stepId,
+            targetRoleId: created.question.targetRoleId,
+          });
+          return;
+        }
+        if (!caller) throw new FactoryHostError("Unauthorized", 401);
+        const owned = database
+          .select()
+          .from(apps)
+          .where(eq(apps.id, appId))
+          .get();
+        if (!owned || owned.ownerType !== "org" || owned.ownerId !== caller.orgId) {
+          throw new FactoryHostError("Not found", 404);
+        }
+        if (request.method === "GET" && !questionId) {
+          json(response, 200, {
+            questions: listHitlQuestions(database, {
+              orgId: caller.orgId,
+              appId,
+              phase,
+              caller,
+            }),
+          });
+          return;
+        }
+        if (request.method === "GET" && questionId && !answering) {
+          json(
+            response,
+            200,
+            getHitlQuestion(database, { questionId, caller }),
+          );
+          return;
+        }
+        if (request.method === "POST" && questionId && answering) {
+          const body = AnswerBody.parse(await readJson(request));
+          const result = await answerHitlQuestion(database, {
+            questionId,
+            caller,
+            body: body.body,
+          });
+          json(response, 200, result);
+          return;
+        }
+        throw new FactoryHostError("Not found", 404);
+      }
+      if (!machine) throw new FactoryHostError("Unauthorized", 401);
       const runMatch = url.pathname.match(
         /^\/v1\/runs\/(gas-city-run:[a-f0-9]{64})$/,
       );

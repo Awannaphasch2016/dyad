@@ -7,23 +7,36 @@ import log from "electron-log";
 import { getDyadAppPath, isAppLocationAccessible } from "../../paths/paths";
 import { apps } from "@/db/schema";
 import { db } from "@/db";
-import { chats } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { insertFactoryPhaseChats } from "../utils/factory_phase_chats";
 
 import { ImportAppParams, ImportAppResult } from "@/ipc/types";
 import { copyDirectoryRecursive } from "../utils/file_utils";
 import { gitService } from "../services/git_service";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
-import { getInitialChatModeForNewChat } from "./chat_mode_resolution";
 import {
   sanitizeAppDisplayName,
   slugifyAppFolderName,
 } from "@/shared/app_names";
 import { resolveUniqueFolderName } from "../utils/app_name_resolution";
 import { queryInvalidationBus } from "@/window_infrastructure/main/query_invalidation_bus";
+import { sharingScope } from "@/control_plane/access";
+import { publishLocalApp } from "@/control_plane/sync_local";
+import { displayNameTaken } from "@/control_plane/visibility";
 
 const logger = log.scope("import-handlers");
 const handle = createLoggedHandler(logger);
+
+async function displayNameConflicts(
+  event: { sender: { id: number } },
+  name: string,
+): Promise<boolean> {
+  const scope = await sharingScope(event);
+  const rows = await db.query.apps.findMany({
+    where: eq(apps.name, name),
+  });
+  return displayNameTaken(rows, scope ? scope.session.account : null);
+}
 
 export function registerImportHandlers() {
   // Handler for selecting an app folder
@@ -56,12 +69,13 @@ export function registerImportHandlers() {
   // Handler for checking if an app name is already taken. Only the display
   // name can hard-conflict — folder names are derived slugs that auto-suffix
   // past filesystem collisions.
-  handle("check-app-name", async (_, { appName }: { appName: string }) => {
-    const existingApp = await db.query.apps.findFirst({
-      where: eq(apps.name, sanitizeAppDisplayName(appName)),
-    });
-
-    return { exists: !!existingApp };
+  handle("check-app-name", async (event, { appName }: { appName: string }) => {
+    return {
+      exists: await displayNameConflicts(
+        event,
+        sanitizeAppDisplayName(appName),
+      ),
+    };
   });
 
   // Handler for importing an app
@@ -90,10 +104,8 @@ export function registerImportHandlers() {
 
       // The display name conflicting is a hard error (the import dialog
       // pre-checks it); folder collisions auto-resolve with a suffix.
-      const existingApp = await db.query.apps.findFirst({
-        where: eq(apps.name, appName),
-      });
-      if (existingApp) {
+      // Another account's cached name does not block this account.
+      if (await displayNameConflicts(event, appName)) {
         throw new DyadError(
           "An app with this name already exists",
           DyadErrorKind.Conflict,
@@ -135,6 +147,8 @@ export function registerImportHandlers() {
       // Store the full absolute path when skipCopy is true, otherwise store
       // the derived folder name.
       // Imported apps don't need an app blueprint — the schema default (false) is correct.
+      const execution = await initialChatExecution();
+      const scope = await sharingScope(event);
       const [app] = await db
         .insert(apps)
         .values({
@@ -142,24 +156,24 @@ export function registerImportHandlers() {
           path: skipCopy ? sourcePath : folderName!,
           installCommand: installCommand ?? null,
           startCommand: startCommand ?? null,
+          ownerType: scope?.session.account.type,
+          ownerId: scope?.session.account.id,
         })
         .returning();
+      const chatId = insertFactoryPhaseChats(app.id, execution);
 
-      const initialChatMode = await getInitialChatModeForNewChat();
+      if (scope) {
+        await publishLocalApp(
+          app.id,
+          scope.session.account,
+          scope.session.userId,
+        );
+      }
 
-      // Create an initial chat for this app
-      const [chat] = await db
-        .insert(chats)
-        .values({
-          appId: app.id,
-          chatMode: initialChatMode,
-          ...(await initialChatExecution()),
-        })
-        .returning();
       queryInvalidationBus.publish([{ family: "apps" }, { family: "chats" }], {
         originEndpoint: event.sender,
       });
-      return { appId: app.id, chatId: chat.id };
+      return { appId: app.id, chatId };
     },
   );
 

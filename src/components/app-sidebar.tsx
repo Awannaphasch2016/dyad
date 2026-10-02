@@ -23,6 +23,8 @@ import { cn } from "@/lib/utils";
 import { ChatList } from "./ChatList";
 import { AppList } from "./AppList";
 import { helpDialogAtom } from "@/atoms/helpDialogAtom";
+import { canSeeOrganizationAdmin } from "@/auth/permissions";
+import { useClerkSession } from "@/auth/session";
 import { SettingsList } from "./SettingsList";
 import { LibraryList } from "./LibraryList";
 import {
@@ -337,6 +339,19 @@ function AppIcons({
 }) {
   const routerState = useRouterState();
   const pathname = routerState.location.pathname;
+  const session = useClerkSession();
+  const showOrganizationAdmin = canSeeOrganizationAdmin(
+    session.status === "signed-in"
+      ? {
+          status: "signed-in",
+          canInvite: session.canInvite,
+          accountType: session.account?.type ?? null,
+        }
+      : { status: session.status, canInvite: false, accountType: null },
+  );
+  const railItems = showOrganizationAdmin
+    ? items
+    : items.filter((item) => item.title !== "Library");
 
   const hoverForTitle = (title: AppSidebarItemTitle): AppSidebarHoverState => {
     switch (title) {
@@ -357,7 +372,7 @@ function AppIcons({
     <SidebarGroup className="p-0 py-2">
       <SidebarGroupContent>
         <SidebarMenu>
-          {items.map((item) => {
+          {railItems.map((item) => {
             const isCurrent = isSidebarItemActive({
               title: item.title,
               pathname,

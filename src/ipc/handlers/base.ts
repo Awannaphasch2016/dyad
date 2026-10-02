@@ -9,6 +9,7 @@ import {
 import { sendTelemetryException } from "../utils/telemetry";
 import { registerTrustedIpcHandler } from "./trusted_handle";
 import { queryInvalidationBus } from "@/window_infrastructure/main/query_invalidation_bus";
+import { enforceSharedAccount } from "@/control_plane/guard";
 
 type RegisteredHandler = (
   event: IpcMainInvokeEvent,
@@ -59,6 +60,7 @@ export function createTypedHandler<
     event: IpcMainInvokeEvent,
     input: z.infer<TInput>,
   ) => {
+    await enforceSharedAccount(event, contract.channel, input);
     const result = await handler(event, input);
     const invalidationScopes = contract.invalidates?.(input, result) ?? [];
     if (invalidationScopes.length > 0) {
@@ -143,6 +145,7 @@ export function createLoggedTypedHandler(logger: {
       event: IpcMainInvokeEvent,
       input: z.infer<TInput>,
     ) => {
+      await enforceSharedAccount(event, contract.channel, input);
       const result = await handler(event, input);
       const invalidationScopes = contract.invalidates?.(input, result) ?? [];
       if (invalidationScopes.length > 0) {
