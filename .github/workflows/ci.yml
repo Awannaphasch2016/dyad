@@ -158,6 +158,42 @@ jobs:
             } >> "$GITHUB_OUTPUT"
           fi
 
+  # This fork serves one Linux container. The roll-up waits on this job.
+  # Electron builds and end-to-end shards stay on dyad-sh/dyad, and can be
+  # started here with the Desktop CI workflow.
+  fast-check:
+    needs: [check-changes]
+    if: needs.check-changes.outputs.should_run_tests == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event.pull_request.head.ref || '' }}
+      - name: Initialize environment
+        uses: actions/setup-node@v5
+        with:
+          node-version: v24.13.1
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install npm 11.8.0
+        run: npm install -g npm@11.8.0
+      - name: Install node modules
+        run: bash scripts/npm-ci-retry.sh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Prep test server
+        run: cd testing/fake-llm-server && npm install && npm run build && cd -
+      - name: Presubmit check (e.g. lint, format)
+        run: npm run presubmit
+      - name: Type-checking
+        run: npm run ts
+      - name: Browser bridge and file sync tests
+        run: npm test -- src/main/browser_bridge.test.ts src/control_plane/file_sync.test.ts
+      - name: Rollout helper tests
+        run: bash scripts/gascity/rollout.test.sh
+
   ts-pg-schema-diff-tests:
     needs: [check-changes]
     if: needs.check-changes.outputs.should_run_schema_diff_tests == 'true'
@@ -237,7 +273,7 @@ jobs:
 
   build-e2e-artifacts:
     needs: [check-changes]
-    if: needs.check-changes.outputs.should_run_tests == 'true'
+    if: needs.check-changes.outputs.should_run_tests == 'true' && github.repository == 'dyad-sh/dyad'
     # Why Mac and Windows?
     # I can't run electron playwright on ubuntu-latest and
     # Linux support for Dyad is experimental so not as important
@@ -303,7 +339,7 @@ jobs:
 
   unit-tests-macos:
     needs: [check-changes]
-    if: needs.check-changes.outputs.should_run_tests == 'true'
+    if: needs.check-changes.outputs.should_run_tests == 'true' && github.repository == 'dyad-sh/dyad'
     runs-on: macos-latest
     steps:
       - name: Checkout code
@@ -341,7 +377,7 @@ jobs:
 
   unit-tests-windows:
     needs: [check-changes]
-    if: needs.check-changes.outputs.should_run_tests == 'true'
+    if: needs.check-changes.outputs.should_run_tests == 'true' && github.repository == 'dyad-sh/dyad'
     runs-on: windows-2022
     steps:
       - name: Checkout code
@@ -376,7 +412,7 @@ jobs:
   # standalone job (not part of the sharded e2e-tests matrix or merge-reports).
   safe-storage-e2e:
     needs: [check-changes, build-e2e-artifacts]
-    if: needs.check-changes.outputs.should_run_tests == 'true'
+    if: needs.check-changes.outputs.should_run_tests == 'true' && github.repository == 'dyad-sh/dyad'
     runs-on: macos-latest
     steps:
       - name: Checkout code
@@ -420,6 +456,7 @@ jobs:
 
   e2e-tests:
     needs: [check-changes, build-e2e-artifacts]
+    if: github.repository == 'dyad-sh/dyad'
     permissions:
       contents: read
     strategy:
@@ -517,7 +554,7 @@ jobs:
   merge-reports:
     # Merge reports after playwright-tests, even if some shards have failed
     # Skip if tests were skipped (only .claude files changed)
-    if: ${{ !cancelled() && needs.check-changes.outputs.should_run_tests == 'true' }}
+    if: ${{ !cancelled() && github.repository == 'dyad-sh/dyad' && needs.check-changes.outputs.should_run_tests == 'true' }}
     needs: [check-changes, e2e-tests]
     permissions:
       contents: read

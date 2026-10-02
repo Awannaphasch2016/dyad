@@ -8,9 +8,13 @@ import {
 
 describe("clerk role gates", () => {
   it("maps factory approvals onto role permissions", () => {
-    expect(roleHasPermission("project-manager", "approve-discovery")).toBe(true);
+    expect(roleHasPermission("project-manager", "approve-discovery")).toBe(
+      true,
+    );
     expect(roleHasPermission("project-manager", "approve-delivery")).toBe(true);
-    expect(roleHasPermission("developer", "approve-implementation")).toBe(false);
+    expect(roleHasPermission("developer", "approve-implementation")).toBe(
+      false,
+    );
     expect(roleHasPermission("developer", "work-implementation")).toBe(true);
     expect(roleHasPermission("project-manager", "manage-members")).toBe(false);
     expect(roleHasPermission(null, "approve-discovery")).toBe(false);

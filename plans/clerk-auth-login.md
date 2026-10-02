@@ -12,16 +12,16 @@ Non-goals for this plan: Supabase Auth, Clerk Organizations, per-app Clerk tenan
 
 ## 2. Current state
 
-| Area | What exists |
-|---|---|
-| Roles model | `src/lib/adminAccess.ts` — `admin` / `reviewer` / `dev`, `roleFromMetadata()` maps legacy `member` → `reviewer` |
-| Admin UI | `src/pages/admin-access.tsx` on `/library` — Members \| Role table + Roles \| Permission table. No Sign in/Sign up links (removed). |
+| Area                   | What exists                                                                                                                                                                                                     |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Roles model            | `src/lib/adminAccess.ts` — `admin` / `reviewer` / `dev`, `roleFromMetadata()` maps legacy `member` → `reviewer`                                                                                                 |
+| Admin UI               | `src/pages/admin-access.tsx` on `/library` — Members \| Role table + Roles \| Permission table. No Sign in/Sign up links (removed).                                                                             |
 | Clerk main-process API | `src/ipc/handlers/clerk_handlers.ts` — `clerk:get-access`, `clerk:invite-member`, `clerk:set-member-role` using `CLERK_SECRET_KEY` (main-only). Registered in `src/ipc/ipc_host.ts`, allowlisted via contracts. |
-| Contracts | `src/ipc/types/clerk.ts` — Zod schemas + `clerkContracts` / `clerkClient`. |
-| Env | `.env.example` documents `CLERK_PUBLISHABLE_KEY` / `CLERK_SECRET_KEY`. Runtime reads `process.env` directly in handlers. No publishable key reaches the renderer today. |
-| Router | `src/router.ts` + `src/routes/*.ts` (TanStack Router). Root layout `src/routes/root.tsx` → `src/app/layout.tsx` (sidebar, `TitleBar`, providers). No auth routes, no `beforeLoad` guards. |
-| Shell | `src/app/TitleBar.tsx` — logo left-aligned, no user menu. Sidebar `src/components/app-sidebar.tsx` — Apps + Admin. |
-| Bridge | `/tmp/dyad-web-bridge.mjs` proxies the renderer on `:8372`; quick-tunnel hostnames expire and change. iPad Safari is the primary client. |
+| Contracts              | `src/ipc/types/clerk.ts` — Zod schemas + `clerkContracts` / `clerkClient`.                                                                                                                                      |
+| Env                    | `.env.example` documents `CLERK_PUBLISHABLE_KEY` / `CLERK_SECRET_KEY`. Runtime reads `process.env` directly in handlers. No publishable key reaches the renderer today.                                         |
+| Router                 | `src/router.ts` + `src/routes/*.ts` (TanStack Router). Root layout `src/routes/root.tsx` → `src/app/layout.tsx` (sidebar, `TitleBar`, providers). No auth routes, no `beforeLoad` guards.                       |
+| Shell                  | `src/app/TitleBar.tsx` — logo left-aligned, no user menu. Sidebar `src/components/app-sidebar.tsx` — Apps + Admin.                                                                                              |
+| Bridge                 | `/tmp/dyad-web-bridge.mjs` proxies the renderer on `:8372`; quick-tunnel hostnames expire and change. iPad Safari is the primary client.                                                                        |
 
 ## 3. Key decisions
 

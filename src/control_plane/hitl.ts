@@ -60,7 +60,10 @@ export function roleForGateStep(stepId: string): AdminRoleId | null {
   return GATE_ROLE[stepId as GateStepId];
 }
 
-export function assertGateRole(stepId: string, targetRoleId: string): AdminRoleId {
+export function assertGateRole(
+  stepId: string,
+  targetRoleId: string,
+): AdminRoleId {
   const expected = roleForGateStep(stepId);
   if (!expected || !isAdminRoleId(targetRoleId) || targetRoleId !== expected) {
     throw new Error(

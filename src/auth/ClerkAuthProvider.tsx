@@ -7,10 +7,7 @@ import {
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import {
-  clerkCanInvite,
-  roleFromClerkMembership,
-} from "@/lib/adminAccess";
+import { clerkCanInvite, roleFromClerkMembership } from "@/lib/adminAccess";
 import { queryKeys } from "@/lib/queryKeys";
 import { ipc } from "@/ipc/types";
 import { loadClerkBrowser } from "./loadClerkBrowser";

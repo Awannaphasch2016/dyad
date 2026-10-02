@@ -28,7 +28,9 @@ describe("admin access", () => {
   });
 
   it("reads only gate roles and does not invent one for an unknown person", () => {
-    expect(roleFromMetadata({ role: "project-manager" })).toBe("project-manager");
+    expect(roleFromMetadata({ role: "project-manager" })).toBe(
+      "project-manager",
+    );
     expect(roleFromMetadata({ role: "developer" })).toBe("developer");
     expect(roleFromMetadata({ role: "admin" })).toBeNull();
     expect(roleFromMetadata({ role: "reviewer" })).toBeNull();
@@ -41,9 +43,9 @@ describe("admin access", () => {
     expect(roleFromClerkMembership({}, "org:admin")).toBeNull();
     expect(roleFromClerkMembership(null, "admin")).toBeNull();
     expect(roleFromClerkMembership({}, "org:member")).toBeNull();
-    expect(
-      roleFromClerkMembership({ role: "developer" }, "org:admin"),
-    ).toBe("developer");
+    expect(roleFromClerkMembership({ role: "developer" }, "org:admin")).toBe(
+      "developer",
+    );
   });
 
   it("builds the Account Portal links from a publishable key", () => {

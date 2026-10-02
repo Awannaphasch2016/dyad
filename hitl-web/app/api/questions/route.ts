@@ -10,7 +10,10 @@ export async function GET() {
   try {
     const resolved = await resolveCaller();
     if (resolved.kind === "signed-out") {
-      return NextResponse.json({ error: "Sign in to continue." }, { status: 401 });
+      return NextResponse.json(
+        { error: "Sign in to continue." },
+        { status: 401 },
+      );
     }
     if (resolved.kind === "unavailable") {
       return NextResponse.json(
