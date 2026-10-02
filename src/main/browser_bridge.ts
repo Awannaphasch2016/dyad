@@ -1,7 +1,10 @@
 /**
- * Serves the existing Vite renderer on 127.0.0.1 and gives that page a
+ * Serves the existing renderer on 127.0.0.1 and gives that page a
  * window.electron that calls the main-process handlers. A Cloudflare tunnel
  * in front of this port is how the same Dyad UI opens in a browser.
+ *
+ * In development the Vite dev server is proxied (HMR included). In a packaged
+ * build the renderer files next to the main bundle are served directly.
  *
  * Started only when DYAD_BROWSER_BRIDGE=1. The desktop BrowserWindow is
  * unchanged. The preview pane, the terminal, and one-way ipcMain.on sends
@@ -16,6 +19,8 @@ import {
 } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { connect as netConnect } from "node:net";
+import { promises as fs } from "node:fs";
+import path from "node:path";
 import type { Duplex } from "node:stream";
 import type { IpcMainInvokeEvent } from "electron";
 import log from "electron-log";
@@ -434,12 +439,107 @@ function proxyUpgrade(
   });
 }
 
-export function startBrowserBridge(options: {
-  devServerUrl: string;
+const STATIC_CONTENT_TYPES: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".map": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".ico": "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".ttf": "font/ttf",
+  ".wasm": "application/wasm",
+  ".txt": "text/plain; charset=utf-8",
+};
+
+/**
+ * Resolves a request path inside the packaged renderer directory, or returns
+ * null when the path escapes it. Routes without a file extension fall back to
+ * index.html so the renderer's router can take over, like loadFile does.
+ */
+export function resolveRendererFile(
+  rendererDir: string,
+  requestPath: string,
+): string | null {
+  let pathname: string;
+  try {
+    pathname = decodeURIComponent(
+      new URL(requestPath, "http://127.0.0.1").pathname,
+    );
+  } catch {
+    return null;
+  }
+  const root = path.resolve(rendererDir);
+  const normalized = path.normalize(pathname).replace(/^(\.\.(\/|\\|$))+/, "");
+  let target = path.resolve(root, `.${path.sep}${normalized}`);
+  if (target !== root && !target.startsWith(root + path.sep)) {
+    return null;
+  }
+  if (target === root || path.extname(target) === "") {
+    target = path.join(root, "index.html");
+  }
+  return target;
+}
+
+async function serveRendererFile(
+  rendererDir: string,
+  req: IncomingMessage,
+  res: ServerResponse,
+) {
+  const target = resolveRendererFile(rendererDir, req.url ?? "/");
+  if (!target) {
+    res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+    res.end("Not found");
+    return;
+  }
+  const extension = path.extname(target).toLowerCase();
+  const contentType =
+    STATIC_CONTENT_TYPES[extension] ?? "application/octet-stream";
+  try {
+    if (extension === ".html") {
+      const html = injectBrowserBridgeScript(await fs.readFile(target, "utf8"));
+      const body = Buffer.from(html);
+      res.writeHead(200, {
+        "content-type": contentType,
+        "content-length": String(body.length),
+        "cache-control": "no-store",
+      });
+      res.end(body);
+      return;
+    }
+    const body = await fs.readFile(target);
+    res.writeHead(200, {
+      "content-type": contentType,
+      "content-length": String(body.length),
+    });
+    res.end(body);
+  } catch {
+    res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+    res.end("Not found");
+  }
+}
+
+export type BrowserBridgeOptions = {
   port?: number;
   host?: string;
-}): Promise<BrowserBridge> {
+} & (
+  | { devServerUrl: string; rendererDir?: undefined }
+  | { rendererDir: string; devServerUrl?: undefined }
+);
+
+export function startBrowserBridge(
+  options: BrowserBridgeOptions,
+): Promise<BrowserBridge> {
   const devServerUrl = options.devServerUrl;
+  const rendererDir = options.rendererDir;
   const host = options.host ?? BROWSER_BRIDGE_HOST;
   const port = options.port ?? BROWSER_BRIDGE_PORT;
   const sockets = new Set<WebSocket>();
@@ -453,7 +553,11 @@ export function startBrowserBridge(options: {
   };
   const socketServer = new WebSocketServer({ noServer: true });
   const server: Server = createServer((req, res) => {
-    proxyHttp(devServerUrl, req, res);
+    if (devServerUrl) {
+      proxyHttp(devServerUrl, req, res);
+    } else if (rendererDir) {
+      void serveRendererFile(rendererDir, req, res);
+    }
   });
   server.on("upgrade", (req, socket, head) => {
     const pathname = new URL(req.url ?? "/", "http://127.0.0.1").pathname;
@@ -463,7 +567,11 @@ export function startBrowserBridge(options: {
       });
       return;
     }
-    proxyUpgrade(devServerUrl, req, socket, head);
+    if (devServerUrl) {
+      proxyUpgrade(devServerUrl, req, socket, head);
+    } else {
+      socket.destroy();
+    }
   });
   socketServer.on("connection", (socket) => {
     sockets.add(socket);
@@ -528,19 +636,23 @@ function bridgePortFromEnv(): number {
   return port;
 }
 
+/**
+ * The packaged renderer lives next to the main bundle, the same path
+ * main.ts hands to loadFile.
+ */
+function packagedRendererDir(): string {
+  return path.join(__dirname, "../renderer/main_window");
+}
+
 export function startBrowserBridgeFromEnv(): void {
   if (process.env.DYAD_BROWSER_BRIDGE !== "1") return;
   const devServerUrl = readViteDevServerUrl();
-  if (!devServerUrl) {
-    logger.error(
-      "DYAD_BROWSER_BRIDGE=1 but the Vite dev server URL is missing",
-    );
-    return;
-  }
-  void startBrowserBridge({
-    devServerUrl,
-    port: bridgePortFromEnv(),
-  })
+  const port = bridgePortFromEnv();
+  void (
+    devServerUrl
+      ? startBrowserBridge({ devServerUrl, port })
+      : startBrowserBridge({ rendererDir: packagedRendererDir(), port })
+  )
     .then((bridge) => {
       activeBridge = bridge;
     })

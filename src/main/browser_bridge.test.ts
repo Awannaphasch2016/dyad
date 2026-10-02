@@ -1,6 +1,9 @@
 // @vitest-environment node
 
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import vm from "node:vm";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
@@ -29,6 +32,7 @@ import {
   dispatchBrowserInvoke,
   dispatchBrowserSend,
   injectBrowserBridgeScript,
+  resolveRendererFile,
   startBrowserBridge,
   type BrowserBridge,
 } from "./browser_bridge";
@@ -274,5 +278,73 @@ describe("browser bridge", () => {
       type: "error",
       message: "Invalid channel: not-a-channel",
     });
+  });
+
+  it("keeps packaged renderer requests inside the renderer directory", () => {
+    const root = path.resolve("/opt/dyad/renderer/main_window");
+    expect(resolveRendererFile(root, "/")).toBe(path.join(root, "index.html"));
+    expect(resolveRendererFile(root, "/apps/12?tab=chat")).toBe(
+      path.join(root, "index.html"),
+    );
+    expect(resolveRendererFile(root, "/assets/index-abc.js")).toBe(
+      path.join(root, "assets", "index-abc.js"),
+    );
+    expect(resolveRendererFile(root, "/../../etc/passwd")).toBe(
+      path.join(root, "index.html"),
+    );
+    expect(resolveRendererFile(root, "/../../etc/passwd.js")).toBe(
+      path.join(root, "etc", "passwd.js"),
+    );
+    expect(resolveRendererFile(root, "/assets/%2e%2e/%2e%2e/secret.js")).toBe(
+      path.join(root, "secret.js"),
+    );
+    expect(resolveRendererFile(root, "/%zz")).toBeNull();
+  });
+
+  it("serves the packaged renderer when there is no Vite dev server", async () => {
+    const rendererDir = await mkdtemp(path.join(tmpdir(), "dyad-renderer-"));
+    closers.push(() => rm(rendererDir, { recursive: true, force: true }));
+    await mkdir(path.join(rendererDir, "assets"));
+    await writeFile(
+      path.join(rendererDir, "index.html"),
+      '<!doctype html><html><head><title>wewebplus</title></head><body><script src="./assets/app.js"></script></body></html>',
+    );
+    await writeFile(
+      path.join(rendererDir, "assets", "app.js"),
+      "console.log('packaged renderer');",
+    );
+
+    const bridge: BrowserBridge = await startBrowserBridge({
+      rendererDir,
+      port: 0,
+    });
+    closers.push(() => bridge.close());
+    const origin = `http://${bridge.host}:${bridge.port}`;
+
+    const home = await fetch(`${origin}/`);
+    const homeHtml = await home.text();
+    expect(home.headers.get("content-type")).toContain("text/html");
+    expect(homeHtml).toContain("data-dyad-browser-bridge");
+    expect(homeHtml).toContain("<title>wewebplus</title>");
+
+    const route = await fetch(`${origin}/apps/12`);
+    expect(await route.text()).toContain("data-dyad-browser-bridge");
+
+    const asset = await fetch(`${origin}/assets/app.js`);
+    expect(asset.status).toBe(200);
+    expect(asset.headers.get("content-type")).toContain("text/javascript");
+    expect(await asset.text()).toBe("console.log('packaged renderer');");
+
+    const missing = await fetch(`${origin}/assets/missing.js`);
+    expect(missing.status).toBe(404);
+
+    const socket = new WebSocket(
+      `ws://${bridge.host}:${bridge.port}${BROWSER_BRIDGE_SOCKET_PATH}`,
+    );
+    await new Promise<void>((resolve, reject) => {
+      socket.once("open", () => resolve());
+      socket.once("error", reject);
+    });
+    socket.close();
   });
 });

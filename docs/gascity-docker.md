@@ -46,6 +46,22 @@ passwords/tokens are required by the compose example and are never build
 arguments or image contents. Avoid placing them in files committed to source
 control.
 
+## Sign-in and the browser URL
+
+`CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `WEWEBPLUS_DATABASE_URL`, and
+`WEWEBPLUS_SECRETS_KEY` are passed through at runtime the same way. With the
+Clerk pair set, the UI requires sign-in; with the database URL as well, shared
+org accounts are on. Leave them unset for an ungated local app.
+
+`DYAD_BROWSER_BRIDGE=1` makes the packaged app also serve its own renderer on
+`127.0.0.1:${DYAD_BROWSER_BRIDGE_PORT:-8372}` with a `window.electron` that
+talks to the main process over a websocket. That is the same UI the Xvfb
+window shows, reachable from any browser. Put a tunnel (for example
+`cloudflared tunnel --url http://127.0.0.1:8373`) in front of that port and add
+the tunnel hostname to the Clerk instance's allowed origins. On a host where
+the Gas City supervisor already owns `8372`, set `DYAD_BROWSER_BRIDGE_PORT`
+to something else. The port stays on loopback; never publish it directly.
+
 To stop the deployment:
 
 ```sh
