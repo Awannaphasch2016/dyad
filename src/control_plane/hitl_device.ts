@@ -1,6 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { and, eq } from "drizzle-orm";
 import { hitlAnswers, hitlQuestions } from "@/db/schema";
 import type { FactoryHostDatabase } from "@/main/factory_host_service";
@@ -13,8 +11,6 @@ import {
   type HitlQuestionRecord,
   type HitlQuestionView,
 } from "./hitl";
-
-const execFileAsync = promisify(execFile);
 
 type DeviceDb = FactoryHostDatabase;
 
@@ -142,41 +138,6 @@ export function createHitlQuestion(
   return { question: rowToRecord(stored), created: true };
 }
 
-export type GateCloser = (input: {
-  gateBeadId: string;
-  actor: string;
-  reason: string;
-}) => Promise<void>;
-
-let closerOverride: GateCloser | null = null;
-
-export function setGateCloserForTesting(closer: GateCloser | null): void {
-  closerOverride = closer;
-}
-
-export async function defaultGateCloser(input: {
-  gateBeadId: string;
-  actor: string;
-  reason: string;
-}): Promise<void> {
-  const projectDir =
-    process.env.GAS_CITY_PROJECT_DIR ??
-    "/opt/gascity/projects/multi tenant HITL";
-  await execFileAsync(
-    "bd",
-    [
-      "--actor",
-      input.actor,
-      "gate",
-      "resolve",
-      input.gateBeadId,
-      "--reason",
-      input.reason,
-    ],
-    { cwd: projectDir },
-  );
-}
-
 export async function answerHitlQuestion(
   database: DeviceDb,
   input: { questionId: string; caller: HitlCaller; body: string },
@@ -201,12 +162,6 @@ export async function answerHitlQuestion(
     return { view, resolved: false };
   }
   const actor = input.caller.displayName || input.caller.userId;
-  const reason = `approved by ${actor}`;
-  if (!record.beadId) {
-    throw new FactoryHostError("This question has no gate to resolve.", 409);
-  }
-  const close = closerOverride ?? defaultGateCloser;
-  await close({ gateBeadId: record.beadId, actor, reason });
   const answeredAt = new Date();
   database
     .insert(hitlAnswers)
@@ -241,7 +196,7 @@ export async function answerHitlQuestion(
     body: input.body,
     createdAt: answeredAt,
   });
-  return { view, resolved: true };
+  return { view, resolved: false };
 }
 
 export async function syncRemote(

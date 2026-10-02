@@ -5,7 +5,6 @@ import { eq } from "drizzle-orm";
 import { apps, chats } from "@/db/schema";
 import { createInMemoryTestDb, type TestDb } from "@/testing/test_db";
 import { createFactoryHostBridgeServer } from "./factory_host_bridge_server";
-import { setGateCloserForTesting } from "@/control_plane/hitl_device";
 import type { HitlCaller } from "@/control_plane/hitl";
 
 const ORG = "org_wewebplus";
@@ -15,7 +14,6 @@ describe("factory host HITL questions", () => {
   let appId: number;
   let baseUrl: string;
   let server: ReturnType<typeof createFactoryHostBridgeServer>;
-  const resolves: string[] = [];
   const callers = new Map<string, HitlCaller>([
     [
       "pm",
@@ -47,10 +45,6 @@ describe("factory host HITL questions", () => {
   ]);
 
   beforeEach(async () => {
-    resolves.length = 0;
-    setGateCloserForTesting(async (input) => {
-      resolves.push(`${input.gateBeadId}:${input.actor}:${input.reason}`);
-    });
     database = createInMemoryTestDb();
     appId = Number(
       database.insert(apps).values({ name: "Factory", path: "factory" }).run()
@@ -77,7 +71,6 @@ describe("factory host HITL questions", () => {
   });
 
   afterEach(async () => {
-    setGateCloserForTesting(null);
     await new Promise<void>((resolve) => server.close(() => resolve()));
     database.$client.close();
   });
@@ -147,7 +140,6 @@ describe("factory host HITL questions", () => {
       "dev",
     );
     expect(forbidden.status).toBe(403);
-    expect(resolves).toEqual([]);
 
     const hidden = await request(`${path}/${created.body.id}`, {}, "outsider");
     expect(hidden.status).toBe(404);
@@ -160,11 +152,8 @@ describe("factory host HITL questions", () => {
       "pm",
     );
     expect(allowed.status).toBe(200);
-    expect(allowed.body.resolved).toBe(true);
+    expect(allowed.body.resolved).toBe(false);
     expect(allowed.body.view.answeredByUserId).toBe("user_pm");
-    expect(resolves).toEqual([
-      "mth-plan:Anakwannaphaschaiyong:approved by Anakwannaphaschaiyong",
-    ]);
 
     const second = await request(
       `${path}/${created.body.id}/answers`,
@@ -173,6 +162,5 @@ describe("factory host HITL questions", () => {
     );
     expect(second.status).toBe(200);
     expect(second.body.resolved).toBe(false);
-    expect(resolves).toHaveLength(1);
   });
 });

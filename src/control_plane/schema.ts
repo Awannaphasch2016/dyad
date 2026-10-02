@@ -197,6 +197,7 @@ export const controlAnswers = controlPlane.table(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    gateResolvedAt: timestamp("gate_resolved_at", { withTimezone: true }),
   },
   (table) => [uniqueIndex("answers_question_unique").on(table.questionId)],
 );
