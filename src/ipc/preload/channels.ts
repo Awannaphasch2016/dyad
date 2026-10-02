@@ -84,6 +84,7 @@ import {
   distributedMachineEvents,
 } from "../types/distributed_machines";
 import { factoryHostContracts } from "../types/factory_host";
+import { workflowGraphContracts } from "../types/workflow_graph";
 
 // =============================================================================
 // Invoke Channels (derived from all contracts)
@@ -160,6 +161,7 @@ export const VALID_INVOKE_CHANNELS = [
   ...getInvokeChannels(windowInfrastructureContracts),
   ...getInvokeChannels(distributedMachineContracts),
   ...getInvokeChannels(factoryHostContracts),
+  ...getInvokeChannels(workflowGraphContracts),
   ...getInvokeChannels(imageGenerationContracts),
   ...getInvokeChannels(previewViewContracts),
 

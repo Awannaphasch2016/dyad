@@ -11,6 +11,7 @@ import {
 describe("app sidebar state", () => {
   it("folds chat routes into the Apps panel", () => {
     expect(getRouteSidebarPanel("/chat")).toBe("Apps");
+    expect(getRouteSidebarPanel("/workflow")).toBe("Apps");
     expect(isSidebarItemActive({ title: "Apps", pathname: "/chat" })).toBe(
       true,
     );
