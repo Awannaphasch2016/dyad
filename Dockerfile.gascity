@@ -52,6 +52,7 @@ RUN apt-get update \
 WORKDIR /app
 
 COPY --from=build --chown=weaver:weaver /app/out/dyad-linux-x64 /app/out/dyad-linux-x64
+COPY --chown=weaver:weaver control-plane/drizzle /app/control-plane/drizzle
 COPY --chown=weaver:weaver docker/gascity-entrypoint.sh /app/docker/gascity-entrypoint.sh
 RUN chmod 755 /app/docker/gascity-entrypoint.sh
 
