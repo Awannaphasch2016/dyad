@@ -1,358 +1,198 @@
-# Preview environments
+# Preview environments — implementation plan
 
-> Written 2026-10-03. Database isolation is Neon. This is not `plans/preview-token-rollout.md` (one image rebuild) and not `src/version_preview/` (in-app version checkout).
+> Updated 2026-10-03 after a read-only pass over the production EC2. Nothing on that host was changed. This plan is for review. Do not start the work until it is approved.
+>
+> This replaces the first draft of this file. That draft put preview stacks on the production EC2, shared one Gas City, called a variable `GAS_CITY_HOST_BRIDGE_URL` that does not exist, and ended in Kubernetes namespaces. The host matches none of those.
 
-## Summary
+## Decision this plan asks you to approve
 
-A preview is a deployment of one image digest into its own environment. The developer’s worktree is not that environment. A push updates only the preview for that pull request. `main` and every other preview stay where they are.
+Prove Dyad and a Gas City client as two containers on a Docker bridge network, on a machine that is not the production EC2. Production stays the current container, the current `gc` process, the current Supabase database, and the current tunnel.
 
-Neon branches the Wewebplus Postgres database (`WEWEBPLUS_DATABASE_URL`). Gas City stays one service. Each preview gets its own project directory and its own Neon connection string.
+A second EC2, a registry, a Neon migration, a preview controller, and Kubernetes are later decisions. They are not how this implementation starts.
 
-## Target architecture
+## Production, measured 2026-10-03 10:22 UTC
+
+Host `13.251.216.187` (`ip-172-31-14-171`), Ubuntu 22.04.5, 4 CPUs, 15Gi RAM (13Gi available), load 0.08. One ext4 root, 29G, **5.1G free**, 83% used, inodes 13% used. Uptime 8 days. No cron.
+
+| Path                          | Size | What it is                                                                  |
+| ----------------------------- | ---- | --------------------------------------------------------------------------- |
+| `/var/lib/containerd`         | 9.6G | Overlay snapshots for the images below                                      |
+| `/var/lib/docker`             | 2.0G | Docker metadata, volumes, and the 2.7G build cache counted inside this tree |
+| `/opt/gascity/city`           | 1.9G | Live Gas City city, including embedded Dolt                                 |
+| `/opt/gascity/projects`       | 319M | 9 app directories, bind-mounted into Dyad                                   |
+| `/opt/gascity/weaver-plus`    | 98M  | Git checkout `cursor/browser-dyad-ui-bbea` at `ad0138a5`, clean             |
+| `/opt/gascity/gascity-source` | 82M  | Gas City source. It does not call Dyad's `/v1/apps` API                     |
+
+Docker: overlayfs, 6 images, build cache 2.75G (544MB marked reclaimable without `-af`). No registry.
+
+| Image                                                | ID             | Size                   | Role                                        |
+| ---------------------------------------------------- | -------------- | ---------------------- | ------------------------------------------- |
+| `weaver-plus:gascity`                                | `8a85cc4a5d1d` | 2.88G                  | Running Dyad. Same ID as `gascity-previous` |
+| `weaver-plus:gascity-before-once`                    | `0ed1ee86f43e` | 2.88G                  | Keep. Not free space                        |
+| `registry.dagger.io/engine:v0.21.10`                 | `2a7c054e0864` | 1.04G                  | Build helper, running                       |
+| `debian:bookworm-slim`                               | `3783cc01769c` | 116M                   | Unused by the live app                      |
+| Victoria Metrics `v1.106.1` / Victoria Logs `v1.0.0` | small          | Metrics, loopback only |
+
+Running containers: `weaver-plus-weaver-plus-1` (healthy, started 2026-10-02T22:35:20Z), `dagger-engine-v0.21.10`, `factory-victoria-metrics` (`127.0.0.1:8428`), `factory-victoria-logs` (`127.0.0.1:9428`). One exited container, `weaver-tty-test`, from 8 days ago. Volumes: `weaver-plus_weaver-plus-user-data` 45MB, Victoria Metrics data 2.0G, Victoria Logs 14MB. Compose project name `weaver-plus`, host network. The container label's working directory is `/tmp` because Dagger launched Compose from there. The source checkout is still `/opt/gascity/weaver-plus`.
+
+| Listen            | Process                                                                                | Reachable from                                           |
+| ----------------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `127.0.0.1:32100` | Dyad factory bridge                                                                    | This host only. No clients connected                     |
+| `127.0.0.1:8373`  | Dyad browser bridge                                                                    | This host, plus the Cloudflare quick tunnel              |
+| `127.0.0.1:8372`  | `/opt/gascity/gc supervisor run` since 2026-09-24 23:46 UTC. `gc version` prints `dev` | This host only                                           |
+| `127.0.0.1:8390`  | `node /tmp/dyad-bridge-proxy.mjs`                                                      | Rewrites HTML and proxies to `8373`. Not the factory API |
+| `127.0.0.1:5900`  | x11vnc                                                                                 | This host only                                           |
+| `0.0.0.0:6080`    | websockify / noVNC                                                                     | Any address the security group allows                    |
+| `0.0.0.0:8080`    | nginx, root `/opt/gascity/site`                                                        | Same                                                     |
+| `0.0.0.0:80`      | nginx default site                                                                     | Same                                                     |
+| `0.0.0.0:22`      | sshd                                                                                   | Operators                                                |
+
+No process listens on 443, 7375, or 8081. `bridge.env` still names `BRIDGE_URL=http://127.0.0.1:8081` and `WEAVER_BASE_URL=http://127.0.0.1:32100`. Nothing reads that file. The supervisor's environment does not include `WEAVER_BASE_URL`. The `gc` binary does not contain `WEAVER_BASE_URL` or `/v1/apps/`.
+
+Kubernetes is absent: no `kubectl`, `kubelet` inactive, `k3s` inactive. The unused `/opt/gascity/docker-compose.yml` describes `gastownhall/gascity:latest` on port 7375, two telegram bots, and a miniapp. Those containers are not running, and that image is not on the host.
+
+Control-plane database is Supabase Postgres (`*.supabase.com:5432`, database `postgres`) via `WEWEBPLUS_DATABASE_URL`. It is not Neon. Vercel `hitl-web` uses that same variable. It does not call Dyad over HTTP.
+
+Rollout files present, unread for values: `/usr/local/sbin/gascity-rollout`, `/etc/doppler/dyad-preview.token`, `/etc/doppler/aws-dev.token`. `scripts/gascity/rollout.sh` fast-forwards the checkout and runs `docker compose up --build` on this host. The last unpack that reached this disk failed with no space left. Free space is still 5.1G. The 8GiB gate in `plans/preview-token-rollout.md` is not implemented. This plan does not prune, rebuild, or roll that host.
+
+Dyad's factory server is `startFactoryHostBridgeFromEnv` in `src/main/factory_host_bridge_server.ts`. It listens on `127.0.0.1` and `GAS_CITY_HOST_BRIDGE_PORT` (production: 32100). Callers send `Authorization: Bearer <GAS_CITY_HOST_BRIDGE_TOKEN>`. An `Origin` header is rejected. Routes under `/v1/apps/:id/...` link a project, post messages, approve a phase, start a run, and create HITL questions.
+
+The browser UI is the bridge on 8373, reached through `cloudflared tunnel --url http://127.0.0.1:8373`. Vercel is the HITL question board, not that UI.
+
+## What the first draft got wrong
+
+- Phase 3 (`preview-14` on port 8383) builds on the disk that already failed an unpack.
+- Phase 5 assumes a Kubernetes cluster on this EC2.
+- "Gas City is shared, and Dyad calls `GAS_CITY_HOST_BRIDGE_URL`" reverses the real API. Dyad listens. A client calls Dyad. The live `gc` supervisor is not that client.
+- Neon is not the production database. Moving production onto a Neon parent would change production, which this implementation does not do.
+- Host networking is why `gc` and Dyad can share `127.0.0.1`. Two containers on a bridge network cannot, until Dyad can bind an address other than loopback.
+
+## Target of the first implementation
 
 ```text
-commit SHA
-  → CI image weaver-plus@sha256:…
-  → namespace preview-<pr>
-       Dyad pod (browser bridge)
-       volume for ~/.config
-       volume for projects
-       Ingress https://pr-<pr>.preview.example
-  → Neon branch preview-pr-<pr>   (this preview’s WEWEBPLUS_DATABASE_URL)
-  → Gas City (shared) at GAS_CITY_HOST_BRIDGE_URL
-stable namespace keeps the main digest, the Neon parent branch, and the stable URL
+a Docker host that is not 13.251.216.187
+  network: bridge name "dyad-proof"
+  container dyad
+    bind GAS_CITY_HOST_BRIDGE_HOST=0.0.0.0 inside the container
+    port 32100 unpublished on the host
+    own empty volume for projects and for ~/.config
+    own bearer token
+  container caller
+    WEAVER_BASE_URL=http://dyad:32100
+    same bearer token
+    one request without the token, one request with it
 ```
 
-Vercel keeps building `hitl-web`. A preview deployment of that app receives the same Neon branch URL as the matching Dyad preview. Vercel does not run the Electron canvas.
-
-## Infrastructure changes
-
-- A container registry. The host stops building from `/opt/gascity/weaver-plus` for previews.
-- One Neon project for the control-plane database. Parent branch is production. Each preview is a child branch.
-- Drop host networking for preview pods. Each preview has its own bridge port behind an Ingress. Stable can stay on 8373 until the cutover.
-- A preview controller record (table below). GitHub Actions creates and deletes it. The controller does not read a developer worktree.
-- Doppler `dyad`/`preview` remains the secret source. The database URL is overwritten per preview by the Neon branch URI. Other names are copied, not shared through one process environment.
-- Gas City is reached by URL, not by `127.0.0.1` inside the host network namespace.
-
-## Isolation
-
-| Thing                       | Stable                  | Preview PR 14           | Preview PR 15           |
-| --------------------------- | ----------------------- | ----------------------- | ----------------------- |
-| Git                         | `main`                  | that PR’s SHA           | that PR’s SHA           |
-| Worktree                    | none used to deploy     | none used to deploy     | none used to deploy     |
-| Image                       | digest A                | digest B                | digest C                |
-| Namespace / compose project | `stable`                | `preview-14`            | `preview-15`            |
-| URL                         | stable host             | `pr-14.…`               | `pr-15.…`               |
-| Postgres                    | Neon parent             | branch `preview-pr-14`  | branch `preview-pr-15`  |
-| Dyad sqlite + settings      | volume `stable-config`  | volume `pr-14-config`   | volume `pr-15-config`   |
-| App project files           | `/opt/gascity/projects` | volume `pr-14-projects` | volume `pr-15-projects` |
-| Gas City engine             | shared                  | shared                  | shared                  |
-
-A worktree may exist on a laptop or on the host for editing. Deploy never uses it as the build context.
-
-## Lifecycle
-
-States: `provisioning` → `ready` → `updating` → `ready` → `destroying` → gone. `failed` can be entered from `provisioning` or `updating`. Failed leaves the previous ready digest in place when one exists.
-
-- **Create.** Pull request opened or labeled `preview`. CI builds and pushes the digest. Neon creates a branch from the parent. Controller writes the row, applies the namespace, waits until the bridge is healthy.
-- **Update.** A new commit on that same pull request builds a new digest and rolls only `preview-<pr>`. The Neon branch is kept. Migrations run against that branch. Other previews and stable are not rolled.
-- **Test.** Open the preview URL. Sign-in redirect for that host works. Create a row in the preview database and confirm it is absent on the parent and on the other preview.
-- **Destroy.** Pull request closed or unlabeled. Delete the namespace and volumes, delete the Neon branch, delete the DNS name. Stable is untouched.
-
-Pin rule: the running digest changes only when this lifecycle runs. Saving a file in a worktree does not.
-
-## Deployment
-
-CI builds `Dockerfile.gascity` once per SHA and pushes `weaver-plus:<sha>`. The controller sets the pod image to that name. It does not run `docker compose up --build` from a checkout.
-
-Stable is promoted by deploying the already-built digest of `main`. It is not rebuilt at promote time.
-
-## Environment and secrets
-
-Doppler `dyad`/`preview` supplies Clerk, the host-bridge token, noVNC, and `WEWEBPLUS_SECRETS_KEY`. The controller writes a per-preview env file:
-
-- `WEWEBPLUS_DATABASE_URL` = Neon branch URI for this preview only
-- `DYAD_BROWSER_BRIDGE=1`
-- `DYAD_BROWSER_BRIDGE_PORT` = this preview’s port
-- `GAS_CITY_HOST_BRIDGE_URL` = the shared Gas City base URL
-- `WEAVER_PROJECTS_DIR` = this preview’s volume
-- Clerk redirect allow-list includes `https://pr-<pr>.preview.example`
-
-Secret values are not image layers and not git. The database URI is a secret reference stored as a Neon branch id, resolved at start.
-
-## External services
-
-- **Neon.** One branch per preview. Parent stays production. Existing `src/neon_admin/` is the API shape for user-app databases. The preview controller uses the same API for the control-plane project. It does not reuse `apps.neonTestBranchId`.
-- **Gas City.** One engine. Previews call it over `GAS_CITY_HOST_BRIDGE_URL`. They do not mount `/opt/gascity/projects`.
-- **Clerk.** One instance. Each preview origin is an allowed redirect. Sessions are not shared across hosts.
-- **Vercel `hitl-web`.** Already previews per branch. Pass the matching Neon URI as that preview’s `WEWEBPLUS_DATABASE_URL`. The formula canvas stays on the Dyad pod.
-- **Bedrock.** Shared IAM from Doppler `aws`/`dev`. Previews do not get a second AWS account.
-
-## Networking
-
-Preview pods use a bridge network, not the host network. Ingress routes `pr-<n>.preview.example` to that pod’s browser-bridge port. WebSocket `/dyad-browser-ipc` stays on that pod. Gas City is a Service or a stable host URL. Previews do not bind 8373 or 6080.
-
-## Data and state
-
-- Postgres: Neon copy-on-write branch. Writes allocate pages on the child. The parent is unchanged.
-- Electron `~/.config`: a new volume per preview. Clerk and sqlite from stable are not in it.
-- Generated app files: a new volume per preview, seeded empty or from a snapshot taken at create time. Not a live bind of the stable project directory.
-- Gas City Dolt history: not branched by this plan. A preview that must change formula history gets a copy of the project files on its own volume and talks to the shared engine.
-
-## CI/CD
-
-GitHub Actions on `pull_request` (`opened`, `synchronize`, `closed`, `unlabeled`):
-
-1. Build and push the image for `github.sha`.
-2. Call the preview controller: create, update, or destroy `preview-<number>`.
-3. The controller calls the Neon API, then applies the manifest with the digest.
-
-The current `gascity-rollout.yml` remains the stable path until phase 2 replaces its `up --build` with a digest pull. It does not deploy previews.
-
-## Migration from today
-
-Today one checkout is fast-forwarded and `compose up --build` replaces `weaver-plus:gascity`. Host networking, one volume, and one database URL make a second copy impossible. Disk is about 5G free. `plans/preview-token-rollout.md` has to land first so a build can finish. This plan does not replace that token or that disk gate.
-
-## Phases
-
-1. **Registry.** Push the stable image by digest. Stable still one container. No second environment yet.
-2. **Neon parent.** Move `WEWEBPLUS_DATABASE_URL` to a Neon branch named `main`. Stable uses only that URI.
-3. **One manual preview.** Compose project `preview-14`, image digest of PR 14, new volumes, port 8383, Neon branch `preview-pr-14`. Stable stays on 8373.
-4. **Controller.** The GitHub Action above. Label `preview` opts in. Close deletes the namespace, volumes, and Neon branch.
-5. **Cluster.** Move the same manifests into Kubernetes namespaces `stable`, `preview-14`, `preview-15` on the EC2 cluster. Gas City stays outside those namespaces.
-6. **HITL.** Vercel preview env for that branch receives the same Neon URI.
-
-## Acceptance
-
-- Two previews and stable answer on three hostnames at the same time.
-- A commit pushed to PR 14 rolls only `preview-14`.
-- A row inserted through PR 14 is absent on PR 15 and on the Neon parent.
-- Deleting PR 14 removes its pod, volumes, Neon branch, and URL. Stable is still healthy.
-- A dirty worktree on the host does not change any running digest.
-
-## System context
-
-Who talks to whom. Developers push git. Users open URLs. The preview controller is the only writer of preview namespaces and Neon branches.
+Production is not in this picture. The default bind stays `127.0.0.1`, so a production rollout of the same code keeps today's loopback behavior until someone sets the env var.
 
 ```mermaid
 flowchart LR
-  Dev[Developers]
-  GH[GitHub PRs]
-  CI[GitHub Actions]
-  Reg[Image registry]
-  Ctrl[Preview controller]
-  Neon[Neon]
-  K8s[EC2 namespace or compose project]
-  GC[Gas City]
-  Vercel[Vercel hitl-web]
-  User[Preview users]
-
-  Dev --> GH
-  GH --> CI
-  CI --> Reg
-  CI --> Ctrl
-  Ctrl --> Neon
-  Ctrl --> K8s
-  Reg --> K8s
-  K8s --> GC
-  Ctrl --> Vercel
-  User --> K8s
-  User --> Vercel
-```
-
-This is the deploy path. The worktree is off to the side, used only by the developer. The controller never builds from it.
-
-## Component diagram
-
-What runs inside the controller and the preview pod.
-
-```mermaid
-flowchart TB
-  subgraph controller
-    GHIn[GitHub event intake]
-    Life[Lifecycle state]
-    NeonOp[Neon branch client]
-    Render[Manifest renderer]
-    GCHook[Cleanup]
+  subgraph proof [Any Docker host except production]
+    Caller[caller container]
+    Dyad[Dyad container :32100]
+    Caller -->|HTTP bearer, Docker DNS| Dyad
   end
-  subgraph previewPod [preview pod]
-    Bridge[Browser bridge]
-    Main[Electron main]
-    VolConfig[config volume]
-    VolProj[project volume]
+  subgraph prod [Production EC2, unchanged]
+    GC[gc supervisor]
+    PDyad[Dyad on 127.0.0.1:32100]
+    GC -. no HTTP client today .-> PDyad
   end
-  GHIn --> Life
-  Life --> NeonOp
-  Life --> Render
-  Render --> Bridge
-  Bridge --> Main
-  Main --> VolConfig
-  Main --> VolProj
-  Main --> GCSvc[Gas City URL]
-  NeonOp --> Main
-  Life --> GCHook
 ```
-
-`GitHub event intake` maps `opened` / `synchronize` / `closed` onto the lifecycle. `Manifest renderer` fills the digest, host, port, and Neon URI. `Cleanup` deletes the namespace, volumes, and Neon branch. The pod’s main process is the existing Dyad binary.
-
-## Class diagram
-
-Records the controller keeps. These are the types to add. They are not the in-app `version_preview` classes.
-
-```mermaid
-classDiagram
-  class PreviewEnvironment {
-    id
-    repo
-    prNumber
-    branch
-    state
-    hostname
-    neonBranchId
-    createdAt
-  }
-  class Deployment {
-    id
-    previewId
-    commitSha
-    imageDigest
-    readyAt
-  }
-  class Route {
-    hostname
-    port
-    previewId
-  }
-  class ServiceBinding {
-    name
-    url
-    shared
-  }
-  class SecretRef {
-    name
-    source
-    previewId
-  }
-  class NeonBranch {
-    branchId
-    parentBranchId
-    connectionSecretRef
-  }
-  PreviewEnvironment "1" --> "*" Deployment
-  PreviewEnvironment "1" --> "1" Route
-  PreviewEnvironment "1" --> "1" NeonBranch
-  PreviewEnvironment "1" --> "*" SecretRef
-  PreviewEnvironment "1" --> "*" ServiceBinding
-```
-
-`state` is `provisioning`, `ready`, `updating`, `destroying`, or `failed`. `Deployment` is append-only. The environment’s current digest is the latest ready row. `ServiceBinding.shared` is true for Gas City and Bedrock.
-
-## Sequences
-
-### Create
 
 ```mermaid
 sequenceDiagram
-  participant GH as GitHub
-  participant CI
-  participant Neon
-  participant Ctrl as Controller
-  participant NS as preview-14
-  GH->>CI: PR 14 opened, label preview
-  CI->>CI: Build and push digest
-  CI->>Neon: Create branch from parent
-  Neon-->>CI: Branch id and URI
-  CI->>Ctrl: Create preview-14 at this digest
-  Ctrl->>NS: Apply pod, volumes, ingress
-  NS-->>Ctrl: Bridge healthy
-  Ctrl-->>GH: URL pr-14.preview.example
+  participant Caller
+  participant Dyad as dyad:32100
+  Caller->>Dyad: GET /v1/apps/1/factory-state
+  Dyad-->>Caller: 401
+  Caller->>Dyad: GET /v1/apps/1/factory-state, Bearer dev token
+  Dyad-->>Caller: 200 or 404 from the empty dev volume
 ```
 
-### Update after a new commit
+A 404 on an unknown app is a successful network proof. A 401 without the token is the auth proof. Neither call leaves the Docker network.
 
-```mermaid
-sequenceDiagram
-  participant Dev
-  participant CI
-  participant NS as preview-14
-  participant Other as preview-15 and stable
-  Dev->>CI: Push a new SHA to PR 14
-  CI->>CI: Build and push a new digest
-  CI->>NS: Roll pod to the new digest
-  Note over NS: Same Neon branch, same volumes
-  Other-->>Other: No rollout
+## Later shape, not this implementation
+
+After the proof is approved a second time:
+
+```text
+Production EC2
+  gc supervisor and /opt/gascity/city stay
+External Dyad container
+  the image built off-host
+Vercel preview
+  hitl-web, pointed at a new empty Postgres, not production Supabase
 ```
 
-### UI to backend
+Cutting production over is a config change on a client that can read `WEAVER_BASE_URL`, then stopping the production Dyad container. That client does not exist yet. Changing `bridge.env` today would not move traffic. That cutover is a separate approval. It is not phase 1.
 
-```mermaid
-sequenceDiagram
-  participant Browser
-  participant Bridge as Preview bridge
-  participant Main as Electron main
-  participant Neon as Neon branch
-  participant GC as Gas City
-  Browser->>Bridge: wss://pr-14…/dyad-browser-ipc
-  Bridge->>Main: IPC
-  Main->>Neon: WEWEBPLUS_DATABASE_URL of this branch
-  Main->>GC: GAS_CITY_HOST_BRIDGE_URL
-```
+## Implementation
 
-### Access and test
+Each phase stops for review. Phase 1 is the only phase this approval covers. Later phases are listed so the sequence is visible.
 
-```mermaid
-sequenceDiagram
-  participant User
-  participant URL as pr-14 URL
-  participant DB as Neon preview-pr-14
-  participant Parent as Neon parent
-  User->>URL: Sign in and create a row
-  URL->>DB: Insert
-  User->>Parent: Read the same key
-  Parent-->>User: Row absent
-```
+### Phase 1 — two containers, off production
 
-### Destroy
+Code, in this repo:
 
-```mermaid
-sequenceDiagram
-  participant GH as GitHub
-  participant Ctrl as Controller
-  participant NS as preview-14
-  participant Neon
-  participant Stable
-  GH->>Ctrl: PR 14 closed
-  Ctrl->>NS: Delete pod, volumes, ingress
-  Ctrl->>Neon: Delete branch preview-pr-14
-  Stable-->>Stable: Still serving
-```
+- In `src/main/factory_host_bridge_server.ts`, read `GAS_CITY_HOST_BRIDGE_HOST`. Empty or unset means `127.0.0.1`. Reject values that are not an IP address or `0.0.0.0`. Pass that host to `server.listen`.
+- Unit-test the host resolution. The existing server tests keep using `127.0.0.1`. Add one test that a server constructed with host `0.0.0.0` accepts a connection on `127.0.0.1` from the same machine. That is the stand-in for another container on the same Docker network.
+- Add `compose.bridge-proof.yml`. Two services, network `dyad-proof`, no `network_mode: host`, no `ports:` entry for 32100. Dyad gets `GAS_CITY_HOST_BRIDGE_HOST=0.0.0.0`, `GAS_CITY_HOST_BRIDGE_ENABLED=true`, a generated token, and an empty projects volume. The caller image is `curlimages/curl` and its command is the two requests above. This file is not what `gascity-rollout` runs.
+- Do not change `compose.gascity.yml` host networking, `scripts/gascity/rollout.sh`, or `.github/workflows/gascity-rollout.yml`.
 
-## ER diagram
+Run, only after you approve, on a Docker engine whose root disk is not this EC2:
 
-```mermaid
-erDiagram
-  REPOSITORY ||--o{ PULL_REQUEST : has
-  PULL_REQUEST ||--o{ COMMIT : contains
-  PULL_REQUEST ||--o| PREVIEW_ENVIRONMENT : opens
-  PREVIEW_ENVIRONMENT ||--|{ DEPLOYMENT : runs
-  COMMIT ||--o{ DEPLOYMENT : built_as
-  PREVIEW_ENVIRONMENT ||--|| ROUTE : exposes
-  PREVIEW_ENVIRONMENT ||--o{ SECRET_REF : uses
-  PREVIEW_ENVIRONMENT ||--|| NEON_BRANCH : isolates
-  PREVIEW_ENVIRONMENT ||--o{ SERVICE_BINDING : calls
-  USER ||--o{ PREVIEW_ENVIRONMENT : opens
-```
+1. `docker compose -f compose.bridge-proof.yml up --build --abort-on-container-exit`
+2. The caller exits 0.
+3. `docker compose -f compose.bridge-proof.yml down -v` removes the proof volumes.
+4. On production, read-only: image `8a85cc4a5d1d` still healthy, `gc` pid 30127 still the supervisor, listeners unchanged, `/` still about 5.1G free.
 
-`PULL_REQUEST` is the GitHub number. `PREVIEW_ENVIRONMENT` exists only while the label is on and the PR is open. `DEPLOYMENT` rows remain after destroy so the digest history is auditable. `SECRET_REF` stores the Doppler name or the Neon branch id, never the secret value. `SERVICE_BINDING` rows for Gas City are shared across environments. `NEON_BRANCH.parent` is the stable branch.
+The proof host needs about 12G free before the build. `Dockerfile.gascity` produces a 2.88G image. This EC2 has 5.1G free, so it is the wrong place to build even a proof.
 
-## Two developers
+Done when the caller log shows 401 and then a non-401 response, and the production checks still match the table above.
 
-Ada pushes PR 14. Bao pushes PR 15. Both are labeled `preview`.
+### Phase 2 — empty database and the HITL board
 
-- CI stores `weaver-plus:<ada-sha>` and `weaver-plus:<bao-sha>`.
-- Neon has `preview-pr-14` and `preview-pr-15`, both copied from the parent at create time.
-- Ada opens `https://pr-14.preview.example`. Bao opens `https://pr-15.preview.example`. Stable stays on its own host.
-- Ada inserts a row. It is on `preview-pr-14` only.
-- Ada pushes again. Only `preview-14` rolls. Bao’s URL still serves Bao’s digest.
-- Ada’s uncommitted worktree is not in either pod.
-- Ada merges and the PR closes. `preview-14`, its volumes, and its Neon branch are deleted. Bao and stable keep running.
+Not started with phase 1.
+
+- New empty Postgres. A second Supabase project matches production. Neon is allowed for this empty database. Production `WEWEBPLUS_DATABASE_URL` stays on the current Supabase host.
+- New `WEWEBPLUS_SECRETS_KEY`. The dev database starts empty, so the production key is the wrong key.
+- Point a Vercel preview of `hitl-web` at that URI. Leave the production Vercel env on production Supabase.
+- Repeat one question create from the caller container and read it through the preview.
+
+### Phase 3 — a real Gas City client
+
+Not started with phase 1.
+
+The live `gc` binary cannot be reconfigured onto the external Dyad, because it never opens `WEAVER_BASE_URL`. This phase adds that client in Gas City, or a small process beside `gc` that does the `/v1` calls, still against the proof Dyad. It uses a new city directory from `gc init`, not a copy of `/opt/gascity/city`.
+
+### Phase 4 — production cutover
+
+A separate approval, after phase 3 has round-tripped one question.
+
+- Save the current client URL.
+- Point the production client at the external Dyad.
+- Confirm one production-originated call hits the external Dyad and that `/opt/gascity/projects` did not gain a new app from that call.
+- Stop `weaver-plus-weaver-plus-1` only after that confirmation. Leave `gc`, `/opt/gascity/city`, nginx, and Victoria running.
+- Revert by restoring the saved URL and starting the previous image. `weaver-plus:gascity-previous` is already `8a85cc4a5d1d`.
+
+No `docker compose up --build` on production in any phase. No `down -v`. No deletion of `weaver-plus:gascity-before-once`. No write to `/etc/doppler`. No edit of `bridge.env` before phase 4.
+
+## Isolation
+
+| Resource                 | Phase 1 proof                         | Production                                                      |
+| ------------------------ | ------------------------------------- | --------------------------------------------------------------- |
+| Machine                  | some other Docker host                | this EC2                                                        |
+| Dyad image build         | on that host                          | not rebuilt                                                     |
+| Bind address             | `0.0.0.0` inside the proof container  | stays `127.0.0.1`                                               |
+| Token                    | new, compose-local                    | existing token, unread and unchanged                            |
+| Projects and `~/.config` | empty volumes, deleted with `down -v` | `/opt/gascity/projects` and `weaver-plus_weaver-plus-user-data` |
+| Gas City city            | not used                              | `/opt/gascity/city`                                             |
+| Database                 | none in phase 1                       | production Supabase                                             |
+| Browser URL              | none in phase 1                       | existing quick tunnel                                           |
+| Vercel                   | none in phase 1                       | production env                                                  |
+
+Shared on purpose, and only if the proof container is given them later: the Bedrock account. Phase 1 does not need Bedrock, Clerk, or Supabase.
+
+## Approval
+
+Reply with approval of phase 1 to authorize the code change and one off-host Compose run. That approval does not authorize phases 2–4, a new EC2, a prune of this disk, or any write to `13.251.216.187`.
