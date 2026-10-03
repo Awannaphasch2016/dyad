@@ -30,7 +30,11 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 2
 fi
 
-docker_root="$(docker info -f '{{.DockerRootDir}}')"
+docker_root="$(docker info -f '{{.DockerRootDir}}' 2>/dev/null || true)"
+# Namespace reports /var/lib/docker even when that path is not visible here.
+if [[ -z "$docker_root" || ! -d "$docker_root" ]]; then
+  docker_root="/"
+fi
 avail_kb="$(df -Pk "$docker_root" | awk 'NR==2 { print $4 }')"
 min_kb=$((8 * 1024 * 1024))
 if [[ -z "$avail_kb" || "$avail_kb" -lt "$min_kb" ]]; then
