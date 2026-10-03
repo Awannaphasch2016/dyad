@@ -1,7 +1,8 @@
-# Prove GitHub can run one command on the preview Devbox.
+# Prove GitHub can run a preview on the shared Devbox.
 #
 # This job does not SSH, does not read the production deploy key, and does not
-# start a preview. The production host is not a target.
+# change the public preview name. PREVIEW_SKIP_TUNNEL leaves that name on
+# Wewebplus-preview. The production host is not a target.
 name: Preview exec
 
 on:
@@ -23,7 +24,7 @@ concurrency:
 jobs:
   exec:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
     steps:
       - name: Log in to Namespace with the GitHub token
         uses: namespacelabs/nscloud-setup@v0
@@ -67,3 +68,32 @@ jobs:
         run: |
           set -euo pipefail
           devbox exec Wewebplus-ci -- echo federated-ok
+
+      - name: Run preview-20 on Wewebplus-ci without moving DNS
+        run: |
+          set -euo pipefail
+          payload="$(base64 -w0 <<'REMOTE'
+          set -euo pipefail
+          echo "--- machine ---"
+          uname -m
+          command -v docker
+          docker version
+          df -h /
+          awk '/MemTotal|MemAvailable/ { print }' /proc/meminfo
+          if ! command -v git >/dev/null 2>&1; then
+            echo "git is missing" >&2
+            exit 1
+          fi
+          repo=/workspaces/weaver-plus
+          if [[ ! -d "$repo/.git" ]]; then
+            git clone --depth 1 --branch cursor/preview-bridge-proof-9e7a https://github.com/Awannaphasch2016/dyad.git "$repo"
+          else
+            git -C "$repo" fetch --depth 1 origin cursor/preview-bridge-proof-9e7a
+            git -C "$repo" checkout --detach FETCH_HEAD
+          fi
+          cd "$repo"
+          echo "--- preview without moving DNS ---"
+          PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh 20 ghcr.io/awannaphasch2016/dyad@sha256:8e5be8469cd4a7caaa1611e41e9906b4f5a8ddb7b87bf6a9b0dcad101296789a
+          REMOTE
+          )"
+          devbox exec Wewebplus-ci -- bash -lc "printf '%s' '${payload}' | base64 -d | bash"

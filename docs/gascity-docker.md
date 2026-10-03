@@ -79,7 +79,7 @@ On the host, `/usr/local/sbin/gascity-rollout` reads a Doppler service token for
 
 `.github/workflows/preview-image.yml` builds `Dockerfile.gascity` and pushes `ghcr.io/<owner>/dyad:sha-<commit>` when that tag is missing. A second run for the same commit sees the tag and does not build again. That workflow does not SSH to the production host, and the host does not pull the image.
 
-`.github/workflows/preview-exec.yml` logs in with the Namespace GitHub app and runs `echo federated-ok` on Devbox `Wewebplus-ci`. That Devbox is workspace-shared. `Wewebplus-preview` stays private, so GitHub cannot exec there. The workflow does not start a preview and does not SSH to the production host.
+`.github/workflows/preview-exec.yml` logs in with the Namespace GitHub app, runs `echo federated-ok` on Devbox `Wewebplus-ci`, and starts project `preview-20` there with `PREVIEW_SKIP_TUNNEL=1`. The public name stays on `Wewebplus-preview`. `Wewebplus-preview` is private, so GitHub cannot exec there. The workflow does not SSH to the production host.
 
 `compose.preview.yml` is a separate Compose project for one pull request. It pulls a `ghcr.io` digest, puts Dyad on a bridge network, and does not publish port 32100. The city volume is created empty. `scripts/gascity/preview-up.sh` refuses to run when `/opt/gascity/weaver-plus` exists, checks that the Docker root has 8GiB free, and starts project `preview-<pr>`. With `CLOUDFLARE_API_TOKEN_`, `CLOUDFLARE_ZONE_ID_`, and `CLOUDFLARE_ACCOUNT_ID` set, it creates the named tunnel and the `pr-<pr>.anakwannaphaschaiyong.com` CNAME. Those values stay in `~/.local/state/wewebplus-preview/` and are not written to git.
 
