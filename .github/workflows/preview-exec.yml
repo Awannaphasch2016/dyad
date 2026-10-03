@@ -1,8 +1,8 @@
 # Prove GitHub can run a preview on the shared Devbox.
 #
 # This job does not SSH, does not read the production deploy key, and does not
-# change the public preview name. PREVIEW_SKIP_TUNNEL leaves that name on
-# Wewebplus-preview. The production host is not a target.
+# retarget DNS. The tunnel on Wewebplus-ci already serves the public name.
+# The production host is not a target.
 name: Preview exec
 
 on:
@@ -98,85 +98,9 @@ jobs:
           )"
           devbox exec Wewebplus-ci -- bash -lc "printf '%s' '${payload}' | base64 -d | bash"
 
-      - name: Prepare a key so the tunnel token can move without entering git
-        run: |
-          set -euo pipefail
-          payload="$(base64 -w0 <<'REMOTE'
-          set -euo pipefail
-          mkdir -p "$HOME/.config/ns"
-          chmod 700 "$HOME/.config/ns"
-          key="$HOME/.config/ns/tunnel-move.pem"
-          if [[ ! -f "$key" ]]; then
-            openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$key"
-            chmod 600 "$key"
-          fi
-          openssl pkey -in "$key" -pubout
-          REMOTE
-          )"
-          devbox exec Wewebplus-ci -- bash -lc "printf '%s' '${payload}' | base64 -d | bash"
-
-      - name: Start the preview tunnel on Wewebplus-ci
-        run: |
-          set -euo pipefail
-          payload="$(base64 -w0 <<'REMOTE'
-          set -euo pipefail
-          dir="$HOME/.config/ns"
-          key="$dir/tunnel-move.pem"
-          printf '%s' 'f2sfzhdmEsYm9h+0OoaNxNiy0Otbl3z0/krTqEBy9WPBheX/if9SEdfVY2IV4jOxNmj2HoAS/9HAQx+9ZltaNblKu7Zy2sE6cc366VM/YlzwEHujJS9LWqxDJWl7AMuBZZR6z7OLbhifHfnTcA3op/0AToPH8ay07Kpoa2qfsTZ3ej5UlspY1fKH6UfunyXwJ6tk5uSMw51JeWjA1qr8AhsfZ9Gh92gyCvWveCItUk5EGN9kj9PXMgFP4C5awVFpDfTJcUAexXrsMFCtmvq1XTUQcLx6XIMLlTfSzmz3KsCuV6JpAYWwhSXdEwcljzK+z958Jrpv+AqQtIqQUybofw==' | base64 -d > "$dir/tunnel-aes.enc"
-          printf '%s' 'U2FsdGVkX1/2p67CNh67aGHUyxqcN3OJeaU5yLMXhNed4OPD5LHz/GoXEMDsFAjlIVdk6KIshgz17nYCaMhdKGobD/KRWcSqnhox0/ZDNkxBllkSJr/susZw8/khhehJGehuwapSlT9YZBulutCJAGhAwIBtGoqcoLdU70UhVLzaFI3vtTx1Jca/G0bqJMpTKQdamEsCopw9HQShc+fwqnTPnywns282EuDUJBAc7uwIuao2CePjzspPLNeHqxZSaN2i/UGBsEZDK2f7/BKaJN5ZCT9aOiDrgPVvLls1mFScB1Fy0EEH7RqMcajrOSlafBd/wtF7wZ1UGMwLegMqEANHLNxWP4bEQ9aOXjFwUlw=' | base64 -d > "$dir/tunnel-token.enc"
-          openssl pkeyutl -decrypt -inkey "$key" -in "$dir/tunnel-aes.enc" -out "$dir/tunnel-aes.key"
-          openssl enc -d -aes-256-cbc -pbkdf2 -in "$dir/tunnel-token.enc" -out "$dir/tunnel-token" -pass "file:$dir/tunnel-aes.key"
-          chmod 600 "$dir/tunnel-token"
-          env_file="$HOME/.local/state/wewebplus-preview/preview-20.env"
-          grep -v '^CLOUDFLARE_TUNNEL_TOKEN=' "$env_file" > "$env_file.tmp"
-          mv "$env_file.tmp" "$env_file"
-          printf 'CLOUDFLARE_TUNNEL_TOKEN=' >> "$env_file"
-          cat "$dir/tunnel-token" >> "$env_file"
-          printf '\n' >> "$env_file"
-          chmod 600 "$env_file"
-          rm -f "$key" "$dir/tunnel-aes.enc" "$dir/tunnel-aes.key" "$dir/tunnel-token.enc" "$dir/tunnel-token"
-          cd /workspaces/weaver-plus
-          docker compose --env-file "$env_file" -p preview-20 -f compose.preview.yml --profile tunnel up -d cloudflared
-          registered=0
-          for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
-            if docker logs preview-20-cloudflared-1 2>&1 | grep -q "Registered tunnel connection"; then
-              registered=1
-              break
-            fi
-            sleep 2
-          done
-          docker ps --filter name=preview-20 --format '{{.Names}} {{.Status}}'
-          test "$registered" -eq 1
-          echo "cloudflared registered"
-          REMOTE
-          )"
-          devbox exec Wewebplus-ci -- bash -lc "printf '%s' '${payload}' | base64 -d | bash"
-
-
-      - name: Check the public preview address before removing the private Devbox
-        run: |
-          set -euo pipefail
-          sleep 5
-          code="$(curl -sS -o /tmp/preview-body -w '%{http_code}' https://pr-20.anakwannaphaschaiyong.com)"
-          echo "http $code"
-          test "$code" = "200"
-          grep -q 'data-dyad-browser-bridge' /tmp/preview-body
-          echo "browser bridge page before delete"
-
-      - name: Remove the private Devbox after the shared tunnel is registered
-        run: |
-          set -euo pipefail
-          if devbox expire --force --show-all Wewebplus-preview; then
-            echo "expired Wewebplus-preview"
-          else
-            echo "could not expire Wewebplus-preview"
-            exit 1
-          fi
-
       - name: Check the public preview address
         run: |
           set -euo pipefail
-          sleep 8
           code="$(curl -sS -o /tmp/preview-body -w '%{http_code}' https://pr-20.anakwannaphaschaiyong.com)"
           echo "http $code"
           test "$code" = "200"
