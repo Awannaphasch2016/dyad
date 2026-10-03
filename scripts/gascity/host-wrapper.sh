@@ -50,7 +50,7 @@ aws_json="$(mktemp)"
 merged="$(mktemp)"
 trap 'rm -f "$preview" "$aws_json" "$merged" "$ENV_FILE"' EXIT
 DOPPLER_TOKEN="$(<"$TOKEN_FILE")"
-DOPPLER_PROJECT=dyad DOPPLER_CONFIG=preview DOPPLER_TOKEN="$DOPPLER_TOKEN" \
+DOPPLER_PROJECT=dyad DOPPLER_CONFIG=prd DOPPLER_TOKEN="$DOPPLER_TOKEN" \
   /usr/bin/doppler secrets download --no-file --format json > "$preview"
 unset DOPPLER_TOKEN
 DOPPLER_TOKEN="$(<"$AWS_TOKEN_FILE")"
