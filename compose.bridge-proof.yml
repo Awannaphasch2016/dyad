@@ -1,0 +1,48 @@
+# Unpublished proof that another container can call the factory API.
+# Not used by scripts/gascity/rollout.sh or compose.gascity.yml.
+# Run on a Docker engine other than the production EC2:
+#   GAS_CITY_HOST_BRIDGE_TOKEN=proof docker compose -f compose.bridge-proof.yml up --build --abort-on-container-exit --exit-code-from caller
+#   docker compose -f compose.bridge-proof.yml down -v
+
+services:
+  dyad:
+    build:
+      context: .
+      dockerfile: Dockerfile.gascity
+    image: weaver-plus:bridge-proof
+    networks: [dyad-proof]
+    environment:
+      GAS_CITY_HOST_BRIDGE_ENABLED: "true"
+      GAS_CITY_HOST_BRIDGE_HOST: "0.0.0.0"
+      GAS_CITY_HOST_BRIDGE_PORT: "32100"
+      GAS_CITY_HOST_BRIDGE_TOKEN: "${GAS_CITY_HOST_BRIDGE_TOKEN:?Set GAS_CITY_HOST_BRIDGE_TOKEN}"
+      DYAD_BROWSER_BRIDGE: "0"
+  caller:
+    image: curlimages/curl:8.11.1
+    networks: [dyad-proof]
+    depends_on: [dyad]
+    environment:
+      GAS_CITY_HOST_BRIDGE_TOKEN: "${GAS_CITY_HOST_BRIDGE_TOKEN:?Set GAS_CITY_HOST_BRIDGE_TOKEN}"
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        set -eu
+        i=0
+        while [ "$$i" -lt 60 ]; do
+          code=$$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 2 http://dyad:32100/v1/apps/1/factory-state || true)
+          if [ "$$code" != "000" ]; then
+            break
+          fi
+          i=$$((i + 1))
+          sleep 2
+        done
+        unauth=$$(curl -s -o /dev/null -w '%{http_code}' http://dyad:32100/v1/apps/1/factory-state)
+        echo "without token: $$unauth"
+        test "$$unauth" = "401"
+        auth=$$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $$GAS_CITY_HOST_BRIDGE_TOKEN" http://dyad:32100/v1/apps/1/factory-state)
+        echo "with token: $$auth"
+        test "$$auth" != "401"
+
+networks:
+  dyad-proof:
+    name: dyad-proof
