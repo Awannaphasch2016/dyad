@@ -21,11 +21,12 @@ Open `http://HOST:6080/vnc.html` and enter `NOVNC_PASSWORD`. Set
 controls the virtual display size.
 
 The compose file deliberately uses Linux host networking. The Gas City bridge
-continues to bind only to `127.0.0.1` (default port `32100`), while Gas City on
-the host can reach it through the shared network namespace. Do not publish the
-bridge or change its bind address to `0.0.0.0`. Host networking also means the
-noVNC port is opened directly by the container, so protect it with a firewall
-and a strong password.
+binds to `127.0.0.1` (default port `32100`) unless `GAS_CITY_HOST_BRIDGE_HOST`
+is set to another IP address. This compose file does not set that variable.
+Do not publish port `32100`. `compose.bridge-proof.yml` is a separate
+unpublished network and is the only file that sets the bind address to
+`0.0.0.0`. Host networking also means the noVNC port is opened directly by the
+container, so protect it with a firewall and a strong password.
 
 These named volumes survive container replacement:
 
