@@ -61,7 +61,10 @@ function HitlQuestionRow({
           : ""}
       </p>
       {question.body != null && (
-        <p className="mt-1 whitespace-pre-wrap" data-testid={`hitl-body-${question.id}`}>
+        <p
+          className="mt-1 whitespace-pre-wrap"
+          data-testid={`hitl-body-${question.id}`}
+        >
           {question.body}
         </p>
       )}

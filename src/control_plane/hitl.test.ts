@@ -7,7 +7,9 @@ import {
 } from "./hitl";
 
 const org = "org_wewebplus";
-const question = (overrides: Partial<HitlQuestionRecord> = {}): HitlQuestionRecord => ({
+const question = (
+  overrides: Partial<HitlQuestionRecord> = {},
+): HitlQuestionRecord => ({
   id: "q1",
   orgId: org,
   appId: "app",
@@ -37,7 +39,9 @@ const caller = (overrides: Partial<HitlCaller> = {}): HitlCaller => ({
 
 describe("HITL question visibility", () => {
   it("hides the question from another organization", () => {
-    expect(presentQuestion(question(), caller({ orgId: "org_other" }))).toBeNull();
+    expect(
+      presentQuestion(question(), caller({ orgId: "org_other" })),
+    ).toBeNull();
     expect(decideAnswer(question(), caller({ orgId: "org_other" })).kind).toBe(
       "not-found",
     );
@@ -65,7 +69,9 @@ describe("HITL question visibility", () => {
     expect(decideAnswer(question(), caller({ roleId: null })).kind).toBe(
       "forbidden",
     );
-    expect(presentQuestion(question(), caller({ roleId: null }))?.body).toBeNull();
+    expect(
+      presentQuestion(question(), caller({ roleId: null }))?.body,
+    ).toBeNull();
   });
 
   it("does not open a second answer after the question is closed", () => {

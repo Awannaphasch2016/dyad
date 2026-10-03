@@ -288,7 +288,7 @@ it("switches back to the organization after Private", async () => {
           value={{
             status: "signed-in",
             roleId: "project-manager",
-          canInvite: true,
+            canInvite: true,
             userId: "user_anak",
             email: "anak@example.com",
             account: {

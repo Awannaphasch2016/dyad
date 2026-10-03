@@ -1,3 +1,15 @@
+# Build stage: the full checkout, node_modules, and Forge output stay here so
+# the runtime image only carries the packaged app.
+FROM node:24-bookworm AS build
+
+WORKDIR /app
+COPY package.json package-lock.json ./
+COPY native ./native
+COPY packages ./packages
+RUN npm ci
+COPY . .
+RUN npm run package
+
 FROM node:24-bookworm
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -39,16 +51,9 @@ RUN apt-get update \
 
 WORKDIR /app
 
-COPY --chown=weaver:weaver package.json package-lock.json ./
-COPY --chown=weaver:weaver native ./native
-COPY --chown=weaver:weaver packages ./packages
-USER weaver
-RUN npm ci
-
-COPY --chown=weaver:weaver . .
-RUN npm run package
-
-USER root
+COPY --from=build --chown=weaver:weaver /app/out/dyad-linux-x64 /app/out/dyad-linux-x64
+COPY --chown=weaver:weaver control-plane/drizzle /app/control-plane/drizzle
+COPY --chown=weaver:weaver docker/gascity-entrypoint.sh /app/docker/gascity-entrypoint.sh
 RUN chmod 755 /app/docker/gascity-entrypoint.sh
 
 ENV DISPLAY=:99 \

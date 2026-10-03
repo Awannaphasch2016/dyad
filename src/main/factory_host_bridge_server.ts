@@ -118,7 +118,10 @@ export function createFactoryHostBridgeServer(options: {
       if (request.headers.origin !== undefined) {
         throw new FactoryHostError("Origin requests are not allowed", 403);
       }
-      const machine = tokenMatches(request.headers.authorization, options.token);
+      const machine = tokenMatches(
+        request.headers.authorization,
+        options.token,
+      );
       const sessionToken = request.headers.authorization?.startsWith("Bearer ")
         ? request.headers.authorization.slice(7)
         : "";
@@ -144,7 +147,11 @@ export function createFactoryHostBridgeServer(options: {
           if (!machine) {
             throw new FactoryHostError("Unauthorized", 401);
           }
-          const row = database.select().from(apps).where(eq(apps.id, appId)).get();
+          const row = database
+            .select()
+            .from(apps)
+            .where(eq(apps.id, appId))
+            .get();
           if (!row) throw new FactoryHostError("App not found", 404);
           if (row.ownerType !== "org" || !row.ownerId) {
             throw new FactoryHostError("App is not in an organization", 409);
@@ -178,7 +185,11 @@ export function createFactoryHostBridgeServer(options: {
           .from(apps)
           .where(eq(apps.id, appId))
           .get();
-        if (!owned || owned.ownerType !== "org" || owned.ownerId !== caller.orgId) {
+        if (
+          !owned ||
+          owned.ownerType !== "org" ||
+          owned.ownerId !== caller.orgId
+        ) {
           throw new FactoryHostError("Not found", 404);
         }
         if (request.method === "GET" && !questionId) {

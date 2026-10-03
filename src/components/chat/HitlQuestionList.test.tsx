@@ -33,7 +33,9 @@ describe("HITL question list", () => {
       screen.getByLabelText("Answer plan-approve"),
       "approved",
     );
-    await userEvent.click(screen.getByRole("button", { name: "Submit answer" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Submit answer" }),
+    );
     expect(onAnswer).toHaveBeenCalledWith("q-plan", "approved");
   });
 

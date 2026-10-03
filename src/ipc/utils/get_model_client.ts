@@ -895,11 +895,17 @@ function getRegularModelClient(
       };
     }
     case "bedrock": {
-      // AWS Bedrock supports API key authentication using AWS_BEARER_TOKEN_BEDROCK
-      // See: https://sdk.vercel.ai/providers/ai-sdk-providers/amazon-bedrock#api-key-authentication
+      // IAM env wins over a stored bearer token. createAmazonBedrock uses
+      // bearer auth whenever apiKey is non-empty, including an expired token
+      // saved in user settings. An empty apiKey selects SigV4.
+      const accessKeyId = runtimeEnv("AWS_ACCESS_KEY_ID");
+      const secretAccessKey = runtimeEnv("AWS_SECRET_ACCESS_KEY");
+      const useIam = Boolean(accessKeyId && secretAccessKey);
       const provider = createAmazonBedrock({
-        apiKey: apiKey,
-        region: getEnvVar("AWS_REGION") || "us-east-1",
+        apiKey: useIam ? "" : apiKey,
+        accessKeyId: useIam ? accessKeyId : undefined,
+        secretAccessKey: useIam ? secretAccessKey : undefined,
+        region: runtimeEnv("AWS_REGION") || "us-east-1",
         ...getModelClientFetchOption(),
       });
       return {
@@ -957,6 +963,13 @@ function getRegularModelClient(
       );
     }
   }
+}
+
+function runtimeEnv(name: string): string | undefined {
+  if (Object.prototype.hasOwnProperty.call(process.env, name)) {
+    return process.env[name]?.trim() || undefined;
+  }
+  return getEnvVar(name)?.trim() || undefined;
 }
 
 function getProviderApiKeyForRequest(

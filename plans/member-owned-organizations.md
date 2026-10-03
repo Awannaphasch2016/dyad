@@ -85,11 +85,11 @@ No database migration. No new IPC channel. The iPad bridge session slot stays as
 
 ## Risks
 
-| Risk | Likelihood | Impact | Mitigation |
-| --- | --- | --- | --- |
-| Clerk already created the organization before the 405, so the name looks taken on retry | Medium | Low | Pick a new name, or select the organization if it is already in the menu |
-| The list call returns more than the creator | Low | Low | Match `user_id` and require `org:admin` before the PATCH |
-| A member expects the new organization to contain the parent organization's apps | Medium | Medium | The menu switches to an empty organization. Apps stay where they were created |
+| Risk                                                                                    | Likelihood | Impact | Mitigation                                                                    |
+| --------------------------------------------------------------------------------------- | ---------- | ------ | ----------------------------------------------------------------------------- |
+| Clerk already created the organization before the 405, so the name looks taken on retry | Medium     | Low    | Pick a new name, or select the organization if it is already in the menu      |
+| The list call returns more than the creator                                             | Low        | Low    | Match `user_id` and require `org:admin` before the PATCH                      |
+| A member expects the new organization to contain the parent organization's apps         | Medium     | Medium | The menu switches to an empty organization. Apps stay where they were created |
 
 ## Assumptions
 

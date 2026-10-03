@@ -46,6 +46,22 @@ passwords/tokens are required by the compose example and are never build
 arguments or image contents. Avoid placing them in files committed to source
 control.
 
+## Sign-in and the browser URL
+
+`CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `WEWEBPLUS_DATABASE_URL`, and
+`WEWEBPLUS_SECRETS_KEY` are passed through at runtime the same way. With the
+Clerk pair set, the UI requires sign-in; with the database URL as well, shared
+org accounts are on. Leave them unset for an ungated local app.
+
+`DYAD_BROWSER_BRIDGE=1` makes the packaged app also serve its own renderer on
+`127.0.0.1:${DYAD_BROWSER_BRIDGE_PORT:-8372}` with a `window.electron` that
+talks to the main process over a websocket. That is the same UI the Xvfb
+window shows, reachable from any browser. Put a tunnel (for example
+`cloudflared tunnel --url http://127.0.0.1:8373`) in front of that port and add
+the tunnel hostname to the Clerk instance's allowed origins. On a host where
+the Gas City supervisor already owns `8372`, set `DYAD_BROWSER_BRIDGE_PORT`
+to something else. The port stays on loopback; never publish it directly.
+
 To stop the deployment:
 
 ```sh
@@ -53,3 +69,13 @@ docker compose -f compose.gascity.yml down
 ```
 
 Omit `-v` to retain user data and projects.
+
+## Continuous delivery
+
+Pushes to `cursor/browser-dyad-ui-bbea` run `.github/workflows/gascity-rollout.yml` after `ci.yml` succeeds for that commit. The workflow can also be started with `workflow_dispatch`. GitHub Actions only SSHs to the host, using the `EC2_SSH_KEY` secret synced from Doppler project `dyad`, config `preview`. It does not copy the rest of that config.
+
+On the host, `/usr/local/sbin/gascity-rollout` reads a Doppler service token for project `dyad`, config `prd`, from `/etc/doppler/dyad-preview.token`, and a second token from `/etc/doppler/aws-dev.token` (project `aws`, config `dev`). It writes a root-only env file and calls the Dagger module in `deploy/gascity`. Dagger uses the host Docker socket to run `scripts/gascity/rollout.sh` in the host namespaces. That script fast-forwards `/opt/gascity/weaver-plus`, tags the running `weaver-plus:gascity` image as `weaver-plus:gascity-previous`, then runs `docker compose -f compose.gascity.yml up --build -d` with project name `weaver-plus`. There is no `-v` and no container registry.
+
+The bridge settings are fixed in that env file: `DYAD_BROWSER_BRIDGE=1`, `DYAD_BROWSER_BRIDGE_PORT=8373`, and `WEAVER_PROJECTS_DIR=/opt/gascity/projects`. The same file passes `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION` (`ap-southeast-1`). When both IAM variables are set, the Bedrock client signs with SigV4 and does not send a bearer token saved in user settings. `/opt/gascity/projects` stays bind-mounted at `/home/weaver/dyad-apps`. The named volume `weaver-plus_weaver-plus-user-data` stays mounted at `/home/weaver/.config`.
+
+If the new container does not become healthy, listen on `8373`, or show both organization members their existing apps on `main`, the script tags `weaver-plus:gascity-previous` back to `weaver-plus:gascity` and runs `docker compose up -d --no-build --force-recreate`. A later rollout does not create an app.

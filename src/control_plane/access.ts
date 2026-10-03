@@ -1,9 +1,6 @@
 import { verifyToken } from "@clerk/backend";
 import type { AdminRoleId } from "@/lib/adminAccess";
-import {
-  clerkCanInvite,
-  roleFromClerkMembership,
-} from "@/lib/adminAccess";
+import { clerkCanInvite, roleFromClerkMembership } from "@/lib/adminAccess";
 import { roleHasPermission } from "@/auth/permissions";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import type { AccountOwner } from "./owner";

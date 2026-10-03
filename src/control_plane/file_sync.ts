@@ -1,8 +1,10 @@
 import fs from "node:fs";
+import path from "node:path";
 import log from "electron-log";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { apps } from "@/db/schema";
+import { gitService } from "@/ipc/services/git_service";
 import { gitClone, gitPush, gitSetRemoteUrl } from "@/ipc/utils/git_utils";
 import { getDyadAppPath } from "@/paths/paths";
 import { getControlPlaneDb } from "./db";
@@ -22,6 +24,12 @@ export async function githubTokenFor(
   return decryptSecret(row.ciphertext);
 }
 
+async function ensureGitRepository(appPath: string): Promise<void> {
+  if (fs.existsSync(path.join(appPath, ".git"))) return;
+  fs.mkdirSync(appPath, { recursive: true });
+  await gitService.initRepoWithInitialCommit({ path: appPath });
+}
+
 export async function ensureProjectFiles(app: {
   path: string;
   githubOrg: string | null;
@@ -30,21 +38,28 @@ export async function ensureProjectFiles(app: {
   ownerId: string | null;
 }): Promise<boolean> {
   const appPath = getDyadAppPath(app.path);
-  if (fs.existsSync(appPath)) return true;
-  if (!app.githubOrg || !app.githubRepo || !app.ownerType || !app.ownerId) {
-    return false;
+  if (fs.existsSync(path.join(appPath, ".git"))) return true;
+  if (
+    !fs.existsSync(appPath) &&
+    app.githubOrg &&
+    app.githubRepo &&
+    app.ownerType &&
+    app.ownerId
+  ) {
+    const token = await githubTokenFor({
+      type: app.ownerType,
+      id: app.ownerId,
+    });
+    if (!token) return false;
+    await gitClone({
+      path: appPath,
+      url: `https://github.com/${app.githubOrg}/${app.githubRepo}.git`,
+      accessToken: token,
+      singleBranch: false,
+    });
+    return true;
   }
-  const token = await githubTokenFor({
-    type: app.ownerType,
-    id: app.ownerId,
-  });
-  if (!token) return false;
-  await gitClone({
-    path: appPath,
-    url: `https://github.com/${app.githubOrg}/${app.githubRepo}.git`,
-    accessToken: token,
-    singleBranch: false,
-  });
+  await ensureGitRepository(appPath);
   return true;
 }
 

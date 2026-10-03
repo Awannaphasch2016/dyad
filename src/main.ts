@@ -20,6 +20,10 @@ import {
   startFactoryHostBridgeFromEnv,
   stopFactoryHostBridge,
 } from "./main/factory_host_bridge_server";
+import {
+  startBrowserBridgeFromEnv,
+  stopBrowserBridge,
+} from "./main/browser_bridge";
 import dotenv from "dotenv";
 import { updateElectronApp, UpdateSourceType } from "update-electron-app";
 import log from "electron-log";
@@ -394,6 +398,7 @@ dotenv.config();
 
 // Register IPC handlers before app is ready
 registerIpcHandlers();
+startBrowserBridgeFromEnv();
 
 // Decide the git directory depending on environment
 function resolveLocalGitDirectory() {
@@ -1792,6 +1797,7 @@ app.on("before-quit", (event) => {
 // IMPORTANT: This handler must be synchronous because Electron's EventEmitter
 // does not await async callbacks — the returned Promise would be silently ignored.
 app.on("will-quit", () => {
+  stopBrowserBridge();
   stopFactoryHostBridge();
   stopClaudeProcesses();
   logLifecycle("app:will-quit");

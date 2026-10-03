@@ -1,0 +1,102 @@
+# Roll the Gas City EC2 host forward after CI passes for this commit.
+#
+# workflow_run only fires from the default branch, so this workflow triggers
+# on a push to the Gas City branch and waits until ci.yml succeeds for the
+# same SHA. GitHub Actions SSHs with the Doppler-synced EC2_SSH_KEY and does
+# not receive the rest of the Doppler config. The host runs doppler and Dagger.
+name: Gas City rollout
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Commit SHA to roll out. Defaults to the branch tip.
+        required: false
+        type: string
+  push:
+    branches:
+      - cursor/browser-dyad-ui-bbea
+
+permissions:
+  contents: read
+  actions: read
+  checks: read
+
+concurrency:
+  group: gascity-rollout
+  cancel-in-progress: false
+
+jobs:
+  rollout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Resolve commit
+        id: target
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_COMMIT: ${{ inputs.commit }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$INPUT_COMMIT" ]; then
+            sha="$INPUT_COMMIT"
+          else
+            sha="$GITHUB_SHA"
+          fi
+          if ! [[ "$sha" =~ ^[0-9a-fA-F]{7,40}$ ]]; then
+            echo "Refusing commit that is not a hex sha" >&2
+            exit 2
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 5400))
+          while true; do
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "CI did not succeed for $TARGET_SHA within 90 minutes" >&2
+              exit 1
+            fi
+            json="$(gh run list --repo "$GITHUB_REPOSITORY" --commit "$TARGET_SHA" --workflow ci.yml --limit 20 --json databaseId,status,conclusion,headSha)"
+            decision="$(printf '%s' "$json" | jq -r '
+              if any(.[]; .conclusion == "success") then "success"
+              elif any(.[]; .status == "queued" or .status == "in_progress" or .status == "waiting" or .status == "pending" or .status == "requested") then "wait"
+              elif length > 0 then "fail"
+              else "wait"
+              end
+            ')"
+            echo "CI for $TARGET_SHA: $decision"
+            if [ "$decision" = "success" ]; then
+              exit 0
+            fi
+            if [ "$decision" = "fail" ]; then
+              echo "CI did not succeed for $TARGET_SHA" >&2
+              exit 1
+            fi
+            sleep 30
+          done
+
+      - name: Roll out over SSH
+        env:
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          set -euo pipefail
+          keyfile="$RUNNER_TEMP/gascity-ec2"
+          python3 scripts/gascity/write_ssh_key.py "$keyfile"
+          ssh -i "$keyfile" \
+            -o UserKnownHostsFile="$GITHUB_WORKSPACE/.github/gascity_known_hosts" \
+            -o StrictHostKeyChecking=yes \
+            -o IdentitiesOnly=yes \
+            -o ConnectTimeout=20 \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=20 \
+            ubuntu@13.251.216.187 \
+            sudo /usr/local/sbin/gascity-rollout "$TARGET_SHA"
