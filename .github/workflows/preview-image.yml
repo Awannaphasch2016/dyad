@@ -99,6 +99,9 @@ jobs:
       id-token: write
       pull-requests: read
     steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -141,6 +144,13 @@ jobs:
           fi
           echo "number=${number}" >> "$GITHUB_OUTPUT"
           echo "Pull request ${number}"
+
+      - name: Attach the Neon preview branch
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          PR: ${{ steps.pr.outputs.number }}
+        run: node deploy/preview/controller.mjs attach --pr "$PR" --out /tmp/preview-runtime.sh
 
       - name: Log in to Namespace with the GitHub token
         uses: namespacelabs/nscloud-setup@v0
@@ -188,6 +198,9 @@ jobs:
           {
             printf 'pr=%q\nsha=%q\nimage=%q\nbranch=%q\nrepo_url=%q\n' \
               "$PR" "$SHA" "$IMAGE" "$BRANCH" "$REPO_URL"
+            if [[ -s /tmp/preview-runtime.sh ]]; then
+              cat /tmp/preview-runtime.sh
+            fi
             printf '%s\n' \
               'set -euo pipefail' \
               'repo=/workspaces/weaver-plus' \

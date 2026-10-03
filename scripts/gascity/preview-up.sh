@@ -70,6 +70,31 @@ else
   printf 'PREVIEW_IMAGE=%s\n' "$image" >> "$env_file"
 fi
 
+# Optional runtime values. Empty values are left untouched. The values are
+# not printed.
+upsert_env() {
+  local key="$1"
+  local value="${!key-}"
+  if [[ -z "$value" ]]; then
+    return 0
+  fi
+  grep -v "^${key}=" "$env_file" > "${env_file}.tmp" || true
+  printf '%s=%s\n' "$key" "$value" >> "${env_file}.tmp"
+  mv "${env_file}.tmp" "$env_file"
+  chmod 600 "$env_file"
+}
+for key in \
+  WEWEBPLUS_DATABASE_URL \
+  WEWEBPLUS_SECRETS_KEY \
+  CLERK_PUBLISHABLE_KEY \
+  CLERK_SECRET_KEY \
+  AWS_ACCESS_KEY_ID \
+  AWS_SECRET_ACCESS_KEY \
+  AWS_REGION
+do
+  upsert_env "$key"
+done
+
 if [[ "${PREVIEW_SKIP_TUNNEL:-}" != "1" ]]; then
   if ! command -v node >/dev/null 2>&1; then
     echo "node 18+ is required to create the Cloudflare tunnel" >&2
