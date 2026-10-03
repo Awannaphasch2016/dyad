@@ -97,3 +97,20 @@ jobs:
           REMOTE
           )"
           devbox exec Wewebplus-ci -- bash -lc "printf '%s' '${payload}' | base64 -d | bash"
+
+      - name: Prepare a key so the tunnel token can move without entering git
+        run: |
+          set -euo pipefail
+          payload="$(base64 -w0 <<'REMOTE'
+          set -euo pipefail
+          mkdir -p "$HOME/.config/ns"
+          chmod 700 "$HOME/.config/ns"
+          key="$HOME/.config/ns/tunnel-move.pem"
+          if [[ ! -f "$key" ]]; then
+            openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$key"
+            chmod 600 "$key"
+          fi
+          openssl pkey -in "$key" -pubout
+          REMOTE
+          )"
+          devbox exec Wewebplus-ci -- bash -lc "printf '%s' '${payload}' | base64 -d | bash"
