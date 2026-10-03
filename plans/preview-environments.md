@@ -4,6 +4,24 @@
 >
 > A preview is one commit, running as its own Dyad container, its own Gas City city, and its own database branch. A worktree is where a developer edits. It is not the running environment.
 
+## Decisions recorded 2026-10-03
+
+These choices replace the open host and hostname questions below. Approving this revision still does not authorize phase 1.
+
+| Choice                     | Decision                                                                                                                                                                                                                                                                                   |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Preview machine            | Namespace Devbox `Wewebplus-preview`, Linux, Docker Engine 29.3.0. It is not the production EC2. `docker version` on that Devbox printed a server.                                                                                                                                         |
+| How long it stays up       | [Devbox lifecycle](https://namespace.so/docs/devbox/managing): Developer 4 hours, Team 5 hours, Business 24 hours. The limit applies while the Devbox is in use. When it stops, the preview URL stops. Files return when the Devbox starts again. A task marker does not pass the maximum. |
+| Public name                | `https://pr-<n>.anakwannaphaschaiyong.com`. The zone is Active on Cloudflare. DNS records are created by the API token, not by hand. Namespace's own `namespaced.app` address is not the Clerk origin. A custom domain on Namespace is an enterprise feature.                              |
+| Database parent            | Neon project `Wewebplus-hitl`, region `aws-ap-southeast-1`, default branch `Dev`. Child branches are `preview-pr-<n>`. Production stays on Supabase.                                                                                                                                       |
+| Secrets                    | Doppler project `dyad`, config `preview`, inheriting `aws` / `dev`. The live EC2 token file stays on config `prd` and is not replaced with this preview token.                                                                                                                             |
+| Automation credential      | `NAMESPACE_API_TOKEN` can activate, fetch, and list Devboxes. Phase 1 does not call it. The proof runs in the Devbox terminal, or on a GitHub-hosted runner.                                                                                                                               |
+| Cloudflare names as stored | `CLOUDFLARE_API_TOKEN_`, `CLOUDFLARE_ZONE_ID_`, and `CLOUDFLARE_ACCOUNT_ID`. The first two names include a trailing underscore. Code reads those stored names.                                                                                                                             |
+| Vercel                     | `VERCEL_TOKEN` can list a project named `dyad`. It does not list `hitl-web`. Phase 6 resolves that project before it writes a preview env.                                                                                                                                                 |
+| Production checkout        | The measurement table below is from 10:22 UTC. The host checkout was later fast-forwarded to `328143c6` without an image rebuild. The running image is still `8a85cc4a5d1d`.                                                                                                               |
+
+Compose project `preview-<pr>` is still the isolation name on that Docker engine. It is not a Kubernetes Namespace. Kubernetes remains phase 7 and stays off the production EC2.
+
 ## Current infrastructure
 
 Production is one Ubuntu 22.04 host, `13.251.216.187`, 4 CPUs, 15Gi RAM, 29G disk, **5.1G free**. There is no Kubernetes (`kubectl` absent, `kubelet` and `k3s` inactive). There is no container registry.
@@ -38,20 +56,20 @@ git commit
          gc            new city directory, its own Dolt
          caller        HTTP client of http://dyad:32100 until gc itself speaks /v1
          volumes       config, projects, city
-       route https://pr-<pr>.preview.example → that Dyad's browser bridge
+       route https://pr-<pr>.anakwannaphaschaiyong.com → that Dyad's browser bridge
   → Neon branch preview-pr-<pr>     this preview's WEWEBPLUS_DATABASE_URL
   → Vercel preview of hitl-web      same Neon URI
 production EC2 stays on Supabase, host gc, and the existing tunnel
 ```
 
-"Namespace" means the Compose project name `preview-<pr>`. It becomes a Kubernetes Namespace only in the last phase, and only on a cluster that is not this production host. That cluster does not exist today.
+The Docker engine is the Namespace Devbox `Wewebplus-preview`. Compose project `preview-<pr>` is the per-PR isolation name on that engine. A Kubernetes Namespace is phase 7 only, on a cluster that is not the production host. That cluster does not exist today.
 
 Previews do not build on the production disk. GitHub Actions has the disk for the image build. The preview host only pulls a digest.
 
 ## Infrastructure changes
 
 - A container registry. GitHub Actions pushes `weaver-plus@sha256:…`. Production continues to build locally until a separate rollout change, which is not this plan.
-- A preview host with Docker and at least 40G disk, 12G free before the first pull. It is not `13.251.216.187`.
+- The preview host is the Namespace Devbox `Wewebplus-preview`. It already has Docker. It is not `13.251.216.187`. The first image pull still needs enough free space for the digest; phase 3 checks that on the Devbox before `compose pull`. The Devbox shuts down at the plan maximum in the decisions table, so a preview URL does not outlive that maximum.
 - One Neon **project** for the control-plane schema (`wewebplus`). Its parent branch is empty apart from migrations. Each preview is a child branch. Production Supabase is not that parent.
 - Compose project per preview, bridge network, no host network. Factory port 32100 is not published. The browser-bridge port is published only to the preview host's proxy.
 - A controller: pure lifecycle types plus a GitHub Action. It does not read a worktree and it does not SSH to production.
@@ -80,7 +98,7 @@ The transition function is pure and lives in `deploy/preview/transition.ts`. It 
 
 - **Create.** PR opened or labeled `preview`. CI builds and pushes the digest if that SHA is not in the registry. Neon creates `preview-pr-<n>` from the empty parent. Controller writes the row, renders the Compose project, starts it, waits until the browser bridge answers and the factory port returns 401 without a token.
 - **Update.** A new commit on the same PR builds a new digest and recreates only that Compose project. The Neon branch, volumes, hostname, and token stay. Control-plane migrations run on Dyad startup, against that branch only (`src/control_plane/db.ts`).
-- **Test.** Open `https://pr-<n>.preview.example`. Sign in. Create an app. The files appear on that preview's projects volume. Insert a HITL row and read it on the matching Vercel preview. Confirm the row is absent on the Neon parent, on every other preview, and on production Supabase.
+- **Test.** Open `https://pr-<n>.anakwannaphaschaiyong.com`. Sign in. Create an app. The files appear on that preview's projects volume. Insert a HITL row and read it on the matching Vercel preview. Confirm the row is absent on the Neon parent, on every other preview, and on production Supabase.
 - **Destroy.** PR closed, merged, or unlabeled. `compose down -v` for that project only, delete the Neon branch, delete the DNS name, delete the Vercel preview env override. Production is not a target of this command.
 
 ## Deployment
@@ -123,16 +141,16 @@ Production `/etc/doppler/dyad-preview.token` and `/etc/doppler/aws-dev.token` st
 
 Discovery is Docker DNS plus env vars. There is no VPN and no API gateway.
 
-| Hop                           | Address                                                      | Published                                                 |
-| ----------------------------- | ------------------------------------------------------------ | --------------------------------------------------------- |
-| Browser → preview UI          | `https://pr-<n>.preview.example` → proxy → container `:8373` | yes, TLS at the proxy. WebSocket path `/dyad-browser-ipc` |
-| Caller or preview `gc` → Dyad | `http://dyad:32100`                                          | no                                                        |
-| Dyad → Neon                   | the branch URI, TLS                                          | outbound                                                  |
-| Vercel → Neon                 | the same URI                                                 | outbound                                                  |
-| Dyad → Bedrock                | `bedrock-runtime` in `ap-southeast-1`                        | outbound                                                  |
-| Preview → production EC2      | none                                                         | —                                                         |
+| Hop                           | Address                                                                | Published                                                 |
+| ----------------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------- |
+| Browser → preview UI          | `https://pr-<n>.anakwannaphaschaiyong.com` → proxy → container `:8373` | yes, TLS at the proxy. WebSocket path `/dyad-browser-ipc` |
+| Caller or preview `gc` → Dyad | `http://dyad:32100`                                                    | no                                                        |
+| Dyad → Neon                   | the branch URI, TLS                                                    | outbound                                                  |
+| Vercel → Neon                 | the same URI                                                           | outbound                                                  |
+| Dyad → Bedrock                | `bedrock-runtime` in `ap-southeast-1`                                  | outbound                                                  |
+| Preview → production EC2      | none                                                                   | —                                                         |
 
-The proxy is a TLS terminator on the preview host (Caddy or a named Cloudflare tunnel). It is not the production quick tunnel, and it is not nginx on the production box.
+The proxy is a named Cloudflare tunnel on the Devbox. The API token creates the tunnel and the `pr-<n>` CNAME. It is not the production quick tunnel, and it is not nginx on the production box.
 
 ## Data and state isolation
 
@@ -197,7 +215,7 @@ GitHub Actions builds `Dockerfile.gascity` and pushes the digest. The production
 
 ### Phase 3 — one preview on the preview host
 
-Compose project `preview-14` from the digest of one open PR. Own volumes. `WEAVER_BASE_URL=http://dyad:32100`. A new `gc` city, not a copy. Hostname `pr-14.preview.example`. Production listeners unchanged.
+Compose project `preview-14` on Devbox `Wewebplus-preview`, from the digest of one open PR. Own volumes. `WEAVER_BASE_URL=http://dyad:32100`. A new `gc` city, not a copy. Hostname `pr-14.anakwannaphaschaiyong.com`. The URL lasts until the Devbox hits the maximum in the decisions table. Production listeners unchanged.
 
 ### Phase 4 — Neon branch
 
@@ -384,7 +402,7 @@ sequenceDiagram
   CI->>Ctrl: Create preview-14 at this digest
   Ctrl->>NS: Compose up, volumes, route
   NS-->>Ctrl: Bridge healthy, factory port returns 401
-  Ctrl-->>GH: URL https://pr-14.preview.example
+  Ctrl-->>GH: URL https://pr-14.anakwannaphaschaiyong.com
 ```
 
 Maps to implementation: the workflow posts the commit status. Compose project name is `preview-14`. The digest is `weaver-plus@sha256:…`. Neon parent is the new control-plane project, not Supabase.
@@ -492,7 +510,7 @@ Ada's worktree is `~/src/dyad-ada` on branch `cursor/formula-graph-canvas-9e7a`,
 - CI stores `weaver-plus@sha256:<ada>` and `weaver-plus@sha256:<bao>`.
 - The preview host runs Compose projects `preview-14` and `preview-15`. Each has its own Dyad, its own `gc` city, its own caller, and its own volumes.
 - Neon has `preview-pr-14` and `preview-pr-15`, both migrated from the empty parent, not from Supabase.
-- Ada opens `https://pr-14.preview.example`. Bao opens `https://pr-15.preview.example`. Production stays on its quick tunnel and on Supabase.
+- Ada opens `https://pr-14.anakwannaphaschaiyong.com`. Bao opens `https://pr-15.anakwannaphaschaiyong.com`. Production stays on its quick tunnel and on Supabase.
 - Ada's caller posts a HITL question to `http://dyad:32100` inside `preview-14` only. Bao's Vercel preview does not list it. Production Vercel does not list it.
 - Ada creates an app. The directory is on volume `pr-14-projects`. `/opt/gascity/projects` does not gain that directory.
 - Ada pushes again. Only `preview-14` pulls the new digest. Bao's URL still serves Bao's digest. Ada's uncommitted worktree files are in neither container.
