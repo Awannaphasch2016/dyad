@@ -1,10 +1,53 @@
 # Development environment outside production EC2
 
 > Written 2026-10-03 from a read-only look at the live host and from PR #17 (`plans/preview-environments.md`, commit `6976bf8b`). No production process, file, image, or volume was changed.
+>
+> Revised the same day. The first proof is two containers on one Docker network, on a machine that is already not the production EC2. A second EC2 is not that proof.
 
-## Recommendation
+## Revision: smallest proof
 
-Yes. Develop on a second machine. Leave the current EC2 as production.
+PR #17 does not create a second EC2. Phase 3 adds compose project `preview-14` on the production host. That keeps the disk limit: the host has 5.1G free, and the last image unpack failed there.
+
+A second EC2 would move the disk use off production. It is more than the first proof needs. Docker bridge networking on any other machine that already has Docker is enough. A laptop is enough. Production is not logged into for the proof.
+
+The two services are not independent yet, for one code reason. `startFactoryHostBridgeFromEnv` listens on `127.0.0.1` only. A second container has its own loopback, so it cannot open that port. The minimum code change is an env var for the bind address, default `127.0.0.1`, set to `0.0.0.0` inside the dev container. The port stays unpublished on the host. Production's default stays loopback, so this change does not by itself move production.
+
+```text
+docker network dev
+  dyad          listens 0.0.0.0:32100 inside the container
+  caller        GET/POST http://dyad:32100 with the dev bearer token
+```
+
+No host network. No published port 32100. No Vercel. No second database. No new EC2.
+
+The running production process `/opt/gascity/gc supervisor run` does not call Dyad. Its environment has no `WEAVER_BASE_URL`. The `gc` binary does not contain that name or `/v1/apps/`. The name exists only in `/opt/gascity/bridge.env`, and nothing on the host reads that file. Port 32100 had no established clients at check time. So "point production Gas City at an external Dyad" is not a one-line switch until some client actually reads the URL.
+
+The first caller is a small container that speaks the HTTP API Dyad already serves. Packaging `gc` into a container does not create that call. Wiring `gc` to the API is later work, still off the production host.
+
+Vercel `hitl-web` is the question board. It is not the Dyad UI. The Dyad UI is the browser bridge in the Dyad container. Leave Vercel out of the first proof.
+
+Do not edit production `bridge.env`, `weaver.env`, or `WEAVER_BASE_URL`. Do not aim production Gas City at the test Dyad. That mixes live factory state with a test backend, and today it would not move traffic anyway.
+
+After the two containers pass, the later migration is:
+
+1. Teach the real Gas City client to use `WEAVER_BASE_URL`, still in a dev container.
+2. Run that client against the external Dyad until a factory question round-trips.
+3. In a planned window, change the production client URL from `http://127.0.0.1:32100` to the external Dyad, with the old value saved for an immediate revert.
+4. Stop the production Dyad container only after that client is confirmed. Gas City stays on the production EC2. This cutover does not rebuild the production image.
+
+### What changes in the PR #17 plan
+
+- Replace phase 3 (compose project on this EC2) and phase 5 (Kubernetes on this EC2) with the two-container proof above.
+- Leave the registry, the Neon parent, and the preview controller until that proof is green.
+- The call direction is the Gas City client to Dyad. There is no `GAS_CITY_HOST_BRIDGE_URL`.
+- Dev does not mount `/opt/gascity/projects` and does not use the production city.
+- Vercel stays a later HITL check, not the Dyad frontend.
+
+The sections below are the earlier full-host proposal. They describe a durable dev host, which is optional after the proof, not the way to start.
+
+## Earlier proposal: a full dev host
+
+A durable second machine was the earlier recommendation. The revision above replaces it as the first step. Leave the current EC2 as production either way.
 
 PR #17 does not deploy anything. It is one plan file. Its phase 3 still puts `preview-14` on this same EC2, on port 8383, and its phase 5 assumes a Kubernetes cluster on that host. Neither exists. The live host has 5.1G free of 29G, one host-networked Dyad container, and a Gas City process that has been running on the host since 2026-09-24. Building or adding a second stack there is how the last rollout filled the disk.
 
