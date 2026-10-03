@@ -1,0 +1,91 @@
+# One preview Compose project. Run it on the Namespace Devbox, not the
+# production EC2, and not with scripts/gascity/rollout.sh.
+#
+#   scripts/gascity/preview-up.sh 20 \
+#     ghcr.io/awannaphasch2016/dyad@sha256:8e5be8469cd4a7caaa1611e41e9906b4f5a8ddb7b87bf6a9b0dcad101296789a
+#
+# Factory port 32100 is not published. The browser bridge stays on
+# 127.0.0.1:8373 inside the Dyad network namespace; cloudflared joins that
+# namespace when the tunnel profile is enabled. The city volume is created
+# empty. This file does not mount /opt/gascity/city.
+
+services:
+  dyad:
+    image: ${PREVIEW_IMAGE:?Set PREVIEW_IMAGE to a ghcr.io digest}
+    networks: [preview]
+    shm_size: 1gb
+    env_file:
+      - ${PREVIEW_ENV_FILE:?Set PREVIEW_ENV_FILE}
+    environment:
+      GAS_CITY_HOST_BRIDGE_ENABLED: "true"
+      GAS_CITY_HOST_BRIDGE_HOST: "0.0.0.0"
+      GAS_CITY_HOST_BRIDGE_PORT: "32100"
+      DYAD_BROWSER_BRIDGE: "1"
+      DYAD_BROWSER_BRIDGE_PORT: "8373"
+    volumes:
+      - config:/home/weaver/.config
+      - projects:/home/weaver/dyad-apps
+      - city:/city
+    healthcheck:
+      start_period: 180s
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      test:
+        - CMD-SHELL
+        - >-
+          curl --fail --silent http://127.0.0.1:6080/vnc.html >/dev/null
+          && test "$$(curl --silent --output /dev/null --write-out '%{http_code}'
+          http://127.0.0.1:32100/v1/apps/0/factory-state)" = "401"
+    restart: unless-stopped
+
+  caller:
+    profiles: ["check"]
+    image: curlimages/curl:8.11.1
+    networks: [preview]
+    depends_on:
+      dyad:
+        condition: service_healthy
+    env_file:
+      - ${PREVIEW_ENV_FILE:?Set PREVIEW_ENV_FILE}
+    environment:
+      WEAVER_BASE_URL: http://dyad:32100
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        set -eu
+        echo "caller target: $$WEAVER_BASE_URL"
+        unauth=$$(curl -s -o /dev/null -w '%{http_code}' "$$WEAVER_BASE_URL/v1/apps/1/factory-state")
+        echo "without token: $$unauth"
+        test "$$unauth" = "401"
+        auth=$$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $$GAS_CITY_HOST_BRIDGE_TOKEN" "$$WEAVER_BASE_URL/v1/apps/1/factory-state")
+        echo "with token: $$auth"
+        test "$$auth" != "401"
+        test "$$auth" != "000"
+
+  cloudflared:
+    profiles: ["tunnel"]
+    image: cloudflare/cloudflared:2026.9.3
+    network_mode: service:dyad
+    depends_on:
+      dyad:
+        condition: service_healthy
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    command:
+      - tunnel
+      - --no-autoupdate
+      - run
+    restart: unless-stopped
+
+networks:
+  preview:
+    name: preview-${PREVIEW_PR:?Set PREVIEW_PR}
+
+volumes:
+  config:
+    name: pr-${PREVIEW_PR:?Set PREVIEW_PR}-config
+  projects:
+    name: pr-${PREVIEW_PR:?Set PREVIEW_PR}-projects
+  city:
+    name: pr-${PREVIEW_PR:?Set PREVIEW_PR}-city
