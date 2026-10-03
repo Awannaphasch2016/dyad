@@ -1,7 +1,8 @@
 "use client";
 
-import { UserButton } from "@clerk/nextjs";
+import { useAuth } from "@clerk/nextjs";
 import { useCallback, useEffect, useState } from "react";
+import { gasCityFetch, gasCityPaths } from "@/lib/gascity/browser_client";
 
 type Question = {
   id: string;
@@ -16,6 +17,7 @@ type Question = {
 type Payload = {
   caller: { displayName: string; roleId: string | null };
   questions: Question[];
+  electronInvoked?: boolean;
 };
 
 function roleLabel(roleId: string): string {
@@ -23,13 +25,19 @@ function roleLabel(roleId: string): string {
 }
 
 export function QuestionBoard() {
+  const { getToken } = useAuth();
   const [payload, setPayload] = useState<Payload | null>(null);
   const [error, setError] = useState("");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [pendingId, setPendingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const response = await fetch("/api/questions", { cache: "no-store" });
+    const token = await getToken();
+    const response = await gasCityFetch(
+      gasCityPaths.questions,
+      undefined,
+      token,
+    );
     if (response.status === 401) {
       window.location.assign("/sign-in");
       return;
@@ -41,7 +49,7 @@ export function QuestionBoard() {
     }
     setError("");
     setPayload(body);
-  }, []);
+  }, [getToken]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -56,11 +64,12 @@ export function QuestionBoard() {
     if (!body) return;
     setPendingId(questionId);
     setError("");
-    const response = await fetch(`/api/questions/${questionId}/answers`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ body }),
-    });
+    const token = await getToken();
+    const response = await gasCityFetch(
+      gasCityPaths.answer(questionId),
+      { method: "POST", body: JSON.stringify({ body }) },
+      token,
+    );
     const result = (await response.json()) as { error?: string };
     setPendingId(null);
     if (!response.ok) {
@@ -72,22 +81,19 @@ export function QuestionBoard() {
   }
 
   return (
-    <main>
-      <header>
-        <div>
-          <h1>Wewebplus</h1>
-          <p className="muted">
-            {payload
-              ? `${payload.caller.displayName}${
-                  payload.caller.roleId
-                    ? ` · ${roleLabel(payload.caller.roleId)}`
-                    : ""
-                }`
-              : "Loading questions"}
-          </p>
-        </div>
-        <UserButton />
-      </header>
+    <section>
+      <p className="muted">
+        {payload
+          ? `${payload.caller.displayName}${
+              payload.caller.roleId
+                ? ` · ${roleLabel(payload.caller.roleId)}`
+                : ""
+            }`
+          : "Loading questions"}
+      </p>
+      <p className="muted">
+        Gates are part of DYAD. Answers go to GasCity, which continues the run.
+      </p>
       {error ? <p className="error">{error}</p> : null}
       {payload && payload.questions.length === 0 ? (
         <p className="muted">No questions yet.</p>
@@ -133,6 +139,6 @@ export function QuestionBoard() {
           ) : null}
         </article>
       ))}
-    </main>
+    </section>
   );
 }
