@@ -1,0 +1,10 @@
+{
+  "name": "gascity-browser",
+  "private": true,
+  "type": "module",
+  "description": "GasCity HTTP listener for the DYAD browser. Electron is not imported.",
+  "scripts": {
+    "test": "node --test server.test.mjs",
+    "start": "node server.mjs"
+  }
+}
