@@ -2,7 +2,7 @@
 
 > Written 2026-10-03. The Singapore Bedrock chat works on the running container, but that container is still the previous image. The image rebuild stops because `/etc/doppler/dyad-preview.token` is rejected.
 >
-> **Revised 2026-10-03 after a second read of the live host.** Do not add the 8GiB gate, and do not run `compose up --build` on this EC2 to land the next image. Free space is 5.1G of 29G. The spike that filled the disk is the on-host build stage (`npm ci` and `npm run package`), not the finished 2.88GB image and not PRs 15 or 16. The implementation to follow is [plans/offhost-image-pull.md](offhost-image-pull.md): GitHub Actions builds `Dockerfile.gascity`, pushes a digest, and the host only pulls. The preview token is still the 58-byte file that Doppler rejects. Do not replace it until the pull-only script is the script the host will execute. The measurements below stay as the record of why the on-host build stopped.
+> **Revised 2026-10-03 after a second read of the live host.** Do not add the 8GiB gate, and do not run `compose up --build` on this EC2 to land the next image. Free space is 5.1G of 29G. The spike that filled the disk is the on-host build stage (`npm ci` and `npm run package`), not the finished 2.88GB image and not PRs 15 or 16. The implementation to follow is [plans/offhost-image-pull.md](offhost-image-pull.md): a Dagger module builds `Dockerfile.gascity` and publishes a digest, and the host only pulls. The digest is not passed into `Gascity.rollout`. The preview token is still the 58-byte file that Doppler rejects. Do not replace it until the pull-only script is the script the host will execute. The measurements below stay as the record of why the on-host build stopped.
 
 ## Summary
 

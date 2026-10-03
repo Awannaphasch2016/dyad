@@ -3,6 +3,8 @@
 > Written 2026-10-03 from the repo at `ad0138a5` and a read-only SSH to `13.251.216.187` at 10:39 UTC. Nothing on the host was changed: no image build, no pull, no token write, no `compose` command, no prune.
 >
 > This replaces the on-host rebuild in [plans/preview-token-rollout.md](preview-token-rollout.md). It is the production promotion change that [plans/preview-environments.md](https://github.com/Awannaphasch2016/dyad/blob/cursor/preview-infra-plan-9e7a/plans/preview-environments.md) (PR 17) explicitly left for later, and it does not wait on the two-container proof in [plans/dev-environment-external.md](https://github.com/Awannaphasch2016/dyad/blob/cursor/dev-env-external-9e7a/plans/dev-environment-external.md) (PR 18). Approving this write-up does not authorize a build, a registry push, or an SSH write.
+>
+> **Locked 2026-10-03.** Dagger owns `build`, `verifyImage`, and `publish`. Production rollout stays bash on EC2 and leaves Dagger. `Gascity.rollout` is not extended and is not the agent entry point. No Doppler token, AWS key, or registry token is pasted into chat or committed. The publish job uses the Actions `GITHUB_TOKEN` with `packages: write`. The host read token is created later, installed only on the host, and is not part of writing this plan.
 
 ## 1. Implementation plan
 
@@ -43,49 +45,58 @@ The running container can answer Bedrock because it was recreated with IAM env a
 
 ### Target state
 
-GitHub Actions builds `Dockerfile.gascity` on the runner and pushes an immutable digest. The EC2 host never receives a build context. `rollout.sh` pulls that digest, checks it, and only then retags and recreates the existing Compose project with `--no-build`. The same volumes, the same host network, the same Doppler env file, and the same `gc` process stay.
+A new Dagger module builds `Dockerfile.gascity` with `dag.container().build`, checks the image, and publishes an immutable digest. GitHub Actions is the event and permission shell around `dagger call publish`. The EC2 host never receives a build context. `host-wrapper.sh` execs `rollout.sh` directly. That script pulls the digest, checks it, and only then retags and recreates the existing Compose project with `--no-build`. The same volumes, the same host network, the same Doppler env file, and the same `gc` process stay.
 
 ```text
+agent or laptop: dagger call verify-image
 push to cursor/browser-dyad-ui-bbea
   → ci.yml
-  → GitHub-hosted runner: docker build -f Dockerfile.gascity
-  → ghcr.io/awannaphasch2016/weaver-plus@sha256:<64 hex>
-  → SSH writes /run/gascity-image-ref and calls the existing sbin wrapper
-  → host-wrapper.sh reads the ref, downloads Doppler, calls Dagger
+  → publish job: dagger call publish
+       build Dockerfile.gascity
+       verifyImage
+       ghcr.io/awannaphasch2016/weaver-plus@sha256:<64 hex>
+  → rollout job writes /run/gascity-image-ref and SSHes
+  → sbin wrapper fast-forwards and execs host-wrapper.sh
+  → host-wrapper.sh reads the ref, downloads Doppler, execs rollout.sh
   → rollout.sh pulls the digest, then compose up -d --no-build
   → healthy container, new image id, previous tag still 8a85cc4a5d1d
 ```
+
+`verifyImage` is the function an agent runs before a push. `publish` fails closed without a push credential. `rollout` is not a Dagger function. Calling today's `Gascity.rollout` deploys this host, so the new module does not take a Docker socket and does not know `/opt/gascity`.
 
 There is no second host, no Neon branch, no Kubernetes namespace, and no change to `gc`. PR 17 keeps production on `gascity-rollout.yml` and says the registry is not pointed at production yet. This plan is that missing pointer, and only that. PR 18 says to leave the registry until a two-container proof is green. This plan does not start that proof. The registry is the production image store. The proof can use the same repository later.
 
 ### Architecture changes required
 
-- The build context moves from `/opt/gascity/weaver-plus` on EC2 to the GitHub-hosted runner. `Dockerfile.gascity` stays the definition of the image.
+- The build context moves from `/opt/gascity/weaver-plus` on EC2 to the runner that executes the new Dagger module. `Dockerfile.gascity` stays the only build definition. The Python SDK does not reimplement `npm ci` or `npm run package`.
+- The new module is separate from `deploy/gascity`. `Gascity.rollout` keeps its current signature and is removed from the pull path. It mounts `/` with `--privileged --pid=host --network=host` and sets `CACHEBUST` to the current time. The new `build` function does not copy `CACHEBUST`. Its `dagger.json` pins an engine version the same way `deploy/gascity/dagger.json` pins `v0.21.10`.
 - `compose up --build` leaves the production path. The compose file keeps a `build:` block so a developer laptop can still build. The host script is no longer allowed to pass `--build`.
+- `ci.yml` stays the lint and unit-test workflow. This module does not start Postgres, Dyad, or `gc`. `gc` is a host process, and the factory bridge listens on `127.0.0.1` only.
 - A digest file is the contract across the installed sbin wrapper, because that wrapper forwards only the commit. The repo script, which git does update, reads the file.
 - Rollback stays a local retag of `weaver-plus:gascity-previous`. The registry is not asked to serve the previous image during a failed health check. The previous image is already on disk.
 - The 8GiB pre-build gate is not added. A pull floor of 4GiB free on `/` is added **before** `docker tag` and **before** the rollback trap. 4GiB is enough for a layer-sharing pull (about one new 388MB app layer) and for one fully new 2.88GB image beside the current one, given 5.1G free. It is not enough to mean "build here." Below 4GiB the script exits 2 and the container keeps serving.
 
 ### Components to add, modify, remove, or reuse
 
-| Piece                                                    | Action                                 | Why                                                                                                                                                                   |
-| -------------------------------------------------------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Dockerfile.gascity`                                     | Reuse                                  | Already the runtime image. No secret `ENV` and no `ARG` for keys                                                                                                      |
-| `.dockerignore`                                          | Reuse                                  | Already keeps `.env` out of the build context                                                                                                                         |
-| `docker/gascity-entrypoint.sh`                           | Reuse                                  | Runtime only. Reads `NOVNC_PASSWORD` from the container env and unsets it                                                                                             |
-| `compose.gascity.yml`                                    | Modify the comment and the image field | `image: ${WEAVER_IMAGE:-weaver-plus:gascity}` so a pulled name can be selected. Keep `build:` for laptops. Production always passes `--no-build`                      |
-| `.github/workflows/gascity-rollout.yml`                  | Modify                                 | Add an `image` job that builds and pushes. The SSH step writes `/run/gascity-image-ref` before calling sbin. Permissions gain `packages: write` on the build job only |
-| `scripts/gascity/host-wrapper.sh`                        | Modify                                 | Inner path reads and deletes the image-ref file before Doppler. Passes the ref to Dagger. Refuses if the file is missing. Does not grow the env allowlist             |
-| `deploy/gascity/src/gascity/main.py`                     | Modify                                 | `rollout(commit, image_ref, docker)` validates the ref and appends it to the chroot argv                                                                              |
-| `scripts/gascity/rollout.sh`                             | Modify                                 | Replace `up --build` with pull, verify, then `up -d --no-build --force-recreate`. Free-space check before any tag                                                     |
-| `scripts/gascity/rollout.test.sh`                        | Modify                                 | Assert order: space check, pull, digest check, then `docker tag`, then trap, then `--no-build`, and no `up --build`                                                   |
-| `scripts/gascity/write_rollout_env.py`                   | Reuse                                  | Registry credential must not join `ALLOW`                                                                                                                             |
-| `use_singapore_bedrock_settings.py`, `verify_bridge.mjs` | Reuse                                  | Still run after healthy, inside the new container, against the same volume                                                                                            |
-| `/usr/local/sbin/gascity-rollout`                        | Reuse as-is                            | It already execs the repo script after fast-forward. Do not depend on editing it. A later one-line `exec ... "$@"` is optional and not required                       |
-| `/etc/gascity/ghcr-read.token`                           | Add on the host, not in git            | Read token for `docker login ghcr.io`. Mode 600, root. Removed from the process environment after login                                                               |
-| `weaver-plus:gascity-before-once`                        | Keep                                   | Not a cache source                                                                                                                                                    |
-| Dagger engine container                                  | Reuse                                  | Still the thing that chroots into `rollout.sh`. It does not build the app image                                                                                       |
-| PR 15 `services/gascity-browser` and PR 16 `hitl-web`    | Out of this change                     | They do not run in this container. Pulling a Dyad image does not connect Vercel `/v1/runs` to `startFactoryRun`                                                       |
+| Piece                                                    | Action                                 | Why                                                                                                                                                               |
+| -------------------------------------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Dockerfile.gascity`                                     | Reuse                                  | Already the runtime image. No secret `ENV` and no `ARG` for keys                                                                                                  |
+| `.dockerignore`                                          | Reuse                                  | Already keeps `.env` out of the build context                                                                                                                     |
+| `docker/gascity-entrypoint.sh`                           | Reuse                                  | Runtime only. Reads `NOVNC_PASSWORD` from the container env and unsets it                                                                                         |
+| `compose.gascity.yml`                                    | Modify the comment and the image field | `image: ${WEAVER_IMAGE:-weaver-plus:gascity}` so a pulled name can be selected. Keep `build:` for laptops. Production always passes `--no-build`                  |
+| New Dagger module, sibling of `deploy/gascity`           | Add                                    | `build` uses `dag.container().build` on `Dockerfile.gascity`. `verifyImage` checks the image. `publish` pushes the digest. No socket, no host path, no `rollout`  |
+| `.github/workflows/gascity-rollout.yml`                  | Modify                                 | Publish job runs `dagger call publish` with `packages: write` and no `EC2_SSH_KEY`. Rollout job has `EC2_SSH_KEY` and writes `/run/gascity-image-ref` before sbin |
+| `scripts/gascity/host-wrapper.sh`                        | Modify                                 | Inner path reads and deletes the image-ref file before Doppler, then execs `rollout.sh`. It stops calling `dagger call rollout`. Refuses if the file is missing   |
+| `deploy/gascity/src/gascity/main.py`                     | Leave                                  | Do not add `image_ref`. The privileged chroot leaves the production path                                                                                          |
+| `scripts/gascity/rollout.sh`                             | Modify                                 | Replace `up --build` with pull, verify, then `up -d --no-build --force-recreate`. Free-space check before any tag                                                 |
+| `scripts/gascity/rollout.test.sh`                        | Modify                                 | Assert order: space check, pull, digest check, then `docker tag`, then trap, then `--no-build`, and no `up --build`                                               |
+| `scripts/gascity/write_rollout_env.py`                   | Reuse                                  | Registry credential must not join `ALLOW`                                                                                                                         |
+| `use_singapore_bedrock_settings.py`, `verify_bridge.mjs` | Reuse                                  | Still run after healthy, inside the new container, against the same volume                                                                                        |
+| `/usr/local/sbin/gascity-rollout`                        | Reuse as-is                            | It already execs the repo script after fast-forward. Do not depend on editing it. A later one-line `exec ... "$@"` is optional and not required                   |
+| `/etc/gascity/ghcr-read.token`                           | Add on the host, not in git            | Read token for `docker login ghcr.io`. Mode 600, root. Removed from the process environment after login                                                           |
+| `weaver-plus:gascity-before-once`                        | Keep                                   | Not a cache source                                                                                                                                                |
+| Dagger engine container on EC2                           | Leave running, drop from the pull path | `dagger-engine-v0.21.10` stays installed. The pull no longer chroots through it. Do not delete it on the first pull                                               |
+| PR 15 `services/gascity-browser` and PR 16 `hitl-web`    | Out of this change                     | They do not run in this container. Pulling a Dyad image does not connect Vercel `/v1/runs` to `startFactoryRun`                                                   |
 
 Nothing in `src/` has to change for the pull itself. The image built from the current branch already contains the `useIam` client. That is the point of shipping a new digest.
 
@@ -101,17 +112,17 @@ PR 17's preview controller, if it is built later, can pull from the same GHCR re
 
 ### Dependencies and external services
 
-| Service                                     | Role in this change                                                  | Already used                                                                                                                                                                                        |
-| ------------------------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GitHub Actions `ubuntu-latest`              | `docker build` and `docker push`                                     | CI already runs here. The image job is new                                                                                                                                                          |
-| GHCR `ghcr.io/awannaphasch2016/weaver-plus` | Stores the digest                                                    | No. Chosen because the git remote is this GitHub repo and the host has no registry login. The script accepts a full `name@sha256:` ref, so ECR can replace GHCR without another host-script rewrite |
-| Docker Hub / Node image `node:24-bookworm`  | Base of both Dockerfile stages. Pulled on the **runner**, not on EC2 | The current image was built from Node 24.21.0                                                                                                                                                       |
-| Doppler `dyad`/`preview` and `aws`/`dev`    | Runtime env file, unchanged                                          | Yes. Preview token is currently rejected                                                                                                                                                            |
-| Supabase                                    | `WEWEBPLUS_DATABASE_URL` at container start                          | Yes. No schema change                                                                                                                                                                               |
-| Amazon Bedrock `ap-southeast-1`             | Outbound from the container after recreate                           | Yes. The new image is what makes IAM win over a saved bearer                                                                                                                                        |
-| Clerk                                       | Keys passed through at runtime                                       | Yes                                                                                                                                                                                                 |
-| Cloudflare quick tunnel                     | Unchanged process on the host                                        | Yes                                                                                                                                                                                                 |
-| Dagger                                      | Invokes `rollout.sh`                                                 | Yes. Not the image builder                                                                                                                                                                          |
+| Service                                     | Role in this change                                                    | Already used                                                                                                                                                                                        |
+| ------------------------------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GitHub Actions `ubuntu-latest`              | Thin launcher: wait for `ci.yml`, then `dagger call publish`, then SSH | CI already runs here. The publish job is new. Runner choice stays in YAML                                                                                                                           |
+| GHCR `ghcr.io/awannaphasch2016/weaver-plus` | Stores the digest                                                      | No. Chosen because the git remote is this GitHub repo and the host has no registry login. The script accepts a full `name@sha256:` ref, so ECR can replace GHCR without another host-script rewrite |
+| Docker Hub / Node image `node:24-bookworm`  | Base of both Dockerfile stages. Pulled on the **runner**, not on EC2   | The current image was built from Node 24.21.0                                                                                                                                                       |
+| Doppler `dyad`/`preview` and `aws`/`dev`    | Runtime env file, unchanged                                            | Yes. Preview token is currently rejected                                                                                                                                                            |
+| Supabase                                    | `WEWEBPLUS_DATABASE_URL` at container start                            | Yes. No schema change                                                                                                                                                                               |
+| Amazon Bedrock `ap-southeast-1`             | Outbound from the container after recreate                             | Yes. The new image is what makes IAM win over a saved bearer                                                                                                                                        |
+| Clerk                                       | Keys passed through at runtime                                         | Yes                                                                                                                                                                                                 |
+| Cloudflare quick tunnel                     | Unchanged process on the host                                          | Yes                                                                                                                                                                                                 |
+| Dagger image module                         | `build`, `verifyImage`, `publish` on the runner                        | The host module exists and only chroots `rollout.sh`. The image functions are new and do not call that chroot                                                                                       |
 
 The runner must be able to pull `node:24-bookworm`. The EC2 host must be able to pull `ghcr.io`. It already has outbound HTTPS for Doppler, Bedrock, Supabase, and the Dagger registry. No inbound port is added. GHCR is not opened on the host firewall as a listener.
 
@@ -141,13 +152,13 @@ Fixed in the env file, as today: `DYAD_BROWSER_BRIDGE=1`, `DYAD_BROWSER_BRIDGE_P
 
 New, and not a container variable:
 
-| Name                            | Where                                                                           | Rule                                                                                                                                                        |
-| ------------------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Image ref                       | `/run/gascity-image-ref`, written by the SSH step, deleted by `host-wrapper.sh` | Must match `^[a-z0-9./_-]+@sha256:[0-9a-f]{64}$`. A tag without `@sha256:` is refused, including `weaver-plus:gascity`                                      |
-| Registry read token             | `/etc/gascity/ghcr-read.token`, mode 600, root                                  | Used only for `docker login ghcr.io`. Unset after login. Never passed to Dagger, never written to `/run/gascity-rollout.env`, never a compose interpolation |
-| `GITHUB_TOKEN` on the build job | GitHub Actions, `packages: write`                                               | Pushes the digest. Does not SSH                                                                                                                             |
+| Name                              | Where                                                                           | Rule                                                                                                                                                        |
+| --------------------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Image ref                         | `/run/gascity-image-ref`, written by the SSH step, deleted by `host-wrapper.sh` | Must match `^[a-z0-9./_-]+@sha256:[0-9a-f]{64}$`. A tag without `@sha256:` is refused, including `weaver-plus:gascity`                                      |
+| Registry read token               | `/etc/gascity/ghcr-read.token`, mode 600, root                                  | Used only for `docker login ghcr.io`. Unset after login. Never passed to Dagger, never written to `/run/gascity-rollout.env`, never a compose interpolation |
+| `GITHUB_TOKEN` on the publish job | GitHub Actions, `packages: write`                                               | The only publish credential. Created by Actions. Not pasted into chat. The rollout job does not receive it                                                  |
 
-`docker build` gets no `--build-arg` and no Doppler env. `.dockerignore` keeps `.env` out. After the push, `docker image inspect` on the runner must show that `Config.Env` has no `AWS_`, `CLERK_`, `WEWEBPLUS_`, `NOVNC_PASSWORD`, or `GAS_CITY_HOST_BRIDGE_TOKEN`. Those appear only when Compose starts the container.
+`dagger call publish` gets no `--build-arg` and no Doppler env. `.dockerignore` keeps `.env` out. `verifyImage` fails the publish when `Config.Env` contains `AWS_`, `CLERK_`, `WEWEBPLUS_`, `NOVNC_PASSWORD`, or `GAS_CITY_HOST_BRIDGE_TOKEN`. Those names appear only when Compose starts the container. An agent can run `dagger call verify-image` with no registry token and no Doppler token. `publish` fails closed when `packages: write` is absent.
 
 The preview token and the aws token stay in `/etc/doppler/`. This plan does not print them and does not commit them. The replacement preview token that was probed earlier is not on the host.
 
@@ -185,9 +196,9 @@ Do not reclaim the 2.9G snapshot as part of the first pull. `docker builder prun
 ### Deployment and runtime considerations
 
 - Concurrency `gascity-rollout` with `cancel-in-progress: false` stays. A second push waits. Do not start a manual wrapper while that group holds the host.
-- The build job does not SSH. A failed build does not touch EC2.
-- The runner disk is ephemeral and is the place `npm ci` is allowed to fill. Do not point BuildKit at the EC2 socket.
-- `debian:bookworm-slim` stays on the host because Dagger's chroot uses it. Do not prune it.
+- The publish job does not SSH. A failed `verifyImage` or `publish` does not touch EC2. `EC2_SSH_KEY` is absent from that job.
+- The runner disk is ephemeral and is the place `npm ci` is allowed to fill. Do not point BuildKit or the Dagger engine at the EC2 socket.
+- `debian:bookworm-slim` and `dagger-engine-v0.21.10` stay on the host. The pull path no longer uses the chroot, so neither image is a reason to keep calling Dagger on EC2. Do not prune them on the first pull.
 - Healthcheck in the Dockerfile covers noVNC and a 401 from `127.0.0.1:32100` with no token. It does **not** cover 8373. `rollout.sh` still opens a socket to 8373 before it declares success. Losing the 8373 check would mark a container healthy while the tunnel target is down.
 - `start_period` is 90s. The wait loop is 48 times 5s. Keep both.
 - User `weaver` uid 10001 is created in the image. The volume is already owned for that uid. A new image that changes the uid would hide the settings. This plan does not change the uid.
@@ -212,15 +223,15 @@ There is no database migration and no volume migration. Rollback of a bad image 
 
 **Phase 0. This document.** No host change. The live image id remains `8a85cc4a5d1d`.
 
-**Phase 1. Teach the workflow to publish a digest.** New job in `gascity-rollout.yml`:
+**Phase 1. Publish a digest from Dagger.** New module and a publish job in `gascity-rollout.yml`:
 
 - checkout the SHA
-- `docker build -f Dockerfile.gascity -t ghcr.io/awannaphasch2016/weaver-plus:<12-char sha>`
-- push by digest
-- fail the job if `Config.Env` contains a secret name
-- push the same SHA twice and assert the second run does not rebuild when the digest exists
+- `dagger call verify-image` checks uid 10001, the secret-name ban on `Config.Env`, and a throwaway container that returns 401 on the factory port with no token
+- `dagger call publish` pushes `ghcr.io/awannaphasch2016/weaver-plus@sha256:<64 hex>` using `GITHUB_TOKEN`
+- the same SHA a second time does not produce a second digest
+- the job has `packages: write` and does not have `EC2_SSH_KEY`
 
-The job does not SSH. Production does not pull yet. This phase can run from the PR branch by `workflow_dispatch` only if the workflow file on that branch is what GitHub uses. `on.push` is limited to `cursor/browser-dyad-ui-bbea`, so a PR branch does not roll production by itself.
+The job does not SSH. Production does not pull yet. `on.push` is limited to `cursor/browser-dyad-ui-bbea`, so a PR branch does not roll production by itself. An agent runs `dagger call verify-image` before the push. That call does not publish and does not SSH.
 
 **Phase 2. Make `rollout.sh` refuse to build.**
 
@@ -235,9 +246,9 @@ Order inside the script, after the existing env requirements and fast-forward:
 
 `rollout.test.sh` greps the script text for that order. It still does not call Docker or Doppler.
 
-**Phase 3. Thread the ref through the wrapper and Dagger.** `host-wrapper.sh` inner path: require `/run/gascity-image-ref`, validate, delete the file, then the existing Doppler download, then `dagger call rollout --commit= --image-ref=`. `Gascity.rollout` adds the string argument and passes it to `rollout.sh`. A missing file exits 2 before Doppler and before Dagger.
+**Phase 3. Thread the ref through the wrapper, not through Dagger.** `host-wrapper.sh` inner path: require `/run/gascity-image-ref`, validate, delete the file, download Doppler, then exec `rollout.sh` with the commit and the ref. Remove the `dagger call rollout` line. Do not change `Gascity.rollout`. A missing file exits 2 before Doppler and before `rollout.sh`.
 
-The SSH step becomes: write the ref, then `sudo /usr/local/sbin/gascity-rollout <sha>`. The sbin script's single-argument forward is fine because the ref is in the file, not in argv.
+The rollout job writes the ref, then runs `sudo /usr/local/sbin/gascity-rollout <sha>`. The sbin script's single-argument forward is fine because the ref is in the file, not in argv.
 
 **Phase 4. Credentials, then one pull.** Install the two host files in the order in the migration section. Dispatch one rollout. Do not `down -v`. Do not `docker image rm` the three named tags. Do not prune builders in this phase.
 
@@ -262,6 +273,8 @@ Stop after phase 5. Do not start PR 17's preview host, PR 18's bridge network, o
 | `docker builder prune` is run early and someone treats it as required        | Unrelated, but it can surprise a later on-host build                                          | Not in the script. Optional only after phase 5                                                                                           |
 | Secret printed in the Actions log                                            | `docker login --password-stdin` can leak if echoed                                            | The workflow must not `echo` the token. The host file is mode 600. Logs print the digest and image id only                               |
 | Floating tag `weaver-plus:latest` is what the host pulls                     | A later push moves the tag under a running rollout                                            | The host pulls `@sha256:` only                                                                                                           |
+| An agent calls `Gascity.rollout` or a future `ci` function that includes it  | The privileged chroot recreates the production container                                      | The image module has no socket and no `rollout`. Agent entry is `verifyImage`                                                            |
+| `CACHEBUST` is copied onto the new build function                            | Every agent run repeats `npm ci`                                                              | The new `build` function does not set `CACHEBUST`. The engine version is pinned                                                          |
 
 Assumptions: the runner can build this Dockerfile (the same file already built on the host once); GHCR is reachable from the EC2 security group for outbound 443; the first digest is built from a commit that contains `c1826ec3`'s client; the volume owner stays uid 10001.
 
@@ -291,7 +304,7 @@ flowchart LR
   Dev[Developer push]
   GH[GitHub branch cursor/browser-dyad-ui-bbea]
   CI[ci.yml]
-  Build[Actions image job]
+  Build[dagger call publish]
   GHCR[GHCR digest]
   Doppler[Doppler dyad/preview and aws/dev]
   EC2[EC2 13.251.216.187]
@@ -317,9 +330,9 @@ flowchart LR
   EC2 --> Clerk
 ```
 
-This is the production system, not a preview environment. `Build` and `GHCR` are the new boxes. Every other box is already in the path: the workflow already SSHes, Doppler already feeds the env file, the tunnel already targets 8373, `gc` already calls 32100, and the container already calls Supabase, Bedrock, and Clerk.
+This is the production system, not a preview environment. `Build` is the new Dagger publish function on a GitHub runner, and `GHCR` is new. Every other box is already in the path: the workflow already SSHes, Doppler already feeds the env file, the tunnel already targets 8373, `gc` already calls 32100, and the container already calls Supabase, Bedrock, and Clerk.
 
-`Build` must not be drawn inside EC2. That mis-drawing is the current failure. PR 17's preview host, Neon, and Vercel are not in this picture. Vercel `hitl-web` keeps reading Supabase on its own and is not a hop in the image pull.
+`Build` must not be drawn inside EC2. That mis-drawing is the current failure. The EC2 Dagger engine is not this box. PR 17's preview host, Neon, and Vercel are not in this picture. Vercel `hitl-web` keeps reading Supabase on its own and is not a hop in the image pull.
 
 ## 3. Container diagram
 
@@ -328,8 +341,8 @@ Deployable units and where they run. "Container" here means a runtime unit, incl
 ```mermaid
 flowchart TB
   subgraph runner [GitHub-hosted runner]
-    Job[image job]
-    DK[docker build Dockerfile.gascity]
+    Job[publish job]
+    DK[dagger build and verifyImage]
     Job --> DK
   end
   subgraph registry [GHCR]
@@ -338,8 +351,7 @@ flowchart TB
   subgraph ec2 [EC2 host network]
     Sbin["/usr/local/sbin/gascity-rollout"]
     Wrap[host-wrapper.sh]
-    Dag[dagger-engine container]
-    Roll[rollout.sh in a chroot]
+    Roll[rollout.sh]
     Dyad["weaver-plus container"]
     GC2[gc supervisor process]
     Tun[cloudflared process]
@@ -348,8 +360,7 @@ flowchart TB
   end
   DK --> Dig
   Sbin --> Wrap
-  Wrap --> Dag
-  Dag --> Roll
+  Wrap --> Roll
   Dig --> Roll
   Roll --> Dyad
   Dyad --> Vol
@@ -358,17 +369,17 @@ flowchart TB
   Proxy --> Dyad
 ```
 
-| Unit                       | Where                    | Exists              | This change                                                |
-| -------------------------- | ------------------------ | ------------------- | ---------------------------------------------------------- |
-| `image` job                | GitHub runner            | No                  | New. The only place `npm ci` runs                          |
-| GHCR digest                | GitHub                   | No                  | New                                                        |
-| sbin wrapper               | EC2, not in git          | Yes, 56 lines       | Unchanged. Forwards the commit, then execs the repo script |
-| `host-wrapper.sh`          | Repo, run on EC2         | Yes                 | Reads the image-ref file                                   |
-| Dagger engine              | EC2 container            | Yes                 | Still chroots. Does not build                              |
-| `rollout.sh`               | Repo, run in that chroot | Yes                 | Pulls instead of `up --build`                              |
-| `weaver-plus`              | EC2, host network        | Yes, `8a85cc4a5d1d` | Same Compose project, new image id, same mounts            |
-| `gc`, cloudflared, `:8390` | EC2 host processes       | Yes                 | Not recreated                                              |
-| Victoria, nginx            | EC2                      | Yes                 | Not in this flow                                           |
+| Unit                       | Where              | Exists              | This change                                                   |
+| -------------------------- | ------------------ | ------------------- | ------------------------------------------------------------- |
+| publish job                | GitHub runner      | No                  | New. Runs `dagger call publish`. The only place `npm ci` runs |
+| GHCR digest                | GitHub             | No                  | New                                                           |
+| sbin wrapper               | EC2, not in git    | Yes, 56 lines       | Unchanged. Forwards the commit, then execs the repo script    |
+| `host-wrapper.sh`          | Repo, run on EC2   | Yes                 | Reads the image-ref file, then execs `rollout.sh`             |
+| Dagger engine              | EC2 container      | Yes                 | Stays installed. Leaves the pull path                         |
+| `rollout.sh`               | Repo, run as root  | Yes                 | Pulls instead of `up --build`                                 |
+| `weaver-plus`              | EC2, host network  | Yes, `8a85cc4a5d1d` | Same Compose project, new image id, same mounts               |
+| `gc`, cloudflared, `:8390` | EC2 host processes | Yes                 | Not recreated                                                 |
+| Victoria, nginx            | EC2                | Yes                 | Not in this flow                                              |
 
 `gc` is outside Docker on purpose. Host networking is why its `127.0.0.1:32100` is the container's listen address. A bridge network would break that without the bind-address change PR 18 describes, and this plan does not make that change.
 
@@ -383,11 +394,14 @@ flowchart TB
     Ref["/run/gascity-image-ref"]
     HW[host-wrapper.sh]
     Env[write_rollout_env.py]
-    Gpy[Gascity.rollout]
     RS[rollout.sh]
     Login[docker login and pull]
     Tag[tag previous then gascity]
     Up[compose up --no-build]
+  end
+  subgraph imageMod [image module on the runner]
+    Verify[verifyImage]
+    Publish[publish digest]
   end
   subgraph process [packaged dyad]
     Entry[gascity-entrypoint.sh]
@@ -398,11 +412,12 @@ flowchart TB
     Model[get_model_client.ts useIam]
     Settings[use_singapore_bedrock_settings.py]
   end
-  WF --> Ref
+  WF --> Verify
+  Verify --> Publish
+  Publish --> Ref
   Ref --> HW
   HW --> Env
-  HW --> Gpy
-  Gpy --> RS
+  HW --> RS
   RS --> Login
   Login --> Tag
   Tag --> Up
@@ -415,13 +430,13 @@ flowchart TB
   Up --> Settings
 ```
 
-`Entry`, `Main`, `Bridge`, `API`, `Run`, and the settings rewrite already exist in the repo and, except `useIam`, already exist in the running image. `Model` exists in the checkout (`get_model_client.ts` sets `apiKey: ""` when both AWS keys are present) and is absent from `app.asar` today. `WF`'s image job, `Ref`, and `Login` are new. `RS` and `HW` and `Gpy` change. `Env` stays.
+`Entry`, `Main`, `Bridge`, `API`, `Run`, and the settings rewrite already exist in the repo and, except `useIam`, already exist in the running image. `Model` exists in the checkout (`get_model_client.ts` sets `apiKey: ""` when both AWS keys are present) and is absent from `app.asar` today. `Verify`, `Publish`, `Ref`, and `Login` are new. `RS` and `HW` change. `Env` stays. `Gascity.rollout` is not in this path.
 
 `Run` is `startFactoryRun` in `src/main/factory_host_service.ts`. It hashes `gas-city-run:` and dispatches `requestedChatMode: "local-agent"`. The pull does not alter that function. PR 16's `/v1/runs` returns `electronInvoked: false` and does not call it. Shipping this image does not close that gap.
 
 ## 5. Class diagram
 
-The delivery types are small because the implementation is a bash script plus one Dagger method. These are the abstractions the code has to grow. They are not Electron classes and not `src/version_preview/`.
+The delivery types are a new image module plus the existing bash rollout. They are not Electron classes and not `src/version_preview/`. `Gascity.rollout` stays the host-only chroot and does not gain `imageRef`.
 
 ```mermaid
 classDiagram
@@ -448,9 +463,10 @@ classDiagram
     previous
     beforeOnce
   }
-  class Gascity {
-    preflight(docker)
-    rollout(commit, imageRef, docker)
+  class ImageModule {
+    build()
+    verifyImage()
+    publish()
   }
   class RunningContainer {
     id
@@ -458,23 +474,24 @@ classDiagram
     mounts
     health
   }
+  ImageModule --> ImageRef
   RolloutRequest --> ImageRef
-  Gascity --> RolloutRequest
   RolloutRequest --> EnvAllowlist
   RolloutRequest --> RegistryCredential
   RolloutRequest --> HostImages
   HostImages --> RunningContainer
 ```
 
-| Type                 | Maps to                                                        | Status                                |
-| -------------------- | -------------------------------------------------------------- | ------------------------------------- |
-| `Gascity`            | `deploy/gascity/src/gascity/main.py` class `Gascity`           | Exists. `rollout` gains `image_ref`   |
-| `EnvAllowlist`       | `ALLOW` and `FIXED` in `write_rollout_env.py`                  | Exists. Unchanged                     |
-| `HostImages`         | The three `docker tag` names in `rollout.sh`                   | Exists. `beforeOnce` is not retagged  |
-| `RunningContainer`   | The `docker inspect` health and mount checks                   | Exists                                |
-| `ImageRef`           | New argument, validated in `main.py` and again in `rollout.sh` | New                                   |
-| `RegistryCredential` | `/etc/gascity/ghcr-read.token`                                 | New. Not an env-file field            |
-| `RolloutRequest`     | The pair the workflow writes: SHA plus ref file                | New as a pair. The SHA already exists |
+| Type                 | Maps to                                                    | Status                                            |
+| -------------------- | ---------------------------------------------------------- | ------------------------------------------------- |
+| `ImageModule`        | New Dagger module beside `deploy/gascity`                  | New. `build`, `verifyImage`, `publish`. No socket |
+| `Gascity`            | `deploy/gascity/src/gascity/main.py` class `Gascity`       | Exists. Left unchanged. Off the pull path         |
+| `EnvAllowlist`       | `ALLOW` and `FIXED` in `write_rollout_env.py`              | Exists. Unchanged                                 |
+| `HostImages`         | The three `docker tag` names in `rollout.sh`               | Exists. `beforeOnce` is not retagged              |
+| `RunningContainer`   | The `docker inspect` health and mount checks               | Exists                                            |
+| `ImageRef`           | Digest file, checked in `host-wrapper.sh` and `rollout.sh` | New                                               |
+| `RegistryCredential` | `/etc/gascity/ghcr-read.token`                             | New. Not an env-file field                        |
+| `RolloutRequest`     | The pair the workflow writes: SHA plus ref file            | New as a pair. The SHA already exists             |
 
 Ownership: GitHub Actions creates the digest and owns the push. The host owns the tags and the running container. Doppler owns secret values. The image owns neither.
 
@@ -490,12 +507,11 @@ sequenceDiagram
   participant S as sbin wrapper
   participant H as host-wrapper.sh
   participant D as Doppler
-  participant G as Dagger chroot
   participant RS as rollout.sh
   participant E as Docker engine
   participant C as weaver-plus container
 
-  GH->>R: docker build Dockerfile.gascity
+  GH->>R: dagger call publish
   R->>Reg: push name@sha256
   GH->>S: write /run/gascity-image-ref then gascity-rollout SHA
   S->>S: fast-forward checkout
@@ -503,8 +519,7 @@ sequenceDiagram
   H->>H: read and delete image ref
   H->>D: download dyad/preview and aws/dev
   D-->>H: JSON names
-  H->>G: dagger call rollout
-  G->>RS: chroot rollout.sh SHA ref
+  H->>RS: exec rollout.sh SHA ref
   RS->>RS: require env, ff, df at least 4GiB
   RS->>E: login, pull ref, logout
   E-->>RS: image id
@@ -534,7 +549,7 @@ sequenceDiagram
   else preview token rejected
     H->>D: secrets download
     D-->>H: Invalid Auth token
-    H-->>S: exit before Dagger
+    H-->>S: exit before rollout.sh
   end
   Note over C: still 8a85cc4a5d1d, still healthy
 ```
@@ -633,11 +648,11 @@ erDiagram
 
 A developer pushes the commit that already contains the Singapore client (`c1826ec3` and the pull-only script) to `cursor/browser-dyad-ui-bbea`. `ci.yml` goes green.
 
-The new image job on `ubuntu-latest` runs `docker build -f Dockerfile.gascity`. Inside the build stage the runner executes `npm ci` and `npm run package`. The runtime stage copies `out/dyad-linux-x64` (the layer that is 388MB on the current image), the drizzle SQL, and the entrypoint. The job pushes `ghcr.io/awannaphasch2016/weaver-plus@sha256:` plus 64 hex digits. Call that digest `NEW`. The job inspects the image config and refuses to continue if a secret name is in `Config.Env`. EC2 disk is still 5.1G free. The container is still `8a85cc4a5d1d`.
+The publish job on `ubuntu-latest` runs `dagger call publish`, which builds `Dockerfile.gascity` through `dag.container().build`. Inside the build stage the runner executes `npm ci` and `npm run package`. The runtime stage copies `out/dyad-linux-x64` (the layer that is 388MB on the current image), the drizzle SQL, and the entrypoint. `verifyImage` refuses the image when a secret name is in `Config.Env`. The function then pushes `ghcr.io/awannaphasch2016/weaver-plus@sha256:` plus 64 hex digits. Call that digest `NEW`. EC2 disk is still 5.1G free. The container is still `8a85cc4a5d1d`.
 
-The SSH step writes `ghcr.io/awannaphasch2016/weaver-plus@sha256:NEW` to `/run/gascity-image-ref` and runs `/usr/local/sbin/gascity-rollout` with the commit. The sbin script sees a clean tree, fast-forwards `/opt/gascity/weaver-plus`, and execs the repo `host-wrapper.sh`. That script reads the ref, deletes the file, downloads the two Doppler configs, and writes `/run/gascity-rollout.env` with the nine allowlisted names. It does not put the GHCR token in that file.
+The rollout job writes `ghcr.io/awannaphasch2016/weaver-plus@sha256:NEW` to `/run/gascity-image-ref` and runs `/usr/local/sbin/gascity-rollout` with the commit. The sbin script sees a clean tree, fast-forwards `/opt/gascity/weaver-plus`, and execs the repo `host-wrapper.sh`. That script reads the ref, deletes the file, downloads the two Doppler configs, and writes `/run/gascity-rollout.env` with the nine allowlisted names. It does not put the GHCR token in that file, and it does not call Dagger.
 
-Dagger chroots and runs `rollout.sh`. The script checks the env names, fast-forwards again, and reads `df`. 5.1G is above 4GiB, so it logs into GHCR, pulls `NEW`, and logs out. The pull reuses the Node, Yarn, and apt layers already stored for `8a85cc4a5d1d` when the Dockerfile base has not moved, and it unpacks a new app layer of about 388MB. It then tags `8a85cc4a5d1d` as `weaver-plus:gascity-previous`, tags `NEW` as `weaver-plus:gascity`, and runs `docker compose up -d --no-build --force-recreate`.
+`rollout.sh` checks the env names, fast-forwards again, and reads `df`. 5.1G is above 4GiB, so it logs into GHCR, pulls `NEW`, and logs out. The pull reuses the Node, Yarn, and apt layers already stored for `8a85cc4a5d1d` when the Dockerfile base has not moved, and it unpacks a new app layer of about 388MB. It then tags `8a85cc4a5d1d` as `weaver-plus:gascity-previous`, tags `NEW` as `weaver-plus:gascity`, and runs `docker compose up -d --no-build --force-recreate`.
 
 The entrypoint starts Xvfb, noVNC, and `/app/out/dyad-linux-x64/dyad` as uid 10001. The same user-data volume comes back, so the sqlite apps and the saved global model id are still there. The same projects directory comes back. The factory bridge binds `127.0.0.1:32100` and the browser bridge binds `127.0.0.1:8373`. The healthcheck sees noVNC and a 401 from port 32100. The script then connects to 8373, rewrites settings (a no-op if the bearer key is already gone), and runs `verify_bridge.mjs`.
 
