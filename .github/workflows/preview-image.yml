@@ -210,6 +210,25 @@ jobs:
               'git -C "$repo" fetch --depth 1 origin "$sha"' \
               'git -C "$repo" checkout --detach FETCH_HEAD' \
               'cd "$repo"' \
+              'state="$HOME/.local/state/wewebplus-preview"' \
+              'secrets="$state/controller.env"' \
+              'if [[ ! -f "$secrets" && -f deploy/preview/sealed.key.b64 && -f deploy/preview/sealed.env.b64 && -f "$state/controller.pem" ]]; then' \
+              '  base64 -d deploy/preview/sealed.key.b64 > "$state/sealed.key.bin"' \
+              '  base64 -d deploy/preview/sealed.env.b64 > "$state/sealed.env.bin"' \
+              '  openssl pkeyutl -decrypt -inkey "$state/controller.pem" -in "$state/sealed.key.bin" -out "$state/aes.key"' \
+              '  openssl enc -d -aes-256-cbc -pbkdf2 -pass "file:$state/aes.key" -in "$state/sealed.env.bin" -out "$secrets"' \
+              '  chmod 600 "$secrets"' \
+              '  rm -f "$state/controller.pem" "$state/sealed.key.bin" "$state/sealed.env.bin" "$state/aes.key"' \
+              '  echo "controller.env installed"' \
+              'fi' \
+              'if [[ -f "$secrets" ]]; then' \
+              '  set -a' \
+              '  source "$secrets"' \
+              '  set +a' \
+              '  node deploy/preview/controller.mjs attach --pr "$pr" --out /tmp/preview-runtime-devbox.sh' \
+              '  source /tmp/preview-runtime-devbox.sh' \
+              '  rm -f /tmp/preview-runtime-devbox.sh' \
+              'fi' \
               'PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh "$pr" "$image"'
           } > /tmp/preview-remote.sh
           payload="$(base64 -w0 /tmp/preview-remote.sh)"
