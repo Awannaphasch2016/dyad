@@ -180,7 +180,10 @@ test("preview image workflow updates the shared Devbox after publish", () => {
   assert.match(workflow, /id-token:\s*write/);
   assert.match(workflow, /namespacelabs\/nscloud-setup@v0/);
   assert.match(workflow, /devbox exec Wewebplus-ci/);
-  assert.match(workflow, /PREVIEW_SKIP_TUNNEL=1 bash scripts\/gascity\/preview-up\.sh/);
+  assert.match(
+    workflow,
+    /PREVIEW_SKIP_TUNNEL=1 bash scripts\/gascity\/preview-up\.sh/,
+  );
   assert.match(workflow, /https:\/\/pr-\$\{PR\}\.anakwannaphaschaiyong\.com/);
   assert.equal(workflow.includes("13.251.216.187"), false);
 });
