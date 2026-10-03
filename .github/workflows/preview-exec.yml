@@ -63,7 +63,7 @@ jobs:
           print("token fields:", ",".join(names))
           PY
 
-      - name: Run one command on Wewebplus-preview
+      - name: Run one command on Wewebplus-ci
         run: |
           set -euo pipefail
-          devbox exec Wewebplus-preview -- echo federated-ok
+          devbox exec Wewebplus-ci -- echo federated-ok
