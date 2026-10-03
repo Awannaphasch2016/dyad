@@ -79,6 +79,8 @@ On the host, `/usr/local/sbin/gascity-rollout` reads a Doppler service token for
 
 `.github/workflows/preview-image.yml` builds `Dockerfile.gascity` and pushes `ghcr.io/<owner>/dyad:sha-<commit>` when that tag is missing. A second run for the same commit sees the tag and does not build again. That workflow does not SSH to the production host, and the host does not pull the image.
 
+`.github/workflows/preview-exec.yml` logs in with the Namespace GitHub app and runs `echo federated-ok` on Devbox `Wewebplus-preview`. It does not start a preview and does not SSH to the production host.
+
 `compose.preview.yml` is a separate Compose project for one pull request. It pulls a `ghcr.io` digest, puts Dyad on a bridge network, and does not publish port 32100. The city volume is created empty. `scripts/gascity/preview-up.sh` refuses to run when `/opt/gascity/weaver-plus` exists, checks that the Docker root has 8GiB free, and starts project `preview-<pr>`. With `CLOUDFLARE_API_TOKEN_`, `CLOUDFLARE_ZONE_ID_`, and `CLOUDFLARE_ACCOUNT_ID` set, it creates the named tunnel and the `pr-<pr>.anakwannaphaschaiyong.com` CNAME. Those values stay in `~/.local/state/wewebplus-preview/` and are not written to git.
 
 The bridge settings are fixed in that env file: `DYAD_BROWSER_BRIDGE=1`, `DYAD_BROWSER_BRIDGE_PORT=8373`, and `WEAVER_PROJECTS_DIR=/opt/gascity/projects`. The same file passes `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION` (`ap-southeast-1`). When both IAM variables are set, the Bedrock client signs with SigV4 and does not send a bearer token saved in user settings. `/opt/gascity/projects` stays bind-mounted at `/home/weaver/dyad-apps`. The named volume `weaver-plus_weaver-plus-user-data` stays mounted at `/home/weaver/.config`.

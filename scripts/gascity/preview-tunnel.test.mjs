@@ -171,6 +171,19 @@ test("preview-up refuses bad arguments and the production checkout", () => {
   }
 });
 
+test("preview exec workflow uses GitHub federation and does not touch production", () => {
+  const workflow = readFileSync(
+    new URL("../../.github/workflows/preview-exec.yml", import.meta.url),
+    "utf8",
+  );
+  assert.match(workflow, /id-token:\s*write/);
+  assert.match(workflow, /namespacelabs\/nscloud-setup@v0/);
+  assert.match(workflow, /devbox exec Wewebplus-preview -- echo federated-ok/);
+  assert.equal(workflow.includes("EC2_SSH_KEY"), false);
+  assert.equal(workflow.includes("13.251.216.187"), false);
+  assert.equal(workflow.includes("gascity-rollout"), false);
+});
+
 test("compose preview file does not publish the factory port or mount the production city", () => {
   const compose = readFileSync(
     new URL("../../compose.preview.yml", import.meta.url),

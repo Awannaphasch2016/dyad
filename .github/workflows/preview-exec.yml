@@ -1,0 +1,69 @@
+# Prove GitHub can run one command on the preview Devbox.
+#
+# This job does not SSH, does not read the production deploy key, and does not
+# start a preview. The production host is not a target.
+name: Preview exec
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cursor/preview-bridge-proof-9e7a
+    paths:
+      - .github/workflows/preview-exec.yml
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: preview-exec-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  exec:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Log in to Namespace with the GitHub token
+        uses: namespacelabs/nscloud-setup@v0
+
+      - name: Install the Devbox CLI
+        run: |
+          set -euo pipefail
+          ver=0.0.195
+          curl -fsSL "https://get.namespace.so/packages/devbox/v${ver}/devbox_${ver}_linux_amd64.tar.gz" -o /tmp/devbox.tgz
+          mkdir -p /tmp/devbox-extract
+          tar -xzf /tmp/devbox.tgz -C /tmp/devbox-extract
+          bin="$(find /tmp/devbox-extract -type f -name devbox -print -quit)"
+          test -n "$bin"
+          sudo install -m 755 "$bin" /usr/local/bin/devbox
+          devbox version
+
+      - name: Point the Devbox CLI at the federated token
+        run: |
+          set -euo pipefail
+          token_file=""
+          if [[ -f /var/run/nsc/token.json ]]; then
+            token_file=/var/run/nsc/token.json
+          elif [[ -f "${HOME}/.config/ns/token.json" ]]; then
+            token_file="${HOME}/.config/ns/token.json"
+          else
+            echo "Namespace login did not write a token file" >&2
+            exit 1
+          fi
+          echo "NSC_TOKEN_FILE=${token_file}" >> "$GITHUB_ENV"
+          python3 - "$token_file" <<'PY'
+          import json, sys
+          with open(sys.argv[1], encoding="utf-8") as handle:
+              payload = json.load(handle)
+          names = sorted(payload)
+          if not names:
+              raise SystemExit("token file has no fields")
+          print("token fields:", ",".join(names))
+          PY
+
+      - name: Run one command on Wewebplus-preview
+        run: |
+          set -euo pipefail
+          devbox exec Wewebplus-preview -- echo federated-ok
