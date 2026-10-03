@@ -1,12 +1,12 @@
 {
   "name": "wewebplus-hitl",
   "private": true,
-  "description": "Wewebplus HITL page. Vercel root directory is hitl-web.",
+  "description": "DYAD web frontend. Vercel root directory stays hitl-web so this branch previews on its own URL. The standalone HITL page is now /hitl.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "node --experimental-strip-types --test lib/*.test.ts"
+    "test": "node --experimental-strip-types --test lib/*.test.ts lib/gascity/*.test.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^6.36.5",

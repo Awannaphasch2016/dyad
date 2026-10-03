@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
-import { getSql } from "@/lib/db";
 import { resolveCaller } from "@/lib/caller";
+import { getSql } from "@/lib/db";
+import { callerFailure } from "@/lib/gascity/caller_response";
+import { parseAnswerBody } from "@/lib/gascity/contract";
 import { answerQuestion } from "@/lib/store";
 
 export const runtime = "nodejs";
@@ -12,24 +14,13 @@ export async function POST(
 ) {
   try {
     const resolved = await resolveCaller();
-    if (resolved.kind === "signed-out") {
-      return NextResponse.json(
-        { error: "Sign in to continue." },
-        { status: 401 },
-      );
-    }
-    if (resolved.kind === "unavailable") {
-      return NextResponse.json(
-        { error: "Question store is unavailable." },
-        { status: 503 },
-      );
-    }
-    if (resolved.kind === "not-found") {
+    const failure = callerFailure(resolved);
+    if (failure) return failure;
+    if (resolved.kind !== "caller") {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    const payload = (await request.json()) as { body?: unknown };
-    const body = typeof payload.body === "string" ? payload.body.trim() : "";
-    if (!body || body.length > 20_000) {
+    const body = parseAnswerBody(await request.json());
+    if (!body) {
       return NextResponse.json({ error: "Enter an answer." }, { status: 400 });
     }
     const { id } = await context.params;
@@ -50,7 +41,10 @@ export async function POST(
         { status: 403 },
       );
     }
-    return NextResponse.json({ question: result.view });
+    return NextResponse.json({
+      question: result.view,
+      electronInvoked: false,
+    });
   } catch {
     return NextResponse.json(
       { error: "Question store is unavailable." },

@@ -12,6 +12,9 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: clerkPublishableKey,
   },
+  async rewrites() {
+    return [{ source: "/v1/:path*", destination: "/api/v1/:path*" }];
+  },
 };
 
 export default nextConfig;

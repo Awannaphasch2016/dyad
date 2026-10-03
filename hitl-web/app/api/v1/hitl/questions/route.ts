@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { getSql } from "@/lib/db";
 import { resolveCaller } from "@/lib/caller";
+import { getSql } from "@/lib/db";
+import { callerFailure } from "@/lib/gascity/caller_response";
 import { listQuestions } from "@/lib/store";
 
 export const runtime = "nodejs";
@@ -9,19 +10,9 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const resolved = await resolveCaller();
-    if (resolved.kind === "signed-out") {
-      return NextResponse.json(
-        { error: "Sign in to continue." },
-        { status: 401 },
-      );
-    }
-    if (resolved.kind === "unavailable") {
-      return NextResponse.json(
-        { error: "Question store is unavailable." },
-        { status: 503 },
-      );
-    }
-    if (resolved.kind === "not-found") {
+    const failure = callerFailure(resolved);
+    if (failure) return failure;
+    if (resolved.kind !== "caller") {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
     const sql = getSql();
@@ -38,6 +29,7 @@ export async function GET() {
         roleId: resolved.caller.roleId,
       },
       questions,
+      electronInvoked: false,
     });
   } catch {
     return NextResponse.json(

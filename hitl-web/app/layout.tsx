@@ -4,8 +4,8 @@ import { clerkPublishableKey } from "../lib/clerk_env";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Wewebplus HITL",
-  description: "Answer Wewebplus approval gates.",
+  title: "wewebplus",
+  description: "DYAD frontend. Prompts and gates go to GasCity.",
 };
 
 export const viewport: Viewport = {

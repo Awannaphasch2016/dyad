@@ -1,12 +1,12 @@
 import { DyadShell } from "@/components/dyad-shell";
-import { HomeComposer } from "@/components/home-composer";
+import { QuestionBoard } from "@/components/question-board";
 
 export const dynamic = "force-dynamic";
 
-export default function HomePage() {
+export default function HitlPage() {
   return (
     <DyadShell>
-      <HomeComposer />
+      <QuestionBoard />
     </DyadShell>
   );
 }
