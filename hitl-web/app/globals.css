@@ -76,6 +76,56 @@ button:disabled {
   opacity: 0.6;
 }
 
+.nav {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.35rem;
+}
+
+.nav a {
+  color: inherit;
+}
+
+.nav a[aria-current="page"] {
+  font-weight: 650;
+}
+
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+
+textarea {
+  font: inherit;
+  width: 100%;
+  border: 1px solid #c8c8c8;
+  border-radius: 12px;
+  padding: 0.75rem;
+  resize: vertical;
+}
+
+.capability-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+
+.boundary {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.boundary th,
+.boundary td {
+  text-align: left;
+  border-bottom: 1px solid #e2e2e2;
+  padding: 0.35rem 0.25rem;
+}
+
 .muted {
   color: #555;
 }

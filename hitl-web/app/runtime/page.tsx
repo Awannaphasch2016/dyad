@@ -1,12 +1,12 @@
 import { DyadShell } from "@/components/dyad-shell";
-import { HomeComposer } from "@/components/home-composer";
+import { RuntimeBoundary } from "@/components/runtime-boundary";
 
 export const dynamic = "force-dynamic";
 
-export default function HomePage() {
+export default function RuntimePage() {
   return (
     <DyadShell>
-      <HomeComposer />
+      <RuntimeBoundary />
     </DyadShell>
   );
 }
