@@ -153,10 +153,39 @@ if grep -q '^CLOUDFLARE_TUNNEL_TOKEN=.' "$env_file"; then
   compose+=(--profile tunnel)
 fi
 
+bedrock_status="$(
+  python3 - "$env_file" << 'PY'
+import sys
+vals = {}
+for line in open(sys.argv[1], encoding="utf-8"):
+    if not line.strip() or line.startswith("#") or "=" not in line:
+        continue
+    key, value = line.split("=", 1)
+    vals[key] = value.strip().strip("'\"")
+ok = all(
+    vals.get(name)
+    for name in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION")
+)
+print("bedrock_iam=present" if ok else "bedrock_iam=absent")
+PY
+)"
+echo "$bedrock_status"
+if [[ "${PREVIEW_REQUIRE_BEDROCK:-}" == "1" && "$bedrock_status" != "bedrock_iam=present" ]]; then
+  echo "Bedrock IAM credentials are missing from the preview env file" >&2
+  exit 2
+fi
+
 echo "Pulling ${image} for ${project}"
 "${compose[@]}" pull dyad gc
 echo "Starting ${project}"
 "${compose[@]}" up -d --wait dyad
+echo "Selecting the global Bedrock profile when the saved model is still auto"
+cid="$("${compose[@]}" ps -q dyad)"
+if [[ -n "$cid" ]]; then
+  docker exec -i -u weaver "$cid" python3 - /home/weaver/.config/weaver-plus/user-settings.json --select-bedrock \
+    < "$root/scripts/gascity/use_singapore_bedrock_settings.py"
+  "${compose[@]}" up -d --force-recreate --wait dyad
+fi
 gc_state=healthy
 if ! "${compose[@]}" up -d --wait gc; then
   gc_state=unhealthy
