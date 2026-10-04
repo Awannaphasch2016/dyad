@@ -162,6 +162,7 @@ test("preview-up refuses bad arguments and the production checkout", () => {
     });
 
   const source = readFileSync(script, "utf8");
+  assert.match(source, /clerk-origins-run/);
   assert.match(source, /MemAvailable/);
   assert.match(source, /Other previews were left running/);
 
