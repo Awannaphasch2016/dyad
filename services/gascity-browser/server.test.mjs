@@ -18,6 +18,14 @@ async function withServer(options, run) {
 
 const auth = { authorization: "Bearer session-token" };
 
+function acceptedRun() {
+  return async () => ({
+    runId: "gascity-run:fixed",
+    dyadStatus: 202,
+    electronInvoked: false,
+  });
+}
+
 test("a prompt is accepted without invoking Electron", async () => {
   let called = false;
   await withServer(
@@ -25,6 +33,7 @@ test("a prompt is accepted without invoking Electron", async () => {
       invokeElectron: () => {
         called = true;
       },
+      continueRun: acceptedRun(),
     },
     async (base) => {
       const response = await fetch(`${base}/v1/runs`, {
@@ -101,38 +110,44 @@ test("a browser origin that is not listed is refused", async () => {
 });
 
 test("a listed browser origin can post a run", async () => {
-  await withServer({ origins: ["https://dyad.example"] }, async (base) => {
-    const response = await fetch(`${base}/v1/runs`, {
-      method: "POST",
-      headers: {
-        ...auth,
-        origin: "https://dyad.example",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ prompt: "hi", idempotencyKey: "k1" }),
-    });
-    assert.equal(response.status, 202);
-    assert.equal(
-      response.headers.get("access-control-allow-origin"),
-      "https://dyad.example",
-    );
-  });
+  await withServer(
+    { origins: ["https://dyad.example"], continueRun: acceptedRun() },
+    async (base) => {
+      const response = await fetch(`${base}/v1/runs`, {
+        method: "POST",
+        headers: {
+          ...auth,
+          origin: "https://dyad.example",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ prompt: "hi", idempotencyKey: "k1" }),
+      });
+      assert.equal(response.status, 202);
+      assert.equal(
+        response.headers.get("access-control-allow-origin"),
+        "https://dyad.example",
+      );
+    },
+  );
 });
 
 test("a Vercel preview origin is allowed only when the preview flag is set", async () => {
-  await withServer({ allowVercelPreviews: true }, async (base) => {
-    const response = await fetch(`${base}/v1/runs`, {
-      method: "POST",
-      headers: {
-        ...auth,
-        origin:
-          "https://dyad-git-cursor-dyad-web-frontend-bbea-anak2.vercel.app",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ prompt: "hi", idempotencyKey: "k1" }),
-    });
-    assert.equal(response.status, 202);
-  });
+  await withServer(
+    { allowVercelPreviews: true, continueRun: acceptedRun() },
+    async (base) => {
+      const response = await fetch(`${base}/v1/runs`, {
+        method: "POST",
+        headers: {
+          ...auth,
+          origin:
+            "https://dyad-git-cursor-dyad-web-frontend-bbea-anak2.vercel.app",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ prompt: "hi", idempotencyKey: "k1" }),
+      });
+      assert.equal(response.status, 202);
+    },
+  );
   await withServer({}, async (base) => {
     const response = await fetch(`${base}/v1/runs`, {
       method: "POST",
@@ -145,6 +160,68 @@ test("a Vercel preview origin is allowed only when the preview flag is set", asy
     });
     assert.equal(response.status, 403);
   });
+});
+
+test("a run without a question store is refused", async () => {
+  let called = false;
+  const lines = [];
+  await withServer(
+    {
+      log: (line) => lines.push(line),
+      invokeElectron: () => {
+        called = true;
+      },
+    },
+    async (base) => {
+      const response = await fetch(`${base}/v1/runs`, {
+        method: "POST",
+        headers: { ...auth, "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "a one-page site",
+          idempotencyKey: "k1",
+        }),
+      });
+      const body = await response.json();
+      assert.equal(response.status, 503);
+      assert.equal(body.error, "Question store is unavailable.");
+      assert.equal(body.electronInvoked, false);
+      assert.equal(called, false);
+    },
+  );
+  assert.match(lines[0], /run refused/);
+  assert.match(lines[0], /dyad=skipped/);
+});
+
+test("a Dyad refusal is returned instead of HTTP 202", async () => {
+  const lines = [];
+  await withServer(
+    {
+      log: (line) => lines.push(line),
+      continueRun: async () => ({
+        runId: "gascity-run:missing-app",
+        dyadStatus: 404,
+        electronInvoked: false,
+      }),
+    },
+    async (base) => {
+      const response = await fetch(`${base}/v1/runs`, {
+        method: "POST",
+        headers: { ...auth, "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "preview gate check",
+          idempotencyKey: "preview-gate-check",
+        }),
+      });
+      const body = await response.json();
+      assert.equal(response.status, 404);
+      assert.equal(body.error, "Dyad did not accept the run.");
+      assert.equal(body.dyadStatus, 404);
+      assert.equal(body.electronInvoked, false);
+    },
+  );
+  assert.match(lines[0], /run refused gascity-run:missing-app/);
+  assert.match(lines[0], /dyad=404/);
+  assert.match(lines[0], /electronInvoked=false/);
 });
 
 test("a run logs the prompt and keeps Electron closed when the gate is written", async () => {

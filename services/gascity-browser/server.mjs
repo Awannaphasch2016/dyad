@@ -1,5 +1,4 @@
 import { createServer } from "node:http";
-import { randomUUID } from "node:crypto";
 import { continueRun } from "./continue.mjs";
 
 const CAPABILITIES = new Set([
@@ -110,34 +109,86 @@ export function createGasCityBrowserServer(options = {}) {
           return;
         }
         const prompt = body.prompt.trim();
-        let runId = `gascity-run:${randomUUID()}`;
-        let dyadStatus = null;
-        if (continueRun) {
-          try {
-            const continued = await continueRun({
-              prompt,
-              idempotencyKey: body.idempotencyKey.trim(),
-            });
-            runId = continued.runId;
-            dyadStatus = continued.dyadStatus;
-          } catch {
+        if (!continueRun) {
+          log(
+            `run refused promptChars=${prompt.length} dyad=skipped electronInvoked=false`,
+          );
+          send(
+            response,
+            503,
+            {
+              error: "Question store is unavailable.",
+              electronInvoked: false,
+            },
+            cors.headers,
+          );
+          return;
+        }
+        let continued;
+        try {
+          continued = await continueRun({
+            prompt,
+            idempotencyKey: body.idempotencyKey.trim(),
+          });
+        } catch {
+          send(
+            response,
+            503,
+            {
+              error: "Question store is unavailable.",
+              electronInvoked: false,
+            },
+            cors.headers,
+          );
+          return;
+        }
+        const dyadStatus = continued.dyadStatus;
+        const accepted =
+          typeof dyadStatus === "number" &&
+          dyadStatus >= 200 &&
+          dyadStatus < 300;
+        if (!accepted) {
+          log(
+            `run refused ${continued.runId} promptChars=${prompt.length} dyad=${dyadStatus ?? "skipped"} electronInvoked=false`,
+          );
+          if (
+            typeof dyadStatus === "number" &&
+            dyadStatus >= 400 &&
+            dyadStatus <= 599
+          ) {
             send(
               response,
-              503,
-              { error: "Question store is unavailable." },
+              dyadStatus,
+              {
+                error: "Dyad did not accept the run.",
+                runId: continued.runId,
+                dyadStatus,
+                electronInvoked: false,
+              },
               cors.headers,
             );
             return;
           }
+          send(
+            response,
+            503,
+            {
+              error: "Question store is unavailable.",
+              runId: continued.runId,
+              electronInvoked: false,
+            },
+            cors.headers,
+          );
+          return;
         }
         log(
-          `run accepted ${runId} promptChars=${prompt.length} dyad=${dyadStatus ?? "skipped"} electronInvoked=false`,
+          `run accepted ${continued.runId} promptChars=${prompt.length} dyad=${dyadStatus} electronInvoked=false`,
         );
         send(
           response,
           202,
           {
-            runId,
+            runId: continued.runId,
             status: "accepted",
             orchestration: "gascity",
             electronInvoked: false,

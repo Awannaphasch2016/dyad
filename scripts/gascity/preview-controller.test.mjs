@@ -15,8 +15,11 @@ import {
   withEnvironmentSecrets,
 } from "../../deploy/preview/render.mjs";
 import {
+  assertRedeployed,
+  assertVercelAssignment,
   assignmentLog,
   assignPreviewDatabase,
+  assignPreviewVariable,
   deletePreviewDatabase,
   redeployPreviewBranch,
 } from "../../deploy/preview/vercel.mjs";
@@ -401,6 +404,34 @@ function json(body) {
   };
 }
 
+test("a preview assignment fails closed without a Vercel token or deployment", () => {
+  assert.throws(
+    () => assertVercelAssignment("cursor/preview-bridge-proof-9e7a", ""),
+    /VERCEL_TOKEN is not set/,
+  );
+  assert.doesNotThrow(() => assertVercelAssignment("", ""));
+  assert.throws(
+    () => assertRedeployed({ redeployed: false, gitBranch: "feature" }),
+    /No Vercel deployment to redeploy for feature/,
+  );
+});
+
+test("an empty Gas City URL is refused", async () => {
+  await assert.rejects(
+    () =>
+      assignPreviewVariable({
+        token: "token",
+        gitBranch: "cursor/preview-bridge-proof-9e7a",
+        key: "NEXT_PUBLIC_GAS_CITY_URL",
+        value: "",
+        fetchImpl: async () => {
+          throw new Error("fetch should not run");
+        },
+      }),
+    /preview environment value is required/,
+  );
+});
+
 test("the label workflow does not target production", () => {
   const workflow = readFileSync(
     new URL("../../.github/workflows/preview.yml", import.meta.url),
@@ -410,7 +441,13 @@ test("the label workflow does not target production", () => {
   assert.match(workflow, /devbox exec Wewebplus-ci/);
   assert.match(
     workflow,
-    /controller\.mjs attach --pr "\$PR" --git-branch "\$BRANCH" --vercel-project dyad/,
+    /controller\.mjs attach --pr "\$PR" --out \/tmp\/preview-runtime\.sh/,
+  );
+  assert.equal(
+    workflow.includes(
+      'attach --pr "$PR" --git-branch "$BRANCH" --vercel-project dyad',
+    ),
+    false,
   );
   assert.match(
     workflow,

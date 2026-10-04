@@ -10,11 +10,11 @@
 
 A prompt has two doors today.
 
-| Door | What it does |
-| --- | --- |
-| `https://pr-<n>.anakwannaphaschaiyong.com` | Dyad on port 8373. This name already resolves. |
+| Door                                          | What it does                                                                             |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `https://pr-<n>.anakwannaphaschaiyong.com`    | Dyad on port 8373. This name already resolves.                                           |
 | `https://gc-pr-<n>.anakwannaphaschaiyong.com` | The listener on port 8787. This name is not created when the Cloudflare token is absent. |
-| Vercel origin `/v1` | Returns HTTP 202 and does not write a question, call Dyad, or start an agent. |
+| Vercel origin `/v1`                           | Returns HTTP 202 and does not write a question, call Dyad, or start an agent.            |
 
 `deploy/preview/render.mjs` exports seven runtime names from the Doppler download. `CLOUDFLARE_API_TOKEN_`, `CLOUDFLARE_ZONE_ID_`, and `CLOUDFLARE_ACCOUNT_ID` are not among them, so they never reach the Devbox. `~/.local/state/wewebplus-preview/controller.env` is what `preview-up.sh` sources. The sealed install writes that file only when it is missing, and the current file has no Cloudflare token. Both preview workflows also pass `PREVIEW_SKIP_TUNNEL=1`. `scripts/gascity/preview-up.sh` skips `preview-tunnel.mjs` when that flag is set and the token is empty. `scripts/gascity/preview-tunnel.mjs` already has the ingress rule and the DNS write for `gc-pr-<n>` once all three names are present.
 
@@ -71,13 +71,13 @@ The response is 503 with `Question store is unavailable.` for a local failure, a
 
 ## Implementation
 
-- [ ] Add the three Cloudflare names to `runtimeKeys` in `deploy/preview/render.mjs`. Map the unsuffixed Doppler aliases onto the names the tunnel reads before export.
-- [ ] Upsert those exports into `~/.local/state/wewebplus-preview/controller.env` from the Devbox remote script. Leave every other line in that file alone.
-- [ ] In `scripts/gascity/preview-up.sh`, exit 2 when any of the three names is empty, including when `PREVIEW_SKIP_TUNNEL=1`.
-- [ ] Make `attach` in `deploy/preview/controller.mjs` throw when the Vercel assignment or the redeploy cannot be done. Do not log success and continue.
-- [ ] Find the same-origin `/v1` client. It is not in `hitl-web` on this branch. Delete it, and do not add `hitl-web/app/api/v1` or `hitl-web/app/v1`. The prompt call uses `NEXT_PUBLIC_GAS_CITY_URL` only.
-- [ ] In `services/gascity-browser/server.mjs`, return an error instead of 202 when `continueRun` is missing or Dyad does not accept the run.
-- [ ] Update `scripts/gascity/preview-controller.test.mjs`, `scripts/gascity/preview-tunnel.test.mjs`, and `services/gascity-browser/server.test.mjs` for the new refusals.
+- [x] Add the three Cloudflare names to `runtimeKeys` in `deploy/preview/render.mjs`. Map the unsuffixed Doppler aliases onto the names the tunnel reads before export.
+- [x] Upsert those exports into `~/.local/state/wewebplus-preview/controller.env` from the Devbox remote script. Leave every other line in that file alone.
+- [x] In `scripts/gascity/preview-up.sh`, exit 2 when any of the three names is empty, including when `PREVIEW_SKIP_TUNNEL=1`.
+- [x] Make `attach` in `deploy/preview/controller.mjs` throw when the Vercel assignment or the redeploy cannot be done. Do not log success and continue.
+- [x] Find the same-origin `/v1` client. It is not in `hitl-web` on this branch. Delete it, and do not add `hitl-web/app/api/v1` or `hitl-web/app/v1`. The prompt call uses `NEXT_PUBLIC_GAS_CITY_URL` only.
+- [x] In `services/gascity-browser/server.mjs`, return an error instead of 202 when `continueRun` is missing or Dyad does not accept the run.
+- [x] Update `scripts/gascity/preview-controller.test.mjs`, `scripts/gascity/preview-tunnel.test.mjs`, and `services/gascity-browser/server.test.mjs` for the new refusals.
 
 ## Verification
 
@@ -94,12 +94,12 @@ After that code is on the preview workflow, one labeled update of preview 20 is 
 
 ## Risks
 
-| Risk | Mitigation |
-| --- | --- |
-| The Doppler config has the API token and not the zone or account id. | The job names the missing key and stops. It does not read production. |
-| Rewriting `controller.env` drops the Neon or Clerk lines. | Upsert the three names. Do not rewrite the file. |
-| A preview build of `hitl-web` on `main` starts failing. | Only a preview git branch is required to have the variable. Production `main` stays on `/api/questions`. |
-| Preview 20's existing tunnel is replaced and `pr-20` goes down. | `ensurePreviewTunnel` updates the tunnel named `preview-pr-20` and writes both hostnames. The job does not delete the tunnel. |
+| Risk                                                                 | Mitigation                                                                                                                    |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| The Doppler config has the API token and not the zone or account id. | The job names the missing key and stops. It does not read production.                                                         |
+| Rewriting `controller.env` drops the Neon or Clerk lines.            | Upsert the three names. Do not rewrite the file.                                                                              |
+| A preview build of `hitl-web` on `main` starts failing.              | Only a preview git branch is required to have the variable. Production `main` stays on `/api/questions`.                      |
+| Preview 20's existing tunnel is replaced and `pr-20` goes down.      | `ensurePreviewTunnel` updates the tunnel named `preview-pr-20` and writes both hostnames. The job does not delete the tunnel. |
 
 ## Decision log
 

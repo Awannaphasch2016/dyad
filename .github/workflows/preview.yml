@@ -263,7 +263,7 @@ jobs:
         env:
           PR: ${{ github.event.pull_request.number }}
           BRANCH: ${{ github.head_ref }}
-        run: node deploy/preview/controller.mjs attach --pr "$PR" --git-branch "$BRANCH" --vercel-project dyad --out /tmp/preview-runtime.sh
+        run: node deploy/preview/controller.mjs attach --pr "$PR" --out /tmp/preview-runtime.sh
 
       - name: Log in to Namespace with the GitHub token
         uses: namespacelabs/nscloud-setup@v0
@@ -337,20 +337,31 @@ jobs:
               '  rm -f "$state/controller.pem" "$state/sealed.key.bin" "$state/sealed.env.bin" "$state/aes.key"' \
               '  echo "controller.env installed"' \
               'fi' \
+              'attach_status=0' \
               'if [[ -f "$secrets" ]]; then' \
               '  set -a' \
               '  source "$secrets"' \
               '  set +a' \
-              '  node deploy/preview/controller.mjs attach --pr "$pr" --git-branch "$branch" --vercel-project dyad --out /tmp/preview-runtime-devbox.sh' \
-              '  source /tmp/preview-runtime-devbox.sh' \
-              '  rm -f /tmp/preview-runtime-devbox.sh' \
-              '  node deploy/preview/controller.mjs assign-page --pr "$pr" --git-branch cursor/dyad-web-frontend-bbea --vercel-project dyad' \
+              '  if ! node deploy/preview/controller.mjs attach --pr "$pr" --git-branch "$branch" --vercel-project dyad --out /tmp/preview-runtime-devbox.sh; then' \
+              '    attach_status=$?' \
+              '  fi' \
+              '  if [[ -s /tmp/preview-runtime-devbox.sh ]]; then' \
+              '    set -a' \
+              '    source /tmp/preview-runtime-devbox.sh' \
+              '    set +a' \
+              '    rm -f /tmp/preview-runtime-devbox.sh' \
+              '  fi' \
+              '  if ! node deploy/preview/controller.mjs assign-page --pr "$pr" --git-branch cursor/dyad-web-frontend-bbea --vercel-project dyad; then' \
+              '    page_status=$?' \
+              '    if [[ "$attach_status" -eq 0 ]]; then attach_status="$page_status"; fi' \
+              '  fi' \
               'fi' \
               'PREVIEW_REQUIRE_BEDROCK=1 PREVIEW_REQUIRE_NAMED_TUNNEL=1 PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh "$pr" "$image"' \
               'origin="$(cat "$HOME/.local/state/wewebplus-preview/preview-${pr}.public-url")"' \
               'echo "clerk step"' \
               'PREVIEW_ORIGIN="$origin" node deploy/preview/clerk-origins-run.mjs' \
-              'echo "clerk step done"'
+              'echo "clerk step done"' \
+              'exit "$attach_status"'
           } > /tmp/preview-remote.sh
           payload="$(base64 -w0 /tmp/preview-remote.sh)"
           set -o pipefail
