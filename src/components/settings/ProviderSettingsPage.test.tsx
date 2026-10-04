@@ -278,4 +278,15 @@ describe("ProviderSettingsPage", () => {
     ).not.toBeNull();
     expect(screen.queryByRole("button", { name: "Paste & Save" })).toBeNull();
   });
+
+  it("requires the IAM pair instead of a Bedrock API key", () => {
+    renderProviderSettingsPage("bedrock");
+
+    expect(
+      screen.getByText(
+        "Bedrock requires AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY on the server.",
+      ),
+    ).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Paste & Save" })).toBeNull();
+  });
 });

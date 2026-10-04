@@ -673,7 +673,7 @@ function getRegularModelClient(
   // Get API key for the specific provider. Azure is handled in its own branch
   // because it has additional config and test-mode bypass behavior.
   const apiKey =
-    providerId === "azure"
+    providerId === "azure" || providerId === "bedrock"
       ? undefined
       : getProviderApiKeyForRequest(
           settings.providerSettings?.[model.provider]?.apiKey?.value ||
@@ -895,16 +895,21 @@ function getRegularModelClient(
       };
     }
     case "bedrock": {
-      // IAM env wins over a stored bearer token. createAmazonBedrock uses
-      // bearer auth whenever apiKey is non-empty, including an expired token
-      // saved in user settings. An empty apiKey selects SigV4.
+      // Bedrock always signs with SigV4. An empty apiKey keeps the SDK from
+      // reading AWS_BEARER_TOKEN_BEDROCK. A missing IAM pair fails here, before
+      // any request, so a saved bearer cannot be sent.
       const accessKeyId = runtimeEnv("AWS_ACCESS_KEY_ID");
       const secretAccessKey = runtimeEnv("AWS_SECRET_ACCESS_KEY");
-      const useIam = Boolean(accessKeyId && secretAccessKey);
+      if (!accessKeyId || !secretAccessKey) {
+        throw new DyadError(
+          "Bedrock requires AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.",
+          DyadErrorKind.Precondition,
+        );
+      }
       const provider = createAmazonBedrock({
-        apiKey: useIam ? "" : apiKey,
-        accessKeyId: useIam ? accessKeyId : undefined,
-        secretAccessKey: useIam ? secretAccessKey : undefined,
+        apiKey: "",
+        accessKeyId,
+        secretAccessKey,
         region: runtimeEnv("AWS_REGION") || "us-east-1",
         ...getModelClientFetchOption(),
       });

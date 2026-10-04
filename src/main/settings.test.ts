@@ -1921,7 +1921,7 @@ describe("stored Bedrock bearer", () => {
     expect(mockFs.writeFileSync).not.toHaveBeenCalled();
   });
 
-  it("keeps a saved bearer when the IAM pair is empty", () => {
+  it("removes a saved bearer when the IAM pair is empty", () => {
     store[mockSettingsPath] = JSON.stringify({
       providerSettings: {
         bedrock: {
@@ -1931,11 +1931,9 @@ describe("stored Bedrock bearer", () => {
     });
 
     const read = readSettings();
-    expect(read.providerSettings.bedrock?.apiKey?.value).toBe("expired-bearer");
-    expect(readStoredFile().providerSettings?.bedrock?.apiKey?.value).toBe(
-      "expired-bearer",
-    );
-    expect(mockFs.writeFileSync).not.toHaveBeenCalled();
+    expect(read.providerSettings.bedrock?.apiKey).toBeUndefined();
+    expect(readStoredFile().providerSettings?.bedrock).toBeUndefined();
+    expect(JSON.stringify(readStoredFile())).not.toContain("expired-bearer");
   });
 });
 

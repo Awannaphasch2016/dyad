@@ -1030,37 +1030,31 @@ describe("getModelClient", () => {
     expect(authorization).not.toContain("expired-bearer");
   });
 
-  test("bedrock without IAM env still sends the stored bearer token", async () => {
+  test("bedrock without the IAM pair fails before any request", async () => {
     vi.stubEnv("AWS_ACCESS_KEY_ID", "");
     vi.stubEnv("AWS_SECRET_ACCESS_KEY", "");
     vi.stubEnv("AWS_REGION", "");
-    let capturedUrl = "";
-    let authorization = "";
-    setModelClientFetchForTesting(async (url, init) => {
-      capturedUrl = String(url);
-      const headers = new Headers(init?.headers);
-      authorization = headers.get("Authorization") ?? "";
+    vi.stubEnv("AWS_BEARER_TOKEN_BEDROCK", "stored-bearer");
+    let called = false;
+    setModelClientFetchForTesting(async () => {
+      called = true;
       return new Response("{}", { status: 400 });
     });
-    const { modelClient } = await getModelClient(
-      {
-        provider: "bedrock",
-        name: "global.anthropic.claude-sonnet-4-5-20250929-v1:0",
-      },
-      {
-        providerSettings: {
-          bedrock: { apiKey: { value: "stored-bearer" } },
+    await expect(
+      getModelClient(
+        {
+          provider: "bedrock",
+          name: "global.anthropic.claude-sonnet-4-5-20250929-v1:0",
         },
-      } as unknown as UserSettings,
+        {
+          providerSettings: {
+            bedrock: { apiKey: { value: "stored-bearer" } },
+          },
+        } as unknown as UserSettings,
+      ),
+    ).rejects.toThrow(
+      "Bedrock requires AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.",
     );
-    await generateText({
-      model: modelClient.model,
-      prompt: "hi",
-      maxRetries: 0,
-    }).catch(() => undefined);
-    expect(capturedUrl).toContain(
-      "https://bedrock-runtime.us-east-1.amazonaws.com/",
-    );
-    expect(authorization).toBe("Bearer stored-bearer");
+    expect(called).toBe(false);
   });
 });

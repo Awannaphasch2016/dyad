@@ -312,13 +312,6 @@ function parseRendererCrashPerformance(
   return parsed.success ? parsed.data : undefined;
 }
 
-function hasBedrockIamCredentials(): boolean {
-  return Boolean(
-    process.env.AWS_ACCESS_KEY_ID?.trim() &&
-    process.env.AWS_SECRET_ACCESS_KEY?.trim(),
-  );
-}
-
 function isStoredBedrockBearerPath(path: string[]): boolean {
   return (
     path.length === 3 &&
@@ -328,12 +321,9 @@ function isStoredBedrockBearerPath(path: string[]): boolean {
   );
 }
 
-// A saved Bedrock API key is a bearer token. While the IAM pair is present the
-// client signs with SigV4, so a leftover bearer must not stay in the file.
+// A saved Bedrock API key is a bearer token. Bedrock never sends one, so the
+// value cannot remain in the file.
 function omitStoredBedrockBearer(settings: UserSettings): boolean {
-  if (!hasBedrockIamCredentials()) {
-    return false;
-  }
   const bedrock = settings.providerSettings?.bedrock;
   if (!bedrock?.apiKey) {
     return false;
@@ -446,10 +436,7 @@ export function writeSettings(settings: Partial<UserSettings>): void {
       settings,
       settingsForWrite.settings,
       settingsForWrite.preserved,
-    ).filter(
-      (entry) =>
-        !hasBedrockIamCredentials() || !isStoredBedrockBearerPath(entry.path),
-    );
+    ).filter((entry) => !isStoredBedrockBearerPath(entry.path));
     omitStoredBedrockBearer(newSettings);
     if (newSettings.githubAccessToken) {
       newSettings.githubAccessToken = encrypt(
