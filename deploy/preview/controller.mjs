@@ -4,7 +4,7 @@
 import { writeFileSync } from "node:fs";
 import { commandForPullRequest } from "./transition.mjs";
 import { deletePreviewBranch, ensurePreviewBranch } from "./neon.mjs";
-import { previewRuntime } from "./render.mjs";
+import { previewRuntime, withEnvironmentSecrets } from "./render.mjs";
 import {
   assignmentLog,
   assignPreviewDatabase,
@@ -48,7 +48,7 @@ async function runtimeEnv() {
 
 async function attach(pr) {
   const out = arg("--out") || "/tmp/preview-runtime.sh";
-  const downloaded = await runtimeEnv();
+  const downloaded = withEnvironmentSecrets(await runtimeEnv(), process.env);
   const apiKey = process.env.NEON_API_KEY || "";
   if (!apiKey) {
     writeFileSync(out, "", { mode: 0o600 });

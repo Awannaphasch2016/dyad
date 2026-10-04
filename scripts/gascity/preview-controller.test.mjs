@@ -7,7 +7,11 @@ import {
   transition,
 } from "../../deploy/preview/transition.mjs";
 import { previewBranchName } from "../../deploy/preview/neon.mjs";
-import { previewRuntime, shellQuote } from "../../deploy/preview/render.mjs";
+import {
+  previewRuntime,
+  shellQuote,
+  withEnvironmentSecrets,
+} from "../../deploy/preview/render.mjs";
 import {
   assignmentLog,
   assignPreviewDatabase,
@@ -109,6 +113,28 @@ test("the preview database export uses the child branch, not the parent URL", ()
   assert.match(legacy, /export CLOUDFLARE_ZONE_ID='legacy-zone'/);
   assert.match(legacy, /export CLOUDFLARE_ACCOUNT_ID='legacy-account'/);
   assert.equal(legacy.includes("CLOUDFLARE_API_TOKEN_"), false);
+  const fromGitHub = previewRuntime(
+    withEnvironmentSecrets(
+      {},
+      {
+        CLOUDFLARE_API_TOKEN: "from-github",
+        CLOUDFLARE_ZONE_ID: "zone-github",
+        CLOUDFLARE_ACCOUNT_ID: "account-github",
+      },
+    ),
+    child,
+  );
+  assert.match(fromGitHub, /export CLOUDFLARE_API_TOKEN='from-github'/);
+  assert.match(fromGitHub, /export CLOUDFLARE_ZONE_ID='zone-github'/);
+  assert.match(fromGitHub, /export CLOUDFLARE_ACCOUNT_ID='account-github'/);
+  const dopplerWins = previewRuntime(
+    withEnvironmentSecrets(
+      { CLOUDFLARE_API_TOKEN: "from-doppler" },
+      { CLOUDFLARE_API_TOKEN: "from-github" },
+    ),
+    child,
+  );
+  assert.match(dopplerWins, /export CLOUDFLARE_API_TOKEN='from-doppler'/);
   assert.equal(shellQuote("a'b"), "'a'\\''b'");
   assert.equal(previewBranchName(20), "preview-pr-20");
   assert.throws(() => previewBranchName("20;rm"), /Pull request number/);

@@ -56,6 +56,25 @@ export function dopplerAllowlist(download) {
   return picked;
 }
 
+const environmentSecretKeys = [
+  "CLOUDFLARE_API_TOKEN",
+  "CLOUDFLARE_ZONE_ID",
+  "CLOUDFLARE_ACCOUNT_ID",
+];
+
+export function withEnvironmentSecrets(download, env = {}) {
+  const merged = { ...download };
+  for (const key of environmentSecretKeys) {
+    const current = merged[key];
+    if (typeof current === "string" && current.length > 0) continue;
+    const fromEnv = env[key];
+    if (typeof fromEnv !== "string" || fromEnv.length === 0) continue;
+    if (fromEnv.includes("\n") || fromEnv.includes("\0")) continue;
+    merged[key] = fromEnv;
+  }
+  return merged;
+}
+
 export function previewRuntime(download, childUri) {
   return runtimeExports({
     ...dopplerAllowlist(download),
