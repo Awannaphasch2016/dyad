@@ -12,6 +12,7 @@ import {
   assignmentLog,
   assignPreviewDatabase,
   deletePreviewDatabase,
+  redeployPreviewBranch,
 } from "../../deploy/preview/vercel.mjs";
 
 test("preview lifecycle creates, updates, and destroys one pull request", () => {
@@ -240,6 +241,45 @@ test("deleting a preview database removes only that git branch variable", async 
   assert.equal(result.envId, "env_pr20");
   assert.equal(deleted.length, 1);
   assert.match(deleted[0], /env_pr20/);
+});
+
+test("redeploy creates a preview deployment from the branch deployment", async () => {
+  let body = {};
+  const fetchImpl = async (url, options = {}) => {
+    if ((options.method || "GET") === "GET") {
+      return json({
+        deployments: [
+          {
+            uid: "dpl_prod",
+            target: "production",
+            meta: { githubCommitRef: "cursor/preview-bridge-proof-9e7a" },
+          },
+          {
+            uid: "dpl_preview",
+            target: null,
+            url: "dyad-preview.vercel.app",
+            meta: { githubCommitRef: "cursor/preview-bridge-proof-9e7a" },
+          },
+        ],
+      });
+    }
+    body = JSON.parse(options.body);
+    assert.equal(options.method, "POST");
+    assert.match(url, /\/v13\/deployments\?teamId=team_test$/);
+    return json({ url: "dyad-new.vercel.app" });
+  };
+  const result = await redeployPreviewBranch({
+    token: "token",
+    project: "dyad",
+    projectId: "prj_dyad",
+    teamId: "team_test",
+    gitBranch: "cursor/preview-bridge-proof-9e7a",
+    fetchImpl,
+  });
+  assert.equal(body.deploymentId, "dpl_preview");
+  assert.equal(body.target, undefined);
+  assert.equal(result.redeployed, true);
+  assert.equal(result.url, "dyad-new.vercel.app");
 });
 
 function json(body) {

@@ -193,7 +193,9 @@ export async function redeployPreviewBranch(options) {
     `/v6/deployments?projectId=${encodeURIComponent(options.projectId)}&limit=20${team}`,
   );
   const current = (listed.deployments || []).find(
-    (item) => item.meta?.githubCommitRef === options.gitBranch,
+    (item) =>
+      item.meta?.githubCommitRef === options.gitBranch &&
+      item.target !== "production",
   );
   if (!current?.uid) {
     return { redeployed: false, gitBranch: options.gitBranch };
@@ -201,8 +203,14 @@ export async function redeployPreviewBranch(options) {
   const created = await vercelRequest(
     fetchImpl,
     options.token,
-    `/v13/deployments/${encodeURIComponent(current.uid)}/redeploy${options.teamId ? `?teamId=${encodeURIComponent(options.teamId)}` : ""}`,
-    { method: "POST", body: { name: options.project } },
+    `/v13/deployments${options.teamId ? `?teamId=${encodeURIComponent(options.teamId)}` : ""}`,
+    {
+      method: "POST",
+      body: {
+        name: options.project,
+        deploymentId: current.uid,
+      },
+    },
   );
   return {
     redeployed: true,
