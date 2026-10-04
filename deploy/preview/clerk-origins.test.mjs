@@ -23,6 +23,18 @@ test("an origin that is already allowed is left unchanged", () => {
   assert.deepEqual(next.origins, existing);
 });
 
+test("a temporary tunnel origin is appended", () => {
+  const next = originsWith(
+    ["https://pr-20.anakwannaphaschaiyong.com"],
+    "https://example-preview.trycloudflare.com",
+  );
+  assert.equal(next.added, true);
+  assert.deepEqual(next.origins, [
+    "https://pr-20.anakwannaphaschaiyong.com",
+    "https://example-preview.trycloudflare.com",
+  ]);
+});
+
 test("a non-preview origin is refused", () => {
   assert.throws(() => originsWith([], "https://example.com"), /pr-<number>/);
 });
