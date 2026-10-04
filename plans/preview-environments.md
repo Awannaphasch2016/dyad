@@ -71,7 +71,7 @@ Approval of this revision authorizes these five steps and no others. Each step s
 
 ### Pull requests 17 through 24
 
-Writing this section does not merge or close anything. After this revision is approved, dispose of the set in the order below. The end state is pull requests 20, 22, 23, and 17 merged, pull request 24 merged into 17, pull request 18 closed, and pull requests 19 and 21 still open.
+Writing this section does not merge or close anything. After this revision is approved, dispose of the set in the order below. The end state is pull requests 20, 22, 23, and 17 merged, pull request 24 merged into 17, pull requests 18 and 21 closed, and pull request 19 still open. Pull request 21's branch stays.
 
 | Pull request | Action | When | Why |
 | --- | --- | --- | --- |
@@ -81,7 +81,7 @@ Writing this section does not merge or close anything. After this revision is ap
 | 24 | Merge into 17 | When this revision is approved | This file. It replaces the 2026-10-03 plan text. |
 | 17 | Merge after 24 | After 24 is inside it | The plan document. Closing it before that merge drops this revision. |
 | 18 | Close | When this revision is approved | The two-container proof already ran on `Wewebplus-ci` as pull request 20. `plans/dev-environment-external.md` is an older shape, including a proof that used production disk. Nothing in it remains to build. |
-| 21 | Keep open | After the rest of this set is merged or closed | Restarts preview 20 after the Devbox session stops. Hardcoded to pull request 20, so leave it unmerged. The five steps do not replace the Namespace session clock. |
+| 21 | Close. Keep branch `cursor/preview-wake-tunnel-9e7a` | When this revision is approved | One-off wake of preview 20. Run [37179418133](https://github.com/Awannaphasch2016/dyad/actions/runs/37179418133) already returned HTTP 200. The workflow is hardcoded to `preview-20` and runs only from that branch (`workflow_dispatch` or a push). Do not merge it. Do not delete the branch: the next Devbox stop still uses that manual run. |
 | 19 | Keep open | Stays open | Production EC2 registry pull (`plans/offhost-image-pull.md`, `plans/preview-token-rollout.md`). This plan leaves `gascity-rollout.yml` and the production host alone. |
 
 Pull requests 15 and 16 are outside this set. Steps 3 and 4 use them. Leave both open in this cleanup.
