@@ -157,7 +157,11 @@ echo "Pulling ${image} for ${project}"
 "${compose[@]}" pull dyad gc
 echo "Starting ${project}"
 "${compose[@]}" up -d --wait dyad
-"${compose[@]}" up -d --wait gc gascity
+if ! "${compose[@]}" up -d --wait gc; then
+  echo "gc did not become healthy. The Dyad page still starts." >&2
+  docker logs --tail 60 "${project}-gc-1" >&2 || true
+fi
+"${compose[@]}" up -d --wait gascity
 if [[ "$tunnel" -eq 1 ]]; then
   "${compose[@]}" up -d cloudflared
 fi

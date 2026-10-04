@@ -163,6 +163,7 @@ test("preview-up refuses bad arguments and the production checkout", () => {
 
   const source = readFileSync(script, "utf8");
   assert.match(source, /clerk-origins-run/);
+  assert.match(source, /gc did not become healthy\. The Dyad page still starts\./);
   assert.match(
     source,
     /CLOUDFLARE_API_TOKEN CLOUDFLARE_ZONE_ID CLOUDFLARE_ACCOUNT_ID/,
