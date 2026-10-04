@@ -88,7 +88,8 @@ jobs:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           PR: ${{ github.event.pull_request.number }}
-        run: node deploy/preview/controller.mjs attach --pr "$PR" --out /tmp/preview-runtime.sh
+          BRANCH: ${{ github.head_ref }}
+        run: node deploy/preview/controller.mjs attach --pr "$PR" --git-branch "$BRANCH" --vercel-project dyad --out /tmp/preview-runtime.sh
 
       - name: Delete the Neon preview branch
         if: steps.decide.outputs.command == 'destroy'
@@ -96,7 +97,8 @@ jobs:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           PR: ${{ github.event.pull_request.number }}
-        run: node deploy/preview/controller.mjs destroy --pr "$PR"
+          BRANCH: ${{ github.head_ref }}
+        run: node deploy/preview/controller.mjs destroy --pr "$PR" --git-branch "$BRANCH" --vercel-project dyad
 
       - name: Log in to Namespace with the GitHub token
         if: steps.decide.outputs.command != 'skip' && (steps.decide.outputs.command == 'destroy' || github.head_ref != 'cursor/preview-bridge-proof-9e7a')
@@ -159,6 +161,16 @@ jobs:
               'git -C "$repo" fetch --depth 1 origin "$sha"' \
               'git -C "$repo" checkout --detach FETCH_HEAD' \
               'cd "$repo"' \
+              'state="$HOME/.local/state/wewebplus-preview"' \
+              'secrets="$state/controller.env"' \
+              'if [[ -f "$secrets" ]]; then' \
+              '  set -a' \
+              '  source "$secrets"' \
+              '  set +a' \
+              '  node deploy/preview/controller.mjs attach --pr "$pr" --git-branch "$branch" --vercel-project dyad --out /tmp/preview-runtime-devbox.sh' \
+              '  source /tmp/preview-runtime-devbox.sh' \
+              '  rm -f /tmp/preview-runtime-devbox.sh' \
+              'fi' \
               'PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh "$pr" "$image"'
           } > /tmp/preview-remote.sh
           payload="$(base64 -w0 /tmp/preview-remote.sh)"
@@ -169,16 +181,41 @@ jobs:
         if: steps.decide.outputs.command == 'destroy'
         env:
           PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+          BRANCH: ${{ github.head_ref }}
+          REPO_URL: https://github.com/${{ github.repository }}.git
         run: |
           set -euo pipefail
           [[ "$PR" =~ ^[0-9]+$ ]]
-          payload="$(printf '%s\n' \
-            'set -euo pipefail' \
-            "pr=${PR}" \
-            'repo=/workspaces/weaver-plus' \
-            'if [[ -f "$repo/compose.preview.yml" ]]; then' \
-            '  docker compose -p "preview-${pr}" -f "$repo/compose.preview.yml" down -v --remove-orphans || true' \
-            'fi' \
-            'rm -f "$HOME/.local/state/wewebplus-preview/preview-${pr}.env"' \
-            | base64 -w0)"
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$BRANCH" =~ ^[A-Za-z0-9._/-]+$ ]]
+          [[ "$BRANCH" != "main" ]]
+          [[ "$REPO_URL" =~ ^https://github\.com/[A-Za-z0-9._/-]+\.git$ ]]
+          {
+            printf 'pr=%q\nsha=%q\nbranch=%q\nrepo_url=%q\n' \
+              "$PR" "$SHA" "$BRANCH" "$REPO_URL"
+            printf '%s\n' \
+              'set -euo pipefail' \
+              'repo=/workspaces/weaver-plus' \
+              'if [[ ! -d "$repo/.git" ]]; then' \
+              '  git clone --depth 1 --branch "$branch" "$repo_url" "$repo"' \
+              'fi' \
+              'git -C "$repo" fetch --depth 1 origin "$sha"' \
+              'git -C "$repo" checkout --detach FETCH_HEAD' \
+              'cd "$repo"' \
+              'state="$HOME/.local/state/wewebplus-preview"' \
+              'secrets="$state/controller.env"' \
+              'if [[ -f "$secrets" ]]; then' \
+              '  set -a' \
+              '  source "$secrets"' \
+              '  set +a' \
+              '  node deploy/preview/controller.mjs destroy --pr "$pr" --git-branch "$branch" --vercel-project dyad' \
+              'fi' \
+              'if [[ -f "$repo/compose.preview.yml" ]]; then' \
+              '  docker compose -p "preview-${pr}" -f "$repo/compose.preview.yml" down -v --remove-orphans || true' \
+              'fi' \
+              'rm -f "$state/preview-${pr}.env"'
+          } > /tmp/preview-remote.sh
+          payload="$(base64 -w0 /tmp/preview-remote.sh)"
+          rm -f /tmp/preview-remote.sh
           devbox exec Wewebplus-ci -- bash -lc "printf '%s' '${payload}' | base64 -d | bash"

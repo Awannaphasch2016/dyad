@@ -7,6 +7,7 @@ import test from "node:test";
 import {
   dnsRecord,
   ensurePreviewTunnel,
+  gasCityHostname,
   ingressConfig,
   previewHostname,
   tunnelName,
@@ -17,17 +18,22 @@ const digest =
 
 test("preview hostname and tunnel name come from the PR number", () => {
   assert.equal(previewHostname(20), "pr-20.anakwannaphaschaiyong.com");
+  assert.equal(gasCityHostname(20), "gc-pr-20.anakwannaphaschaiyong.com");
   assert.equal(tunnelName("20"), "preview-pr-20");
   assert.throws(() => previewHostname("20;rm"), /digits/);
 });
 
 test("ingress stays on the Dyad network namespace and DNS points at the tunnel", () => {
-  assert.deepEqual(ingressConfig("pr-20.anakwannaphaschaiyong.com"), {
+  assert.deepEqual(ingressConfig(20), {
     config: {
       ingress: [
         {
           hostname: "pr-20.anakwannaphaschaiyong.com",
           service: "http://127.0.0.1:8373",
+        },
+        {
+          hostname: "gc-pr-20.anakwannaphaschaiyong.com",
+          service: "http://gascity:8787",
         },
         { service: "http_status:404" },
       ],
@@ -88,10 +94,15 @@ test("tunnel setup writes the token to a file and does not return it", async () 
     ),
     true,
   );
-  const dns = calls.find(
+  const dns = calls.filter(
     (call) => call.method === "POST" && call.url.includes("/dns_records"),
   );
-  assert.equal(JSON.parse(dns.body).proxied, true);
+  assert.equal(dns.length, 2);
+  assert.equal(JSON.parse(dns[0].body).proxied, true);
+  assert.equal(
+    JSON.parse(dns[1].body).name,
+    "gc-pr-20.anakwannaphaschaiyong.com",
+  );
   assert.equal(
     calls.some((call) =>
       String(call.body ?? "").includes("http://127.0.0.1:8373"),
@@ -188,6 +199,10 @@ test("preview image workflow updates the shared Devbox after publish", () => {
     workflow,
     /controller\.mjs attach --pr "\$pr" --git-branch "\$branch" --vercel-project dyad/,
   );
+  assert.match(
+    workflow,
+    /assign-page --pr "\$pr" --git-branch cursor\/dyad-web-frontend-bbea --vercel-project dyad/,
+  );
   assert.match(workflow, /https:\/\/pr-\$\{PR\}\.anakwannaphaschaiyong\.com/);
   assert.equal(workflow.includes("13.251.216.187"), false);
 });
@@ -220,4 +235,9 @@ test("compose preview file does not publish the factory port or mount the produc
   assert.match(compose, /network_mode: service:dyad/);
   assert.match(compose, /pr-\$\{PREVIEW_PR:\?Set PREVIEW_PR\}-city/);
   assert.match(compose, /name: preview-\$\{PREVIEW_PR:\?Set PREVIEW_PR\}/);
+  assert.match(
+    compose,
+    /ghcr\.io\/awannaphasch2016\/gascity@sha256:59e824d8393891dc849e11c838e791b89c59f748d6d8bae86ef2a21db838d916/,
+  );
+  assert.match(compose, /http:\/\/gascity:8787|GAS_CITY_BROWSER_HOST/);
 });

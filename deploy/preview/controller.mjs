@@ -8,7 +8,11 @@ import { previewRuntime } from "./render.mjs";
 import {
   assignmentLog,
   assignPreviewDatabase,
+  assignPreviewVariable,
   deletePreviewDatabase,
+  deletePreviewVariable,
+  previewGasCityKey,
+  previewGasCityOrigin,
   redeployPreviewBranch,
 } from "./vercel.mjs";
 
@@ -57,7 +61,8 @@ async function attach(pr) {
   const exports = previewRuntime(downloaded, branch.uri);
   writeFileSync(out, exports ? `${exports}\n` : "", { mode: 0o600 });
   console.log(`Attached ${branch.name} at ${branch.host}`);
-  await assignVercelDatabase(pr, branch);
+  const assigned = await assignVercelDatabase(pr, branch);
+  if (assigned) await redeployAssigned(assigned);
 }
 
 async function assignVercelDatabase(pr, branch) {
@@ -83,7 +88,39 @@ async function assignVercelDatabase(pr, branch) {
       neonBranch: branch.name,
     }),
   );
+  const origin = previewGasCityOrigin(pr);
+  const page = await assignPreviewVariable({
+    token,
+    project: arg("--vercel-project") || undefined,
+    gitBranch,
+    key: previewGasCityKey,
+    value: origin,
+  });
+  console.log(
+    `Assigned ${page.key} for pull request ${pr} git branch ${page.gitBranch} to ${origin} on Vercel project ${page.project} target ${page.targets}`,
+  );
   return assigned;
+}
+
+async function redeployAssigned(assigned) {
+  try {
+    const rolled = await redeployPreviewBranch({
+      token: process.env.VERCEL_TOKEN,
+      project: assigned.project,
+      projectId: assigned.projectId,
+      teamId: assigned.teamId,
+      gitBranch: assigned.gitBranch,
+    });
+    console.log(
+      rolled.redeployed
+        ? `Redeployed Vercel preview ${rolled.url} for ${rolled.gitBranch}`
+        : `No Vercel deployment to redeploy for ${rolled.gitBranch}`,
+    );
+  } catch (error) {
+    console.log(
+      `Vercel redeploy failed after the database assignment: ${error.message}`,
+    );
+  }
 }
 
 async function destroy(pr) {
@@ -116,6 +153,17 @@ async function destroy(pr) {
       ? `Removed Vercel preview database for ${removed.gitBranch}`
       : `Vercel preview database for ${removed.gitBranch} was already gone`,
   );
+  const gasCity = await deletePreviewVariable({
+    token,
+    project: arg("--vercel-project") || undefined,
+    gitBranch,
+    key: previewGasCityKey,
+  });
+  console.log(
+    gasCity.deleted
+      ? `Removed ${gasCity.key} for ${gasCity.gitBranch}`
+      : `${previewGasCityKey} for ${gasCity.gitBranch} was already gone`,
+  );
 }
 
 async function assignVercel(pr) {
@@ -135,24 +183,7 @@ async function assignVercel(pr) {
   if (!assigned) {
     throw new Error("Vercel preview database was not assigned");
   }
-  try {
-    const rolled = await redeployPreviewBranch({
-      token: process.env.VERCEL_TOKEN,
-      project: assigned.project,
-      projectId: assigned.projectId,
-      teamId: assigned.teamId,
-      gitBranch: assigned.gitBranch,
-    });
-    console.log(
-      rolled.redeployed
-        ? `Redeployed Vercel preview ${rolled.url} for ${rolled.gitBranch}`
-        : `No Vercel deployment to redeploy for ${rolled.gitBranch}`,
-    );
-  } catch (error) {
-    console.log(
-      `Vercel redeploy failed after the database assignment: ${error.message}`,
-    );
-  }
+  await redeployAssigned(assigned);
 }
 
 async function decide() {
@@ -177,9 +208,14 @@ if (command === "decide") {
 } else if (!/^[0-9]+$/.test(pr)) {
   console.error("Usage: controller.mjs <attach|destroy|decide> --pr <number>");
   process.exit(2);
-} else if (command === "attach" || command === "assign-vercel") {
-  if (command === "assign-vercel") await assignVercel(pr);
-  else await attach(pr);
+} else if (
+  command === "attach" ||
+  command === "assign-vercel" ||
+  command === "assign-page"
+) {
+  if (command === "assign-vercel" || command === "assign-page") {
+    await assignVercel(pr);
+  } else await attach(pr);
 } else if (command === "destroy") {
   await destroy(pr);
 } else {

@@ -12,6 +12,14 @@ export function previewHostname(pr) {
   return `pr-${value}.${PREVIEW_ZONE}`;
 }
 
+export function gasCityHostname(pr) {
+  const value = String(pr);
+  if (!/^[0-9]+$/.test(value)) {
+    throw new Error("PR number must be digits");
+  }
+  return `gc-pr-${value}.${PREVIEW_ZONE}`;
+}
+
 export function tunnelName(pr) {
   const value = String(pr);
   if (!/^[0-9]+$/.test(value)) {
@@ -20,11 +28,12 @@ export function tunnelName(pr) {
   return `preview-pr-${value}`;
 }
 
-export function ingressConfig(hostname) {
+export function ingressConfig(pr) {
   return {
     config: {
       ingress: [
-        { hostname, service: "http://127.0.0.1:8373" },
+        { hostname: previewHostname(pr), service: "http://127.0.0.1:8373" },
+        { hostname: gasCityHostname(pr), service: "http://gascity:8787" },
         { service: "http_status:404" },
       ],
     },
@@ -100,7 +109,7 @@ export async function ensurePreviewTunnel({
     `/accounts/${accountId}/cfd_tunnel/${tunnel.id}/configurations`,
     {
       method: "PUT",
-      body: JSON.stringify(ingressConfig(hostname)),
+      body: JSON.stringify(ingressConfig(pr)),
     },
   );
   const tokenResult = await cloudflare(
@@ -116,30 +125,37 @@ export async function ensurePreviewTunnel({
   }
   await writeToken(tunnelToken);
 
-  const record = dnsRecord(hostname, tunnel.id);
-  const existing = await cloudflare(
-    fetchImpl,
-    apiToken,
-    `/zones/${zoneId}/dns_records?type=CNAME&name=${encodeURIComponent(hostname)}`,
-  );
-  const current = Array.isArray(existing) ? existing[0] : undefined;
-  if (!current) {
-    await cloudflare(fetchImpl, apiToken, `/zones/${zoneId}/dns_records`, {
-      method: "POST",
-      body: JSON.stringify(record),
-    });
-  } else if (current.content !== record.content || current.proxied !== true) {
-    await cloudflare(
+  for (const dnsName of [hostname, gasCityHostname(pr)]) {
+    const record = dnsRecord(dnsName, tunnel.id);
+    const existing = await cloudflare(
       fetchImpl,
       apiToken,
-      `/zones/${zoneId}/dns_records/${current.id}`,
-      {
-        method: "PATCH",
-        body: JSON.stringify(record),
-      },
+      `/zones/${zoneId}/dns_records?type=CNAME&name=${encodeURIComponent(dnsName)}`,
     );
+    const current = Array.isArray(existing) ? existing[0] : undefined;
+    if (!current) {
+      await cloudflare(fetchImpl, apiToken, `/zones/${zoneId}/dns_records`, {
+        method: "POST",
+        body: JSON.stringify(record),
+      });
+    } else if (current.content !== record.content || current.proxied !== true) {
+      await cloudflare(
+        fetchImpl,
+        apiToken,
+        `/zones/${zoneId}/dns_records/${current.id}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify(record),
+        },
+      );
+    }
   }
-  return { hostname, tunnelId: tunnel.id, tunnelName: name };
+  return {
+    hostname,
+    gasCityHostname: gasCityHostname(pr),
+    tunnelId: tunnel.id,
+    tunnelName: name,
+  };
 }
 
 function requireEnv(name) {

@@ -298,6 +298,18 @@ test("the label workflow does not target production", () => {
   );
   assert.match(workflow, /commandForPullRequest|controller\.mjs decide/);
   assert.match(workflow, /devbox exec Wewebplus-ci/);
+  assert.match(
+    workflow,
+    /controller\.mjs attach --pr "\$PR" --git-branch "\$BRANCH" --vercel-project dyad/,
+  );
+  assert.match(
+    workflow,
+    /controller\.mjs attach --pr "\$pr" --git-branch "\$branch" --vercel-project dyad/,
+  );
+  assert.match(
+    workflow,
+    /controller\.mjs destroy --pr "\$pr" --git-branch "\$branch" --vercel-project dyad/,
+  );
   assert.equal(workflow.includes("13.251.216.187"), false);
   assert.equal(workflow.includes("EC2_SSH_KEY"), false);
   assert.equal(workflow.includes("gascity-rollout"), false);

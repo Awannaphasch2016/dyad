@@ -63,6 +63,66 @@ services:
         test "$$auth" != "401"
         test "$$auth" != "000"
 
+  gc:
+    image: ghcr.io/awannaphasch2016/gascity@sha256:59e824d8393891dc849e11c838e791b89c59f748d6d8bae86ef2a21db838d916
+    user: "0"
+    networks: [preview]
+    environment:
+      WEAVER_BASE_URL: http://dyad:32100
+    volumes:
+      - city:/city
+    entrypoint: ["bash", "-lc"]
+    command:
+      - |
+        set -eu
+        if [ ! -f /city/city.toml ]; then
+          gc init --template gascity --default-provider claude --no-start --skip-provider-readiness --yes /city
+        fi
+        exec sleep infinity
+    healthcheck:
+      test: ["CMD", "test", "-s", "/city/city.toml"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 120s
+    restart: unless-stopped
+
+  gascity:
+    image: node:22-bookworm-slim
+    networks: [preview]
+    depends_on:
+      dyad:
+        condition: service_healthy
+    env_file:
+      - ${PREVIEW_ENV_FILE:?Set PREVIEW_ENV_FILE}
+    environment:
+      PORT: "8787"
+      GAS_CITY_BROWSER_HOST: "0.0.0.0"
+      GAS_CITY_BROWSER_ALLOW_VERCEL_PREVIEWS: "1"
+      WEAVER_BASE_URL: http://dyad:32100
+    volumes:
+      - ./services/gascity-browser:/app:ro
+    entrypoint: ["bash", "-lc"]
+    command:
+      - |
+        set -eu
+        mkdir -p /tmp/gascity-browser
+        cp /app/package.json /app/server.mjs /app/continue.mjs /tmp/gascity-browser/
+        cd /tmp/gascity-browser
+        npm install --omit=dev
+        exec node server.mjs
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8787/v1/runs').then((r)=>process.exit(r.status===401?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 180s
+    restart: unless-stopped
+
   cloudflared:
     profiles: ["tunnel"]
     image: cloudflare/cloudflared:2026.9.3

@@ -95,7 +95,7 @@ do
   upsert_env "$key"
 done
 
-if [[ "${PREVIEW_SKIP_TUNNEL:-}" != "1" ]]; then
+if [[ "${PREVIEW_SKIP_TUNNEL:-}" != "1" || -n "${CLOUDFLARE_API_TOKEN_:-}" ]]; then
   if ! command -v node >/dev/null 2>&1; then
     echo "node 18+ is required to create the Cloudflare tunnel" >&2
     exit 2
@@ -119,16 +119,18 @@ if grep -q '^CLOUDFLARE_TUNNEL_TOKEN=.' "$env_file"; then
 fi
 
 echo "Pulling ${image} for ${project}"
-"${compose[@]}" pull dyad
+"${compose[@]}" pull dyad gc
 echo "Starting ${project}"
 "${compose[@]}" up -d --wait dyad
+"${compose[@]}" up -d --wait gc gascity
 if [[ "$tunnel" -eq 1 ]]; then
   "${compose[@]}" up -d cloudflared
 fi
 echo "Checking factory API on the preview network"
 "${compose[@]}" --profile check run --rm caller
 echo "Preview project ${project} is up"
-echo "City volume pr-${pr}-city is empty; this image does not run gc"
+echo "City volume pr-${pr}-city has a city"
+echo "https://gc-pr-${pr}.anakwannaphaschaiyong.com"
 if [[ "$tunnel" -eq 1 ]]; then
   echo "https://pr-${pr}.anakwannaphaschaiyong.com"
 fi

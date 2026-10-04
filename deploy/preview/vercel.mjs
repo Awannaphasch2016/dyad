@@ -5,6 +5,15 @@ const vercelApi = "https://api.vercel.com";
 
 export const defaultVercelProject = "dyad";
 export const previewDatabaseKey = "WEWEBPLUS_DATABASE_URL";
+export const previewGasCityKey = "NEXT_PUBLIC_GAS_CITY_URL";
+
+export function previewGasCityOrigin(pr) {
+  const value = String(pr);
+  if (!/^[0-9]+$/.test(value)) {
+    throw new Error("PR number must be digits");
+  }
+  return `https://gc-pr-${value}.anakwannaphaschaiyong.com`;
+}
 
 export function assertPreviewGitBranch(gitBranch) {
   if (gitBranch === "main" || !/^[A-Za-z0-9._/-]+$/.test(gitBranch || "")) {
@@ -50,10 +59,10 @@ async function vercelRequest(fetchImpl, token, path, options = {}) {
   return body;
 }
 
-function isExactPreviewBranch(env, gitBranch) {
+function isExactPreviewKey(env, key, gitBranch) {
   const targets = Array.isArray(env.target) ? env.target : [];
   return (
-    env.key === previewDatabaseKey &&
+    env.key === key &&
     env.gitBranch === gitBranch &&
     targets.length === 1 &&
     targets[0] === "preview"
@@ -64,10 +73,14 @@ function envId(body) {
   return body.created?.id || body.id || "";
 }
 
-export async function assignPreviewDatabase(options) {
+export async function assignPreviewVariable(options) {
   assertPreviewGitBranch(options.gitBranch);
-  if (!/^postgres(ql)?:\/\//.test(options.uri || "")) {
-    throw new Error("Neon connection URI is required");
+  const key = options.key;
+  if (!/^[A-Z][A-Z0-9_]+$/.test(key || "")) {
+    throw new Error("A preview environment key is required");
+  }
+  if (!options.value) {
+    throw new Error("A preview environment value is required");
   }
   const fetchImpl = options.fetchImpl || fetch;
   const token = options.token;
@@ -90,19 +103,19 @@ export async function assignPreviewDatabase(options) {
   const envs = listed.envs || [];
   const dangerous = envs.find(
     (env) =>
-      env.key === previewDatabaseKey &&
+      env.key === key &&
       env.gitBranch === options.gitBranch &&
       (env.target || []).includes("production"),
   );
   if (dangerous) {
-    throw new Error("Refusing to change a production database variable");
+    throw new Error("Refusing to change a production variable");
   }
   const existing = envs.find((env) =>
-    isExactPreviewBranch(env, options.gitBranch),
+    isExactPreviewKey(env, key, options.gitBranch),
   );
   const payload = {
-    key: previewDatabaseKey,
-    value: options.uri,
+    key,
+    value: options.value,
     type: "encrypted",
     target: ["preview"],
     gitBranch: options.gitBranch,
@@ -128,23 +141,38 @@ export async function assignPreviewDatabase(options) {
     `/v9/projects/${encodeURIComponent(projectId)}/env${query}`,
   );
   const record = (confirmed.envs || []).find((env) => env.id === id);
-  if (!record || !isExactPreviewBranch(record, options.gitBranch)) {
-    throw new Error("Vercel preview database assignment was not found");
+  if (!record || !isExactPreviewKey(record, key, options.gitBranch)) {
+    throw new Error("Vercel preview assignment was not found");
   }
   return {
     project: project.name || projectName,
     projectId,
     teamId,
     envId: id,
-    key: previewDatabaseKey,
+    key,
     gitBranch: record.gitBranch,
     targets: record.target.join(","),
+  };
+}
+
+export async function assignPreviewDatabase(options) {
+  if (!/^postgres(ql)?:\/\//.test(options.uri || "")) {
+    throw new Error("Neon connection URI is required");
+  }
+  const assigned = await assignPreviewVariable({
+    ...options,
+    key: previewDatabaseKey,
+    value: options.uri,
+  });
+  return {
+    ...assigned,
     host: new URL(options.uri).hostname,
   };
 }
 
-export async function deletePreviewDatabase(options) {
+export async function deletePreviewVariable(options) {
   assertPreviewGitBranch(options.gitBranch);
+  const key = options.key || previewDatabaseKey;
   const fetchImpl = options.fetchImpl || fetch;
   const token = options.token;
   const projectName = options.project || defaultVercelProject;
@@ -164,10 +192,10 @@ export async function deletePreviewDatabase(options) {
     `/v9/projects/${encodeURIComponent(projectId)}/env${query}`,
   );
   const existing = (listed.envs || []).find((env) =>
-    isExactPreviewBranch(env, options.gitBranch),
+    isExactPreviewKey(env, key, options.gitBranch),
   );
   if (!existing) {
-    return { deleted: false, gitBranch: options.gitBranch };
+    return { deleted: false, gitBranch: options.gitBranch, key };
   }
   await vercelRequest(
     fetchImpl,
@@ -175,7 +203,16 @@ export async function deletePreviewDatabase(options) {
     `/v9/projects/${encodeURIComponent(projectId)}/env/${encodeURIComponent(existing.id)}${query}`,
     { method: "DELETE" },
   );
-  return { deleted: true, gitBranch: options.gitBranch, envId: existing.id };
+  return {
+    deleted: true,
+    gitBranch: options.gitBranch,
+    envId: existing.id,
+    key,
+  };
+}
+
+export async function deletePreviewDatabase(options) {
+  return deletePreviewVariable({ ...options, key: previewDatabaseKey });
 }
 
 export function assignmentLog(record) {
