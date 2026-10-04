@@ -1822,6 +1822,123 @@ describe("legacy keychain recovery integration", () => {
   });
 });
 
+describe("stored Bedrock bearer", () => {
+  const mockUserDataPath = "/mock/user/data";
+  const mockSettingsPath = "/mock/user/data/user-settings.json";
+  let store: Record<string, string>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv("AWS_ACCESS_KEY_ID", "");
+    vi.stubEnv("AWS_SECRET_ACCESS_KEY", "");
+    mockGetUserDataPath.mockReturnValue(mockUserDataPath);
+    mockPath.join.mockReturnValue(mockSettingsPath);
+    mockSafeStorage.isEncryptionAvailable.mockReturnValue(false);
+    store = {};
+    mockFs.existsSync.mockImplementation((p) => (p as string) in store);
+    mockFs.readFileSync.mockImplementation((p) => {
+      const value = store[p as string];
+      if (value === undefined) {
+        const err = new Error("ENOENT") as NodeJS.ErrnoException;
+        err.code = "ENOENT";
+        throw err;
+      }
+      return value;
+    });
+    mockFs.writeFileSync.mockImplementation((p, data) => {
+      store[p as string] = data as string;
+    });
+    mockFs.copyFileSync.mockImplementation((src, dest) => {
+      store[dest as string] = store[src as string];
+    });
+    mockFs.renameSync.mockImplementation((oldPath, newPath) => {
+      store[newPath as string] = store[oldPath as string];
+      delete store[oldPath as string];
+    });
+    mockFs.unlinkSync.mockImplementation((p) => {
+      delete store[p as string];
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  const readStoredFile = () =>
+    JSON.parse(store[mockSettingsPath]) as {
+      providerSettings?: {
+        bedrock?: { apiKey?: { value?: string } };
+        openai?: { apiKey?: { value?: string } };
+      };
+    };
+
+  it("drops a saved bearer on write when the IAM pair is set", () => {
+    vi.stubEnv("AWS_ACCESS_KEY_ID", "AKIA_TEST");
+    vi.stubEnv("AWS_SECRET_ACCESS_KEY", "aws-secret");
+    store[mockSettingsPath] = JSON.stringify({ providerSettings: {} });
+
+    writeSettings({
+      providerSettings: {
+        bedrock: {
+          apiKey: { value: "expired-bearer", encryptionType: "plaintext" },
+        },
+        openai: {
+          apiKey: { value: "sk-openai", encryptionType: "plaintext" },
+        },
+      },
+    });
+
+    const stored = readStoredFile();
+    expect(stored.providerSettings?.bedrock).toBeUndefined();
+    expect(stored.providerSettings?.openai?.apiKey?.value).toBe("sk-openai");
+    expect(JSON.stringify(stored)).not.toContain("expired-bearer");
+  });
+
+  it("rewrites a stored bearer once when the IAM pair is set", () => {
+    vi.stubEnv("AWS_ACCESS_KEY_ID", "AKIA_TEST");
+    vi.stubEnv("AWS_SECRET_ACCESS_KEY", "aws-secret");
+    store[mockSettingsPath] = JSON.stringify({
+      providerSettings: {
+        bedrock: {
+          apiKey: { value: "expired-bearer", encryptionType: "plaintext" },
+        },
+        openai: {
+          apiKey: { value: "sk-openai", encryptionType: "plaintext" },
+        },
+      },
+    });
+
+    const first = readSettings();
+    expect(first.providerSettings.bedrock?.apiKey).toBeUndefined();
+    expect(first.providerSettings.openai?.apiKey?.value).toBe("sk-openai");
+    expect(readStoredFile().providerSettings?.bedrock).toBeUndefined();
+    expect(JSON.stringify(readStoredFile())).not.toContain("expired-bearer");
+
+    mockFs.writeFileSync.mockClear();
+    const second = readSettings();
+    expect(second.providerSettings.bedrock?.apiKey).toBeUndefined();
+    expect(mockFs.writeFileSync).not.toHaveBeenCalled();
+  });
+
+  it("keeps a saved bearer when the IAM pair is empty", () => {
+    store[mockSettingsPath] = JSON.stringify({
+      providerSettings: {
+        bedrock: {
+          apiKey: { value: "expired-bearer", encryptionType: "plaintext" },
+        },
+      },
+    });
+
+    const read = readSettings();
+    expect(read.providerSettings.bedrock?.apiKey?.value).toBe("expired-bearer");
+    expect(readStoredFile().providerSettings?.bedrock?.apiKey?.value).toBe(
+      "expired-bearer",
+    );
+    expect(mockFs.writeFileSync).not.toHaveBeenCalled();
+  });
+});
+
 describe("renderer crash record", () => {
   const mockUserDataPath = "/mock/user/data";
   const crashPath = `${mockUserDataPath}/renderer-crash.json`;

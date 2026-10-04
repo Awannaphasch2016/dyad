@@ -46,11 +46,11 @@ Test values are the literal `expired-bearer`. No real bearer is printed or commi
 
 ## Checklist
 
-- [ ] Strip the key in `writeSettings`.
-- [ ] Strip and rewrite once in `readSettings`. Log `removed stored bedrock bearer`.
-- [ ] Hide the Bedrock paste box when `BEDROCK_IAM` is `1`.
-- [ ] Surface `Bearer Token has expired`.
-- [ ] Add the tests above.
+- [x] Strip the key in `writeSettings`.
+- [x] Strip and rewrite once in `readSettings`. Log `removed stored bedrock bearer`.
+- [x] Hide the Bedrock paste box when `BEDROCK_IAM` is `1`.
+- [x] Surface `Bearer Token has expired`.
+- [x] Add the tests above.
 
 ## After this lands
 
