@@ -30,10 +30,10 @@ export function isProviderSetup(
 
   const providerSettings = settings?.providerSettings[provider];
 
-  // Bedrock IAM is a main-process flag. The access key and secret are not
-  // copied into the renderer.
-  if (provider === "bedrock" && envVars.BEDROCK_IAM === "1") {
-    return true;
+  // Bedrock is configured only by the IAM pair. A saved API key or
+  // AWS_BEARER_TOKEN_BEDROCK is not a credential this app will send.
+  if (provider === "bedrock") {
+    return envVars.BEDROCK_IAM === "1";
   }
 
   // Vertex uses service account credentials instead of an API key

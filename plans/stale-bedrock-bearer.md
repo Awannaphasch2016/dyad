@@ -4,7 +4,7 @@
 
 ## Outcome
 
-A Bedrock API key saved in `user-settings.json` is deleted when `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` are both set, and a later paste cannot write it back. Chats sign with SigV4. If a bearer is ever sent and AWS says it expired, the chat shows `Bearer Token has expired`.
+Bedrock requires `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`. A missing pair fails before any request. A saved Bedrock API key is deleted on read and on write, and the settings page has no paste box. Chats sign with SigV4. If a bearer is ever sent and AWS says it expired, the chat shows `Bearer Token has expired`.
 
 ## Where the string is
 
@@ -16,14 +16,12 @@ The production image does not contain `useIam`. A bearer saved on that image is 
 
 ## In scope
 
-Four edits, all behind the same condition: both IAM variables are non-empty after trim.
-
-1. `writeSettings` in `src/main/settings.ts` drops `providerSettings.bedrock.apiKey` before the file is written. An empty `bedrock` object is removed with it. `set-user-settings` uses this function, so a paste during the session does not land.
-2. `readSettings` drops a key already in the file, writes the file back once through the existing atomic write, and logs `removed stored bedrock bearer` without the value. A second read does not write.
-3. `ProviderSettingsPage`, when `useSettings().envVars.BEDROCK_IAM` is `1`, shows that requests are signed with the AWS credentials on the server and does not render the paste box. The renderer already receives that flag from `get-env-vars` and does not receive the access key or the secret.
-4. `getErrorMessageWithDetails` appends a response body that contains `Bearer Token has expired`. Other response bodies stay hidden. That body does not contain the bearer.
-
-Desktop installs with the IAM pair empty keep the current path: a saved bearer is still sent. The existing test `bedrock without IAM env still sends the stored bearer token` stays.
+1. `writeSettings` drops `providerSettings.bedrock.apiKey` before the file is written, whether or not the IAM pair is set. An empty `bedrock` object is removed with it.
+2. `readSettings` drops a key already in the file, writes the file back once, and logs `removed stored bedrock bearer` without the value.
+3. The Bedrock settings page never renders the paste box. With `BEDROCK_IAM=1` it says requests are signed with the AWS credentials on the server. Without that flag it says the IAM pair is required.
+4. `getModelClient` throws `Bedrock requires AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.` before any network call when either value is missing. It always passes an empty `apiKey`, so `AWS_BEARER_TOKEN_BEDROCK` is not sent.
+5. `isProviderSetup("bedrock")` is true only when `BEDROCK_IAM` is `1`. `get-env-vars` does not copy `AWS_BEARER_TOKEN_BEDROCK` to the renderer.
+6. `getErrorMessageWithDetails` appends a response body that contains `Bearer Token has expired`. Other response bodies stay hidden.
 
 ## Out of scope
 
@@ -37,7 +35,7 @@ Desktop installs with the IAM pair empty keep the current path: a saved bearer i
 
 - `writeSettings` with both IAM variables set and `apiKey` value `expired-bearer` leaves the file without that key.
 - `readSettings` on a file that already contains `expired-bearer`, with both IAM variables set, returns settings without the key and rewrites the file. A second read does not write.
-- With the IAM pair empty, a saved bedrock key is still returned.
+- With the IAM pair empty, a saved bedrock key is still removed, and `getModelClient` throws before a request.
 - `BEDROCK_IAM=1` renders the status line and does not render the paste control.
 - A body containing `Bearer Token has expired` is included in the chat error. A body that is only `Forbidden` is not.
 - The existing SigV4 test stays green.
@@ -48,10 +46,10 @@ Test values are the literal `expired-bearer`. No real bearer is printed or commi
 
 - [x] Strip the key in `writeSettings`.
 - [x] Strip and rewrite once in `readSettings`. Log `removed stored bedrock bearer`.
-- [x] Hide the Bedrock paste box when `BEDROCK_IAM` is `1`.
+- [x] Hide the Bedrock paste box. Require the IAM pair, and fail before a request when it is missing.
 - [x] Surface `Bearer Token has expired`.
 - [x] Add the tests above.
 
 ## After this lands
 
-The preview image that contains these edits deletes a stored bearer on startup and ignores a paste. The production container keeps its current image until a separate rollout is approved. On that image, saving a Bedrock API key in Settings sends the bearer again.
+The preview image that contains these edits deletes a stored bearer on startup and refuses a Bedrock call that has no IAM pair. The production container keeps its current image until a separate rollout is approved. On that image, saving a Bedrock API key in Settings sends the bearer again.

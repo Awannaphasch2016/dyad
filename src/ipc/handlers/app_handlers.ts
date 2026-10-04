@@ -1364,6 +1364,11 @@ export function registerAppHandlers() {
     const envVars: Record<string, string | undefined> = {};
     const providers = await getLanguageModelProviders();
     for (const provider of providers) {
+      // Bedrock does not use its bearer env var. Leave that value out of the
+      // renderer map so a stale token is not copied across the IPC boundary.
+      if (provider.id === "bedrock") {
+        continue;
+      }
       if (provider.envVarName) {
         envVars[provider.envVarName] = getEnvVar(provider.envVarName);
       }

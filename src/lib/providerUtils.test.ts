@@ -25,4 +25,20 @@ describe("isProviderSetup bedrock", () => {
       }),
     ).toBe(false);
   });
+
+  it("ignores a saved bearer and the bearer env var", () => {
+    expect(
+      isProviderSetup("bedrock", {
+        settings: {
+          ...settings,
+          providerSettings: {
+            bedrock: {
+              apiKey: { value: "expired-bearer", encryptionType: "plaintext" },
+            },
+          },
+        },
+        envVars: { AWS_BEARER_TOKEN_BEDROCK: "expired-bearer" },
+      }),
+    ).toBe(false);
+  });
 });
