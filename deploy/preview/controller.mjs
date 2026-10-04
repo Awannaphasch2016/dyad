@@ -60,6 +60,19 @@ async function attach(pr) {
   const branch = await ensurePreviewBranch({ apiKey, pr });
   const exports = previewRuntime(downloaded, branch.uri);
   writeFileSync(out, exports ? `${exports}\n` : "", { mode: 0o600 });
+  const cloudflareNames = [
+    "CLOUDFLARE_API_TOKEN",
+    "CLOUDFLARE_ZONE_ID",
+    "CLOUDFLARE_ACCOUNT_ID",
+  ];
+  console.log(
+    cloudflareNames
+      .map(
+        (name) =>
+          `${name}: ${exports.includes(`export ${name}=`) ? "present" : "absent"}`,
+      )
+      .join(", "),
+  );
   console.log(`Attached ${branch.name} at ${branch.host}`);
   const assigned = await assignVercelDatabase(pr, branch);
   if (assigned) await redeployAssigned(assigned);

@@ -80,8 +80,8 @@ test("the preview database export uses the child branch, not the parent URL", ()
     {
       WEWEBPLUS_DATABASE_URL: parent,
       CLERK_PUBLISHABLE_KEY: "pk_test",
-      CLOUDFLARE_API_TOKEN_: "cf-token",
-      CLOUDFLARE_ZONE_ID_: "zone",
+      CLOUDFLARE_API_TOKEN: "cf-token",
+      CLOUDFLARE_ZONE_ID: "zone",
       CLOUDFLARE_ACCOUNT_ID: "account",
       EC2_SSH_KEY: "must-not-export",
       NEON_API_KEY: "must-not-export",
@@ -93,9 +93,22 @@ test("the preview database export uses the child branch, not the parent URL", ()
   assert.equal(text.includes("NEON_API_KEY"), false);
   assert.match(text, /export WEWEBPLUS_DATABASE_URL=/);
   assert.match(text, /export CLERK_PUBLISHABLE_KEY='pk_test'/);
-  assert.match(text, /export CLOUDFLARE_API_TOKEN_='cf-token'/);
-  assert.match(text, /export CLOUDFLARE_ZONE_ID_='zone'/);
+  assert.match(text, /export CLOUDFLARE_API_TOKEN='cf-token'/);
+  assert.match(text, /export CLOUDFLARE_ZONE_ID='zone'/);
   assert.match(text, /export CLOUDFLARE_ACCOUNT_ID='account'/);
+  assert.equal(text.includes("CLOUDFLARE_API_TOKEN_"), false);
+  const legacy = previewRuntime(
+    {
+      CLOUDFLARE_API_TOKEN_: "legacy-token",
+      CLOUDFLARE_ZONE_ID_: "legacy-zone",
+      CLOUDFLARE_ACCOUNT_ID_: "legacy-account",
+    },
+    child,
+  );
+  assert.match(legacy, /export CLOUDFLARE_API_TOKEN='legacy-token'/);
+  assert.match(legacy, /export CLOUDFLARE_ZONE_ID='legacy-zone'/);
+  assert.match(legacy, /export CLOUDFLARE_ACCOUNT_ID='legacy-account'/);
+  assert.equal(legacy.includes("CLOUDFLARE_API_TOKEN_"), false);
   assert.equal(shellQuote("a'b"), "'a'\\''b'");
   assert.equal(previewBranchName(20), "preview-pr-20");
   assert.throws(() => previewBranchName("20;rm"), /Pull request number/);

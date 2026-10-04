@@ -163,6 +163,14 @@ test("preview-up refuses bad arguments and the production checkout", () => {
 
   const source = readFileSync(script, "utf8");
   assert.match(source, /clerk-origins-run/);
+  assert.match(
+    source,
+    /CLOUDFLARE_API_TOKEN CLOUDFLARE_ZONE_ID CLOUDFLARE_ACCOUNT_ID/,
+  );
+  assert.match(
+    source,
+    /PREVIEW_SKIP_TUNNEL:-\}" != "1" \|\| -n "\$\{CLOUDFLARE_API_TOKEN:-\}"/,
+  );
   assert.match(source, /MemAvailable/);
   assert.match(source, /Other previews were left running/);
 

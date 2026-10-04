@@ -79,7 +79,7 @@ export async function ensurePreviewTunnel({
 }) {
   if (!accountId || !zoneId || !apiToken) {
     throw new Error(
-      "CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_ZONE_ID_, and CLOUDFLARE_API_TOKEN_ are required",
+      "CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_ZONE_ID, and CLOUDFLARE_API_TOKEN are required",
     );
   }
   const hostname = previewHostname(pr);
@@ -177,8 +177,8 @@ async function main() {
   const { writeFile } = await import("node:fs/promises");
   const result = await ensurePreviewTunnel({
     accountId: requireEnv("CLOUDFLARE_ACCOUNT_ID"),
-    zoneId: requireEnv("CLOUDFLARE_ZONE_ID_"),
-    apiToken: requireEnv("CLOUDFLARE_API_TOKEN_"),
+    zoneId: requireEnv("CLOUDFLARE_ZONE_ID"),
+    apiToken: requireEnv("CLOUDFLARE_API_TOKEN"),
     pr,
     writeToken: (token) => writeFile(tokenPath, token, { mode: 0o600 }),
   });

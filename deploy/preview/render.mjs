@@ -8,10 +8,27 @@ const runtimeKeys = [
   "AWS_ACCESS_KEY_ID",
   "AWS_SECRET_ACCESS_KEY",
   "AWS_REGION",
-  "CLOUDFLARE_API_TOKEN_",
-  "CLOUDFLARE_ZONE_ID_",
+  "CLOUDFLARE_API_TOKEN",
+  "CLOUDFLARE_ZONE_ID",
   "CLOUDFLARE_ACCOUNT_ID",
 ];
+
+const legacyCloudflareNames = {
+  CLOUDFLARE_API_TOKEN: "CLOUDFLARE_API_TOKEN_",
+  CLOUDFLARE_ZONE_ID: "CLOUDFLARE_ZONE_ID_",
+  CLOUDFLARE_ACCOUNT_ID: "CLOUDFLARE_ACCOUNT_ID_",
+};
+
+function pickedValue(download, key) {
+  const primary = download[key];
+  if (typeof primary === "string" && primary.length > 0) return primary;
+  const legacyName = legacyCloudflareNames[key];
+  if (legacyName) {
+    const legacy = download[legacyName];
+    if (typeof legacy === "string" && legacy.length > 0) return legacy;
+  }
+  return typeof primary === "string" ? primary : undefined;
+}
 
 export function shellQuote(value) {
   return `'${String(value).replaceAll("'", "'\\''")}'`;
@@ -33,7 +50,8 @@ export function runtimeExports(env) {
 export function dopplerAllowlist(download) {
   const picked = {};
   for (const key of runtimeKeys) {
-    if (typeof download[key] === "string") picked[key] = download[key];
+    const value = pickedValue(download, key);
+    if (typeof value === "string") picked[key] = value;
   }
   return picked;
 }

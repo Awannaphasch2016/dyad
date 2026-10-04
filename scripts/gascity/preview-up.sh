@@ -106,23 +106,23 @@ secrets_file="${HOME}/.local/state/wewebplus-preview/controller.env"
 if [[ -f "$secrets_file" ]]; then
   echo "controller cloudflare keys:"
   awk -F= '/^CLOUDFLARE/ { print $1 }' "$secrets_file"
-  if [[ -z "${CLOUDFLARE_API_TOKEN_:-}${CLOUDFLARE_API_TOKEN:-}" ]]; then
+  if [[ -z "${CLOUDFLARE_API_TOKEN:-}${CLOUDFLARE_API_TOKEN_:-}" ]]; then
     set -a
     # shellcheck disable=SC1090
     source "$secrets_file"
     set +a
   fi
 fi
-if [[ -z "${CLOUDFLARE_API_TOKEN_:-}" && -n "${CLOUDFLARE_API_TOKEN:-}" ]]; then
-  export CLOUDFLARE_API_TOKEN_="$CLOUDFLARE_API_TOKEN"
+if [[ -z "${CLOUDFLARE_API_TOKEN:-}" && -n "${CLOUDFLARE_API_TOKEN_:-}" ]]; then
+  export CLOUDFLARE_API_TOKEN="$CLOUDFLARE_API_TOKEN_"
 fi
-if [[ -z "${CLOUDFLARE_ZONE_ID_:-}" && -n "${CLOUDFLARE_ZONE_ID:-}" ]]; then
-  export CLOUDFLARE_ZONE_ID_="$CLOUDFLARE_ZONE_ID"
+if [[ -z "${CLOUDFLARE_ZONE_ID:-}" && -n "${CLOUDFLARE_ZONE_ID_:-}" ]]; then
+  export CLOUDFLARE_ZONE_ID="$CLOUDFLARE_ZONE_ID_"
 fi
 if [[ -z "${CLOUDFLARE_ACCOUNT_ID:-}" && -n "${CLOUDFLARE_ACCOUNT_ID_:-}" ]]; then
   export CLOUDFLARE_ACCOUNT_ID="$CLOUDFLARE_ACCOUNT_ID_"
 fi
-for cloudflare_name in CLOUDFLARE_API_TOKEN_ CLOUDFLARE_ZONE_ID_ CLOUDFLARE_ACCOUNT_ID; do
+for cloudflare_name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ZONE_ID CLOUDFLARE_ACCOUNT_ID; do
   if [[ -n "${!cloudflare_name:-}" ]]; then
     echo "${cloudflare_name}: present"
   else
@@ -130,7 +130,7 @@ for cloudflare_name in CLOUDFLARE_API_TOKEN_ CLOUDFLARE_ZONE_ID_ CLOUDFLARE_ACCO
   fi
 done
 
-if [[ "${PREVIEW_SKIP_TUNNEL:-}" != "1" || -n "${CLOUDFLARE_API_TOKEN_:-}" ]]; then
+if [[ "${PREVIEW_SKIP_TUNNEL:-}" != "1" || -n "${CLOUDFLARE_API_TOKEN:-}" ]]; then
   if ! command -v node >/dev/null 2>&1; then
     echo "node 18+ is required to create the Cloudflare tunnel" >&2
     exit 2
