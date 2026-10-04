@@ -249,10 +249,25 @@ Rehearsal, before any production URL changes:
 
 ### Phase 1: Catalog
 
-- [ ] Run the catalog on the unpooled production URL.
-- [ ] Confirm the object list matches the inventory, or record the extras.
-- [ ] Record row counts and whether `drizzle.__drizzle_migrations` exists.
-- [ ] Record whether the Dyad process uses a direct or pooled URL.
+- [x] Run the catalog on the production URL. The direct Supabase host is IPv6-only from the production server, so the read used the session pooler the process already uses (port 5432).
+- [x] Confirm the object list matches the inventory, or record the extras.
+- [x] Record row counts and whether `drizzle.__drizzle_migrations` exists.
+- [x] Record whether the Dyad process uses a direct or pooled URL.
+
+## Measured catalog (2026-10-04)
+
+Read from the running production Dyad container. No connection string, ciphertext, or row body was saved. Production `WEWEBPLUS_DATABASE_URL` was not changed.
+
+- Provider: Supabase. Postgres 17.6. Database name `postgres`.
+- The Dyad process uses the Supabase session pooler on port 5432. It has been healthy on that URL. A direct `db.<project>.supabase.co` connection from that server fails with `ENETUNREACH` because the address is IPv6. `pg_dump` from that server has to use the session pooler until the Supabase IPv4 add-on is enabled. Do not use port 6543.
+- `wewebplus` tables, columns, and indexes match migrations `0000`–`0002`. There are no functions, triggers, or policies in `wewebplus` or `drizzle`. `runtime_run_id` is not present.
+- `drizzle.__drizzle_migrations` has three rows whose `created_at` values are `1790499480296`, `1790838000000`, and `1790907463649`.
+- `wewebplus` is about 991 KB. Counts: `account_connections` 0, `answer_locks` 0, `answers` 3, `apps` 10, `audit_events` 0, `chats` 31, `knowledge_items` 0, `memberships` 2, `messages` 85, `phase_approvals` 0, `phase_comments` 0, `questions` 3, `roles` 2.
+- `account_connections` is empty, so the decrypt check has no row to test.
+- The same Supabase project also contains `public` (including `agenturmarkt_leads`, 8182 rows, plus deals, funnels, and template tables), `storage.objects` (182 rows), and empty `auth.users`. This repository does not query those tables. They stay on Supabase. Dumping them into the control-plane Neon project is not part of this cutover.
+- Extensions installed on the Supabase database are `pg_stat_statements`, `pgcrypto`, `plpgsql`, `supabase_vault`, `uuid-ossp`, and `vector`. None are used by the `wewebplus` tables. The schema-scoped dump does not need them on Neon.
+
+Phase 2 did not start. No `NEON_API_KEY` is available to this environment, the production host, or the production env file. The preview Neon parent was not used. Production still reads Supabase.
 
 ### Phase 2: Empty Neon project and restore
 
@@ -298,8 +313,10 @@ Rehearsal, before any production URL changes:
 
 ## Open questions
 
-- The live Supabase catalog has not been read. Extras, extensions, and the real size are unknown until Phase 1. The dump command stays the same unless that catalog shows objects outside `wewebplus` that the app queries.
-- The Supabase region is not recorded in the repo. Match it when the catalog or the project settings show it. Otherwise use `ap-southeast-1`.
+- Phase 1 is measured. `wewebplus` matches the migrations. The same Supabase project also holds an unrelated `public` schema and Storage objects. Those stay on Supabase.
+- The direct Supabase host is IPv6-only from the production server. The dump from that server uses the session pooler on port 5432.
+- Creating the Neon project needs a `NEON_API_KEY`. None was available, so the restore and the URL swap have not run.
+- The Supabase region was not printed. Create the Neon project on Postgres 17 in `ap-southeast-1` unless the project settings show a different region.
 - Whether the gate poller is running in production changes who must be quiesced. The URL it would use is still `WEWEBPLUS_DATABASE_URL`.
 
 ---
