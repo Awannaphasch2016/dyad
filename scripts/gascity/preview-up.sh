@@ -95,6 +95,34 @@ do
   upsert_env "$key"
 done
 
+secrets_file="${HOME}/.local/state/wewebplus-preview/controller.env"
+if [[ -f "$secrets_file" ]]; then
+  echo "controller cloudflare keys:"
+  awk -F= '/^CLOUDFLARE/ { print $1 }' "$secrets_file"
+  if [[ -z "${CLOUDFLARE_API_TOKEN_:-}${CLOUDFLARE_API_TOKEN:-}" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$secrets_file"
+    set +a
+  fi
+fi
+if [[ -z "${CLOUDFLARE_API_TOKEN_:-}" && -n "${CLOUDFLARE_API_TOKEN:-}" ]]; then
+  export CLOUDFLARE_API_TOKEN_="$CLOUDFLARE_API_TOKEN"
+fi
+if [[ -z "${CLOUDFLARE_ZONE_ID_:-}" && -n "${CLOUDFLARE_ZONE_ID:-}" ]]; then
+  export CLOUDFLARE_ZONE_ID_="$CLOUDFLARE_ZONE_ID"
+fi
+if [[ -z "${CLOUDFLARE_ACCOUNT_ID:-}" && -n "${CLOUDFLARE_ACCOUNT_ID_:-}" ]]; then
+  export CLOUDFLARE_ACCOUNT_ID="$CLOUDFLARE_ACCOUNT_ID_"
+fi
+for cloudflare_name in CLOUDFLARE_API_TOKEN_ CLOUDFLARE_ZONE_ID_ CLOUDFLARE_ACCOUNT_ID; do
+  if [[ -n "${!cloudflare_name:-}" ]]; then
+    echo "${cloudflare_name}: present"
+  else
+    echo "${cloudflare_name}: absent"
+  fi
+done
+
 if [[ "${PREVIEW_SKIP_TUNNEL:-}" != "1" || -n "${CLOUDFLARE_API_TOKEN_:-}" ]]; then
   if ! command -v node >/dev/null 2>&1; then
     echo "node 18+ is required to create the Cloudflare tunnel" >&2
@@ -128,6 +156,11 @@ if [[ "$tunnel" -eq 1 ]]; then
 fi
 echo "Checking factory API on the preview network"
 "${compose[@]}" --profile check run --rm caller
+echo "Checking the preview listener"
+gate_code="$(docker exec "${project}-gascity-1" node -e 'fetch("http://127.0.0.1:8787/v1/runs",{method:"POST",headers:{"authorization":"Bearer session-token","content-type":"application/json"},body:JSON.stringify({prompt:"preview gate check",idempotencyKey:"preview-gate-check"})}).then(async (response)=>{process.stdout.write(String(response.status))})')"
+echo "listener ${gate_code}"
+test "$gate_code" = "202"
+docker logs "${project}-gascity-1" 2>&1 | grep 'run accepted' | tail -1
 echo "Preview project ${project} is up"
 echo "City volume pr-${pr}-city has a city"
 echo "https://gc-pr-${pr}.anakwannaphaschaiyong.com"
