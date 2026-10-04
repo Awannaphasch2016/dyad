@@ -19,6 +19,7 @@ function toResponse(stored: StoredFormulaGraph) {
     formulaName: stored.graph.formulaName,
     description: stored.graph.description,
     persisted: stored.persisted,
+    linked: stored.linked,
     terminal: stored.run?.terminal ?? false,
     nodes: stored.graph.nodes.map((node) => ({
       ...node,

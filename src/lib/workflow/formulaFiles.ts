@@ -19,6 +19,7 @@ export type StoredFormulaGraph = {
   graph: FormulaGraph;
   positions: Record<string, Point>;
   persisted: boolean;
+  linked: boolean;
   run: RunSnapshot | null;
 };
 
@@ -43,6 +44,23 @@ export function layoutFilePath(
 
 export function runFilePath(projectDir: string, formulaName: string): string {
   return path.join(projectDir, "formulas", `${formulaName}.run.json`);
+}
+
+export function unlinkedStoredFormula(formulaName: string): StoredFormulaGraph {
+  const graph =
+    formulaName === REVIEW_PIPELINE_NAME
+      ? exampleReviewPipeline()
+      : emptyFormula(formulaName);
+  return {
+    graph,
+    positions: columnPositions(
+      graph.nodes.map((node) => node.id),
+      graph.edges,
+    ),
+    persisted: false,
+    linked: false,
+    run: null,
+  };
 }
 
 export async function readStoredFormula(
@@ -74,6 +92,7 @@ export async function readStoredFormula(
     graph,
     positions,
     persisted,
+    linked: true,
     run: await readRun(projectDir, formulaName),
   };
 }

@@ -75,12 +75,27 @@ services:
     command:
       - |
         set -eu
+        mkdir -p /city/bin /city/lib /city/libexec
+        gc_src="$$(command -v gc)"
+        cp -a "$$gc_src" /city/libexec/gc
+        chmod 755 /city/libexec/gc
+        if ldd "$$gc_src" >/dev/null 2>&1; then
+          ldd "$$gc_src" | awk '/=> \// { print $$3 }' | while read -r lib; do
+            cp -a "$$lib" /city/lib/
+          done
+        fi
+        printf '%s\n' \
+          '#!/bin/sh' \
+          'export LD_LIBRARY_PATH="/city/lib$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}"' \
+          'exec /city/libexec/gc "$$@"' \
+          > /city/bin/gc
+        chmod 755 /city/bin/gc
         if [ ! -f /city/city.toml ]; then
           gc init --template gascity --default-provider claude --no-start --skip-provider-readiness --yes /city
         fi
         exec sleep infinity
     healthcheck:
-      test: ["CMD", "test", "-s", "/city/city.toml"]
+      test: ["CMD-SHELL", "test -s /city/city.toml && test -x /city/bin/gc"]
       interval: 10s
       timeout: 5s
       retries: 30

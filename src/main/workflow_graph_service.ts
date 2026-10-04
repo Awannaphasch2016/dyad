@@ -2,13 +2,14 @@ import path from "node:path";
 import { eq } from "drizzle-orm";
 import { db, type db as productionDb } from "@/db";
 import { apps } from "@/db/schema";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import { DyadError, DyadErrorKind, isDyadError } from "@/errors/dyad_error";
 import {
   closeGateBead,
   compileWithGc,
   readStoredFormula,
   saveStoredFormula,
   saveStoredLayout,
+  unlinkedStoredFormula,
   type FormulaCompiler,
   type StoredFormulaGraph,
 } from "@/lib/workflow/formulaFiles";
@@ -43,7 +44,17 @@ export async function getWorkflowGraph(
   formulaName: string,
   database: Database = db,
 ): Promise<StoredFormulaGraph> {
-  return readStoredFormula(projectDirForApp(database, appId), formulaName);
+  try {
+    return await readStoredFormula(
+      projectDirForApp(database, appId),
+      formulaName,
+    );
+  } catch (error) {
+    if (isDyadError(error) && error.kind === DyadErrorKind.Precondition) {
+      return unlinkedStoredFormula(formulaName);
+    }
+    throw error;
+  }
 }
 
 export async function saveWorkflowGraph(

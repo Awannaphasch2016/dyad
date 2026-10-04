@@ -1,8 +1,9 @@
 # Create, update, or destroy one preview from the preview label.
 #
 # This job does not SSH. The production host is not a target. Branch
-# cursor/preview-bridge-proof-9e7a is updated by
-# preview-image.yml so the two jobs do not restart that preview twice.
+# cursor/preview-bridge-proof-9e7a and cursor/formula-preview-9e7a are
+# updated by preview-image.yml so the two jobs do not restart those
+# previews twice.
 name: Preview
 
 on:
@@ -41,16 +42,16 @@ jobs:
           echo "command=${command}" >> "$GITHUB_OUTPUT"
           echo "${command}"
 
-      - name: Leave the proof branch to the image workflow
-        if: steps.decide.outputs.command == 'update' && github.head_ref == 'cursor/preview-bridge-proof-9e7a'
+      - name: Leave image-managed branches to the image workflow
+        if: steps.decide.outputs.command == 'update' && contains(fromJSON('["cursor/preview-bridge-proof-9e7a", "cursor/formula-preview-9e7a"]'), github.head_ref)
         run: echo "preview-image.yml updates this branch"
 
       - name: Set up Docker Buildx
-        if: steps.decide.outputs.command == 'update' && github.head_ref != 'cursor/preview-bridge-proof-9e7a'
+        if: "steps.decide.outputs.command == 'update' && !contains(fromJSON('[\"cursor/preview-bridge-proof-9e7a\", \"cursor/formula-preview-9e7a\"]'), github.head_ref)"
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
-        if: steps.decide.outputs.command == 'update' && github.head_ref != 'cursor/preview-bridge-proof-9e7a'
+        if: "steps.decide.outputs.command == 'update' && !contains(fromJSON('[\"cursor/preview-bridge-proof-9e7a\", \"cursor/formula-preview-9e7a\"]'), github.head_ref)"
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -59,7 +60,7 @@ jobs:
 
       - name: Resolve the published digest
         id: digest
-        if: steps.decide.outputs.command == 'update' && github.head_ref != 'cursor/preview-bridge-proof-9e7a'
+        if: "steps.decide.outputs.command == 'update' && !contains(fromJSON('[\"cursor/preview-bridge-proof-9e7a\", \"cursor/formula-preview-9e7a\"]'), github.head_ref)"
         env:
           OWNER: ${{ github.repository_owner }}
           SHA: ${{ github.event.pull_request.head.sha }}
@@ -83,7 +84,7 @@ jobs:
           echo "image=${image}" >> "$GITHUB_OUTPUT"
 
       - name: Attach the Neon preview branch
-        if: steps.decide.outputs.command == 'update' && github.head_ref != 'cursor/preview-bridge-proof-9e7a'
+        if: "steps.decide.outputs.command == 'update' && !contains(fromJSON('[\"cursor/preview-bridge-proof-9e7a\", \"cursor/formula-preview-9e7a\"]'), github.head_ref)"
         env:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
@@ -101,11 +102,11 @@ jobs:
         run: node deploy/preview/controller.mjs destroy --pr "$PR" --git-branch "$BRANCH" --vercel-project dyad
 
       - name: Log in to Namespace with the GitHub token
-        if: steps.decide.outputs.command != 'skip' && (steps.decide.outputs.command == 'destroy' || github.head_ref != 'cursor/preview-bridge-proof-9e7a')
+        if: "steps.decide.outputs.command != 'skip' && (steps.decide.outputs.command == 'destroy' || !contains(fromJSON('[\"cursor/preview-bridge-proof-9e7a\", \"cursor/formula-preview-9e7a\"]'), github.head_ref))"
         uses: namespacelabs/nscloud-setup@v0
 
       - name: Install the Devbox CLI
-        if: steps.decide.outputs.command != 'skip' && (steps.decide.outputs.command == 'destroy' || github.head_ref != 'cursor/preview-bridge-proof-9e7a')
+        if: "steps.decide.outputs.command != 'skip' && (steps.decide.outputs.command == 'destroy' || !contains(fromJSON('[\"cursor/preview-bridge-proof-9e7a\", \"cursor/formula-preview-9e7a\"]'), github.head_ref))"
         run: |
           set -euo pipefail
           ver=0.0.195
@@ -117,7 +118,7 @@ jobs:
           sudo install -m 755 "$bin" /usr/local/bin/devbox
 
       - name: Point the Devbox CLI at the federated token
-        if: steps.decide.outputs.command != 'skip' && (steps.decide.outputs.command == 'destroy' || github.head_ref != 'cursor/preview-bridge-proof-9e7a')
+        if: "steps.decide.outputs.command != 'skip' && (steps.decide.outputs.command == 'destroy' || !contains(fromJSON('[\"cursor/preview-bridge-proof-9e7a\", \"cursor/formula-preview-9e7a\"]'), github.head_ref))"
         run: |
           set -euo pipefail
           token_file=""
@@ -132,7 +133,7 @@ jobs:
           echo "NSC_TOKEN_FILE=${token_file}" >> "$GITHUB_ENV"
 
       - name: Update the preview on Wewebplus-ci
-        if: steps.decide.outputs.command == 'update' && github.head_ref != 'cursor/preview-bridge-proof-9e7a'
+        if: "steps.decide.outputs.command == 'update' && !contains(fromJSON('[\"cursor/preview-bridge-proof-9e7a\", \"cursor/formula-preview-9e7a\"]'), github.head_ref)"
         env:
           PR: ${{ github.event.pull_request.number }}
           SHA: ${{ github.event.pull_request.head.sha }}

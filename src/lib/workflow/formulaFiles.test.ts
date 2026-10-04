@@ -9,6 +9,7 @@ import {
   readStoredFormula,
   saveStoredFormula,
   saveStoredLayout,
+  unlinkedStoredFormula,
 } from "./formulaFiles";
 
 const directories: string[] = [];
@@ -39,6 +40,7 @@ describe("formula files", () => {
     );
     const stored = await readStoredFormula(projectDir, graph.formulaName);
     expect(stored.persisted).toBe(true);
+    expect(stored.linked).toBe(true);
     expect(stored.graph.nodes).toHaveLength(4);
     expect(stored.positions.draft).toEqual({ x: 1, y: 2 });
     expect(
@@ -113,5 +115,21 @@ describe("formula files", () => {
     ).toBe(before);
     const stored = await readStoredFormula(projectDir, graph.formulaName);
     expect(stored.positions.draft).toEqual({ x: 40, y: 50 });
+  });
+
+  it("shows the review pipeline in memory when the app is not linked", () => {
+    const stored = unlinkedStoredFormula("review-pipeline");
+    expect(stored.linked).toBe(false);
+    expect(stored.persisted).toBe(false);
+    expect(stored.run).toBeNull();
+    expect(stored.graph.nodes.map((node) => node.id)).toEqual([
+      "draft",
+      "revise",
+      "approve",
+      "ship",
+    ]);
+    expect(stored.positions.draft).toEqual(
+      expect.objectContaining({ x: expect.any(Number), y: expect.any(Number) }),
+    );
   });
 });

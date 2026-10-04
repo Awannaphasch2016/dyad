@@ -1,0 +1,69 @@
+// Add one preview origin to the Clerk instance without dropping the others.
+
+import { pathToFileURL } from "node:url";
+
+const PREVIEW_ORIGIN = /^https:\/\/pr-[0-9]+\.anakwannaphaschaiyong\.com$/;
+
+export function originsWith(existing, origin) {
+  if (!PREVIEW_ORIGIN.test(origin)) {
+    throw new Error("Preview origin is not a pr-<number> hostname");
+  }
+  const origins = [];
+  for (const item of existing ?? []) {
+    if (typeof item !== "string" || item.length === 0) continue;
+    if (!origins.includes(item)) origins.push(item);
+  }
+  if (origins.includes(origin)) return { origins, added: false };
+  return { origins: [...origins, origin], added: true };
+}
+
+async function main() {
+  const origin = process.env.PREVIEW_ORIGIN ?? "";
+  const key = process.env.CLERK_SECRET_KEY ?? "";
+  if (!PREVIEW_ORIGIN.test(origin)) {
+    console.error(
+      "PREVIEW_ORIGIN must be https://pr-<number>.anakwannaphaschaiyong.com",
+    );
+    process.exitCode = 2;
+    return;
+  }
+  if (key.length === 0) {
+    console.error("CLERK_SECRET_KEY is absent");
+    process.exitCode = 2;
+    return;
+  }
+  const headers = {
+    Authorization: `Bearer ${key}`,
+    "Content-Type": "application/json",
+  };
+  const current = await fetch("https://api.clerk.com/v1/instance", { headers });
+  if (!current.ok) {
+    console.error(`Clerk read failed: ${current.status}`);
+    process.exitCode = 1;
+    return;
+  }
+  const body = await current.json();
+  const next = originsWith(body.allowed_origins, origin);
+  if (!next.added) {
+    console.log(`Clerk already allows ${origin}`);
+    return;
+  }
+  const updated = await fetch("https://api.clerk.com/v1/instance", {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify({ allowed_origins: next.origins }),
+  });
+  if (updated.status !== 204) {
+    console.error(`Clerk update failed: ${updated.status}`);
+    process.exitCode = 1;
+    return;
+  }
+  console.log(`Clerk allows ${origin} (${next.origins.length} origins)`);
+}
+
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  await main();
+}

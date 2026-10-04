@@ -36,6 +36,7 @@ export const FormulaGraphSchema = z.object({
   formulaName: z.string().trim().min(1).max(128),
   description: z.string().max(4_000),
   persisted: z.boolean(),
+  linked: z.boolean(),
   terminal: z.boolean(),
   nodes: z.array(FormulaNodeSchema),
   edges: z.array(FormulaEdgeSchema),

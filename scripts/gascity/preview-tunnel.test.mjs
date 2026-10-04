@@ -161,6 +161,10 @@ test("preview-up refuses bad arguments and the production checkout", () => {
       env: { ...process.env, ...env },
     });
 
+  const source = readFileSync(script, "utf8");
+  assert.match(source, /MemAvailable/);
+  assert.match(source, /Other previews were left running/);
+
   const usage = run([]);
   assert.equal(usage.status, 2);
   assert.match(usage.stderr, /Usage/);
@@ -204,6 +208,8 @@ test("preview image workflow updates the shared Devbox after publish", () => {
     /assign-page --pr "\$pr" --git-branch cursor\/dyad-web-frontend-bbea --vercel-project dyad/,
   );
   assert.match(workflow, /https:\/\/pr-\$\{PR\}\.anakwannaphaschaiyong\.com/);
+  assert.match(workflow, /cursor\/formula-preview-9e7a/);
+  assert.match(workflow, /deploy\/preview\/clerk-origins\.mjs/);
   assert.equal(workflow.includes("13.251.216.187"), false);
 });
 
@@ -239,5 +245,6 @@ test("compose preview file does not publish the factory port or mount the produc
     compose,
     /ghcr\.io\/awannaphasch2016\/gascity@sha256:59e824d8393891dc849e11c838e791b89c59f748d6d8bae86ef2a21db838d916/,
   );
+  assert.match(compose, /\/city\/bin\/gc/);
   assert.match(compose, /http:\/\/gascity:8787|GAS_CITY_BROWSER_HOST/);
 });
