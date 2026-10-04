@@ -33,6 +33,7 @@ import { eq } from "drizzle-orm";
 import { mcpManager } from "@/ipc/utils/mcp_manager";
 import { ClaudeCodeModel } from "@/ipc/services/claude_code/model";
 import { requireMcpToolConsent } from "@/ipc/utils/mcp_consent";
+import { messageWithRecognizedResponseBody } from "./error_response_body";
 import { buildMcpAutoApprove } from "./mcp_auto_consent";
 import { scheduleChatSearchIndexing } from "./chat_search_indexer";
 import { parseMcpToolKey, sanitizeMcpName } from "@/ipc/utils/mcp_tool_utils";
@@ -2569,30 +2570,12 @@ function getErrorResponseBody(error: unknown, depth = 0): string | undefined {
   return undefined;
 }
 
-// Markers that identify the engine's free-model quota error in a response
-// body. We only surface raw response bodies for this case so the renderer's
-// ChatErrorBox can recognize the quota error; other errors keep their normal
-// (non-verbose) message.
-const FREE_MODEL_QUOTA_MARKERS = [
-  "dyad_free_model_quota_exceeded",
-  "FREE_MODEL_QUOTA_EXCEEDED",
-  "Dyad Free has reached its daily limit.",
-  "Dyad Free limit",
-];
-
 function getErrorMessageWithDetails(error: unknown): string {
   const message = getErrorMessage(error);
-  const responseBody = getErrorResponseBody(error);
-  if (!responseBody || message.includes(responseBody)) {
-    return message;
-  }
-  const isFreeModelQuotaBody = FREE_MODEL_QUOTA_MARKERS.some((marker) =>
-    responseBody.includes(marker),
+  return messageWithRecognizedResponseBody(
+    message,
+    getErrorResponseBody(error),
   );
-  if (!isFreeModelQuotaBody) {
-    return message;
-  }
-  return `${message}\n\nDetails: ${responseBody}`;
 }
 
 function isTerminatedStreamError(error: unknown): boolean {

@@ -7,6 +7,7 @@ import { ProviderSettingsPage } from "./ProviderSettingsPage";
 
 const mocks = vi.hoisted(() => ({
   anyProviderSetup: false,
+  envVars: {} as Record<string, string | undefined>,
   hasArmedPayload: false,
   navigate: vi.fn(),
   routerBack: vi.fn(),
@@ -34,7 +35,7 @@ vi.mock("@tanstack/react-router", () => ({
 vi.mock("@/hooks/useSettings", () => ({
   useSettings: () => ({
     settings: mocks.settings,
-    envVars: {},
+    envVars: mocks.envVars,
     loading: false,
     error: null,
     updateSettings: mocks.updateSettings,
@@ -57,6 +58,13 @@ vi.mock("@/hooks/useLanguageModelProviders", () => ({
         type: "cloud",
         envVarName: "ANTHROPIC_API_KEY",
         websiteUrl: "https://example.com/api-keys",
+      },
+      {
+        id: "bedrock",
+        name: "AWS Bedrock",
+        type: "cloud",
+        envVarName: "AWS_BEARER_TOKEN_BEDROCK",
+        websiteUrl: "https://console.aws.amazon.com/bedrock/",
       },
     ],
     isLoading: false,
@@ -128,6 +136,7 @@ async function saveApiKey(providerName = "Google", provider = "google") {
 describe("ProviderSettingsPage", () => {
   beforeEach(() => {
     mocks.anyProviderSetup = false;
+    mocks.envVars = {};
     mocks.hasArmedPayload = false;
     mocks.navigate.mockReset();
     mocks.routerBack.mockReset();
@@ -256,4 +265,17 @@ describe("ProviderSettingsPage", () => {
       expect(screen.queryByText("API key check failed")).toBeNull();
     },
   );
+
+  it("hides the Bedrock paste box when IAM credentials are configured", () => {
+    mocks.envVars = { BEDROCK_IAM: "1" };
+
+    renderProviderSettingsPage("bedrock");
+
+    expect(
+      screen.getByText(
+        "Requests are signed with the AWS credentials on the server.",
+      ),
+    ).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Paste & Save" })).toBeNull();
+  });
 });
