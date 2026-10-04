@@ -1,11 +1,15 @@
 // Add one preview origin to the Clerk instance without dropping the others.
 
+import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-const PREVIEW_ORIGIN = /^https:\/\/pr-[0-9]+\.anakwannaphaschaiyong\.com$/;
+const PREVIEW_ORIGINS = [
+  /^https:\/\/pr-[0-9]+\.anakwannaphaschaiyong\.com$/,
+  /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/,
+];
 
 export function originsWith(existing, origin) {
-  if (!PREVIEW_ORIGIN.test(origin)) {
+  if (!PREVIEW_ORIGINS.some((pattern) => pattern.test(origin))) {
     throw new Error("Preview origin is not a pr-<number> hostname");
   }
   const origins = [];
@@ -20,9 +24,9 @@ export function originsWith(existing, origin) {
 async function main() {
   const origin = process.env.PREVIEW_ORIGIN ?? "";
   const key = process.env.CLERK_SECRET_KEY ?? "";
-  if (!PREVIEW_ORIGIN.test(origin)) {
+  if (!PREVIEW_ORIGINS.some((pattern) => pattern.test(origin))) {
     console.error(
-      "PREVIEW_ORIGIN must be https://pr-<number>.anakwannaphaschaiyong.com",
+      "PREVIEW_ORIGIN must be the named preview host or a trycloudflare host",
     );
     process.exitCode = 2;
     return;
@@ -63,7 +67,7 @@ async function main() {
 
 if (
   process.argv[1] &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
+  import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href
 ) {
   await main();
 }

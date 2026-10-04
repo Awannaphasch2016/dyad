@@ -181,5 +181,37 @@ echo "Preview project ${project} is up"
 echo "City volume pr-${pr}-city has a city"
 echo "https://gc-pr-${pr}.anakwannaphaschaiyong.com"
 if [[ "$tunnel" -eq 1 ]]; then
-  echo "https://pr-${pr}.anakwannaphaschaiyong.com"
+  preview_url="https://pr-${pr}.anakwannaphaschaiyong.com"
+else
+  echo "Named tunnel credentials are absent. Starting a temporary tunnel."
+  "${compose[@]}" --profile quick up -d quick
+  preview_url=""
+  for _ in $(seq 1 30); do
+    preview_url="$(docker logs "${project}-quick-1" 2>&1 | grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' | head -1 || true)"
+    if [[ -n "$preview_url" ]]; then
+      break
+    fi
+    sleep 2
+  done
+  if [[ -z "$preview_url" ]]; then
+    echo "Temporary tunnel did not report a URL." >&2
+    exit 2
+  fi
 fi
+ok=0
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  code="$(curl -sS -o /tmp/preview-body -w '%{http_code}' --max-time 20 "$preview_url" || true)"
+  echo "preview http ${code}"
+  if [[ "$code" == "200" ]] && grep -q 'data-dyad-browser-bridge' /tmp/preview-body; then
+    ok=1
+    break
+  fi
+  sleep 5
+done
+if [[ "$ok" != "1" ]]; then
+  echo "Preview page did not return the browser bridge." >&2
+  exit 1
+fi
+printf '%s\n' "$preview_url" > "${state_dir}/preview-${pr}.public-url"
+chmod 600 "${state_dir}/preview-${pr}.public-url"
+echo "preview_url=${preview_url}"
