@@ -234,7 +234,9 @@ jobs:
               'fi' \
               'PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh "$pr" "$image"' \
               'origin="$(cat "$HOME/.local/state/wewebplus-preview/preview-${pr}.public-url")"' \
-              'PREVIEW_ORIGIN="$origin" node deploy/preview/clerk-origins.mjs'
+              'echo "clerk step"' \
+              'PREVIEW_ORIGIN="$origin" node deploy/preview/clerk-origins-run.mjs' \
+              'echo "clerk step done"'
           } > /tmp/preview-remote.sh
           payload="$(base64 -w0 /tmp/preview-remote.sh)"
           set -o pipefail

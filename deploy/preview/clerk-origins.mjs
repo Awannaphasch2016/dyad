@@ -1,8 +1,5 @@
 // Add one preview origin to the Clerk instance without dropping the others.
 
-import path from "node:path";
-import { pathToFileURL } from "node:url";
-
 const PREVIEW_ORIGINS = [
   /^https:\/\/pr-[0-9]+\.anakwannaphaschaiyong\.com$/,
   /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/,
@@ -21,7 +18,7 @@ export function originsWith(existing, origin) {
   return { origins: [...origins, origin], added: true };
 }
 
-async function main() {
+export async function run() {
   const origin = process.env.PREVIEW_ORIGIN ?? "";
   const key = process.env.CLERK_SECRET_KEY ?? "";
   if (!PREVIEW_ORIGINS.some((pattern) => pattern.test(origin))) {
@@ -65,9 +62,3 @@ async function main() {
   console.log(`Clerk allows ${origin} (${next.origins.length} origins)`);
 }
 
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href
-) {
-  await main();
-}

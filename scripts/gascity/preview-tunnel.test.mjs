@@ -208,7 +208,7 @@ test("preview image workflow updates the shared Devbox after publish", () => {
     /assign-page --pr "\$pr" --git-branch cursor\/dyad-web-frontend-bbea --vercel-project dyad/,
   );
   assert.match(workflow, /cursor\/formula-preview-9e7a/);
-  assert.match(workflow, /deploy\/preview\/clerk-origins\.mjs/);
+  assert.match(workflow, /deploy\/preview\/clerk-origins-run\.mjs/);
   assert.match(workflow, /preview_url=https:\/\//);
   assert.equal(workflow.includes("13.251.216.187"), false);
 });
