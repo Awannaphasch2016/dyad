@@ -1,0 +1,122 @@
+# Start the existing preview-20 containers after the Devbox time limit
+# stops cloudflared. This does not build an image, does not change the
+# digest, and does not touch the production host.
+name: Preview wake
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cursor/preview-wake-tunnel-9e7a
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: preview-devbox-wewebplus-ci
+  cancel-in-progress: false
+
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Log in to Namespace with the GitHub token
+        uses: namespacelabs/nscloud-setup@v0
+
+      - name: Install the Devbox CLI
+        run: |
+          set -euo pipefail
+          ver=0.0.195
+          curl -fsSL "https://get.namespace.so/packages/devbox/v${ver}/devbox_${ver}_linux_amd64.tar.gz" -o /tmp/devbox.tgz
+          mkdir -p /tmp/devbox-extract
+          tar -xzf /tmp/devbox.tgz -C /tmp/devbox-extract
+          bin="$(find /tmp/devbox-extract -type f -name devbox -print -quit)"
+          test -n "$bin"
+          sudo install -m 755 "$bin" /usr/local/bin/devbox
+          devbox version
+
+      - name: Point the Devbox CLI at the federated token
+        run: |
+          set -euo pipefail
+          token_file=""
+          if [[ -f /var/run/nsc/token.json ]]; then
+            token_file=/var/run/nsc/token.json
+          elif [[ -f "${HOME}/.config/ns/token.json" ]]; then
+            token_file="${HOME}/.config/ns/token.json"
+          else
+            echo "Namespace login did not write a token file" >&2
+            exit 1
+          fi
+          echo "NSC_TOKEN_FILE=${token_file}" >> "$GITHUB_ENV"
+
+      - name: Start preview-20 on Wewebplus-ci
+        run: |
+          set -euo pipefail
+          {
+            printf '%s\n' \
+              'set -euo pipefail' \
+              'echo "--- wake ---"' \
+              'date -u' \
+              'docker info >/dev/null' \
+              'project=preview-20' \
+              'echo "containers before:"' \
+              'docker ps -a --filter "label=com.docker.compose.project=${project}" --format "{{.Names}} {{.Status}}"' \
+              'dyad_id="$(docker ps -aq --filter "label=com.docker.compose.project=${project}" --filter "label=com.docker.compose.service=dyad")"' \
+              'tunnel_id="$(docker ps -aq --filter "label=com.docker.compose.project=${project}" --filter "label=com.docker.compose.service=cloudflared")"' \
+              'if [[ -n "$dyad_id" ]]; then' \
+              '  docker start "$dyad_id"' \
+              '  healthy=0' \
+              '  for _ in $(seq 1 36); do' \
+              '    status="$(docker inspect --format "{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}" "$dyad_id")"' \
+              '    echo "dyad ${status}"' \
+              '    if [[ "$status" == "healthy" ]]; then' \
+              '      healthy=1' \
+              '      break' \
+              '    fi' \
+              '    sleep 10' \
+              '  done' \
+              '  test "$healthy" = "1"' \
+              '  if [[ -n "$tunnel_id" ]]; then' \
+              '    docker restart "$tunnel_id"' \
+              '  else' \
+              '    echo "cloudflared container is missing"' \
+              '    exit 1' \
+              '  fi' \
+              'else' \
+              '  state="${HOME}/.local/state/wewebplus-preview"' \
+              '  env_file="${state}/preview-20.env"' \
+              '  test -f "$env_file"' \
+              '  image="$(awk -F= '\''$1=="PREVIEW_IMAGE" { print $2; exit }'\'' "$env_file")"' \
+              '  repo=/workspaces/weaver-plus' \
+              '  test -d "$repo/.git"' \
+              '  cd "$repo"' \
+              '  echo "starting from saved digest"' \
+              '  PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh 20 "$image"' \
+              'fi' \
+              'echo "containers after:"' \
+              'docker ps --filter "label=com.docker.compose.project=${project}" --format "{{.Names}} {{.Status}}"'
+          } > /tmp/preview-remote.sh
+          payload="$(base64 -w0 /tmp/preview-remote.sh)"
+          devbox exec Wewebplus-ci -- bash -lc "printf '%s' '${payload}' | base64 -d | bash"
+
+      - name: Check the public preview address
+        run: |
+          set -euo pipefail
+          url="https://pr-20.anakwannaphaschaiyong.com"
+          ok=0
+          for _ in $(seq 1 18); do
+            code="$(curl -sS -o /tmp/preview-body -w '%{http_code}' --max-time 20 "$url" || true)"
+            echo "http ${code}"
+            if [[ "$code" == "200" ]] && grep -q 'data-dyad-browser-bridge' /tmp/preview-body; then
+              ok=1
+              break
+            fi
+            sleep 10
+          done
+          test "$ok" = "1"
+          echo "browser bridge page"

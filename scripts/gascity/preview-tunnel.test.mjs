@@ -188,6 +188,22 @@ test("preview image workflow updates the shared Devbox after publish", () => {
   assert.equal(workflow.includes("13.251.216.187"), false);
 });
 
+test("preview wake workflow starts the existing Devbox stack and does not touch production", () => {
+  const workflow = readFileSync(
+    new URL("../../.github/workflows/preview-wake.yml", import.meta.url),
+    "utf8",
+  );
+  assert.match(workflow, /id-token:\s*write/);
+  assert.match(workflow, /namespacelabs\/nscloud-setup@v0/);
+  assert.match(workflow, /devbox exec Wewebplus-ci/);
+  assert.match(workflow, /preview-20/);
+  assert.match(workflow, /https:\/\/pr-20\.anakwannaphaschaiyong\.com/);
+  assert.equal(workflow.includes("EC2_SSH_KEY"), false);
+  assert.equal(workflow.includes("13.251.216.187"), false);
+  assert.equal(workflow.includes("gascity-rollout"), false);
+  assert.equal(workflow.includes("/opt/gascity"), false);
+});
+
 test("preview exec workflow uses GitHub federation and does not touch production", () => {
   const workflow = readFileSync(
     new URL("../../.github/workflows/preview-exec.yml", import.meta.url),
