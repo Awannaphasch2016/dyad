@@ -3,6 +3,7 @@
 # This job does not SSH, does not read the production deploy key, and does not
 # retarget DNS. The tunnel on Wewebplus-ci already serves the public name.
 # The production host is not a target.
+# A push of this file starts the stopped Devbox and brings preview 20 back.
 name: Preview exec
 
 on:
