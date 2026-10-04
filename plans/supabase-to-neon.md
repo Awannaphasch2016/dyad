@@ -264,7 +264,7 @@ Read from the running production Dyad container. No connection string, ciphertex
 - `drizzle.__drizzle_migrations` has three rows whose `created_at` values are `1790499480296`, `1790838000000`, and `1790907463649`.
 - `wewebplus` is about 991 KB. Counts: `account_connections` 0, `answer_locks` 0, `answers` 3, `apps` 10, `audit_events` 0, `chats` 31, `knowledge_items` 0, `memberships` 2, `messages` 85, `phase_approvals` 0, `phase_comments` 0, `questions` 3, `roles` 2.
 - `account_connections` is empty, so the decrypt check has no row to test.
-- The same Supabase project also contains `public` (including `agenturmarkt_leads`, 8182 rows, plus deals, funnels, and template tables), `storage.objects` (182 rows), and empty `auth.users`. This repository does not query those tables. They stay on Supabase. Dumping them into the control-plane Neon project is not part of this cutover. `public.agenturmarkt_leads` was dropped after the cutover. The `pipeline-artifacts` bucket and its 182 objects were deleted. Storage now has no buckets. The other `public` tables, including template, deal, and credential tables, are still only on Supabase.
+- The same Supabase project also contained `public` (including `agenturmarkt_leads`, 8182 rows, plus deals, funnels, and template tables), `storage.objects` (182 rows), and empty `auth.users`. This repository does not query those tables. They were not dumped into the control-plane Neon project. After the cutover, `public.agenturmarkt_leads`, the `pipeline-artifacts` bucket, and the remaining 70 `public` tables were dropped. Storage has no buckets. `public` has no tables. `wewebplus` and `drizzle` remain on Supabase as the rollback copy.
 - Extensions installed on the Supabase database are `pg_stat_statements`, `pgcrypto`, `plpgsql`, `supabase_vault`, `uuid-ossp`, and `vector`. None are used by the `wewebplus` tables. The schema-scoped dump does not need them on Neon.
 
 ### Phase 2: Empty Neon project and restore
@@ -337,7 +337,7 @@ Rollback files on the server, mode 0600: `/opt/gascity/weaver.env.supabase-backu
 
 ## Open questions
 
-- The cutover is done. Production Dyad and the production question board read Neon project `proud-salad-68182047`. Supabase still has the quiesced copy and the unrelated `public` schema. `public.agenturmarkt_leads` and the `pipeline-artifacts` bucket have been removed. The preview Doppler config has no separate Supabase key. `WEWEBPLUS_DATABASE_URL` stays; in production it is the Neon URL.
+- The cutover is done. Production Dyad and the production question board read Neon project `proud-salad-68182047`. Supabase still has the quiesced `wewebplus` copy and its Drizzle journal. The unrelated `public` tables and the `pipeline-artifacts` bucket have been removed. The preview Doppler config has no separate Supabase key. `WEWEBPLUS_DATABASE_URL` stays; in production it is the Neon URL.
 - No gate poller process was running on the production host at the pause. The Dyad container was the writer that was stopped.
 - Rollback is the Supabase URL in `/opt/gascity/weaver.rollback.env` plus the production Vercel env. Deleting the Supabase project is a later decision.
 
