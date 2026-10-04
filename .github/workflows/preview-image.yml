@@ -225,7 +225,7 @@ jobs:
               '  set -a' \
               '  source "$secrets"' \
               '  set +a' \
-              '  node deploy/preview/controller.mjs attach --pr "$pr" --out /tmp/preview-runtime-devbox.sh' \
+              '  node deploy/preview/controller.mjs attach --pr "$pr" --git-branch "$branch" --vercel-project dyad --out /tmp/preview-runtime-devbox.sh' \
               '  source /tmp/preview-runtime-devbox.sh' \
               '  rm -f /tmp/preview-runtime-devbox.sh' \
               'fi' \

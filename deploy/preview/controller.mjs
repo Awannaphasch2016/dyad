@@ -5,6 +5,12 @@ import { writeFileSync } from "node:fs";
 import { commandForPullRequest } from "./transition.mjs";
 import { deletePreviewBranch, ensurePreviewBranch } from "./neon.mjs";
 import { previewRuntime } from "./render.mjs";
+import {
+  assignmentLog,
+  assignPreviewDatabase,
+  deletePreviewDatabase,
+  redeployPreviewBranch,
+} from "./vercel.mjs";
 
 const dopplerDownloadUrl =
   "https://api.doppler.com/v3/configs/config/secrets/download?format=json";
@@ -51,6 +57,33 @@ async function attach(pr) {
   const exports = previewRuntime(downloaded, branch.uri);
   writeFileSync(out, exports ? `${exports}\n` : "", { mode: 0o600 });
   console.log(`Attached ${branch.name} at ${branch.host}`);
+  await assignVercelDatabase(pr, branch);
+}
+
+async function assignVercelDatabase(pr, branch) {
+  const gitBranch = arg("--git-branch");
+  if (!gitBranch) return null;
+  const token = process.env.VERCEL_TOKEN || "";
+  if (!token) {
+    console.log(
+      "Vercel preview database was not assigned. VERCEL_TOKEN is not set.",
+    );
+    return null;
+  }
+  const assigned = await assignPreviewDatabase({
+    token,
+    project: arg("--vercel-project") || undefined,
+    gitBranch,
+    uri: branch.uri,
+  });
+  console.log(
+    assignmentLog({
+      ...assigned,
+      pr,
+      neonBranch: branch.name,
+    }),
+  );
+  return assigned;
 }
 
 async function destroy(pr) {
@@ -70,6 +103,56 @@ async function destroy(pr) {
       ? `Deleted ${result.name}`
       : `${result.name} was already gone`,
   );
+  const gitBranch = arg("--git-branch");
+  const token = process.env.VERCEL_TOKEN || "";
+  if (!gitBranch || !token) return;
+  const removed = await deletePreviewDatabase({
+    token,
+    project: arg("--vercel-project") || undefined,
+    gitBranch,
+  });
+  console.log(
+    removed.deleted
+      ? `Removed Vercel preview database for ${removed.gitBranch}`
+      : `Vercel preview database for ${removed.gitBranch} was already gone`,
+  );
+}
+
+async function assignVercel(pr) {
+  const apiKey = process.env.NEON_API_KEY || "";
+  if (!apiKey) {
+    throw new Error("NEON_API_KEY is not set");
+  }
+  if (!process.env.VERCEL_TOKEN) {
+    throw new Error("VERCEL_TOKEN is not set");
+  }
+  if (!arg("--git-branch")) {
+    throw new Error("A non-production git branch is required");
+  }
+  const branch = await ensurePreviewBranch({ apiKey, pr });
+  console.log(`Attached ${branch.name} at ${branch.host}`);
+  const assigned = await assignVercelDatabase(pr, branch);
+  if (!assigned) {
+    throw new Error("Vercel preview database was not assigned");
+  }
+  try {
+    const rolled = await redeployPreviewBranch({
+      token: process.env.VERCEL_TOKEN,
+      project: assigned.project,
+      projectId: assigned.projectId,
+      teamId: assigned.teamId,
+      gitBranch: assigned.gitBranch,
+    });
+    console.log(
+      rolled.redeployed
+        ? `Redeployed Vercel preview ${rolled.url} for ${rolled.gitBranch}`
+        : `No Vercel deployment to redeploy for ${rolled.gitBranch}`,
+    );
+  } catch (error) {
+    console.log(
+      `Vercel redeploy failed after the database assignment: ${error.message}`,
+    );
+  }
 }
 
 async function decide() {
@@ -94,8 +177,9 @@ if (command === "decide") {
 } else if (!/^[0-9]+$/.test(pr)) {
   console.error("Usage: controller.mjs <attach|destroy|decide> --pr <number>");
   process.exit(2);
-} else if (command === "attach") {
-  await attach(pr);
+} else if (command === "attach" || command === "assign-vercel") {
+  if (command === "assign-vercel") await assignVercel(pr);
+  else await attach(pr);
 } else if (command === "destroy") {
   await destroy(pr);
 } else {

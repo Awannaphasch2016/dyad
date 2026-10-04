@@ -8,6 +8,11 @@ import {
 } from "../../deploy/preview/transition.mjs";
 import { previewBranchName } from "../../deploy/preview/neon.mjs";
 import { previewRuntime, shellQuote } from "../../deploy/preview/render.mjs";
+import {
+  assignmentLog,
+  assignPreviewDatabase,
+  deletePreviewDatabase,
+} from "../../deploy/preview/vercel.mjs";
 
 test("preview lifecycle creates, updates, and destroys one pull request", () => {
   assert.deepEqual(transition("absent", "create"), {
@@ -115,6 +120,136 @@ test("preview-up stores the database URL without printing it", () => {
   assert.match(script, /WEWEBPLUS_DATABASE_URL/);
   assert.equal(script.includes('echo "$WEWEBPLUS_DATABASE_URL"'), false);
 });
+
+test("a pull request git branch receives its own Neon database on Vercel preview", async () => {
+  const child = "postgresql://role:secret@preview-pr-20.example/neondb";
+  const calls = [];
+  const fetchImpl = async (url, options = {}) => {
+    calls.push({ url, method: options.method || "GET", body: options.body });
+    if (url.endsWith("/v9/projects/dyad")) {
+      return json({ id: "prj_dyad", name: "dyad", accountId: "team_test" });
+    }
+    if (url.includes("/env?") && (options.method || "GET") === "GET") {
+      const created = calls.some((call) => call.method === "POST");
+      return json({
+        envs: [
+          {
+            id: "production-db",
+            key: "WEWEBPLUS_DATABASE_URL",
+            target: ["production"],
+            gitBranch: null,
+          },
+          {
+            id: "shared-preview-db",
+            key: "WEWEBPLUS_DATABASE_URL",
+            target: ["preview"],
+          },
+          ...(created
+            ? [
+                {
+                  id: "env_pr20",
+                  key: "WEWEBPLUS_DATABASE_URL",
+                  target: ["preview"],
+                  gitBranch: "cursor/preview-bridge-proof-9e7a",
+                },
+              ]
+            : []),
+        ],
+      });
+    }
+    if (options.method === "POST") {
+      const body = JSON.parse(options.body);
+      assert.deepEqual(body.target, ["preview"]);
+      assert.equal(body.gitBranch, "cursor/preview-bridge-proof-9e7a");
+      assert.equal(body.key, "WEWEBPLUS_DATABASE_URL");
+      assert.equal(body.value, child);
+      return json({ created: { id: "env_pr20" } });
+    }
+    throw new Error(`unexpected ${options.method || "GET"} ${url}`);
+  };
+  const assigned = await assignPreviewDatabase({
+    token: "token",
+    project: "dyad",
+    gitBranch: "cursor/preview-bridge-proof-9e7a",
+    uri: child,
+    fetchImpl,
+  });
+  const line = assignmentLog({
+    ...assigned,
+    pr: "20",
+    neonBranch: "preview-pr-20",
+  });
+  assert.match(line, /pull request 20/);
+  assert.match(line, /git branch cursor\/preview-bridge-proof-9e7a/);
+  assert.match(line, /Neon preview-pr-20/);
+  assert.match(line, /preview-pr-20\.example/);
+  assert.match(line, /target preview/);
+  assert.equal(line.includes("secret"), false);
+  assert.equal(line.includes(child), false);
+  assert.equal(
+    calls.some((call) => (call.body || "").includes('"production"')),
+    false,
+  );
+  await assert.rejects(
+    () =>
+      assignPreviewDatabase({
+        token: "token",
+        gitBranch: "main",
+        uri: child,
+        fetchImpl,
+      }),
+    /non-production git branch/,
+  );
+});
+
+test("deleting a preview database removes only that git branch variable", async () => {
+  const deleted = [];
+  const fetchImpl = async (url, options = {}) => {
+    if (url.endsWith("/v9/projects/dyad")) {
+      return json({ id: "prj_dyad", name: "dyad", accountId: "team_test" });
+    }
+    if ((options.method || "GET") === "GET") {
+      return json({
+        envs: [
+          {
+            id: "production-db",
+            key: "WEWEBPLUS_DATABASE_URL",
+            target: ["production"],
+          },
+          {
+            id: "env_pr20",
+            key: "WEWEBPLUS_DATABASE_URL",
+            target: ["preview"],
+            gitBranch: "cursor/preview-bridge-proof-9e7a",
+          },
+        ],
+      });
+    }
+    if (options.method === "DELETE") {
+      deleted.push(url);
+      return json({});
+    }
+    throw new Error(`unexpected ${url}`);
+  };
+  const result = await deletePreviewDatabase({
+    token: "token",
+    gitBranch: "cursor/preview-bridge-proof-9e7a",
+    fetchImpl,
+  });
+  assert.equal(result.deleted, true);
+  assert.equal(result.envId, "env_pr20");
+  assert.equal(deleted.length, 1);
+  assert.match(deleted[0], /env_pr20/);
+});
+
+function json(body) {
+  return {
+    ok: true,
+    async text() {
+      return JSON.stringify(body);
+    },
+  };
+}
 
 test("the label workflow does not target production", () => {
   const workflow = readFileSync(

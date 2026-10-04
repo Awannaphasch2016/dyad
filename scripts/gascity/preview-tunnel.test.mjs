@@ -184,6 +184,10 @@ test("preview image workflow updates the shared Devbox after publish", () => {
     workflow,
     /PREVIEW_SKIP_TUNNEL=1 bash scripts\/gascity\/preview-up\.sh/,
   );
+  assert.match(
+    workflow,
+    /controller\.mjs attach --pr "\$pr" --git-branch "\$branch" --vercel-project dyad/,
+  );
   assert.match(workflow, /https:\/\/pr-\$\{PR\}\.anakwannaphaschaiyong\.com/);
   assert.equal(workflow.includes("13.251.216.187"), false);
 });
