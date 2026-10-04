@@ -14,7 +14,8 @@ export function getRouteSidebarPanel(pathname: string): AppSidebarPanel | null {
     pathname === "/" ||
     pathname.startsWith("/apps") ||
     pathname.startsWith("/app-details") ||
-    pathname === "/chat"
+    pathname === "/chat" ||
+    pathname.startsWith("/workflow")
   ) {
     return "Apps";
   }
