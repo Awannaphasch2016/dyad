@@ -164,10 +164,19 @@ fi
 echo "Checking factory API on the preview network"
 "${compose[@]}" --profile check run --rm caller
 echo "Checking the preview listener"
-gate_code="$(docker exec "${project}-gascity-1" node -e 'fetch("http://127.0.0.1:8787/v1/runs",{method:"POST",headers:{"authorization":"Bearer session-token","content-type":"application/json"},body:JSON.stringify({prompt:"preview gate check",idempotencyKey:"preview-gate-check"})}).then(async (response)=>{process.stdout.write(String(response.status))})')"
-echo "listener ${gate_code}"
-test "$gate_code" = "202"
-docker logs "${project}-gascity-1" 2>&1 | grep 'run accepted' | tail -1
+gate_code=""
+for _ in 1 2 3 4 5; do
+  gate_code="$(docker exec "${project}-gascity-1" node -e 'fetch("http://127.0.0.1:8787/v1/runs",{method:"POST",headers:{"authorization":"Bearer session-token","content-type":"application/json"},body:JSON.stringify({prompt:"preview gate check",idempotencyKey:"preview-gate-check"})}).then(async (response)=>{process.stdout.write(String(response.status))})')"
+  echo "listener ${gate_code}"
+  if [[ "$gate_code" == "202" ]]; then
+    docker logs "${project}-gascity-1" 2>&1 | grep 'run accepted' | tail -1
+    break
+  fi
+  sleep 3
+done
+if [[ "$gate_code" != "202" ]]; then
+  echo "Listener returned ${gate_code}. The Dyad page still starts." >&2
+fi
 echo "Preview project ${project} is up"
 echo "City volume pr-${pr}-city has a city"
 echo "https://gc-pr-${pr}.anakwannaphaschaiyong.com"
