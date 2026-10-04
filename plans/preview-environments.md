@@ -1,8 +1,73 @@
 # Preview infrastructure
 
-> For review. Do not implement until this plan is approved. The production EC2 was read on 2026-10-03 10:22 UTC and was not changed.
->
-> A preview is one commit, running as its own Dyad container, its own Gas City city, and its own database branch. A worktree is where a developer edits. It is not the running environment.
+> Revision 2026-10-04, for review. Do not start the remaining work until this revision is approved. The production EC2 was not changed. The sections below this revision are the 2026-10-03 record. Where they disagree with this revision, this revision wins.
+
+A preview is one pull request. It runs its own Dyad container, its own Gas City city, and its own Neon branch. A git branch is the commit series. A Vercel Preview Deployment is the question-board page for that git branch. A worktree is where a developer edits. None of those three is the running environment by itself.
+
+## Revision 2026-10-04
+
+### What is already true
+
+| Piece | Fact |
+| --- | --- |
+| Preview machine | Namespace Devbox `Wewebplus-ci`, shared with the workspace. `Wewebplus-preview` was private and has been deleted. GitHub Actions can exec the shared Devbox. A session stops at the plan maximum, and the public URL stops with it. Starting the Devbox again brings the files back. |
+| Live proof | Pull request 20. `https://pr-20.anakwannaphaschaiyong.com` serves the Dyad browser bridge from Compose project `preview-20`. Factory port 32100 is not published. |
+| Dyad image | GitHub Actions publishes `ghcr.io/awannaphasch2016/dyad:sha-<commit>`. The production host does not pull it. |
+| Neon | Child `preview-pr-20` of `Wewebplus-hitl` / `Dev`. The Devbox Dyad uses that child. The parent has no `wewebplus` tables. Production stays on Supabase. |
+| Vercel project | One project, `dyad`, root directory `hitl-web`, production branch `main`. There is no second project named `wewebplus-hitl`. The token cannot create one. |
+| Vercel database for PR 20 | Git branch `cursor/preview-bridge-proof-9e7a` has `WEWEBPLUS_DATABASE_URL` on the Preview target only, env `s3oQUnCzA3xChhxQ`, host `ep-empty-sunset-b3pfwb1h-pooler.c-4.ap-southeast-1.aws.neon.tech`. That is Neon `preview-pr-20`. The Production environment was not written. Other git branches still share the unscoped Preview value. The code that does this is pull request 22 and is not on `main`. |
+| Gas City image | Built from fork `Awannaphasch2016/gascity` at `d47f1d3f3069dea8d46c0b2701faf035bd8a9179`, Dockerfiles `contrib/k8s/Dockerfile.base` and `Dockerfile.agent`. Published and pulled: `ghcr.io/awannaphasch2016/gascity@sha256:59e824d8393891dc849e11c838e791b89c59f748d6d8bae86ef2a21db838d916`. Tag `preview` points at that digest. It is not running in the preview Compose project yet. The city volume `pr-20-city` is still empty. |
+| Application split | Pull request 15 is a browser listener. `POST /v1/runs` returns 202 and stops. Question routes return 503. Pull request 16 is the Vercel UI. It calls that listener only when `NEXT_PUBLIC_GAS_CITY_URL` is set. Otherwise it calls its own `/v1` routes, which also stop after 202. |
+| Controller | `deploy/preview/*.mjs` on the proof branch. The pure transition is `transition.mjs`. A synchronize without the `preview` label does not destroy pull request 20. |
+| Workflow scope | `preview.yml` runs for every pull request only after it is on `main`. Until then, only a branch that contains the file gets a preview. |
+
+Phases 1 through 5 are done for pull request 20. Phase 6 is done for that one git branch. Phase 7 stays skipped. There is no non-production Kubernetes cluster.
+
+### How a preview is connected
+
+```mermaid
+sequenceDiagram
+  participant Git as Git branch of the pull request
+  participant GH as GitHub Action
+  participant Neon as Neon preview-pr-N
+  participant Vercel as Vercel project dyad
+  participant Page as Vercel Preview of that git branch
+  participant Box as Devbox preview-N
+  participant GC as ghcr.io/awannaphasch2016/gascity
+
+  Git->>GH: Pull request N, label preview
+  GH->>Neon: Create or reuse preview-pr-N
+  GH->>Box: Dyad digest, WEWEBPLUS_DATABASE_URL = that child
+  GH->>Vercel: Same URL, Preview target, this git branch only
+  GH->>Box: Pull GC into the city volume
+  Page->>Vercel: Read WEWEBPLUS_DATABASE_URL
+  Page->>Neon: Questions and answers
+  Box->>Neon: The same child
+  GC->>Box: http://dyad:32100 on the preview network
+```
+
+`main` stays on the Production environment and on Supabase. Another git branch does not receive pull request N's variable.
+
+### What to build next
+
+Approval of this revision authorizes these five steps and no others. Each step stops when its check passes. None of them SSH to `13.251.216.187`, copy `/opt/gascity`, or change `gascity-rollout.yml`.
+
+1. **Every labeled pull request gets its own Neon child on Vercel.** Land the assignment in pull request 22 onto the preview controller. `attach` writes `WEWEBPLUS_DATABASE_URL` for that git branch, target `preview`, then redeploys that branch. `destroy` deletes that variable and that Neon child. The Production environment is not written. Check: an answer on pull request 20's Vercel page is in `preview-pr-20`. An answer on a second labeled pull request is in its own child and is absent from `preview-pr-20` and from the production board.
+
+2. **Run the published Gas City image in the preview.** Add a `gc` service to `compose.preview.yml` using `ghcr.io/awannaphasch2016/gascity@sha256:59e824d8393891dc849e11c838e791b89c59f748d6d8bae86ef2a21db838d916`. Mount volume `pr-<n>-city`. Do not mount `/opt/gascity`. Initialize a new city in that volume. Keep the reference caller until this `gc` itself calls `http://dyad:32100`. Check: `https://pr-20.anakwannaphaschaiyong.com` still serves Dyad, and the city volume is no longer empty.
+
+3. **Point the pull request 16 page at that preview.** For that git branch only, set `NEXT_PUBLIC_GAS_CITY_URL` to the preview's Gas City origin. The page stops using its same-origin `/v1` stand-in. Until `gc` serves the browser routes, the pull request 15 listener is that origin, on the preview network, with the same Neon child. Check: a prompt from the Vercel page is logged by that preview listener and does not open Electron.
+
+4. **Make a run continue.** The listener writes the gate into `preview-pr-<n>`, asks Dyad at `http://dyad:32100` to run the agent, and the page reads the result. An Electron-only capability still returns 409. Check: the new row is visible on that Vercel page and on `pr-<n>`, and absent from production Supabase and from every other preview.
+
+5. **Put the workflow on `main`.** Merge `preview.yml` and the controller so a new labeled pull request gets a `pr-<n>` URL, a Neon child, and a Vercel variable without a one-off workflow. Production rollout stays where it is.
+
+### What this approval does not include
+
+- A change to the production EC2, its Supabase URL, its Gas City city, or `gascity-rollout.yml`.
+- Closing pull request 20. Closing it destroys preview 20.
+- Kubernetes.
+- A second Vercel project.
 
 ## Decisions recorded 2026-10-03
 
