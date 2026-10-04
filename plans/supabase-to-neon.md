@@ -267,20 +267,36 @@ Read from the running production Dyad container. No connection string, ciphertex
 - The same Supabase project also contains `public` (including `agenturmarkt_leads`, 8182 rows, plus deals, funnels, and template tables), `storage.objects` (182 rows), and empty `auth.users`. This repository does not query those tables. They stay on Supabase. Dumping them into the control-plane Neon project is not part of this cutover.
 - Extensions installed on the Supabase database are `pg_stat_statements`, `pgcrypto`, `plpgsql`, `supabase_vault`, `uuid-ossp`, and `vector`. None are used by the `wewebplus` tables. The schema-scoped dump does not need them on Neon.
 
-Phase 2 did not start. No `NEON_API_KEY` is available to this environment, the production host, or the production env file. The preview Neon parent was not used. Production still reads Supabase.
-
 ### Phase 2: Empty Neon project and restore
 
-- [ ] Create the production Neon project. Do not parent it on the preview Dev branch.
-- [ ] `pg_dump` / `pg_restore` as above.
-- [ ] Seed the Drizzle journal if the dump did not include it.
-- [ ] Compare counts, primary keys, and ciphertext hashes.
+- [x] Create the production Neon project. Do not parent it on the preview Dev branch.
+- [x] `pg_dump` / `pg_restore` as above.
+- [x] Seed the Drizzle journal if the dump did not include it.
+- [x] Compare counts, primary keys, and ciphertext hashes.
+
+The new project is `proud-salad-68182047` (`wewebplus-production`), Postgres 17, region `aws-ap-southeast-1`. Its default branch is `br-billowing-frost-b3i42bh6` (`main`) with no parent. It is not project `mute-credit-71067312` and not branch `br-mute-shadow-b3jxqoho`. The endpoint is `ep-young-wave-b3cwe0rz`. The database name is `neondb`. Compute is 0.25 CU and does not suspend. The transaction pooler is enabled. The direct host and the pooled host are different, and a `SELECT 1` succeeded on each.
+
+The dump used the production session pooler (port 5432) from the running container. `pg_dump` 17.11 wrote a custom-format archive of only `wewebplus` and `drizzle` (`--no-owner --no-acl`). The archive contains those two schemas, the 13 tables, the Drizzle journal, and no `auth`, `storage`, or `public` tables. `pg_restore --no-owner --no-acl --exit-on-error` into the direct Neon URL exited 0.
+
+Comparison after the restore, with row bodies left unread:
+
+- Columns, indexes, and constraints in `wewebplus` and `drizzle` match Supabase.
+- Counts match the catalog above, including `apps` 10, `chats` 31, `messages` 85, `questions` 3, `answers` 3, `memberships` 2, `roles` 2, and zeros elsewhere.
+- Ordered primary-key hashes match for `questions`, `answers`, `memberships`, `apps`, and `account_connections`.
+- `account_connections` is still empty on both sides, so the ciphertext hash is the empty digest and there is still no row to decrypt.
+- `drizzle.__drizzle_migrations` still has the three `created_at` values above. Nothing was inserted by hand.
+
+This dump was taken while the production container was up and healthy. It is a rehearsal copy. It is not the cutover snapshot. Production `WEWEBPLUS_DATABASE_URL` was not changed. The preview parent was not written.
 
 ### Phase 3: Rehearsal
 
-- [ ] Point a non-production board and a non-production Dyad process at Neon.
-- [ ] Match the production board, decrypt one connection, and confirm startup does not re-apply `CREATE TABLE`.
-- [ ] Confirm the rehearsal write is absent from Supabase.
+- [x] Run the control-plane Drizzle migrator from this tree against the Neon direct URL.
+- [x] Confirm startup does not apply a later migration. `account_connections` is empty, so there is no ciphertext to decrypt.
+- [x] Write one question and one answer on Neon only, confirm both are absent from Supabase, then delete them so the rehearsal copy matches the dump again.
+
+The migrator logged `schema "drizzle" already exists, skipping` and `relation "__drizzle_migrations" already exists, skipping`, then left the journal at 3 rows with max `created_at` `1790907463649`. Counts stayed at the restored values. A question id `rehearsal-neon-cutover` inserted on Neon was absent from Supabase (`questions` stayed 3). Deleting that question removed the answer with it. Both databases were at 3 questions and 3 answers afterward.
+
+The production question board and the production Dyad process were not pointed at Neon. Preview Doppler and preview Vercel were not changed.
 
 ### Phase 4: Cutover and rollback watch
 
@@ -291,13 +307,13 @@ Phase 2 did not start. No `NEON_API_KEY` is available to this environment, the p
 
 ## Testing strategy
 
-- [ ] Catalog object list equals the migration inventory, or every extra object is named.
-- [ ] Row counts and primary-key sets match.
-- [ ] Ciphertext hashes match, and one decrypt succeeds without logging the plaintext.
-- [ ] Drizzle boot on Neon applies no `CREATE TABLE` for tables that already exist.
+- [x] Catalog object list equals the migration inventory, or every extra object is named.
+- [x] Row counts and primary-key sets match.
+- [x] Ciphertext hashes match. There is no ciphertext row to decrypt.
+- [x] Drizzle boot on Neon applies no `CREATE TABLE` for tables that already exist.
 - [ ] Production board after the swap matches the last Supabase read.
 - [ ] A user-app Supabase action (link project or run a project query) still uses `api.supabase.com` and is unaffected.
-- [ ] Preview `WEWEBPLUS_DATABASE_URL` values are still Neon preview children, not the new production project.
+- [x] Preview `WEWEBPLUS_DATABASE_URL` was not written. This cutover did not change preview Doppler, preview Vercel, or `NEON_PARENT_BRANCH_ID`.
 
 ## Risks
 
@@ -313,10 +329,10 @@ Phase 2 did not start. No `NEON_API_KEY` is available to this environment, the p
 
 ## Open questions
 
-- Phase 1 is measured. `wewebplus` matches the migrations. The same Supabase project also holds an unrelated `public` schema and Storage objects. Those stay on Supabase.
-- The direct Supabase host is IPv6-only from the production server. The dump from that server uses the session pooler on port 5432.
-- Creating the Neon project needs a `NEON_API_KEY`. None was available, so the restore and the URL swap have not run.
-- The Supabase region was not printed. Create the Neon project on Postgres 17 in `ap-southeast-1` unless the project settings show a different region.
+- Phase 1 and the rehearsal restore are done. `wewebplus` matches the migrations. The same Supabase project also holds an unrelated `public` schema and Storage objects. Those stay on Supabase.
+- The direct Supabase host is IPv6-only from the production server. The rehearsal dump used the session pooler on port 5432.
+- Neon project `proud-salad-68182047` holds the rehearsal copy. Production Dyad and the production question board still use Supabase. The URL swap has not run.
+- The next dump has to be taken with writers stopped: the production Dyad process, the production question board, and the gate poller if that poller is running. Restore that dump over an empty target, or over this database only after confirming the rehearsal rows are gone, then compare again before changing either production URL.
 - Whether the gate poller is running in production changes who must be quiesced. The URL it would use is still `WEWEBPLUS_DATABASE_URL`.
 
 ---
