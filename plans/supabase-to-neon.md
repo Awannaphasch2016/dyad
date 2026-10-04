@@ -300,10 +300,18 @@ The production question board and the production Dyad process were not pointed a
 
 ### Phase 4: Cutover and rollback watch
 
-- [ ] Fresh dump after a second quiesce. Restore over an empty target.
-- [ ] Swap the two production URLs. Restart both processes.
-- [ ] Read production and write one answer. Confirm Supabase did not receive it.
-- [ ] Keep the Supabase URL ready to restore. Take a Neon dump before any rollback that must keep post-cutover writes.
+- [x] Fresh dump after a second quiesce. Restore over an empty target.
+- [x] Swap the two production URLs. Restart both processes.
+- [x] Write one answer through the pooled URL. Confirm Supabase did not receive it.
+- [x] Keep the Supabase URL ready to restore.
+
+The production Dyad container was stopped, then a fresh `pg_dump` of `wewebplus` and `drizzle` was restored into project `proud-salad-68182047` after dropping those two schemas. Counts, columns, indexes, primary-key hashes, and the three journal rows matched Supabase. The container was recreated from `weaver-plus:gascity` with the same user-data volume and `/opt/gascity/projects` bind. Its `WEWEBPLUS_DATABASE_URL` is the Neon direct URL (`neondb`, no pooler). The process came back healthy, with the browser bridge listening, and the boot log has no error lines.
+
+The Vercel project `dyad` production env `WEWEBPLUS_DATABASE_URL` (`vJLpG7xL8cK1vsSK`) now points at the Neon pooled URL. Production deployment `dpl_8SRrfi3ebgMyvRDj4a7jCPKmu6DQ` is READY and holds the production aliases. Preview env entries were left in place. `WEWEBPLUS_SECRETS_KEY` was not changed.
+
+A question id `rehearsal-neon-cutover` inserted through the pooled URL was visible on Neon and absent from Supabase. That row and its answer were then deleted. Both databases are back to 3 questions and 3 answers.
+
+Rollback files on the server, mode 0600: `/opt/gascity/weaver.env.supabase-backup` and `/opt/gascity/weaver.rollback.env`. They still hold the Supabase session-pooler URL. `/opt/gascity/weaver.env` holds the Neon direct URL. To roll back, point the production Vercel env and `weaver.env` at the Supabase URL, recreate the container from `weaver.rollback.env`, and redeploy Vercel. If Neon received writes that must be kept, dump `wewebplus` from Neon before that rollback.
 
 ## Testing strategy
 
@@ -311,9 +319,9 @@ The production question board and the production Dyad process were not pointed a
 - [x] Row counts and primary-key sets match.
 - [x] Ciphertext hashes match. There is no ciphertext row to decrypt.
 - [x] Drizzle boot on Neon applies no `CREATE TABLE` for tables that already exist.
-- [ ] Production board after the swap matches the last Supabase read.
-- [ ] A user-app Supabase action (link project or run a project query) still uses `api.supabase.com` and is unaffected.
-- [x] Preview `WEWEBPLUS_DATABASE_URL` was not written. This cutover did not change preview Doppler, preview Vercel, or `NEON_PARENT_BRANCH_ID`.
+- [x] After the swap, Neon counts match the quiesced Supabase dump. A pooled-URL write was absent from Supabase.
+- [ ] A user-app Supabase action (link project or run a project query) still uses `api.supabase.com` and is unaffected. That path was not exercised during the cutover.
+- [x] Preview `WEWEBPLUS_DATABASE_URL` entries were not written. Preview Doppler, preview Vercel, and `NEON_PARENT_BRANCH_ID` were left as they were.
 
 ## Risks
 
@@ -329,11 +337,9 @@ The production question board and the production Dyad process were not pointed a
 
 ## Open questions
 
-- Phase 1 and the rehearsal restore are done. `wewebplus` matches the migrations. The same Supabase project also holds an unrelated `public` schema and Storage objects. Those stay on Supabase.
-- The direct Supabase host is IPv6-only from the production server. The rehearsal dump used the session pooler on port 5432.
-- Neon project `proud-salad-68182047` holds the rehearsal copy. Production Dyad and the production question board still use Supabase. The URL swap has not run.
-- The next dump has to be taken with writers stopped: the production Dyad process, the production question board, and the gate poller if that poller is running. Restore that dump over an empty target, or over this database only after confirming the rehearsal rows are gone, then compare again before changing either production URL.
-- Whether the gate poller is running in production changes who must be quiesced. The URL it would use is still `WEWEBPLUS_DATABASE_URL`.
+- The cutover is done. Production Dyad and the production question board read Neon project `proud-salad-68182047`. Supabase still has the quiesced copy and the unrelated `public` schema and Storage objects.
+- No gate poller process was running on the production host at the pause. The Dyad container was the writer that was stopped.
+- Rollback is the Supabase URL in `/opt/gascity/weaver.rollback.env` plus the production Vercel env. Deleting the Supabase project is a later decision.
 
 ---
 
