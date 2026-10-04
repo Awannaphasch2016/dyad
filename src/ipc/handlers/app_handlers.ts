@@ -1370,6 +1370,11 @@ export function registerAppHandlers() {
     }
     // Azure setup detection needs the resource name in addition to its API key.
     envVars["AZURE_RESOURCE_NAME"] = getEnvVar("AZURE_RESOURCE_NAME");
+    const iamAccessKey = process.env.AWS_ACCESS_KEY_ID?.trim();
+    const iamSecret = process.env.AWS_SECRET_ACCESS_KEY?.trim();
+    if (iamAccessKey && iamSecret) {
+      envVars.BEDROCK_IAM = "1";
+    }
     return envVars;
   });
 

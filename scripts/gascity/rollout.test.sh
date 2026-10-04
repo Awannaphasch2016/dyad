@@ -120,6 +120,18 @@ if "expired-bearer-value" in text:
 print("bedrock settings ok")
 PY
 
+python3 scripts/gascity/use_singapore_bedrock_settings.py "$tmp/auto-settings.json" --select-bedrock
+python3 - "$tmp/auto-settings.json" << 'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+if data["selectedModel"] != {
+    "provider": "bedrock",
+    "name": "global.anthropic.claude-sonnet-4-5-20250929-v1:0",
+}:
+    raise SystemExit("auto preview did not select the global Bedrock profile")
+print("bedrock select ok")
+PY
+
 EC2_SSH_KEY='line-one\nline-two' python3 scripts/gascity/write_ssh_key.py "$tmp/key"
 python3 - "$tmp/key" << 'PY'
 import os, stat, sys

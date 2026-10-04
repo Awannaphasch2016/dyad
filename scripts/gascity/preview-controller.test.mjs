@@ -7,7 +7,11 @@ import {
   transition,
 } from "../../deploy/preview/transition.mjs";
 import { previewBranchName } from "../../deploy/preview/neon.mjs";
-import { previewRuntime, shellQuote } from "../../deploy/preview/render.mjs";
+import {
+  mergeAwsCredentials,
+  previewRuntime,
+  shellQuote,
+} from "../../deploy/preview/render.mjs";
 import {
   assignmentLog,
   assignPreviewDatabase,
@@ -99,6 +103,32 @@ test("the preview database export uses the child branch, not the parent URL", ()
   assert.equal(shellQuote("a'b"), "'a'\\''b'");
   assert.equal(previewBranchName(20), "preview-pr-20");
   assert.throws(() => previewBranchName("20;rm"), /Pull request number/);
+});
+
+test("aws credentials fill only empty Bedrock names", () => {
+  const merged = mergeAwsCredentials(
+    { CLERK_PUBLISHABLE_KEY: "pk_test", AWS_REGION: "us-east-1" },
+    { AWS_ACCESS_KEY_ID: "AKIA_FROM_AWS", AWS_SECRET_ACCESS_KEY: "secret-from-aws" },
+    { AWS_ACCESS_KEY_ID: "AKIA_FROM_ENV", AWS_DEFAULT_REGION: "ap-southeast-1" },
+  );
+  assert.equal(merged.AWS_ACCESS_KEY_ID, "AKIA_FROM_AWS");
+  assert.equal(merged.AWS_SECRET_ACCESS_KEY, "secret-from-aws");
+  assert.equal(merged.AWS_REGION, "us-east-1");
+  assert.equal(merged.CLERK_PUBLISHABLE_KEY, "pk_test");
+  const fromDefault = mergeAwsCredentials(
+    {},
+    {},
+    {
+      AWS_ACCESS_KEY_ID: "AKIA_FROM_ENV",
+      AWS_SECRET_ACCESS_KEY: "secret-from-env",
+      AWS_DEFAULT_REGION: "us-east-1",
+    },
+  );
+  assert.equal(fromDefault.AWS_REGION, "us-east-1");
+  const text = previewRuntime(fromDefault, "postgresql://child.example/neondb");
+  assert.match(text, /export AWS_ACCESS_KEY_ID='AKIA_FROM_ENV'/);
+  assert.match(text, /export AWS_REGION='us-east-1'/);
+  assert.equal(text.includes("AWS_DEFAULT_REGION"), false);
 });
 
 test("the controller decides from pull request events", () => {

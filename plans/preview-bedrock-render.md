@@ -67,13 +67,15 @@ The quick tunnel is valid only while that Devbox session is up. If the host no l
 
 ## Implementation checklist
 
-- [ ] Add `BEDROCK_IAM` to `get-env-vars` and to `isProviderSetup("bedrock")`.
-- [ ] Download `aws`/`dev` in `controller.mjs` when `AWS_DOPPLER_TOKEN` is set, and export only the three AWS names.
-- [ ] Pass that secret through the preview image workflow without printing it.
-- [ ] Run the Singapore settings script after the preview container is healthy.
-- [ ] Fail the Bedrock check when any of the three names is empty, and print `bedrock_iam=absent`.
-- [ ] Merge those commits onto `cursor/formula-preview-9e7a` so preview 27 rebuilds.
-- [ ] Open the `preview_url` from that run, sign in, and confirm one chat replies `pong`.
+- [x] Add `BEDROCK_IAM` to `get-env-vars` and to `isProviderSetup("bedrock")`.
+- [x] Download `aws`/`dev` in `controller.mjs` when `AWS_DOPPLER_TOKEN` is set, and export only the three AWS names. Process env fills any name the download leaves empty. `AWS_DEFAULT_REGION` is used when `AWS_REGION` is empty.
+- [x] Pass that secret through the preview image workflow without printing it.
+- [x] Run the Singapore settings script after the preview container is healthy, and select the global Bedrock profile when the saved model is still `auto`.
+- [x] Fail the Bedrock check when any of the three names is empty, and print `bedrock_iam=absent`.
+- [ ] Publish the image from this branch and open the `preview_url` from that run.
+- [ ] Sign in and confirm one chat replies `pong`.
+
+The three credentials in the agent environment call `global.anthropic.claude-sonnet-4-5-20250929-v1:0` and the model replies `pong` in both `us-east-1` and `ap-southeast-1`. The preview job receives them only from the Doppler download or from GitHub Actions secrets. They are not written into git.
 
 ## Risks
 
