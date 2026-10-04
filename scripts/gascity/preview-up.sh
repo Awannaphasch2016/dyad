@@ -38,7 +38,14 @@ fi
 avail_kb="$(df -Pk "$docker_root" | awk 'NR==2 { print $4 }')"
 min_kb=$((8 * 1024 * 1024))
 if [[ -z "$avail_kb" || "$avail_kb" -lt "$min_kb" ]]; then
-  echo "Need 8GiB free on ${docker_root} before pulling the preview image" >&2
+  echo "Need 8GiB free on ${docker_root} before pulling the preview image. Stopping this preview. Other previews were left running." >&2
+  exit 2
+fi
+
+mem_kb="$(awk '/MemAvailable:/ { print $2 }' /proc/meminfo 2>/dev/null || true)"
+min_mem_kb=$((3 * 1024 * 1024))
+if [[ -z "$mem_kb" || "$mem_kb" -lt "$min_mem_kb" ]]; then
+  echo "MemAvailable is ${mem_kb:-unknown}kB, below 3GiB. Stopping this preview before it starts. Other previews were left running." >&2
   exit 2
 fi
 

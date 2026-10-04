@@ -106,6 +106,8 @@ export default function WorkflowPage() {
       showError(error instanceof Error ? error.message : "Close failed"),
   });
 
+  const linked = graphQuery.data?.linked === true;
+
   const flowNodes = useMemo<FormulaFlowNode[]>(
     () =>
       nodes.map((node) => ({
@@ -135,7 +137,7 @@ export default function WorkflowPage() {
   const onEdgesChange: OnEdgesChange<Edge> = (changes) => {
     const next = applyEdgeChanges(changes, edges);
     setEdges(next);
-    if (changes.some((change) => change.type === "remove")) {
+    if (linked && changes.some((change) => change.type === "remove")) {
       saveMutation.mutate({ nodes, edges: next });
     }
   };
@@ -150,7 +152,7 @@ export default function WorkflowPage() {
       { id, source: connection.source, target: connection.target },
     ];
     setEdges(next);
-    saveMutation.mutate({ nodes, edges: next });
+    if (linked) saveMutation.mutate({ nodes, edges: next });
   };
 
   const selected = nodes.find((node) => node.id === selectedId) ?? null;
@@ -229,10 +231,16 @@ export default function WorkflowPage() {
         </Button>
         <Button
           onClick={() => saveMutation.mutate(undefined)}
-          disabled={saveMutation.isPending}
+          disabled={!linked || saveMutation.isPending}
         >
           Save
         </Button>
+        {graphQuery.data?.linked === false && (
+          <span className="text-sm text-muted-foreground">
+            This app is not linked to a Gas City project. You can move the
+            review pipeline here. Save stays off until the app is linked.
+          </span>
+        )}
         {terminal && (
           <span className="text-sm text-muted-foreground">Run finished</span>
         )}
@@ -256,7 +264,7 @@ export default function WorkflowPage() {
               item.id === node.id ? { ...item, position: node.position } : item,
             );
             setNodes(next);
-            layoutMutation.mutate(next);
+            if (linked) layoutMutation.mutate(next);
           }}
           onSelect={setSelectedId}
         />
@@ -277,10 +285,14 @@ export default function WorkflowPage() {
             setNodes(nextNodes);
             setEdges(nextEdges);
             setSelectedId(null);
-            saveMutation.mutate({ nodes: nextNodes, edges: nextEdges });
+            if (linked) {
+              saveMutation.mutate({ nodes: nextNodes, edges: nextEdges });
+            }
           }}
-          onCloseGate={(beadId) => closeMutation.mutate(beadId)}
-          closePending={closeMutation.isPending}
+          onCloseGate={(beadId) => {
+            if (linked) closeMutation.mutate(beadId);
+          }}
+          closePending={!linked || closeMutation.isPending}
         />
       </div>
     </div>

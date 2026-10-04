@@ -9,6 +9,7 @@ on:
   push:
     branches:
       - cursor/preview-bridge-proof-9e7a
+      - cursor/formula-preview-9e7a
 
 permissions:
   contents: read
@@ -230,7 +231,8 @@ jobs:
               '  rm -f /tmp/preview-runtime-devbox.sh' \
               '  node deploy/preview/controller.mjs assign-page --pr "$pr" --git-branch cursor/dyad-web-frontend-bbea --vercel-project dyad' \
               'fi' \
-              'PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh "$pr" "$image"'
+              'PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh "$pr" "$image"' \
+              'PREVIEW_ORIGIN="https://pr-${pr}.anakwannaphaschaiyong.com" node deploy/preview/clerk-origins.mjs'
           } > /tmp/preview-remote.sh
           payload="$(base64 -w0 /tmp/preview-remote.sh)"
           devbox exec Wewebplus-ci -- bash -lc "printf '%s' '${payload}' | base64 -d | bash"
