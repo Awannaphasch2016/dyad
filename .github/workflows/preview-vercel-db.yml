@@ -81,6 +81,7 @@ jobs:
               'fi' \
               'git -C "$repo" checkout --detach FETCH_HEAD' \
               'cd "$repo"' \
+              'bash scripts/gascity/preview-resume.sh' \
               'node deploy/preview/controller.mjs assign-vercel --pr "$pr" --git-branch "$git_branch" --vercel-project dyad'
           } > /tmp/preview-remote.sh
           payload="$(base64 -w0 /tmp/preview-remote.sh)"

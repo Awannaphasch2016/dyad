@@ -165,6 +165,7 @@ jobs:
               'git -C "$repo" fetch --depth 1 origin "$sha"' \
               'git -C "$repo" checkout --detach FETCH_HEAD' \
               'cd "$repo"' \
+              'bash scripts/gascity/preview-resume.sh "$pr"' \
               'state="$HOME/.local/state/wewebplus-preview"' \
               'secrets="$state/controller.env"' \
               'if [[ -f "$secrets" ]]; then' \
@@ -207,6 +208,7 @@ jobs:
               'git -C "$repo" fetch --depth 1 origin "$sha"' \
               'git -C "$repo" checkout --detach FETCH_HEAD' \
               'cd "$repo"' \
+              'bash scripts/gascity/preview-resume.sh "$pr"' \
               'state="$HOME/.local/state/wewebplus-preview"' \
               'secrets="$state/controller.env"' \
               'if [[ -f "$secrets" ]]; then' \
@@ -215,10 +217,10 @@ jobs:
               '  set +a' \
               '  node deploy/preview/controller.mjs destroy --pr "$pr" --git-branch "$branch" --vercel-project dyad' \
               'fi' \
+              'rm -f "$state/preview-${pr}.env" "$state/preview-${pr}.tunnel-token" "$state/preview-${pr}.public-url"' \
               'if [[ -f "$repo/compose.preview.yml" ]]; then' \
               '  docker compose -p "preview-${pr}" -f "$repo/compose.preview.yml" down -v --remove-orphans || true' \
-              'fi' \
-              'rm -f "$state/preview-${pr}.env"'
+              'fi'
           } > /tmp/preview-remote.sh
           payload="$(base64 -w0 /tmp/preview-remote.sh)"
           rm -f /tmp/preview-remote.sh

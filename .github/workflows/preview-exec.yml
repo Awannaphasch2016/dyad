@@ -94,6 +94,7 @@ jobs:
           fi
           cd "$repo"
           echo "--- preview without moving DNS ---"
+          bash scripts/gascity/preview-resume.sh 20
           PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh 20 ghcr.io/awannaphasch2016/dyad@sha256:8e5be8469cd4a7caaa1611e41e9906b4f5a8ddb7b87bf6a9b0dcad101296789a
           REMOTE
           )"

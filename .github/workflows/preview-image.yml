@@ -215,6 +215,7 @@ jobs:
               'git -C "$repo" fetch --depth 1 origin "$sha"' \
               'git -C "$repo" checkout --detach FETCH_HEAD' \
               'cd "$repo"' \
+              'bash scripts/gascity/preview-resume.sh "$pr"' \
               'state="$HOME/.local/state/wewebplus-preview"' \
               'secrets="$state/controller.env"' \
               'if [[ ! -f "$secrets" && -f deploy/preview/sealed.key.b64 && -f deploy/preview/sealed.env.b64 && -f "$state/controller.pem" ]]; then' \
