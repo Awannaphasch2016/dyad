@@ -1,0 +1,87 @@
+# Assign pull request 20's Neon branch to that git branch's Vercel Preview.
+# Prints the host and the git branch. Does not print the connection string.
+# Does not change the Production environment or the production host.
+name: Preview database
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cursor/vercel-neon-branch-9e7a
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: preview-devbox-wewebplus-ci
+  cancel-in-progress: false
+
+jobs:
+  assign:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Log in to Namespace with the GitHub token
+        uses: namespacelabs/nscloud-setup@v0
+
+      - name: Install the Devbox CLI
+        run: |
+          set -euo pipefail
+          ver=0.0.195
+          curl -fsSL "https://get.namespace.so/packages/devbox/v${ver}/devbox_${ver}_linux_amd64.tar.gz" -o /tmp/devbox.tgz
+          mkdir -p /tmp/devbox-extract
+          tar -xzf /tmp/devbox.tgz -C /tmp/devbox-extract
+          bin="$(find /tmp/devbox-extract -type f -name devbox -print -quit)"
+          test -n "$bin"
+          sudo install -m 755 "$bin" /usr/local/bin/devbox
+
+      - name: Point the Devbox CLI at the federated token
+        run: |
+          set -euo pipefail
+          token_file=""
+          if [[ -f /var/run/nsc/token.json ]]; then
+            token_file=/var/run/nsc/token.json
+          elif [[ -f "${HOME}/.config/ns/token.json" ]]; then
+            token_file="${HOME}/.config/ns/token.json"
+          else
+            echo "Namespace login did not write a token file" >&2
+            exit 1
+          fi
+          echo "NSC_TOKEN_FILE=${token_file}" >> "$GITHUB_ENV"
+
+      - name: Assign the Neon branch to the Vercel preview
+        env:
+          PR: "20"
+          GIT_BRANCH: cursor/preview-bridge-proof-9e7a
+          CODE_BRANCH: cursor/vercel-neon-branch-9e7a
+          REPO_URL: https://github.com/Awannaphasch2016/dyad.git
+        run: |
+          set -euo pipefail
+          [[ "$PR" =~ ^[0-9]+$ ]]
+          [[ "$GIT_BRANCH" =~ ^[A-Za-z0-9._/-]+$ ]]
+          [[ "$GIT_BRANCH" != "main" ]]
+          [[ "$CODE_BRANCH" =~ ^[A-Za-z0-9._/-]+$ ]]
+          [[ "$REPO_URL" =~ ^https://github\.com/[A-Za-z0-9._/-]+\.git$ ]]
+          {
+            printf 'pr=%q\ngit_branch=%q\ncode_branch=%q\nrepo_url=%q\n' \
+              "$PR" "$GIT_BRANCH" "$CODE_BRANCH" "$REPO_URL"
+            printf '%s\n' \
+              'set -euo pipefail' \
+              'state="${HOME}/.local/state/wewebplus-preview"' \
+              'test -f "$state/controller.env"' \
+              'set -a' \
+              'source "$state/controller.env"' \
+              'set +a' \
+              'repo=/workspaces/weaver-plus' \
+              'if [[ ! -d "$repo/.git" ]]; then' \
+              '  git clone --depth 1 --branch "$code_branch" "$repo_url" "$repo"' \
+              'else' \
+              '  git -C "$repo" fetch --depth 1 origin "$code_branch"' \
+              'fi' \
+              'git -C "$repo" checkout --detach FETCH_HEAD' \
+              'cd "$repo"' \
+              'node deploy/preview/controller.mjs assign-vercel --pr "$pr" --git-branch "$git_branch" --vercel-project dyad'
+          } > /tmp/preview-remote.sh
+          payload="$(base64 -w0 /tmp/preview-remote.sh)"
+          devbox exec Wewebplus-ci -- bash -lc "printf '%s' '${payload}' | base64 -d | bash"

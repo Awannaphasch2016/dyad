@@ -1,0 +1,151 @@
+# One preview Compose project. Run it on the Namespace Devbox, not the
+# production EC2, and not with scripts/gascity/rollout.sh.
+#
+#   scripts/gascity/preview-up.sh 20 \
+#     ghcr.io/awannaphasch2016/dyad@sha256:8e5be8469cd4a7caaa1611e41e9906b4f5a8ddb7b87bf6a9b0dcad101296789a
+#
+# Factory port 32100 is not published. The browser bridge stays on
+# 127.0.0.1:8373 inside the Dyad network namespace; cloudflared joins that
+# namespace when the tunnel profile is enabled. The city volume is created
+# empty. This file does not mount /opt/gascity/city.
+
+services:
+  dyad:
+    image: ${PREVIEW_IMAGE:?Set PREVIEW_IMAGE to a ghcr.io digest}
+    networks: [preview]
+    shm_size: 1gb
+    env_file:
+      - ${PREVIEW_ENV_FILE:?Set PREVIEW_ENV_FILE}
+    environment:
+      GAS_CITY_HOST_BRIDGE_ENABLED: "true"
+      GAS_CITY_HOST_BRIDGE_HOST: "0.0.0.0"
+      GAS_CITY_HOST_BRIDGE_PORT: "32100"
+      DYAD_BROWSER_BRIDGE: "1"
+      DYAD_BROWSER_BRIDGE_PORT: "8373"
+    volumes:
+      - config:/home/weaver/.config
+      - projects:/home/weaver/dyad-apps
+      - city:/city
+    healthcheck:
+      start_period: 180s
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      test:
+        - CMD-SHELL
+        - >-
+          curl --fail --silent http://127.0.0.1:6080/vnc.html >/dev/null
+          && test "$$(curl --silent --output /dev/null --write-out '%{http_code}'
+          http://127.0.0.1:32100/v1/apps/0/factory-state)" = "401"
+    restart: unless-stopped
+
+  caller:
+    profiles: ["check"]
+    image: curlimages/curl:8.11.1
+    networks: [preview]
+    depends_on:
+      dyad:
+        condition: service_healthy
+    env_file:
+      - ${PREVIEW_ENV_FILE:?Set PREVIEW_ENV_FILE}
+    environment:
+      WEAVER_BASE_URL: http://dyad:32100
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        set -eu
+        echo "caller target: $$WEAVER_BASE_URL"
+        unauth=$$(curl -s -o /dev/null -w '%{http_code}' "$$WEAVER_BASE_URL/v1/apps/1/factory-state")
+        echo "without token: $$unauth"
+        test "$$unauth" = "401"
+        auth=$$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $$GAS_CITY_HOST_BRIDGE_TOKEN" "$$WEAVER_BASE_URL/v1/apps/1/factory-state")
+        echo "with token: $$auth"
+        test "$$auth" != "401"
+        test "$$auth" != "000"
+
+  gc:
+    image: ghcr.io/awannaphasch2016/gascity@sha256:59e824d8393891dc849e11c838e791b89c59f748d6d8bae86ef2a21db838d916
+    user: "0"
+    networks: [preview]
+    environment:
+      WEAVER_BASE_URL: http://dyad:32100
+    volumes:
+      - city:/city
+    entrypoint: ["bash", "-lc"]
+    command:
+      - |
+        set -eu
+        if [ ! -f /city/city.toml ]; then
+          gc init --template gascity --default-provider claude --no-start --skip-provider-readiness --yes /city
+        fi
+        exec sleep infinity
+    healthcheck:
+      test: ["CMD", "test", "-s", "/city/city.toml"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 120s
+    restart: unless-stopped
+
+  gascity:
+    image: node:22-bookworm-slim
+    networks: [preview]
+    depends_on:
+      dyad:
+        condition: service_healthy
+    env_file:
+      - ${PREVIEW_ENV_FILE:?Set PREVIEW_ENV_FILE}
+    environment:
+      PORT: "8787"
+      GAS_CITY_BROWSER_HOST: "0.0.0.0"
+      GAS_CITY_BROWSER_ALLOW_VERCEL_PREVIEWS: "1"
+      WEAVER_BASE_URL: http://dyad:32100
+    volumes:
+      - ./services/gascity-browser:/app:ro
+    entrypoint: ["bash", "-lc"]
+    command:
+      - |
+        set -eu
+        mkdir -p /tmp/gascity-browser
+        cp /app/package.json /app/server.mjs /app/continue.mjs /tmp/gascity-browser/
+        cd /tmp/gascity-browser
+        npm install --omit=dev
+        exec node server.mjs
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8787/v1/runs').then((r)=>process.exit(r.status===401?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 180s
+    restart: unless-stopped
+
+  cloudflared:
+    profiles: ["tunnel"]
+    image: cloudflare/cloudflared:2026.9.3
+    network_mode: service:dyad
+    depends_on:
+      dyad:
+        condition: service_healthy
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    command:
+      - tunnel
+      - --no-autoupdate
+      - run
+    restart: unless-stopped
+
+networks:
+  preview:
+    name: preview-${PREVIEW_PR:?Set PREVIEW_PR}
+
+volumes:
+  config:
+    name: pr-${PREVIEW_PR:?Set PREVIEW_PR}-config
+  projects:
+    name: pr-${PREVIEW_PR:?Set PREVIEW_PR}-projects
+  city:
+    name: pr-${PREVIEW_PR:?Set PREVIEW_PR}-city

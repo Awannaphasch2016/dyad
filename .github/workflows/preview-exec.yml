@@ -1,0 +1,108 @@
+# Prove GitHub can run a preview on the shared Devbox.
+#
+# This job does not SSH, does not read the production deploy key, and does not
+# retarget DNS. The tunnel on Wewebplus-ci already serves the public name.
+# The production host is not a target.
+name: Preview exec
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cursor/preview-bridge-proof-9e7a
+    paths:
+      - .github/workflows/preview-exec.yml
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: preview-exec-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  exec:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Log in to Namespace with the GitHub token
+        uses: namespacelabs/nscloud-setup@v0
+
+      - name: Install the Devbox CLI
+        run: |
+          set -euo pipefail
+          ver=0.0.195
+          curl -fsSL "https://get.namespace.so/packages/devbox/v${ver}/devbox_${ver}_linux_amd64.tar.gz" -o /tmp/devbox.tgz
+          mkdir -p /tmp/devbox-extract
+          tar -xzf /tmp/devbox.tgz -C /tmp/devbox-extract
+          bin="$(find /tmp/devbox-extract -type f -name devbox -print -quit)"
+          test -n "$bin"
+          sudo install -m 755 "$bin" /usr/local/bin/devbox
+          devbox version
+
+      - name: Point the Devbox CLI at the federated token
+        run: |
+          set -euo pipefail
+          token_file=""
+          if [[ -f /var/run/nsc/token.json ]]; then
+            token_file=/var/run/nsc/token.json
+          elif [[ -f "${HOME}/.config/ns/token.json" ]]; then
+            token_file="${HOME}/.config/ns/token.json"
+          else
+            echo "Namespace login did not write a token file" >&2
+            exit 1
+          fi
+          echo "NSC_TOKEN_FILE=${token_file}" >> "$GITHUB_ENV"
+          python3 - "$token_file" <<'PY'
+          import json, sys
+          with open(sys.argv[1], encoding="utf-8") as handle:
+              payload = json.load(handle)
+          names = sorted(payload)
+          if not names:
+              raise SystemExit("token file has no fields")
+          print("token fields:", ",".join(names))
+          PY
+
+      - name: Run one command on Wewebplus-ci
+        run: |
+          set -euo pipefail
+          devbox exec Wewebplus-ci -- echo federated-ok
+
+      - name: Run preview-20 on Wewebplus-ci without moving DNS
+        run: |
+          set -euo pipefail
+          payload="$(base64 -w0 <<'REMOTE'
+          set -euo pipefail
+          echo "--- machine ---"
+          uname -m
+          command -v docker
+          docker version
+          df -h /
+          awk '/MemTotal|MemAvailable/ { print }' /proc/meminfo
+          if ! command -v git >/dev/null 2>&1; then
+            echo "git is missing" >&2
+            exit 1
+          fi
+          repo=/workspaces/weaver-plus
+          if [[ ! -d "$repo/.git" ]]; then
+            git clone --depth 1 --branch cursor/preview-bridge-proof-9e7a https://github.com/Awannaphasch2016/dyad.git "$repo"
+          else
+            git -C "$repo" fetch --depth 1 origin cursor/preview-bridge-proof-9e7a
+            git -C "$repo" checkout --detach FETCH_HEAD
+          fi
+          cd "$repo"
+          echo "--- preview without moving DNS ---"
+          PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh 20 ghcr.io/awannaphasch2016/dyad@sha256:8e5be8469cd4a7caaa1611e41e9906b4f5a8ddb7b87bf6a9b0dcad101296789a
+          REMOTE
+          )"
+          devbox exec Wewebplus-ci -- bash -lc "printf '%s' '${payload}' | base64 -d | bash"
+
+      - name: Check the public preview address
+        run: |
+          set -euo pipefail
+          code="$(curl -sS -o /tmp/preview-body -w '%{http_code}' https://pr-20.anakwannaphaschaiyong.com)"
+          echo "http $code"
+          test "$code" = "200"
+          grep -q 'data-dyad-browser-bridge' /tmp/preview-body
+          echo "browser bridge page"

@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type Server } from "node:http";
+import { isIP } from "node:net";
 import { timingSafeEqual } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
@@ -319,6 +320,19 @@ export function createFactoryHostBridgeServer(options: {
 
 let activeServer: Server | null = null;
 
+/** Bind address for the factory API. Unset stays on loopback. Hostnames are rejected. */
+export function resolveFactoryHostBridgeHost(
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const raw = env.GAS_CITY_HOST_BRIDGE_HOST;
+  if (raw === undefined) return "127.0.0.1";
+  const host = raw.trim();
+  if (isIP(host) === 0) {
+    throw new Error("GAS_CITY_HOST_BRIDGE_HOST must be an IP address");
+  }
+  return host;
+}
+
 export async function startFactoryHostBridgeFromEnv(): Promise<void> {
   if (process.env.GAS_CITY_HOST_BRIDGE_ENABLED !== "true") return;
   const token = process.env.GAS_CITY_HOST_BRIDGE_TOKEN;
@@ -334,10 +348,11 @@ export async function startFactoryHostBridgeFromEnv(): Promise<void> {
       "GAS_CITY_HOST_BRIDGE_PORT must be an integer from 1 to 65535",
     );
   }
+  const host = resolveFactoryHostBridgeHost();
   const server = createFactoryHostBridgeServer({ token });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
-    server.listen(port, "127.0.0.1", () => {
+    server.listen(port, host, () => {
       server.off("error", reject);
       resolve();
     });

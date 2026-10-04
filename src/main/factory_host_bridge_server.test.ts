@@ -1,10 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { AddressInfo } from "node:net";
+import { createServer as createNetServer, type AddressInfo } from "node:net";
 import { request as httpRequest } from "node:http";
 import { eq } from "drizzle-orm";
 import { apps, chats, chatTurnIntents, messages } from "@/db/schema";
 import { createInMemoryTestDb, type TestDb } from "@/testing/test_db";
-import { createFactoryHostBridgeServer } from "./factory_host_bridge_server";
+import {
+  createFactoryHostBridgeServer,
+  resolveFactoryHostBridgeHost,
+  startFactoryHostBridgeFromEnv,
+  stopFactoryHostBridge,
+} from "./factory_host_bridge_server";
 import type { SerializableChatTurnIntent } from "@/chat_stream/transport";
 
 describe("factory host bridge", () => {
@@ -237,5 +242,87 @@ describe("factory host bridge", () => {
       body: { idempotencyKey: "run-1", prompt: "Different prompt" },
     });
     expect(conflict.status).toBe(409);
+  });
+});
+
+describe("factory host bridge bind address", () => {
+  const previous = {
+    enabled: process.env.GAS_CITY_HOST_BRIDGE_ENABLED,
+    token: process.env.GAS_CITY_HOST_BRIDGE_TOKEN,
+    port: process.env.GAS_CITY_HOST_BRIDGE_PORT,
+    host: process.env.GAS_CITY_HOST_BRIDGE_HOST,
+  };
+
+  afterEach(() => {
+    stopFactoryHostBridge();
+    for (const [key, value] of Object.entries({
+      GAS_CITY_HOST_BRIDGE_ENABLED: previous.enabled,
+      GAS_CITY_HOST_BRIDGE_TOKEN: previous.token,
+      GAS_CITY_HOST_BRIDGE_PORT: previous.port,
+      GAS_CITY_HOST_BRIDGE_HOST: previous.host,
+    })) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  it("defaults to loopback and rejects hostnames", () => {
+    expect(resolveFactoryHostBridgeHost({})).toBe("127.0.0.1");
+    expect(
+      resolveFactoryHostBridgeHost({ GAS_CITY_HOST_BRIDGE_HOST: " 0.0.0.0 " }),
+    ).toBe("0.0.0.0");
+    expect(() =>
+      resolveFactoryHostBridgeHost({ GAS_CITY_HOST_BRIDGE_HOST: "dyad" }),
+    ).toThrow(/IP address/);
+    expect(() =>
+      resolveFactoryHostBridgeHost({ GAS_CITY_HOST_BRIDGE_HOST: "" }),
+    ).toThrow(/IP address/);
+  });
+
+  it("accepts a local connection when bound to 0.0.0.0", async () => {
+    const server = createFactoryHostBridgeServer({ token: "proof-token" });
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "0.0.0.0", () => resolve());
+    });
+    const address = server.address() as AddressInfo;
+    const status = await new Promise<number>((resolve, reject) => {
+      const request = httpRequest(
+        `http://127.0.0.1:${address.port}/v1/apps/1/factory-state`,
+      );
+      request.on("error", reject);
+      request.on("response", (response) => {
+        response.resume();
+        resolve(response.statusCode ?? 0);
+      });
+      request.end();
+    });
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    expect(address.address).toBe("0.0.0.0");
+    expect(status).toBe(401);
+  });
+
+  it("serves loopback when the host variable is unset", async () => {
+    process.env.GAS_CITY_HOST_BRIDGE_ENABLED = "true";
+    process.env.GAS_CITY_HOST_BRIDGE_TOKEN = "proof-token";
+    delete process.env.GAS_CITY_HOST_BRIDGE_HOST;
+    const probe = createNetServer();
+    await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", resolve));
+    const port = (probe.address() as AddressInfo).port;
+    await new Promise<void>((resolve) => probe.close(() => resolve()));
+    process.env.GAS_CITY_HOST_BRIDGE_PORT = String(port);
+    await startFactoryHostBridgeFromEnv();
+    const status = await new Promise<number>((resolve, reject) => {
+      const request = httpRequest(
+        `http://127.0.0.1:${port}/v1/apps/1/factory-state`,
+      );
+      request.on("error", reject);
+      request.on("response", (response) => {
+        response.resume();
+        resolve(response.statusCode ?? 0);
+      });
+      request.end();
+    });
+    expect(status).toBe(401);
   });
 });

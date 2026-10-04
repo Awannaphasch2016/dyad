@@ -1,0 +1,221 @@
+# Create, update, or destroy one preview from the preview label.
+#
+# This job does not SSH. The production host is not a target. Branch
+# cursor/preview-bridge-proof-9e7a is updated by
+# preview-image.yml so the two jobs do not restart that preview twice.
+name: Preview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed, labeled, unlabeled]
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  pull-requests: read
+
+concurrency:
+  group: preview-devbox-wewebplus-ci
+  cancel-in-progress: false
+
+jobs:
+  preview:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Decide
+        id: decide
+        env:
+          ACTION: ${{ github.event.action }}
+          LABEL: ${{ github.event.label.name }}
+          CLOSED: ${{ github.event.pull_request.state == 'closed' }}
+          LABELS: "${{ join(github.event.pull_request.labels.*.name, ',') }}"
+        run: |
+          set -euo pipefail
+          command="$(node deploy/preview/controller.mjs decide --action "$ACTION" --label "$LABEL" --labels "$LABELS" --closed "$CLOSED")"
+          echo "command=${command}" >> "$GITHUB_OUTPUT"
+          echo "${command}"
+
+      - name: Leave the proof branch to the image workflow
+        if: steps.decide.outputs.command == 'update' && github.head_ref == 'cursor/preview-bridge-proof-9e7a'
+        run: echo "preview-image.yml updates this branch"
+
+      - name: Set up Docker Buildx
+        if: steps.decide.outputs.command == 'update' && github.head_ref != 'cursor/preview-bridge-proof-9e7a'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: steps.decide.outputs.command == 'update' && github.head_ref != 'cursor/preview-bridge-proof-9e7a'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve the published digest
+        id: digest
+        if: steps.decide.outputs.command == 'update' && github.head_ref != 'cursor/preview-bridge-proof-9e7a'
+        env:
+          OWNER: ${{ github.repository_owner }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          owner="$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]')"
+          tag="ghcr.io/${owner}/dyad:sha-${SHA}"
+          image=""
+          for _ in 1 2 3 4 5 6 7 8 9 10; do
+            digest="$(docker buildx imagetools inspect "$tag" 2>/dev/null | awk 'tolower($1) == "digest:" { print $2; exit }' || true)"
+            if [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              image="ghcr.io/${owner}/dyad@${digest}"
+              break
+            fi
+            sleep 30
+          done
+          if [[ ! "$image" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]]; then
+            echo "Image ${tag} was not published" >&2
+            exit 1
+          fi
+          echo "image=${image}" >> "$GITHUB_OUTPUT"
+
+      - name: Attach the Neon preview branch
+        if: steps.decide.outputs.command == 'update' && github.head_ref != 'cursor/preview-bridge-proof-9e7a'
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          PR: ${{ github.event.pull_request.number }}
+          BRANCH: ${{ github.head_ref }}
+        run: node deploy/preview/controller.mjs attach --pr "$PR" --git-branch "$BRANCH" --vercel-project dyad --out /tmp/preview-runtime.sh
+
+      - name: Delete the Neon preview branch
+        if: steps.decide.outputs.command == 'destroy'
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          PR: ${{ github.event.pull_request.number }}
+          BRANCH: ${{ github.head_ref }}
+        run: node deploy/preview/controller.mjs destroy --pr "$PR" --git-branch "$BRANCH" --vercel-project dyad
+
+      - name: Log in to Namespace with the GitHub token
+        if: steps.decide.outputs.command != 'skip' && (steps.decide.outputs.command == 'destroy' || github.head_ref != 'cursor/preview-bridge-proof-9e7a')
+        uses: namespacelabs/nscloud-setup@v0
+
+      - name: Install the Devbox CLI
+        if: steps.decide.outputs.command != 'skip' && (steps.decide.outputs.command == 'destroy' || github.head_ref != 'cursor/preview-bridge-proof-9e7a')
+        run: |
+          set -euo pipefail
+          ver=0.0.195
+          curl -fsSL "https://get.namespace.so/packages/devbox/v${ver}/devbox_${ver}_linux_amd64.tar.gz" -o /tmp/devbox.tgz
+          mkdir -p /tmp/devbox-extract
+          tar -xzf /tmp/devbox.tgz -C /tmp/devbox-extract
+          bin="$(find /tmp/devbox-extract -type f -name devbox -print -quit)"
+          test -n "$bin"
+          sudo install -m 755 "$bin" /usr/local/bin/devbox
+
+      - name: Point the Devbox CLI at the federated token
+        if: steps.decide.outputs.command != 'skip' && (steps.decide.outputs.command == 'destroy' || github.head_ref != 'cursor/preview-bridge-proof-9e7a')
+        run: |
+          set -euo pipefail
+          token_file=""
+          if [[ -f /var/run/nsc/token.json ]]; then
+            token_file=/var/run/nsc/token.json
+          elif [[ -f "${HOME}/.config/ns/token.json" ]]; then
+            token_file="${HOME}/.config/ns/token.json"
+          else
+            echo "Namespace login did not write a token file" >&2
+            exit 1
+          fi
+          echo "NSC_TOKEN_FILE=${token_file}" >> "$GITHUB_ENV"
+
+      - name: Update the preview on Wewebplus-ci
+        if: steps.decide.outputs.command == 'update' && github.head_ref != 'cursor/preview-bridge-proof-9e7a'
+        env:
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+          IMAGE: ${{ steps.digest.outputs.image }}
+          BRANCH: ${{ github.head_ref }}
+          REPO_URL: https://github.com/${{ github.repository }}.git
+        run: |
+          set -euo pipefail
+          [[ "$PR" =~ ^[0-9]+$ ]]
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$IMAGE" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]]
+          [[ "$BRANCH" =~ ^[A-Za-z0-9._/-]+$ ]]
+          [[ "$REPO_URL" =~ ^https://github\.com/[A-Za-z0-9._/-]+\.git$ ]]
+          {
+            printf 'pr=%q\nsha=%q\nimage=%q\nbranch=%q\nrepo_url=%q\n' \
+              "$PR" "$SHA" "$IMAGE" "$BRANCH" "$REPO_URL"
+            if [[ -s /tmp/preview-runtime.sh ]]; then
+              cat /tmp/preview-runtime.sh
+            fi
+            printf '%s\n' \
+              'set -euo pipefail' \
+              'repo=/workspaces/weaver-plus' \
+              'if [[ ! -d "$repo/.git" ]]; then' \
+              '  git clone --depth 1 --branch "$branch" "$repo_url" "$repo"' \
+              'fi' \
+              'git -C "$repo" fetch --depth 1 origin "$sha"' \
+              'git -C "$repo" checkout --detach FETCH_HEAD' \
+              'cd "$repo"' \
+              'state="$HOME/.local/state/wewebplus-preview"' \
+              'secrets="$state/controller.env"' \
+              'if [[ -f "$secrets" ]]; then' \
+              '  set -a' \
+              '  source "$secrets"' \
+              '  set +a' \
+              '  node deploy/preview/controller.mjs attach --pr "$pr" --git-branch "$branch" --vercel-project dyad --out /tmp/preview-runtime-devbox.sh' \
+              '  source /tmp/preview-runtime-devbox.sh' \
+              '  rm -f /tmp/preview-runtime-devbox.sh' \
+              'fi' \
+              'PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh "$pr" "$image"'
+          } > /tmp/preview-remote.sh
+          payload="$(base64 -w0 /tmp/preview-remote.sh)"
+          rm -f /tmp/preview-remote.sh /tmp/preview-runtime.sh
+          devbox exec Wewebplus-ci -- bash -lc "printf '%s' '${payload}' | base64 -d | bash"
+
+      - name: Remove the preview from Wewebplus-ci
+        if: steps.decide.outputs.command == 'destroy'
+        env:
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+          BRANCH: ${{ github.head_ref }}
+          REPO_URL: https://github.com/${{ github.repository }}.git
+        run: |
+          set -euo pipefail
+          [[ "$PR" =~ ^[0-9]+$ ]]
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$BRANCH" =~ ^[A-Za-z0-9._/-]+$ ]]
+          [[ "$BRANCH" != "main" ]]
+          [[ "$REPO_URL" =~ ^https://github\.com/[A-Za-z0-9._/-]+\.git$ ]]
+          {
+            printf 'pr=%q\nsha=%q\nbranch=%q\nrepo_url=%q\n' \
+              "$PR" "$SHA" "$BRANCH" "$REPO_URL"
+            printf '%s\n' \
+              'set -euo pipefail' \
+              'repo=/workspaces/weaver-plus' \
+              'if [[ ! -d "$repo/.git" ]]; then' \
+              '  git clone --depth 1 --branch "$branch" "$repo_url" "$repo"' \
+              'fi' \
+              'git -C "$repo" fetch --depth 1 origin "$sha"' \
+              'git -C "$repo" checkout --detach FETCH_HEAD' \
+              'cd "$repo"' \
+              'state="$HOME/.local/state/wewebplus-preview"' \
+              'secrets="$state/controller.env"' \
+              'if [[ -f "$secrets" ]]; then' \
+              '  set -a' \
+              '  source "$secrets"' \
+              '  set +a' \
+              '  node deploy/preview/controller.mjs destroy --pr "$pr" --git-branch "$branch" --vercel-project dyad' \
+              'fi' \
+              'if [[ -f "$repo/compose.preview.yml" ]]; then' \
+              '  docker compose -p "preview-${pr}" -f "$repo/compose.preview.yml" down -v --remove-orphans || true' \
+              'fi' \
+              'rm -f "$state/preview-${pr}.env"'
+          } > /tmp/preview-remote.sh
+          payload="$(base64 -w0 /tmp/preview-remote.sh)"
+          rm -f /tmp/preview-remote.sh
+          devbox exec Wewebplus-ci -- bash -lc "printf '%s' '${payload}' | base64 -d | bash"

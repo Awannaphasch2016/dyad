@@ -1,0 +1,256 @@
+# Publish the Gas City image digest and update the shared preview.
+#
+# The deploy job runs on Devbox Wewebplus-ci. It does not SSH and does not
+# run gascity-rollout. The production host does not pull the image.
+name: Preview image
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cursor/preview-bridge-proof-9e7a
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: preview-image-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Decide whether this commit is already published
+        id: inspect
+        env:
+          OWNER: ${{ github.repository_owner }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          owner="$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]')"
+          image="ghcr.io/${owner}/dyad:sha-${SHA}"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          if docker buildx imagetools inspect "$image" >/dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "Already published: $image"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            echo "Not published yet: $image"
+          fi
+
+      - name: Free runner disk before the image build
+        if: steps.inspect.outputs.published != 'true'
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          df -h /
+
+      - name: Build and push
+        id: build
+        if: steps.inspect.outputs.published != 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.gascity
+          push: true
+          provenance: false
+          sbom: false
+          tags: ${{ steps.inspect.outputs.image }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Report
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.inspect.outputs.published }}" = "true" ]; then
+            echo "Skipped the build. ${{ steps.inspect.outputs.image }} already exists."
+          else
+            echo "Pushed ${{ steps.inspect.outputs.image }}"
+            echo "Digest ${{ steps.build.outputs.digest }}"
+          fi
+
+  deploy:
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    concurrency:
+      group: preview-devbox-wewebplus-ci
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+      pull-requests: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve the published digest
+        id: digest
+        env:
+          OWNER: ${{ github.repository_owner }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          owner="$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]')"
+          tag="ghcr.io/${owner}/dyad:sha-${SHA}"
+          digest="$(docker buildx imagetools inspect "$tag" | awk 'tolower($1) == "digest:" { print $2; exit }')"
+          image="ghcr.io/${owner}/dyad@${digest}"
+          if [[ ! "$image" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]]; then
+            echo "Could not resolve a digest for ${tag}" >&2
+            exit 1
+          fi
+          echo "image=${image}" >> "$GITHUB_OUTPUT"
+          echo "Resolved ${image}"
+
+      - name: Find the open pull request
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          number="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$HEAD" --state open --json number --jq '.[0].number')"
+          if [[ ! "$number" =~ ^[0-9]+$ ]]; then
+            echo "No open pull request for ${HEAD}" >&2
+            exit 1
+          fi
+          echo "number=${number}" >> "$GITHUB_OUTPUT"
+          echo "Pull request ${number}"
+
+      - name: Attach the Neon preview branch
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          PR: ${{ steps.pr.outputs.number }}
+        run: node deploy/preview/controller.mjs attach --pr "$PR" --out /tmp/preview-runtime.sh
+
+      - name: Log in to Namespace with the GitHub token
+        uses: namespacelabs/nscloud-setup@v0
+
+      - name: Install the Devbox CLI
+        run: |
+          set -euo pipefail
+          ver=0.0.195
+          curl -fsSL "https://get.namespace.so/packages/devbox/v${ver}/devbox_${ver}_linux_amd64.tar.gz" -o /tmp/devbox.tgz
+          mkdir -p /tmp/devbox-extract
+          tar -xzf /tmp/devbox.tgz -C /tmp/devbox-extract
+          bin="$(find /tmp/devbox-extract -type f -name devbox -print -quit)"
+          test -n "$bin"
+          sudo install -m 755 "$bin" /usr/local/bin/devbox
+          devbox version
+
+      - name: Point the Devbox CLI at the federated token
+        run: |
+          set -euo pipefail
+          token_file=""
+          if [[ -f /var/run/nsc/token.json ]]; then
+            token_file=/var/run/nsc/token.json
+          elif [[ -f "${HOME}/.config/ns/token.json" ]]; then
+            token_file="${HOME}/.config/ns/token.json"
+          else
+            echo "Namespace login did not write a token file" >&2
+            exit 1
+          fi
+          echo "NSC_TOKEN_FILE=${token_file}" >> "$GITHUB_ENV"
+
+      - name: Update the preview on Wewebplus-ci
+        env:
+          PR: ${{ steps.pr.outputs.number }}
+          SHA: ${{ github.sha }}
+          IMAGE: ${{ steps.digest.outputs.image }}
+          BRANCH: ${{ github.ref_name }}
+          REPO_URL: https://github.com/${{ github.repository }}.git
+        run: |
+          set -euo pipefail
+          [[ "$PR" =~ ^[0-9]+$ ]]
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$IMAGE" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]]
+          [[ "$BRANCH" =~ ^[A-Za-z0-9._/-]+$ ]]
+          [[ "$REPO_URL" =~ ^https://github\.com/[A-Za-z0-9._/-]+\.git$ ]]
+          {
+            printf 'pr=%q\nsha=%q\nimage=%q\nbranch=%q\nrepo_url=%q\n' \
+              "$PR" "$SHA" "$IMAGE" "$BRANCH" "$REPO_URL"
+            if [[ -s /tmp/preview-runtime.sh ]]; then
+              cat /tmp/preview-runtime.sh
+            fi
+            printf '%s\n' \
+              'set -euo pipefail' \
+              'repo=/workspaces/weaver-plus' \
+              'if [[ ! -d "$repo/.git" ]]; then' \
+              '  git clone --depth 1 --branch "$branch" "$repo_url" "$repo"' \
+              'fi' \
+              'git -C "$repo" fetch --depth 1 origin "$sha"' \
+              'git -C "$repo" checkout --detach FETCH_HEAD' \
+              'cd "$repo"' \
+              'state="$HOME/.local/state/wewebplus-preview"' \
+              'secrets="$state/controller.env"' \
+              'if [[ ! -f "$secrets" && -f deploy/preview/sealed.key.b64 && -f deploy/preview/sealed.env.b64 && -f "$state/controller.pem" ]]; then' \
+              '  base64 -d deploy/preview/sealed.key.b64 > "$state/sealed.key.bin"' \
+              '  base64 -d deploy/preview/sealed.env.b64 > "$state/sealed.env.bin"' \
+              '  openssl pkeyutl -decrypt -inkey "$state/controller.pem" -in "$state/sealed.key.bin" -out "$state/aes.key"' \
+              '  openssl enc -d -aes-256-cbc -pbkdf2 -pass "file:$state/aes.key" -in "$state/sealed.env.bin" -out "$secrets"' \
+              '  chmod 600 "$secrets"' \
+              '  rm -f "$state/controller.pem" "$state/sealed.key.bin" "$state/sealed.env.bin" "$state/aes.key"' \
+              '  echo "controller.env installed"' \
+              'fi' \
+              'if [[ -f "$secrets" ]]; then' \
+              '  set -a' \
+              '  source "$secrets"' \
+              '  set +a' \
+              '  node deploy/preview/controller.mjs attach --pr "$pr" --git-branch "$branch" --vercel-project dyad --out /tmp/preview-runtime-devbox.sh' \
+              '  source /tmp/preview-runtime-devbox.sh' \
+              '  rm -f /tmp/preview-runtime-devbox.sh' \
+              '  node deploy/preview/controller.mjs assign-page --pr "$pr" --git-branch cursor/dyad-web-frontend-bbea --vercel-project dyad' \
+              'fi' \
+              'PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh "$pr" "$image"'
+          } > /tmp/preview-remote.sh
+          payload="$(base64 -w0 /tmp/preview-remote.sh)"
+          devbox exec Wewebplus-ci -- bash -lc "printf '%s' '${payload}' | base64 -d | bash"
+
+      - name: Check the public preview address
+        env:
+          PR: ${{ steps.pr.outputs.number }}
+        run: |
+          set -euo pipefail
+          [[ "$PR" =~ ^[0-9]+$ ]]
+          url="https://pr-${PR}.anakwannaphaschaiyong.com"
+          ok=0
+          for _ in 1 2 3 4 5 6; do
+            code="$(curl -sS -o /tmp/preview-body -w '%{http_code}' --max-time 20 "$url" || true)"
+            echo "http ${code}"
+            if [[ "$code" == "200" ]] && grep -q 'data-dyad-browser-bridge' /tmp/preview-body; then
+              ok=1
+              break
+            fi
+            sleep 10
+          done
+          test "$ok" = "1"
+          echo "browser bridge page"
