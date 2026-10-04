@@ -1,6 +1,6 @@
 # Preview infrastructure
 
-> Revision 2026-10-04, for review. Do not start the remaining work until this revision is approved. The production EC2 was not changed. The sections below this revision are the 2026-10-03 record. Where they disagree with this revision, this revision wins.
+> Revision 2026-10-04, for review. Do not start the remaining work, and do not merge or close pull requests 17 through 24, until this revision is approved. The production EC2 was not changed. The sections below this revision are the 2026-10-03 record. Where they disagree with this revision, this revision wins.
 
 A preview is one pull request. It runs its own Dyad container, its own Gas City city, and its own Neon branch. A git branch is the commit series. A Vercel Preview Deployment is the question-board page for that git branch. A worktree is where a developer edits. None of those three is the running environment by itself.
 
@@ -68,6 +68,23 @@ Approval of this revision authorizes these five steps and no others. Each step s
 - Closing pull request 20. Closing it destroys preview 20.
 - Kubernetes.
 - A second Vercel project.
+
+### Pull requests 17 through 24
+
+Writing this section does not merge or close anything. After this revision is approved, dispose of the set in the order below. The end state is pull requests 20, 22, 23, and 17 merged, pull request 24 merged into 17, pull request 18 closed, and pull requests 19 and 21 still open.
+
+| Pull request | Action | When | Why |
+| --- | --- | --- | --- |
+| 22 | Merge into 20, then close | Step 1 | Assigns `WEWEBPLUS_DATABASE_URL` for one git branch on Vercel project `dyad`. That code is not in pull request 20 yet. |
+| 20 | Merge | Step 5, after 22 is inside it | Devbox Compose, Neon child, controller, and `preview.yml`. Other preview code lands here first. Closing it before that merge destroys preview 20. |
+| 23 | Merge | Before step 2 | The Gas City image is already in GHCR. This pull request is the rebuild workflow. Step 2 only consumes digest `sha256:59e824d8393891dc849e11c838e791b89c59f748d6d8bae86ef2a21db838d916`. |
+| 24 | Merge into 17 | When this revision is approved | This file. It replaces the 2026-10-03 plan text. |
+| 17 | Merge after 24 | After 24 is inside it | The plan document. Closing it before that merge drops this revision. |
+| 18 | Close | When this revision is approved | The two-container proof already ran on `Wewebplus-ci` as pull request 20. `plans/dev-environment-external.md` is an older shape, including a proof that used production disk. Nothing in it remains to build. |
+| 21 | Keep open | After the rest of this set is merged or closed | Restarts preview 20 after the Devbox session stops. Hardcoded to pull request 20, so leave it unmerged. The five steps do not replace the Namespace session clock. |
+| 19 | Keep open | Stays open | Production EC2 registry pull (`plans/offhost-image-pull.md`, `plans/preview-token-rollout.md`). This plan leaves `gascity-rollout.yml` and the production host alone. |
+
+Pull requests 15 and 16 are outside this set. Steps 3 and 4 use them. Leave both open in this cleanup.
 
 ## Decisions recorded 2026-10-03
 
@@ -581,6 +598,6 @@ Ada's worktree is `~/src/dyad-ada` on branch `cursor/formula-graph-canvas-9e7a`,
 - Ada pushes again. Only `preview-14` pulls the new digest. Bao's URL still serves Bao's digest. Ada's uncommitted worktree files are in neither container.
 - Ada merges and the PR closes. `preview-14`, its volumes, its Neon branch, and its hostname are deleted. Bao's preview and production keep running.
 
-## What this approval does not include
+## What the 2026-10-03 approval did not include
 
-Approval of this plan authorizes writing it down. It does not authorize phase 1's code, a new host, a Neon project, a registry, or any SSH write to `13.251.216.187`. Each phase stops for a separate go-ahead. Production image `weaver-plus:gascity-before-once` stays. No `compose down -v` on project `weaver-plus`.
+The 2026-10-04 revision above replaces this paragraph. Phases 1 through 5 have since landed for pull request 20, and phase 6 has landed for that one git branch. The remaining authorization is the five steps in that revision. Production image `weaver-plus:gascity` stays on the EC2. No `compose down -v` on project `weaver-plus`. No SSH write to `13.251.216.187`.
