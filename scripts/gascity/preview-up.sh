@@ -215,3 +215,6 @@ fi
 printf '%s\n' "$preview_url" > "${state_dir}/preview-${pr}.public-url"
 chmod 600 "${state_dir}/preview-${pr}.public-url"
 echo "preview_url=${preview_url}"
+echo "clerk step"
+PREVIEW_ORIGIN="$preview_url" node "$root/deploy/preview/clerk-origins-run.mjs"
+echo "clerk step done"
