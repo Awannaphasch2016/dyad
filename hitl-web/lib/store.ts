@@ -27,6 +27,7 @@ type QuestionRow = {
   answered_by_user_id: string | null;
   answered_by_name: string | null;
   answered_at: Date | null;
+  runtime_run_id: string | null;
 };
 
 function toRecord(row: QuestionRow): HitlQuestionRecord | null {
@@ -53,6 +54,17 @@ function toRecord(row: QuestionRow): HitlQuestionRecord | null {
   };
 }
 
+export type ListedQuestion = HitlQuestionView & {
+  runtimeRunId: string | null;
+};
+
+function withRuntime(
+  view: HitlQuestionView,
+  runtimeRunId: string | null,
+): ListedQuestion {
+  return { ...view, runtimeRunId };
+}
+
 export async function readMemberships(
   sql: Sql,
   userId: string,
@@ -66,24 +78,60 @@ export async function readMemberships(
   }));
 }
 
+async function selectQuestionRows(
+  sql: Sql,
+  caller: HitlCaller,
+  questionId?: string,
+): Promise<QuestionRow[]> {
+  try {
+    if (questionId) {
+      return await sql<QuestionRow[]>`
+        select q.id, q.org_id, q.app_id, q.phase, q.run_id, q.step_id, q.target_role_id,
+               q.visibility, q.status, q.body, q.idempotency_key, q.created_at, q.bead_id,
+               q.answered_by_user_id, q.answered_by_name, q.answered_at,
+               a.runtime_run_id
+        from wewebplus.questions q
+        left join wewebplus.answers a on a.question_id = q.id
+        where q.id = ${questionId}
+      `;
+    }
+    return await sql<QuestionRow[]>`
+      select q.id, q.org_id, q.app_id, q.phase, q.run_id, q.step_id, q.target_role_id,
+             q.visibility, q.status, q.body, q.idempotency_key, q.created_at, q.bead_id,
+             q.answered_by_user_id, q.answered_by_name, q.answered_at,
+             a.runtime_run_id
+      from wewebplus.questions q
+      left join wewebplus.answers a on a.question_id = q.id
+      where q.org_id = ${caller.orgId}
+      order by q.created_at asc
+      limit 100
+    `;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (!message.includes("runtime_run_id")) throw error;
+    const rows = await sql<Omit<QuestionRow, "runtime_run_id">[]>`
+      select id, org_id, app_id, phase, run_id, step_id, target_role_id, visibility,
+             status, body, idempotency_key, created_at, bead_id,
+             answered_by_user_id, answered_by_name, answered_at
+      from wewebplus.questions
+      where ${questionId ? sql`id = ${questionId}` : sql`org_id = ${caller.orgId}`}
+      order by created_at asc
+      limit 100
+    `;
+    return rows.map((row) => ({ ...row, runtime_run_id: null }));
+  }
+}
+
 export async function listQuestions(
   sql: Sql,
   caller: HitlCaller,
-): Promise<HitlQuestionView[]> {
-  const rows = await sql<QuestionRow[]>`
-    select id, org_id, app_id, phase, run_id, step_id, target_role_id, visibility,
-           status, body, idempotency_key, created_at, bead_id,
-           answered_by_user_id, answered_by_name, answered_at
-    from wewebplus.questions
-    where org_id = ${caller.orgId}
-    order by created_at asc
-    limit 100
-  `;
+): Promise<ListedQuestion[]> {
+  const rows = await selectQuestionRows(sql, caller);
   return rows.flatMap((row) => {
     const record = toRecord(row);
     if (!record) return [];
     const view = presentQuestion(record, caller);
-    return view ? [view] : [];
+    return view ? [withRuntime(view, row.runtime_run_id)] : [];
   });
 }
 

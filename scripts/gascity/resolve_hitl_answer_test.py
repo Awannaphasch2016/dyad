@@ -33,15 +33,24 @@ class Store:
     def execute(self, sql, params=None):
         text = " ".join(sql.split())
         if text.startswith("select"):
-            pending = [
-                row
-                for row in self.rows
-                if row["gate_resolved_at"] is None
-                and row["run_id"]
-                and row["step_id"]
-                and row["answered_by_name"]
-            ]
-            pending.sort(key=lambda row: row["created_at"])
+            if "a.gate_resolved_at is not null" in text:
+                chosen = [
+                    row
+                    for row in self.rows
+                    if row["gate_resolved_at"] is not None
+                    and row.get("runtime_run_id") is None
+                ]
+            else:
+                chosen = [
+                    row
+                    for row in self.rows
+                    if row["gate_resolved_at"] is None
+                    and row.get("runtime_run_id") is None
+                    and row["run_id"]
+                    and row["step_id"]
+                    and row["answered_by_name"]
+                ]
+            chosen.sort(key=lambda row: row["created_at"])
             return Result([
                 (
                     row["id"],
@@ -49,9 +58,19 @@ class Store:
                     row["step_id"],
                     row["answered_by_name"],
                     row["gate_resolved_at"],
+                    row.get("phase") or "implementation",
+                    row.get("body") or "prompt",
+                    row.get("idempotency_key") or "key",
+                    row.get("runtime_run_id"),
                 )
-                for row in pending
+                for row in chosen
             ])
+        if text.startswith("update") and "runtime_run_id" in text:
+            value, answer_id = params
+            for row in self.rows:
+                if row["id"] == answer_id and row.get("runtime_run_id") is None:
+                    row["runtime_run_id"] = value
+            return Result([])
         if text.startswith("update"):
             answer_id = params[0]
             for row in self.rows:
@@ -76,8 +95,16 @@ def pending_row():
         "step_id": "plan-approve",
         "answered_by_name": "Project Manager",
         "gate_resolved_at": None,
+        "runtime_run_id": None,
+        "phase": "implementation",
+        "body": "build the board",
+        "idempotency_key": "gate-1",
         "created_at": "2026-10-02T00:00:00Z",
     }
+
+
+def accept_post(_row):
+    return True, "gas-city-run:accepted"
 
 
 class ResolveHitlAnswerTest(unittest.TestCase):
@@ -104,7 +131,10 @@ class ResolveHitlAnswerTest(unittest.TestCase):
             os.environ["FAKE_HITL_LOG"] = str(log)
             store = Store([pending_row()])
             stamped = worker.close_pending(
-                store, run=worker.run_hitl, script=str(script)
+                store,
+                run=worker.run_hitl,
+                script=str(script),
+                post=accept_post,
             )
             self.assertEqual(stamped, ["ans-1"])
             self.assertEqual(store.rows[0]["gate_resolved_at"], "stamped")
@@ -130,7 +160,7 @@ class ResolveHitlAnswerTest(unittest.TestCase):
                 {record["rig"] for record in records}, {"multi tenant HITL"}
             )
             again = worker.close_pending(
-                store, run=worker.run_hitl, script=str(script)
+                store, run=worker.run_hitl, script=str(script), post=accept_post
             )
             self.assertEqual(again, [])
             self.assertEqual(len(log.read_text(encoding="utf-8").splitlines()), 2)
@@ -162,11 +192,35 @@ class ResolveHitlAnswerTest(unittest.TestCase):
             calls.append(argv)
             return 0
 
-        stamped = worker.close_pending(Store([row]), run=run, script="hitl.py")
+        stamped = worker.close_pending(
+            Store([row]), run=run, script="hitl.py", post=accept_post
+        )
         self.assertEqual(stamped, [])
         self.assertEqual(calls, [])
         self.assertFalse(worker.close_answer(row, run=run, script="hitl.py"))
         self.assertEqual(calls, [])
+
+    def test_refused_dyad_post_keeps_the_stamp_and_does_not_repeat(self):
+        posts = []
+
+        def refuse(row):
+            posts.append(row["id"])
+            return False, None
+
+        store = Store([pending_row()])
+        stamped = worker.close_pending(
+            store, run=lambda _argv: 0, script="hitl.py", post=refuse
+        )
+        self.assertEqual(stamped, ["ans-1"])
+        self.assertEqual(store.rows[0]["gate_resolved_at"], "stamped")
+        self.assertEqual(store.rows[0]["runtime_run_id"], "refused")
+        self.assertEqual(posts, ["ans-1"])
+        again = worker.close_pending(
+            store, run=lambda _argv: 0, script="hitl.py", post=refuse
+        )
+        self.assertEqual(again, [])
+        self.assertEqual(posts, ["ans-1"])
+        self.assertEqual(store.rows[0]["gate_resolved_at"], "stamped")
 
 
 if __name__ == "__main__":

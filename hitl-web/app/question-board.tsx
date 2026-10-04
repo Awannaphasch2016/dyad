@@ -2,6 +2,7 @@
 
 import { UserButton } from "@clerk/nextjs";
 import { useCallback, useEffect, useState } from "react";
+import { runtimeStatusLine } from "@/lib/runtime_status";
 import { PreviewPrompt } from "./preview-prompt";
 
 type Question = {
@@ -12,6 +13,7 @@ type Question = {
   answeredByName: string | null;
   body: string | null;
   canAnswer: boolean;
+  runtimeRunId?: string | null;
 };
 
 type Payload = {
@@ -89,52 +91,62 @@ export function QuestionBoard() {
         </div>
         <UserButton />
       </header>
+      <PreviewPrompt enabled={payload != null} />
       {error ? <p className="error">{error}</p> : null}
-      <PreviewPrompt />
       {payload && payload.questions.length === 0 ? (
         <p className="muted">No questions yet.</p>
       ) : null}
-      {payload?.questions.map((question) => (
-        <article
-          className="card"
-          key={question.id}
-          data-testid={`hitl-question-${question.id}`}
-        >
-          <p data-testid={`hitl-wait-${question.id}`}>
-            Waiting on {roleLabel(question.targetRoleId)} for {question.stepId}.
-            Status: {question.status}.
-            {question.status === "answered" && question.answeredByName
-              ? ` Answered by ${question.answeredByName}.`
-              : ""}
-          </p>
-          {question.body != null ? (
-            <p data-testid={`hitl-body-${question.id}`}>{question.body}</p>
-          ) : null}
-          {question.canAnswer ? (
-            <form
-              data-testid={`hitl-answer-${question.id}`}
-              onSubmit={(event) => {
-                event.preventDefault();
-                void onAnswer(question.id);
-              }}
-            >
-              <input
-                aria-label={`Answer ${question.stepId}`}
-                value={drafts[question.id] ?? ""}
-                onChange={(event) =>
-                  setDrafts((current) => ({
-                    ...current,
-                    [question.id]: event.target.value,
-                  }))
-                }
-              />
-              <button type="submit" disabled={pendingId === question.id}>
-                Submit answer
-              </button>
-            </form>
-          ) : null}
-        </article>
-      ))}
+      {payload?.questions.map((question) => {
+        const runtime = runtimeStatusLine({
+          status: question.status,
+          runtimeRunId: question.runtimeRunId ?? null,
+          preview: Boolean(process.env.NEXT_PUBLIC_GAS_CITY_URL?.trim()),
+        });
+        return (
+          <article
+            className="card"
+            key={question.id}
+            data-testid={`hitl-question-${question.id}`}
+          >
+            <p data-testid={`hitl-wait-${question.id}`}>
+              Waiting on {roleLabel(question.targetRoleId)} for{" "}
+              {question.stepId}. Status: {question.status}.
+              {question.status === "answered" && question.answeredByName
+                ? ` Answered by ${question.answeredByName}.`
+                : ""}
+            </p>
+            {question.body != null ? (
+              <p data-testid={`hitl-body-${question.id}`}>{question.body}</p>
+            ) : null}
+            {runtime ? (
+              <p data-testid={`hitl-runtime-${question.id}`}>{runtime}</p>
+            ) : null}
+            {question.canAnswer ? (
+              <form
+                data-testid={`hitl-answer-${question.id}`}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void onAnswer(question.id);
+                }}
+              >
+                <input
+                  aria-label={`Answer ${question.stepId}`}
+                  value={drafts[question.id] ?? ""}
+                  onChange={(event) =>
+                    setDrafts((current) => ({
+                      ...current,
+                      [question.id]: event.target.value,
+                    }))
+                  }
+                />
+                <button type="submit" disabled={pendingId === question.id}>
+                  Submit answer
+                </button>
+              </form>
+            ) : null}
+          </article>
+        );
+      })}
     </main>
   );
 }

@@ -8,6 +8,7 @@ import { apps } from "@/db/schema";
 import {
   approveFactoryPhase,
   FactoryHostError,
+  ensurePreviewFactoryApp,
   linkFactoryApp,
   postFactoryHostMessage,
   readFactoryState,
@@ -26,7 +27,7 @@ import {
   listHitlQuestions,
   syncRemote,
 } from "@/control_plane/hitl_device";
-import type { HitlCaller } from "@/control_plane/hitl";
+import { WEWEBPLUS_ORG_ID, type HitlCaller } from "@/control_plane/hitl";
 
 const MAX_BODY_BYTES = 256 * 1024;
 const LinkBody = z.object({
@@ -225,6 +226,17 @@ export function createFactoryHostBridgeServer(options: {
         throw new FactoryHostError("Not found", 404);
       }
       if (!machine) throw new FactoryHostError("Unauthorized", 401);
+      if (
+        request.method === "POST" &&
+        url.pathname === "/v1/preview-factory-app"
+      ) {
+        json(
+          response,
+          200,
+          ensurePreviewFactoryApp(database, { orgId: WEWEBPLUS_ORG_ID }),
+        );
+        return;
+      }
       const runMatch = url.pathname.match(
         /^\/v1\/runs\/(gas-city-run:[a-f0-9]{64})$/,
       );

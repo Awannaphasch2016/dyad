@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { mkdirSync } from "node:fs";
 import { and, asc, eq, gt } from "drizzle-orm";
 import type { db as productionDb } from "@/db";
 import {
@@ -86,6 +87,66 @@ export function readFactoryState(database: FactoryHostDatabase, appId: number) {
     gasCityProjectId: app.gasCityProjectId,
     approvedPhases: approvals,
   };
+}
+
+export function ensurePreviewFactoryApp(
+  database: FactoryHostDatabase,
+  input: { orgId: string; gasCityProjectId?: string; path?: string },
+): { appId: number } {
+  const gasCityProjectId = input.gasCityProjectId ?? "preview";
+  const path = input.path ?? "/home/weaver/dyad-apps/preview-factory";
+  let row = database
+    .select()
+    .from(apps)
+    .where(eq(apps.gasCityProjectId, gasCityProjectId))
+    .get();
+  if (!row) {
+    try {
+      mkdirSync(path, { recursive: true });
+    } catch {
+      // The preview volume creates this directory. Tests still record the app.
+    }
+    const inserted = database
+      .insert(apps)
+      .values({
+        name: "Preview",
+        path,
+        ownerType: "org",
+        ownerId: input.orgId,
+        factoryHostManaged: true,
+        gasCityProjectId,
+      })
+      .run();
+    row = database
+      .select()
+      .from(apps)
+      .where(eq(apps.id, Number(inserted.lastInsertRowid)))
+      .get();
+  } else if (!row.factoryHostManaged || row.ownerId !== input.orgId) {
+    database
+      .update(apps)
+      .set({
+        factoryHostManaged: true,
+        ownerType: "org",
+        ownerId: input.orgId,
+        updatedAt: new Date(),
+      })
+      .where(eq(apps.id, row.id))
+      .run();
+  }
+  if (!row) throw new FactoryHostError("App was not stored", 500);
+  const existing = database
+    .select({ title: chats.title })
+    .from(chats)
+    .where(eq(chats.appId, row.id))
+    .all();
+  const titles = new Set(existing.map((chat) => chat.title));
+  for (const title of ["Discovery", "Implementation", "Delivery"]) {
+    if (!titles.has(title)) {
+      database.insert(chats).values({ appId: row.id, title }).run();
+    }
+  }
+  return { appId: row.id };
 }
 
 export function linkFactoryApp(

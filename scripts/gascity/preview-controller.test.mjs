@@ -6,7 +6,10 @@ import {
   commandForPullRequest,
   transition,
 } from "../../deploy/preview/transition.mjs";
-import { previewBranchName } from "../../deploy/preview/neon.mjs";
+import {
+  previewBranchName,
+  resolveNeonParentBranchId,
+} from "../../deploy/preview/neon.mjs";
 import {
   credentialsFromEnvironment,
   mergeAwsCredentials,
@@ -88,6 +91,27 @@ test("a push without the preview label does not destroy an existing preview", ()
       closed: true,
     }),
     "skip",
+  );
+});
+
+test("the Neon parent must be an explicit sanitized branch", () => {
+  assert.throws(() => resolveNeonParentBranchId({}), /sanitized Neon parent/);
+  assert.throws(
+    () =>
+      resolveNeonParentBranchId({
+        NEON_PARENT_BRANCH_ID: "br-mute-shadow-b3jxqoho",
+      }),
+    /sanitized Neon parent/,
+  );
+  assert.throws(
+    () => resolveNeonParentBranchId({ NEON_PARENT_BRANCH_ID: "not-a-branch" }),
+    /sanitized Neon parent/,
+  );
+  assert.equal(
+    resolveNeonParentBranchId({
+      NEON_PARENT_BRANCH_ID: "br-sanitized-parent",
+    }),
+    "br-sanitized-parent",
   );
 });
 

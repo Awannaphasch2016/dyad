@@ -243,6 +243,36 @@ describe("factory host bridge", () => {
     });
     expect(conflict.status).toBe(409);
   });
+
+  it("provisions one factory-managed preview app", async () => {
+    const first = await request("/v1/preview-factory-app", {
+      method: "POST",
+      body: {},
+    });
+    const second = await request("/v1/preview-factory-app", {
+      method: "POST",
+      body: {},
+    });
+    expect(first.status).toBe(200);
+    expect(second.body).toEqual(first.body);
+    const app = database
+      .select()
+      .from(apps)
+      .where(eq(apps.id, first.body.appId))
+      .get();
+    expect(app?.factoryHostManaged).toBe(true);
+    expect(app?.ownerType).toBe("org");
+    const phaseChats = database
+      .select()
+      .from(chats)
+      .where(eq(chats.appId, first.body.appId))
+      .all();
+    expect(phaseChats.map((chat) => chat.title).sort()).toEqual([
+      "Delivery",
+      "Discovery",
+      "Implementation",
+    ]);
+  });
 });
 
 describe("factory host bridge bind address", () => {

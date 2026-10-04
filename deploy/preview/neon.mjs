@@ -1,11 +1,41 @@
-// Neon branch preview-pr-<number> under Wewebplus-hitl. The parent is Dev.
+// Neon branch preview-pr-<number>. The parent must already have control-plane
+// migrations 0000 through 0003 and the 0001 role and membership seed. It must
+// not contain account_connections ciphertext. Neon copies schema and rows
+// (parent-data). This module does not set init_source.
 
 const neonApi = "https://console.neon.tech/api/v2";
 
 export const defaultNeonProjectId = "mute-credit-71067312";
-export const defaultNeonParentBranchId = "br-mute-shadow-b3jxqoho";
+export const unsanitizedNeonParentBranchId = "br-mute-shadow-b3jxqoho";
 export const defaultNeonDatabase = "neondb";
 export const defaultNeonRole = "neondb_owner";
+
+const parentBranchPattern = /^br-[a-z0-9-]+$/;
+
+export function resolveNeonParentBranchId(env = process.env) {
+  const value = String(env.NEON_PARENT_BRANCH_ID ?? "").trim();
+  if (
+    !value ||
+    value === unsanitizedNeonParentBranchId ||
+    !parentBranchPattern.test(value)
+  ) {
+    throw new Error(
+      "NEON_PARENT_BRANCH_ID must name a sanitized Neon parent branch",
+    );
+  }
+  return value;
+}
+
+function assertSanitizedParent(parentId) {
+  if (
+    parentId === unsanitizedNeonParentBranchId ||
+    !parentBranchPattern.test(String(parentId))
+  ) {
+    throw new Error(
+      "NEON_PARENT_BRANCH_ID must name a sanitized Neon parent branch",
+    );
+  }
+}
 
 export function previewBranchName(pr) {
   if (!/^[0-9]+$/.test(String(pr))) {
@@ -67,7 +97,8 @@ async function waitForOperations(key, projectId, operations) {
 export async function ensurePreviewBranch(options) {
   const key = options.apiKey;
   const projectId = options.projectId || defaultNeonProjectId;
-  const parentId = options.parentBranchId || defaultNeonParentBranchId;
+  const parentId = options.parentBranchId || resolveNeonParentBranchId();
+  assertSanitizedParent(parentId);
   const database = options.database || defaultNeonDatabase;
   const role = options.role || defaultNeonRole;
   const name = previewBranchName(options.pr);

@@ -4,10 +4,11 @@
 #   scripts/gascity/preview-up.sh 20 \
 #     ghcr.io/awannaphasch2016/dyad@sha256:8e5be8469cd4a7caaa1611e41e9906b4f5a8ddb7b87bf6a9b0dcad101296789a
 #
-# Factory port 32100 is not published. The browser bridge stays on
-# 127.0.0.1:8373 inside the Dyad network namespace; cloudflared joins that
-# namespace when the tunnel profile is enabled. The city volume is created
-# empty. This file does not mount /opt/gascity/city.
+# Factory port 32100 is not published. The browser bridge may listen inside
+# the Dyad network namespace, and it is not a public page. cloudflared joins
+# that namespace when the tunnel profile is enabled and publishes only the
+# Gas City listener. The city volume is created empty. Place hitl.py on that
+# volume for the poller. This file does not mount /opt/gascity/city.
 
 services:
   dyad:
@@ -114,7 +115,6 @@ services:
       PORT: "8787"
       GAS_CITY_BROWSER_HOST: "0.0.0.0"
       GAS_CITY_BROWSER_ALLOW_VERCEL_PREVIEWS: "1"
-      WEAVER_BASE_URL: http://dyad:32100
     volumes:
       - ./services/gascity-browser:/app:ro
     entrypoint: ["bash", "-lc"]
@@ -151,6 +151,38 @@ services:
       - --no-autoupdate
       - --url
       - http://127.0.0.1:8373
+
+  poller:
+    image: python:3.12-slim
+    networks: [preview]
+    depends_on:
+      dyad:
+        condition: service_healthy
+      gc:
+        condition: service_healthy
+    env_file:
+      - ${PREVIEW_ENV_FILE:?Set PREVIEW_ENV_FILE}
+    environment:
+      HITL_PY: /city/hitl.py
+      WEAVER_BASE_URL: http://dyad:32100
+    volumes:
+      - city:/city
+      - ./scripts/gascity/resolve_hitl_answer.py:/opt/wewebplus/resolve_hitl_answer.py:ro
+      - ./scripts/gascity/preview_poller.py:/opt/wewebplus/preview_poller.py:ro
+    entrypoint: ["bash", "-lc"]
+    command:
+      - |
+        set -eu
+        test -s /city/hitl.py
+        pip install --disable-pip-version-check 'psycopg[binary]==3.2.10'
+        exec python /opt/wewebplus/preview_poller.py
+    healthcheck:
+      test: ["CMD", "test", "-s", "/city/hitl.py"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
 
   cloudflared:
     profiles: ["tunnel"]
