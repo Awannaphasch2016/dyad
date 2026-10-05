@@ -80,6 +80,34 @@ describe("app blueprint tools", () => {
     safeSend.mockReset();
   });
 
+  it("stores the initial blueprint when the questionnaire latch is set", async () => {
+    const chatId = 1007;
+    const ctx = createAgentContext(chatId);
+    ctx.appBlueprintQuestionnaireCompleted = true;
+    ctx.planningQuestionnaireAvailable = false;
+
+    await writeAppBlueprintTool.execute(
+      {
+        app_name: "Cozy Owl Jump",
+        user_prompt: "A one-page site for a neighborhood bakery.",
+        attachments: [],
+        design_direction: "Warm bakery page with a hero, menu, and hours.",
+        primary_color: "#C2410C",
+        visuals: [
+          {
+            type: "logo",
+            description: "Bakery logo",
+            prompt: "Simple owl bakery mark",
+          },
+        ],
+      },
+      ctx,
+    );
+
+    expect(getAppBlueprintForChat(chatId)?.appName).toBe("Cozy Owl Jump");
+    expect(ctx.appBlueprintWrittenThisTurn).toBe(true);
+  });
+
   it("requires a successful questionnaire before creating the initial blueprint", async () => {
     const ctx = createAgentContext(1004);
     ctx.appBlueprintQuestionnaireCompleted = false;

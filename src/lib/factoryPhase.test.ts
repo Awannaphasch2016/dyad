@@ -23,6 +23,9 @@ import {
   phaseFromTitle,
   factoryChatIdsToDrop,
   previewOpenForPhase,
+  factoryPhaseSkipsBlueprintQuestionnaire,
+  userMessageHasApprovedDiscoverySummary,
+  shouldSkipFactoryBlueprintQuestionnaire,
 } from "./factoryPhase";
 
 describe("factoryPhase", () => {
@@ -375,6 +378,85 @@ Here is what I understood. Approve to continue, or tell me what to change.
     expect(factoryPhaseKickoff("delivery", "- **Page:** Index")).toContain(
       "- **Page:** Index",
     );
+  });
+
+  it("lets only Implementation skip the blueprint questionnaire", () => {
+    expect(factoryPhaseSkipsBlueprintQuestionnaire("implementation")).toBe(
+      true,
+    );
+    expect(factoryPhaseSkipsBlueprintQuestionnaire("discovery")).toBe(false);
+    expect(factoryPhaseSkipsBlueprintQuestionnaire("delivery")).toBe(false);
+  });
+
+  it("treats the Continue prefill bullets as an approved Discovery summary", () => {
+    const summary = [
+      "- **Page name:** Tiny Bakery",
+      "- **One sentence:** A neighborhood bakery's opening hours and menu.",
+      "- **Page contents:** Hero, menu of 3 breads, hours, contact.",
+    ].join("\n");
+    const prefill = continuePrefill("implementation", summary)!;
+    expect(extractFactoryPhaseSummary(prefill, "discovery")).toBeNull();
+    expect(userMessageHasApprovedDiscoverySummary(prefill)).toBe(true);
+    expect(
+      userMessageHasApprovedDiscoverySummary(
+        `Here is the brief.\n\n## Discovery summary\n${summary}`,
+      ),
+    ).toBe(true);
+    expect(
+      userMessageHasApprovedDiscoverySummary(continuePrefill("implementation")),
+    ).toBe(false);
+    expect(
+      userMessageHasApprovedDiscoverySummary(
+        "- **Page name:** Tiny Bakery\n- **One sentence:** Hours and menu.",
+      ),
+    ).toBe(false);
+    expect(
+      userMessageHasApprovedDiscoverySummary(
+        "<think>\n- **Page name:** Hidden\n- **One sentence:** Hidden.\n- **Page contents:** Hidden.\n</think>\nBuild the page.",
+      ),
+    ).toBe(false);
+  });
+
+  it("latches the questionnaire only for Implementation with a summary and a required blueprint", () => {
+    const message = continuePrefill(
+      "implementation",
+      "- **Page name:** Tiny Bakery\n- **One sentence:** Hours and menu.\n- **Page contents:** Hero and contact.",
+    );
+    expect(
+      shouldSkipFactoryBlueprintQuestionnaire({
+        chatTitle: "Implementation",
+        userMessage: message,
+        blueprintStillRequired: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldSkipFactoryBlueprintQuestionnaire({
+        chatTitle: "Implementation",
+        userMessage: message,
+        blueprintStillRequired: false,
+      }),
+    ).toBe(false);
+    expect(
+      shouldSkipFactoryBlueprintQuestionnaire({
+        chatTitle: "Notes",
+        userMessage: message,
+        blueprintStillRequired: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldSkipFactoryBlueprintQuestionnaire({
+        chatTitle: "Discovery",
+        userMessage: message,
+        blueprintStillRequired: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldSkipFactoryBlueprintQuestionnaire({
+        chatTitle: "Implementation",
+        userMessage: "Build the homepage",
+        blueprintStillRequired: true,
+      }),
+    ).toBe(false);
   });
 
   it("prefills Implementation with the approved Discovery summary", () => {
