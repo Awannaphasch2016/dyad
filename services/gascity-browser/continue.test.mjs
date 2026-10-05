@@ -2,52 +2,70 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { continueRun, WEWEBPLUS_ORG_ID } from "./continue.mjs";
 
-test("a run writes the gate into the preview database and asks Dyad", async () => {
+function memoryQuery(rows) {
+  return async (text, params) => {
+    if (text.includes("insert into")) {
+      const key = params[10];
+      if (rows.some((row) => row.idempotencyKey === key)) return [];
+      const row = {
+        runId: params[4],
+        idempotencyKey: key,
+        stepId: params[5],
+        role: params[6],
+        status: params[8],
+        body: params[9],
+        orgId: params[1],
+        appId: params[2],
+      };
+      rows.push(row);
+      return [{ run_id: row.runId }];
+    }
+    return rows
+      .filter(
+        (row) => row.orgId === params[0] && row.idempotencyKey === params[1],
+      )
+      .map((row) => ({ run_id: row.runId }));
+  };
+}
+
+test("a run writes the gate and does not call Dyad", async () => {
   const rows = [];
-  const calls = [];
   const result = await continueRun({
     prompt: "build the board",
     idempotencyKey: "gate-1",
-    query: async (_text, params) => {
-      rows.push(params);
+    query: memoryQuery(rows),
+    dyadFetch: async () => {
+      throw new Error("Dyad must not be called");
     },
-    dyadFetch: async (url, init) => {
-      calls.push({ url, init });
-      return { status: 202 };
-    },
-    dyadBase: "http://dyad:32100",
-    bridgeToken: "bridge-token",
   });
   assert.equal(result.electronInvoked, false);
-  assert.equal(result.dyadStatus, 202);
+  assert.equal(result.stored, true);
+  assert.equal(result.dyadStatus, undefined);
   assert.equal(rows.length, 1);
-  assert.equal(rows[0][1], WEWEBPLUS_ORG_ID);
-  assert.equal(rows[0][5], "plan-approve");
-  assert.equal(rows[0][6], "project-manager");
-  assert.equal(rows[0][8], "open");
-  assert.equal(rows[0][9], "build the board");
-  assert.equal(calls.length, 1);
-  assert.equal(
-    calls[0].url,
-    "http://dyad:32100/v1/apps/1/phases/implementation/runs",
-  );
-  assert.equal(calls[0].init.headers.authorization, "Bearer bridge-token");
-  assert.equal(calls[0].init.body.includes("build the board"), true);
+  assert.equal(rows[0].orgId, WEWEBPLUS_ORG_ID);
+  assert.equal(rows[0].appId, "preview");
+  assert.equal(rows[0].stepId, "plan-approve");
+  assert.equal(rows[0].role, "project-manager");
+  assert.equal(rows[0].status, "open");
+  assert.equal(rows[0].body, "build the board");
+  assert.match(result.runId, /^gascity-run:/);
 });
 
-test("a refused Dyad run keeps the gate", async () => {
-  let wrote = false;
-  const result = await continueRun({
-    prompt: "keep going",
-    idempotencyKey: "gate-2",
-    query: async () => {
-      wrote = true;
-    },
-    dyadFetch: async () => ({ status: 409 }),
-    dyadBase: "http://dyad:32100/",
-    bridgeToken: "bridge-token",
+test("the same idempotency key does not insert a second row", async () => {
+  const rows = [];
+  const query = memoryQuery(rows);
+  const first = await continueRun({
+    prompt: "build the board",
+    idempotencyKey: "gate-1",
+    query,
   });
-  assert.equal(wrote, true);
-  assert.equal(result.dyadStatus, 409);
-  assert.equal(result.electronInvoked, false);
+  const second = await continueRun({
+    prompt: "build the board",
+    idempotencyKey: "gate-1",
+    query,
+  });
+  assert.equal(rows.length, 1);
+  assert.equal(second.stored, true);
+  assert.equal(second.runId, first.runId);
+  assert.equal(second.electronInvoked, false);
 });

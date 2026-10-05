@@ -6,57 +6,62 @@ const insertQuestion = `insert into wewebplus.questions (
   id, org_id, app_id, phase, run_id, step_id, target_role_id, visibility,
   status, body, idempotency_key
 ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-on conflict (org_id, idempotency_key) do nothing`;
+on conflict (org_id, idempotency_key) do nothing
+returning run_id`;
+
+const selectQuestion = `select run_id from wewebplus.questions
+where org_id = $1 and idempotency_key = $2`;
+
+function storedRunId(row, fallback) {
+  if (!row) return fallback;
+  if (typeof row.run_id === "string" && row.run_id) return row.run_id;
+  if (typeof row[0] === "string" && row[0]) return row[0];
+  return fallback;
+}
 
 /**
- * Write one open gate into the preview database, then ask Dyad to run.
- * A missing app or a refused factory call does not remove the gate.
- * Electron is never invoked from this function.
+ * Write one open gate into the preview database.
+ * This function does not call Dyad. The preview poller starts the run
+ * after the answer is released.
  */
 export async function continueRun({
   prompt,
   idempotencyKey,
   query,
-  dyadFetch,
-  dyadBase = "",
-  bridgeToken = "",
-  appId = 1,
+  appId = "preview",
 }) {
+  if (!query) throw new Error("Question store is unavailable.");
   const runId = `gascity-run:${randomUUID()}`;
-  if (query) {
-    await query(insertQuestion, [
-      randomUUID(),
-      WEWEBPLUS_ORG_ID,
-      String(appId),
-      "implementation",
-      runId,
-      "plan-approve",
-      "project-manager",
-      "role",
-      "open",
-      prompt,
-      idempotencyKey,
-    ]);
+  const inserted = await query(insertQuestion, [
+    randomUUID(),
+    WEWEBPLUS_ORG_ID,
+    String(appId),
+    "implementation",
+    runId,
+    "plan-approve",
+    "project-manager",
+    "role",
+    "open",
+    prompt,
+    idempotencyKey,
+  ]);
+  const created = Array.isArray(inserted) ? inserted[0] : null;
+  if (created) {
+    return {
+      runId: storedRunId(created, runId),
+      electronInvoked: false,
+      stored: true,
+    };
   }
-  let dyadStatus = null;
-  const base = dyadBase.replace(/\/$/, "");
-  if (dyadFetch && base && bridgeToken) {
-    try {
-      const response = await dyadFetch(
-        `${base}/v1/apps/${appId}/phases/implementation/runs`,
-        {
-          method: "POST",
-          headers: {
-            authorization: `Bearer ${bridgeToken}`,
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({ prompt, idempotencyKey }),
-        },
-      );
-      dyadStatus = response.status;
-    } catch {
-      dyadStatus = 0;
-    }
-  }
-  return { runId, dyadStatus, electronInvoked: false };
+  const existing = await query(selectQuestion, [
+    WEWEBPLUS_ORG_ID,
+    idempotencyKey,
+  ]);
+  const row = Array.isArray(existing) ? existing[0] : null;
+  if (!row) return { runId, electronInvoked: false, stored: false };
+  return {
+    runId: storedRunId(row, runId),
+    electronInvoked: false,
+    stored: true,
+  };
 }

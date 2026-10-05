@@ -10,6 +10,10 @@ const clerkPublishableKey = process.env.CLERK_PUBLISHABLE_KEY ?? "";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  experimental: {
+    // The page and the Electron main process share one rules module.
+    externalDir: true,
+  },
   outputFileTracingRoot: path.join(__dirname),
   eslint: { ignoreDuringBuilds: true },
   env: {

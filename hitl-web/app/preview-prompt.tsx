@@ -4,12 +4,13 @@ import { useAuth } from "@clerk/nextjs";
 import { useState, type FormEvent } from "react";
 import { postPreviewPrompt } from "@/lib/gas_city_url";
 
-export function PreviewPrompt() {
+export function PreviewPrompt({ enabled = true }: { enabled?: boolean }) {
   const origin = process.env.NEXT_PUBLIC_GAS_CITY_URL?.trim() ?? "";
   const { getToken } = useAuth();
   const [prompt, setPrompt] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
+  const [stored, setStored] = useState(false);
 
   if (!origin) {
     if (process.env.NEXT_PUBLIC_VERCEL_ENV === "preview") {
@@ -21,6 +22,7 @@ export function PreviewPrompt() {
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
+    setStored(false);
     setPending(true);
     try {
       const token = await getToken();
@@ -38,6 +40,7 @@ export function PreviewPrompt() {
           body.error || `Listener returned HTTP ${response.status}`,
         );
       }
+      setStored(true);
       setPrompt("");
     } catch (caught) {
       setError(
@@ -58,10 +61,11 @@ export function PreviewPrompt() {
           value={prompt}
           onChange={(event) => setPrompt(event.target.value)}
         />
-        <button type="submit" disabled={pending}>
+        <button type="submit" disabled={!enabled || pending}>
           Send prompt
         </button>
       </form>
+      {stored ? <p data-testid="hitl-prompt-stored">Question stored.</p> : null}
       {error ? <p className="error">{error}</p> : null}
     </article>
   );

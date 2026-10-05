@@ -198,6 +198,7 @@ export const controlAnswers = controlPlane.table(
       .notNull()
       .defaultNow(),
     gateResolvedAt: timestamp("gate_resolved_at", { withTimezone: true }),
+    runtimeRunId: text("runtime_run_id"),
   },
   (table) => [uniqueIndex("answers_question_unique").on(table.questionId)],
 );

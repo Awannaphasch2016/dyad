@@ -195,7 +195,10 @@ if ! "${compose[@]}" up -d --wait gc; then
   echo "gc did not become healthy. The Dyad page still starts." >&2
   docker logs --tail 60 "${project}-gc-1" >&2 || true
 fi
-"${compose[@]}" up -d --wait gascity
+if ! "${compose[@]}" up -d --wait gascity poller; then
+  echo "The answer poller did not start." >&2
+  exit 2
+fi
 if [[ "$tunnel" -eq 1 ]]; then
   "${compose[@]}" up -d cloudflared
 fi
@@ -213,10 +216,11 @@ for _ in 1 2 3 4 5; do
   sleep 3
 done
 if [[ "$gate_code" != "202" ]]; then
-  echo "listener refused the run with HTTP ${gate_code}" >&2
-  docker logs "${project}-gascity-1" 2>&1 | grep -E 'run (accepted|refused)' | tail -1 || true
+  echo "The listener did not store the question (HTTP ${gate_code})" >&2
+  docker logs "${project}-gascity-1" 2>&1 | grep -E 'question (stored|refused)' | tail -1 || true
   exit 2
 fi
+docker logs "${project}-gascity-1" 2>&1 | grep 'question stored' | tail -1
 echo "Preview project ${project} is up"
 echo "City volume pr-${pr}-city has a city"
 echo "https://gc-pr-${pr}.anakwannaphaschaiyong.com"

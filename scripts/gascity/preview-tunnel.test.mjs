@@ -23,14 +23,10 @@ test("preview hostname and tunnel name come from the PR number", () => {
   assert.throws(() => previewHostname("20;rm"), /digits/);
 });
 
-test("ingress stays on the Dyad network namespace and DNS points at the tunnel", () => {
+test("ingress publishes only the Gas City listener", () => {
   assert.deepEqual(ingressConfig(20), {
     config: {
       ingress: [
-        {
-          hostname: "pr-20.anakwannaphaschaiyong.com",
-          service: "http://127.0.0.1:8373",
-        },
         {
           hostname: "gc-pr-20.anakwannaphaschaiyong.com",
           service: "http://gascity:8787",
@@ -40,7 +36,11 @@ test("ingress stays on the Dyad network namespace and DNS points at the tunnel",
     },
   });
   assert.equal(
-    dnsRecord("pr-20.anakwannaphaschaiyong.com", "tunnel-id").content,
+    JSON.stringify(ingressConfig(20)).includes("127.0.0.1:8373"),
+    false,
+  );
+  assert.equal(
+    dnsRecord("gc-pr-20.anakwannaphaschaiyong.com", "tunnel-id").content,
     "tunnel-id.cfargotunnel.com",
   );
 });
@@ -85,7 +85,7 @@ test("tunnel setup writes the token to a file and does not return it", async () 
     },
   });
   assert.equal(written, "secret-tunnel-token");
-  assert.equal(result.hostname, "pr-20.anakwannaphaschaiyong.com");
+  assert.equal(result.hostname, "gc-pr-20.anakwannaphaschaiyong.com");
   assert.equal(Object.hasOwn(result, "token"), false);
   assert.equal(JSON.stringify(result).includes("secret-tunnel-token"), false);
   assert.equal(
@@ -97,17 +97,17 @@ test("tunnel setup writes the token to a file and does not return it", async () 
   const dns = calls.filter(
     (call) => call.method === "POST" && call.url.includes("/dns_records"),
   );
-  assert.equal(dns.length, 2);
+  assert.equal(dns.length, 1);
   assert.equal(JSON.parse(dns[0].body).proxied, true);
   assert.equal(
-    JSON.parse(dns[1].body).name,
+    JSON.parse(dns[0].body).name,
     "gc-pr-20.anakwannaphaschaiyong.com",
   );
   assert.equal(
     calls.some((call) =>
       String(call.body ?? "").includes("http://127.0.0.1:8373"),
     ),
-    true,
+    false,
   );
 });
 
@@ -310,6 +310,10 @@ test("preview image workflow updates the shared Devbox after publish", () => {
   assert.equal(workflow.includes("secrets.CLOUDFLARE_ACCOUNT_ID"), false);
   assert.match(workflow, /deploy\/preview\/clerk-origins-run\.mjs/);
   assert.match(workflow, /preview_url=https:\/\//);
+  assert.match(
+    workflow,
+    /https:\/\/gc-pr-\$\{PR\}\.anakwannaphaschaiyong\.com\/v1\/runs/,
+  );
   assert.equal(workflow.includes("13.251.216.187"), false);
 });
 
@@ -405,4 +409,7 @@ test("compose preview file does not publish the factory port or mount the produc
   assert.match(compose, /\/city\/bin\/gc/);
   assert.match(compose, /profiles: \["quick"\]/);
   assert.match(compose, /http:\/\/gascity:8787|GAS_CITY_BROWSER_HOST/);
+  assert.match(compose, /HITL_PY: \/city\/hitl\.py/);
+  assert.match(compose, /preview_poller\.py/);
+  assert.match(compose, /http:\/\/127\.0\.0\.1:8373/);
 });

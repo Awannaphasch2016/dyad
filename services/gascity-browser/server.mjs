@@ -111,7 +111,7 @@ export function createGasCityBrowserServer(options = {}) {
         const prompt = body.prompt.trim();
         if (!continueRun) {
           log(
-            `run refused promptChars=${prompt.length} dyad=skipped electronInvoked=false`,
+            `question refused promptChars=${prompt.length} dyad=skipped electronInvoked=false`,
           );
           send(
             response,
@@ -142,33 +142,10 @@ export function createGasCityBrowserServer(options = {}) {
           );
           return;
         }
-        const dyadStatus = continued.dyadStatus;
-        const accepted =
-          typeof dyadStatus === "number" &&
-          dyadStatus >= 200 &&
-          dyadStatus < 300;
-        if (!accepted) {
+        if (continued.stored !== true) {
           log(
-            `run refused ${continued.runId} promptChars=${prompt.length} dyad=${dyadStatus ?? "skipped"} electronInvoked=false`,
+            `question refused ${continued.runId ?? "none"} promptChars=${prompt.length} electronInvoked=false`,
           );
-          if (
-            typeof dyadStatus === "number" &&
-            dyadStatus >= 400 &&
-            dyadStatus <= 599
-          ) {
-            send(
-              response,
-              dyadStatus,
-              {
-                error: "Dyad did not accept the run.",
-                runId: continued.runId,
-                dyadStatus,
-                electronInvoked: false,
-              },
-              cors.headers,
-            );
-            return;
-          }
           send(
             response,
             503,
@@ -182,7 +159,7 @@ export function createGasCityBrowserServer(options = {}) {
           return;
         }
         log(
-          `run accepted ${continued.runId} promptChars=${prompt.length} dyad=${dyadStatus} electronInvoked=false`,
+          `question stored ${continued.runId} promptChars=${prompt.length} electronInvoked=false`,
         );
         send(
           response,
@@ -275,16 +252,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     log: (line) => {
       process.stdout.write(`${line}\n`);
     },
-    continueRun: query
-      ? (input) =>
-          continueRun({
-            ...input,
-            query,
-            dyadFetch: fetch,
-            dyadBase: process.env.WEAVER_BASE_URL || "http://dyad:32100",
-            bridgeToken: process.env.GAS_CITY_HOST_BRIDGE_TOKEN || "",
-          })
-      : null,
+    continueRun: query ? (input) => continueRun({ ...input, query }) : null,
   });
   server.listen(port, listenHost());
 }

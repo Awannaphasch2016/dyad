@@ -21,7 +21,7 @@ const auth = { authorization: "Bearer session-token" };
 function acceptedRun() {
   return async () => ({
     runId: "gascity-run:fixed",
-    dyadStatus: 202,
+    stored: true,
     electronInvoked: false,
   });
 }
@@ -188,18 +188,19 @@ test("a run without a question store is refused", async () => {
       assert.equal(called, false);
     },
   );
-  assert.match(lines[0], /run refused/);
-  assert.match(lines[0], /dyad=skipped/);
+  assert.match(lines[0], /question refused/);
+  assert.match(lines[0], /electronInvoked=false/);
 });
 
-test("a Dyad refusal is returned instead of HTTP 202", async () => {
+test("a stored question is HTTP 202 and does not mean Dyad started", async () => {
   const lines = [];
   await withServer(
     {
       log: (line) => lines.push(line),
       continueRun: async () => ({
-        runId: "gascity-run:missing-app",
+        runId: "gascity-run:stored",
         dyadStatus: 404,
+        stored: true,
         electronInvoked: false,
       }),
     },
@@ -213,14 +214,14 @@ test("a Dyad refusal is returned instead of HTTP 202", async () => {
         }),
       });
       const body = await response.json();
-      assert.equal(response.status, 404);
-      assert.equal(body.error, "Dyad did not accept the run.");
-      assert.equal(body.dyadStatus, 404);
+      assert.equal(response.status, 202);
+      assert.equal(body.status, "accepted");
+      assert.equal(body.runId, "gascity-run:stored");
       assert.equal(body.electronInvoked, false);
+      assert.equal(body.dyadStatus, undefined);
     },
   );
-  assert.match(lines[0], /run refused gascity-run:missing-app/);
-  assert.match(lines[0], /dyad=404/);
+  assert.match(lines[0], /question stored gascity-run:stored/);
   assert.match(lines[0], /electronInvoked=false/);
 });
 
@@ -234,7 +235,7 @@ test("a run logs the prompt and keeps Electron closed when the gate is written",
         prompt = input.prompt;
         return {
           runId: "gascity-run:fixed",
-          dyadStatus: 202,
+          stored: true,
           electronInvoked: false,
         };
       },
@@ -256,7 +257,7 @@ test("a run logs the prompt and keeps Electron closed when the gate is written",
   );
   assert.equal(prompt, "show the gate");
   assert.match(lines[0], /promptChars=13/);
-  assert.match(lines[0], /dyad=202/);
+  assert.match(lines[0], /question stored/);
   assert.match(lines[0], /electronInvoked=false/);
 });
 

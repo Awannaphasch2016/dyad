@@ -49,6 +49,12 @@ async function runtimeEnv() {
     if (!process.env.NEON_API_KEY && downloaded.NEON_API_KEY) {
       process.env.NEON_API_KEY = downloaded.NEON_API_KEY;
     }
+    if (
+      !process.env.NEON_PARENT_BRANCH_ID &&
+      downloaded.NEON_PARENT_BRANCH_ID
+    ) {
+      process.env.NEON_PARENT_BRANCH_ID = downloaded.NEON_PARENT_BRANCH_ID;
+    }
   }
   const awsToken = process.env.AWS_DOPPLER_TOKEN || "";
   const awsDownload = awsToken ? await downloadDoppler(awsToken) : {};

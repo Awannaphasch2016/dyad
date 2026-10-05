@@ -32,7 +32,6 @@ export function ingressConfig(pr) {
   return {
     config: {
       ingress: [
-        { hostname: previewHostname(pr), service: "http://127.0.0.1:8373" },
         { hostname: gasCityHostname(pr), service: "http://gascity:8787" },
         { service: "http_status:404" },
       ],
@@ -82,7 +81,7 @@ export async function ensurePreviewTunnel({
       "CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_ZONE_ID, and CLOUDFLARE_API_TOKEN are required",
     );
   }
-  const hostname = previewHostname(pr);
+  const hostname = gasCityHostname(pr);
   const name = tunnelName(pr);
   const listed = await cloudflare(
     fetchImpl,
@@ -125,7 +124,7 @@ export async function ensurePreviewTunnel({
   }
   await writeToken(tunnelToken);
 
-  for (const dnsName of [hostname, gasCityHostname(pr)]) {
+  for (const dnsName of [hostname]) {
     const record = dnsRecord(dnsName, tunnel.id);
     const existing = await cloudflare(
       fetchImpl,
