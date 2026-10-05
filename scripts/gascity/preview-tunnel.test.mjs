@@ -161,6 +161,23 @@ test("preview-up refuses bad arguments and the production checkout", () => {
       env: { ...process.env, ...env },
     });
 
+  const source = readFileSync(script, "utf8");
+  assert.match(source, /clerk-origins-run/);
+  assert.match(
+    source,
+    /gc did not become healthy\. The Dyad page still starts\./,
+  );
+  assert.match(
+    source,
+    /CLOUDFLARE_API_TOKEN CLOUDFLARE_ZONE_ID CLOUDFLARE_ACCOUNT_ID/,
+  );
+  assert.match(
+    source,
+    /PREVIEW_SKIP_TUNNEL:-\}" != "1" \|\| -n "\$\{CLOUDFLARE_API_TOKEN:-\}"/,
+  );
+  assert.match(source, /MemAvailable/);
+  assert.match(source, /Other previews were left running/);
+
   const usage = run([]);
   assert.equal(usage.status, 2);
   assert.match(usage.stderr, /Usage/);
@@ -201,9 +218,24 @@ test("preview image workflow updates the shared Devbox after publish", () => {
   );
   assert.match(
     workflow,
-    /assign-page --pr "\$pr" --git-branch cursor\/dyad-web-frontend-bbea --vercel-project dyad/,
+    /assign-page --pr "\$pr" --git-branch "\$branch" --vercel-project dyad/,
   );
-  assert.match(workflow, /https:\/\/pr-\$\{PR\}\.anakwannaphaschaiyong\.com/);
+  assert.equal(workflow.includes("cursor/dyad-web-frontend-bbea"), false);
+  assert.match(workflow, /cursor\/formula-preview-9e7a/);
+  assert.match(
+    workflow,
+    /CLOUDFLARE_API_TOKEN: \$\{\{ secrets\.CLOUDFLARE_API_TOKEN \}\}/,
+  );
+  assert.match(
+    workflow,
+    /CLOUDFLARE_ZONE_ID: \$\{\{ secrets\.CLOUDFLARE_ZONE_ID \}\}/,
+  );
+  assert.match(
+    workflow,
+    /CLOUDFLARE_ACCOUNT_ID: \$\{\{ secrets\.CLOUDFLARE_ACCOUNT_ID \}\}/,
+  );
+  assert.match(workflow, /deploy\/preview\/clerk-origins-run\.mjs/);
+  assert.match(workflow, /preview_url=https:\/\//);
   assert.equal(workflow.includes("13.251.216.187"), false);
 });
 
@@ -239,5 +271,7 @@ test("compose preview file does not publish the factory port or mount the produc
     compose,
     /ghcr\.io\/awannaphasch2016\/gascity@sha256:59e824d8393891dc849e11c838e791b89c59f748d6d8bae86ef2a21db838d916/,
   );
+  assert.match(compose, /\/city\/bin\/gc/);
+  assert.match(compose, /profiles: \["quick"\]/);
   assert.match(compose, /http:\/\/gascity:8787|GAS_CITY_BROWSER_HOST/);
 });

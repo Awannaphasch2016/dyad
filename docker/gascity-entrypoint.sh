@@ -12,6 +12,7 @@ if [[ -z "${NOVNC_PASSWORD:-}" ]]; then
   exit 2
 fi
 
+export PATH="/city/bin:${PATH}"
 export DISPLAY="${DISPLAY:-:99}"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/weaver-runtime}"
 mkdir -p "$XDG_RUNTIME_DIR" "$DYAD_DEV_USER_DATA_DIR" "$HOME/dyad-apps"

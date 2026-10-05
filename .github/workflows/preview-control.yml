@@ -1,0 +1,102 @@
+# Run one saved preview action on Wewebplus-ci.
+#
+# This workflow does not build an image. Resume starts containers that are
+# already on the Devbox. The production host is not a target.
+name: Preview control
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: resume, status, logs, destroy, deploy, db-status, db-ensure, or db-assign
+        required: true
+        type: string
+      pr:
+        description: Pull request number
+        required: false
+        type: string
+      git_branch:
+        description: Git branch for database assign
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: preview-devbox-wewebplus-ci
+  cancel-in-progress: false
+
+jobs:
+  control:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Log in to Namespace with the GitHub token
+        uses: namespacelabs/nscloud-setup@v0
+
+      - name: Install the Devbox CLI
+        run: |
+          set -euo pipefail
+          ver=0.0.195
+          curl -fsSL "https://get.namespace.so/packages/devbox/v${ver}/devbox_${ver}_linux_amd64.tar.gz" -o /tmp/devbox.tgz
+          mkdir -p /tmp/devbox-extract
+          tar -xzf /tmp/devbox.tgz -C /tmp/devbox-extract
+          bin="$(find /tmp/devbox-extract -type f -name devbox -print -quit)"
+          test -n "$bin"
+          sudo install -m 755 "$bin" /usr/local/bin/devbox
+          devbox version
+
+      - name: Point the Devbox CLI at the federated token
+        run: |
+          set -euo pipefail
+          token_file=""
+          if [[ -f /var/run/nsc/token.json ]]; then
+            token_file=/var/run/nsc/token.json
+          elif [[ -f "${HOME}/.config/ns/token.json" ]]; then
+            token_file="${HOME}/.config/ns/token.json"
+          else
+            echo "Namespace login did not write a token file" >&2
+            exit 1
+          fi
+          echo "NSC_TOKEN_FILE=${token_file}" >> "$GITHUB_ENV"
+
+      - name: Run the preview control action on Wewebplus-ci
+        env:
+          ACTION: ${{ inputs.action }}
+          PR: ${{ inputs.pr }}
+          GIT_BRANCH: ${{ inputs.git_branch }}
+          SHA: ${{ github.sha }}
+          REPO_URL: https://github.com/${{ github.repository }}.git
+        run: |
+          set -euo pipefail
+          [[ "$ACTION" =~ ^(resume|status|logs|destroy|deploy|db-status|db-ensure|db-assign)$ ]]
+          if [[ -n "$PR" && ! "$PR" =~ ^[0-9]+$ ]]; then
+            echo "pr must be a number" >&2
+            exit 2
+          fi
+          if [[ -n "$GIT_BRANCH" && ! "$GIT_BRANCH" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+            echo "git branch is invalid" >&2
+            exit 2
+          fi
+          [[ "$GIT_BRANCH" != "main" ]]
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$REPO_URL" =~ ^https://github\.com/[A-Za-z0-9._/-]+\.git$ ]]
+          {
+            printf 'action=%q\npr=%q\ngit_branch=%q\nsha=%q\nrepo_url=%q\n' \
+              "$ACTION" "$PR" "$GIT_BRANCH" "$SHA" "$REPO_URL"
+            printf '%s\n' \
+              'set -euo pipefail' \
+              'repo=/workspaces/weaver-plus' \
+              'if [[ ! -d "$repo/.git" ]]; then' \
+              '  git clone --depth 1 "$repo_url" "$repo"' \
+              'fi' \
+              'git -C "$repo" fetch --depth 1 origin "$sha"' \
+              'git -C "$repo" checkout --detach FETCH_HEAD' \
+              'cd "$repo"' \
+              'bash scripts/gascity/preview-control.sh "$action" "$pr" "$git_branch"'
+          } > /tmp/preview-control-remote.sh
+          payload="$(base64 -w0 /tmp/preview-control-remote.sh)"
+          rm -f /tmp/preview-control-remote.sh
+          devbox exec Wewebplus-ci -- bash -lc "printf '%s' '${payload}' | base64 -d | bash"

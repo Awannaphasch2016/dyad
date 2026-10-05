@@ -4,7 +4,7 @@
 import { writeFileSync } from "node:fs";
 import { commandForPullRequest } from "./transition.mjs";
 import { deletePreviewBranch, ensurePreviewBranch } from "./neon.mjs";
-import { previewRuntime } from "./render.mjs";
+import { previewRuntime, withEnvironmentSecrets } from "./render.mjs";
 import {
   assignmentLog,
   assignPreviewDatabase,
@@ -48,7 +48,7 @@ async function runtimeEnv() {
 
 async function attach(pr) {
   const out = arg("--out") || "/tmp/preview-runtime.sh";
-  const downloaded = await runtimeEnv();
+  const downloaded = withEnvironmentSecrets(await runtimeEnv(), process.env);
   const apiKey = process.env.NEON_API_KEY || "";
   if (!apiKey) {
     writeFileSync(out, "", { mode: 0o600 });
@@ -60,6 +60,19 @@ async function attach(pr) {
   const branch = await ensurePreviewBranch({ apiKey, pr });
   const exports = previewRuntime(downloaded, branch.uri);
   writeFileSync(out, exports ? `${exports}\n` : "", { mode: 0o600 });
+  const cloudflareNames = [
+    "CLOUDFLARE_API_TOKEN",
+    "CLOUDFLARE_ZONE_ID",
+    "CLOUDFLARE_ACCOUNT_ID",
+  ];
+  console.log(
+    cloudflareNames
+      .map(
+        (name) =>
+          `${name}: ${exports.includes(`export ${name}=`) ? "present" : "absent"}`,
+      )
+      .join(", "),
+  );
   console.log(`Attached ${branch.name} at ${branch.host}`);
   const assigned = await assignVercelDatabase(pr, branch);
   if (assigned) await redeployAssigned(assigned);

@@ -9,6 +9,7 @@ on:
   push:
     branches:
       - cursor/preview-bridge-proof-9e7a
+      - cursor/formula-preview-9e7a
 
 permissions:
   contents: read
@@ -149,6 +150,9 @@ jobs:
         env:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           PR: ${{ steps.pr.outputs.number }}
         run: node deploy/preview/controller.mjs attach --pr "$PR" --out /tmp/preview-runtime.sh
 
@@ -182,6 +186,7 @@ jobs:
           echo "NSC_TOKEN_FILE=${token_file}" >> "$GITHUB_ENV"
 
       - name: Update the preview on Wewebplus-ci
+        id: deploy
         env:
           PR: ${{ steps.pr.outputs.number }}
           SHA: ${{ github.sha }}
@@ -210,6 +215,7 @@ jobs:
               'git -C "$repo" fetch --depth 1 origin "$sha"' \
               'git -C "$repo" checkout --detach FETCH_HEAD' \
               'cd "$repo"' \
+              'bash scripts/gascity/preview-resume.sh "$pr"' \
               'state="$HOME/.local/state/wewebplus-preview"' \
               'secrets="$state/controller.env"' \
               'if [[ ! -f "$secrets" && -f deploy/preview/sealed.key.b64 && -f deploy/preview/sealed.env.b64 && -f "$state/controller.pem" ]]; then' \
@@ -228,20 +234,36 @@ jobs:
               '  node deploy/preview/controller.mjs attach --pr "$pr" --git-branch "$branch" --vercel-project dyad --out /tmp/preview-runtime-devbox.sh' \
               '  source /tmp/preview-runtime-devbox.sh' \
               '  rm -f /tmp/preview-runtime-devbox.sh' \
-              '  node deploy/preview/controller.mjs assign-page --pr "$pr" --git-branch cursor/dyad-web-frontend-bbea --vercel-project dyad' \
+              '  node deploy/preview/controller.mjs assign-page --pr "$pr" --git-branch "$branch" --vercel-project dyad' \
               'fi' \
-              'PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh "$pr" "$image"'
+              'PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh "$pr" "$image"' \
+              'origin="$(cat "$HOME/.local/state/wewebplus-preview/preview-${pr}.public-url")"' \
+              'echo "clerk step"' \
+              'PREVIEW_ORIGIN="$origin" node deploy/preview/clerk-origins-run.mjs' \
+              'echo "clerk step done"'
           } > /tmp/preview-remote.sh
           payload="$(base64 -w0 /tmp/preview-remote.sh)"
-          devbox exec Wewebplus-ci -- bash -lc "printf '%s' '${payload}' | base64 -d | bash"
+          set -o pipefail
+          devbox exec Wewebplus-ci -- bash -lc "printf '%s' '${payload}' | base64 -d | bash" | tee /tmp/preview-devbox.log
+          url="$(grep -E '^preview_url=https://' /tmp/preview-devbox.log | tail -1 | cut -d= -f2-)"
+          if [[ ! "$url" =~ ^https:// ]]; then
+            echo "Preview did not report a URL" >&2
+            exit 1
+          fi
+          echo "url=${url}" >> "$GITHUB_OUTPUT"
 
       - name: Check the public preview address
         env:
           PR: ${{ steps.pr.outputs.number }}
+          PREVIEW_URL: ${{ steps.deploy.outputs.url }}
         run: |
           set -euo pipefail
           [[ "$PR" =~ ^[0-9]+$ ]]
-          url="https://pr-${PR}.anakwannaphaschaiyong.com"
+          url="$PREVIEW_URL"
+          if [[ ! "$url" =~ ^https:// ]]; then
+            echo "Preview URL is missing" >&2
+            exit 1
+          fi
           ok=0
           for _ in 1 2 3 4 5 6; do
             code="$(curl -sS -o /tmp/preview-body -w '%{http_code}' --max-time 20 "$url" || true)"

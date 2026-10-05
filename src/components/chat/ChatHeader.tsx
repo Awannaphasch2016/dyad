@@ -6,6 +6,7 @@ import {
   SquareTerminal,
 } from "lucide-react";
 import { PanelRightClose } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { useAtom, useAtomValue } from "jotai";
 import { selectedAppIdAtom } from "@/atoms/appAtoms";
@@ -44,6 +45,7 @@ export function ChatHeader({
   onVersionClick,
 }: ChatHeaderProps) {
   const { t } = useTranslation("chat");
+  const navigate = useNavigate();
   const appId = useAtomValue(selectedAppIdAtom);
   const { versions, loading: versionsLoading } = useVersions(appId);
   const [selectedChatId] = useAtom(selectedChatIdAtom);
@@ -191,6 +193,19 @@ export function ChatHeader({
       {/* Why is this pt-0.5? Because the loading bar is h-1 (it always takes space) and we want the vertical spacing to be consistent.*/}
       <div className="@container flex items-center justify-between pb-1.5 pt-0.5">
         <div className="flex items-center space-x-2">
+          <Button
+            variant="ghost"
+            className="hidden @6xs:flex cursor-pointer items-center gap-1 text-sm px-2 py-1 rounded-md"
+            disabled={!appId}
+            onClick={() =>
+              navigate({
+                to: "/workflow",
+                search: { appId: appId ?? undefined },
+              })
+            }
+          >
+            Workflow
+          </Button>
           <Button
             onClick={onVersionClick}
             variant="ghost"

@@ -38,7 +38,14 @@ fi
 avail_kb="$(df -Pk "$docker_root" | awk 'NR==2 { print $4 }')"
 min_kb=$((8 * 1024 * 1024))
 if [[ -z "$avail_kb" || "$avail_kb" -lt "$min_kb" ]]; then
-  echo "Need 8GiB free on ${docker_root} before pulling the preview image" >&2
+  echo "Need 8GiB free on ${docker_root} before pulling the preview image. Stopping this preview. Other previews were left running." >&2
+  exit 2
+fi
+
+mem_kb="$(awk '/MemAvailable:/ { print $2 }' /proc/meminfo 2>/dev/null || true)"
+min_mem_kb=$((3 * 1024 * 1024))
+if [[ -z "$mem_kb" || "$mem_kb" -lt "$min_mem_kb" ]]; then
+  echo "MemAvailable is ${mem_kb:-unknown}kB, below 3GiB. Stopping this preview before it starts. Other previews were left running." >&2
   exit 2
 fi
 
@@ -99,23 +106,23 @@ secrets_file="${HOME}/.local/state/wewebplus-preview/controller.env"
 if [[ -f "$secrets_file" ]]; then
   echo "controller cloudflare keys:"
   awk -F= '/^CLOUDFLARE/ { print $1 }' "$secrets_file"
-  if [[ -z "${CLOUDFLARE_API_TOKEN_:-}${CLOUDFLARE_API_TOKEN:-}" ]]; then
+  if [[ -z "${CLOUDFLARE_API_TOKEN:-}${CLOUDFLARE_API_TOKEN_:-}" ]]; then
     set -a
     # shellcheck disable=SC1090
     source "$secrets_file"
     set +a
   fi
 fi
-if [[ -z "${CLOUDFLARE_API_TOKEN_:-}" && -n "${CLOUDFLARE_API_TOKEN:-}" ]]; then
-  export CLOUDFLARE_API_TOKEN_="$CLOUDFLARE_API_TOKEN"
+if [[ -z "${CLOUDFLARE_API_TOKEN:-}" && -n "${CLOUDFLARE_API_TOKEN_:-}" ]]; then
+  export CLOUDFLARE_API_TOKEN="$CLOUDFLARE_API_TOKEN_"
 fi
-if [[ -z "${CLOUDFLARE_ZONE_ID_:-}" && -n "${CLOUDFLARE_ZONE_ID:-}" ]]; then
-  export CLOUDFLARE_ZONE_ID_="$CLOUDFLARE_ZONE_ID"
+if [[ -z "${CLOUDFLARE_ZONE_ID:-}" && -n "${CLOUDFLARE_ZONE_ID_:-}" ]]; then
+  export CLOUDFLARE_ZONE_ID="$CLOUDFLARE_ZONE_ID_"
 fi
 if [[ -z "${CLOUDFLARE_ACCOUNT_ID:-}" && -n "${CLOUDFLARE_ACCOUNT_ID_:-}" ]]; then
   export CLOUDFLARE_ACCOUNT_ID="$CLOUDFLARE_ACCOUNT_ID_"
 fi
-for cloudflare_name in CLOUDFLARE_API_TOKEN_ CLOUDFLARE_ZONE_ID_ CLOUDFLARE_ACCOUNT_ID; do
+for cloudflare_name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ZONE_ID CLOUDFLARE_ACCOUNT_ID; do
   if [[ -n "${!cloudflare_name:-}" ]]; then
     echo "${cloudflare_name}: present"
   else
@@ -123,7 +130,7 @@ for cloudflare_name in CLOUDFLARE_API_TOKEN_ CLOUDFLARE_ZONE_ID_ CLOUDFLARE_ACCO
   fi
 done
 
-if [[ "${PREVIEW_SKIP_TUNNEL:-}" != "1" || -n "${CLOUDFLARE_API_TOKEN_:-}" ]]; then
+if [[ "${PREVIEW_SKIP_TUNNEL:-}" != "1" || -n "${CLOUDFLARE_API_TOKEN:-}" ]]; then
   if ! command -v node >/dev/null 2>&1; then
     echo "node 18+ is required to create the Cloudflare tunnel" >&2
     exit 2
@@ -150,20 +157,79 @@ echo "Pulling ${image} for ${project}"
 "${compose[@]}" pull dyad gc
 echo "Starting ${project}"
 "${compose[@]}" up -d --wait dyad
-"${compose[@]}" up -d --wait gc gascity
+gc_state=healthy
+if ! "${compose[@]}" up -d --wait gc; then
+  gc_state=unhealthy
+  echo "gc did not become healthy. The Dyad page still starts." >&2
+  docker logs --tail 60 "${project}-gc-1" >&2 || true
+fi
+"${compose[@]}" up -d --wait gascity
 if [[ "$tunnel" -eq 1 ]]; then
   "${compose[@]}" up -d cloudflared
 fi
 echo "Checking factory API on the preview network"
 "${compose[@]}" --profile check run --rm caller
 echo "Checking the preview listener"
-gate_code="$(docker exec "${project}-gascity-1" node -e 'fetch("http://127.0.0.1:8787/v1/runs",{method:"POST",headers:{"authorization":"Bearer session-token","content-type":"application/json"},body:JSON.stringify({prompt:"preview gate check",idempotencyKey:"preview-gate-check"})}).then(async (response)=>{process.stdout.write(String(response.status))})')"
-echo "listener ${gate_code}"
-test "$gate_code" = "202"
-docker logs "${project}-gascity-1" 2>&1 | grep 'run accepted' | tail -1
+gate_code=""
+for _ in 1 2 3 4 5; do
+  gate_code="$(docker exec "${project}-gascity-1" node -e 'fetch("http://127.0.0.1:8787/v1/runs",{method:"POST",headers:{"authorization":"Bearer session-token","content-type":"application/json"},body:JSON.stringify({prompt:"preview gate check",idempotencyKey:"preview-gate-check"})}).then(async (response)=>{process.stdout.write(String(response.status))})')"
+  echo "listener ${gate_code}"
+  if [[ "$gate_code" == "202" ]]; then
+    docker logs "${project}-gascity-1" 2>&1 | grep 'run accepted' | tail -1
+    break
+  fi
+  sleep 3
+done
+if [[ "$gate_code" != "202" ]]; then
+  echo "Listener returned ${gate_code}. The Dyad page still starts." >&2
+fi
 echo "Preview project ${project} is up"
 echo "City volume pr-${pr}-city has a city"
 echo "https://gc-pr-${pr}.anakwannaphaschaiyong.com"
 if [[ "$tunnel" -eq 1 ]]; then
-  echo "https://pr-${pr}.anakwannaphaschaiyong.com"
+  preview_url="https://pr-${pr}.anakwannaphaschaiyong.com"
+else
+  echo "Named tunnel credentials are absent. Starting a temporary tunnel."
+  "${compose[@]}" --profile quick up -d quick
+  preview_url=""
+  for _ in $(seq 1 30); do
+    preview_url="$(docker logs "${project}-quick-1" 2>&1 | grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' | head -1 || true)"
+    if [[ -n "$preview_url" ]]; then
+      break
+    fi
+    sleep 2
+  done
+  if [[ -z "$preview_url" ]]; then
+    echo "Temporary tunnel did not report a URL." >&2
+    exit 2
+  fi
 fi
+ok=0
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  code="$(curl -sS -o /tmp/preview-body -w '%{http_code}' --max-time 20 "$preview_url" || true)"
+  echo "preview http ${code}"
+  if [[ "$code" == "200" ]] && grep -q 'data-dyad-browser-bridge' /tmp/preview-body; then
+    ok=1
+    break
+  fi
+  sleep 5
+done
+tunnel_kind=quick
+if [[ "$tunnel" -eq 1 ]]; then
+  tunnel_kind=named
+fi
+bridge=no
+if [[ "$ok" == "1" ]]; then
+  bridge=yes
+fi
+echo "preview_result pr=${pr} action=up url=${preview_url} http=${code} bridge=${bridge} tunnel=${tunnel_kind} gc=${gc_state}"
+if [[ "$ok" != "1" ]]; then
+  echo "Preview page did not return the browser bridge." >&2
+  exit 1
+fi
+printf '%s\n' "$preview_url" > "${state_dir}/preview-${pr}.public-url"
+chmod 600 "${state_dir}/preview-${pr}.public-url"
+echo "preview_url=${preview_url}"
+echo "clerk step"
+PREVIEW_ORIGIN="$preview_url" node "$root/deploy/preview/clerk-origins-run.mjs"
+echo "clerk step done"
