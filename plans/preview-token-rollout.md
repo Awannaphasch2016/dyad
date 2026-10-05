@@ -1,6 +1,8 @@
 # Replace the preview token and rebuild the Gas City image
 
 > Written 2026-10-03. The Singapore Bedrock chat works on the running container, but that container is still the previous image. The image rebuild stops because `/etc/doppler/dyad-preview.token` is rejected.
+>
+> **Revised 2026-10-03 after a second read of the live host.** Do not add the 8GiB gate, and do not run `compose up --build` on this EC2 to land the next image. Free space is 5.1G of 29G. The spike that filled the disk is the on-host build stage (`npm ci` and `npm run package`), not the finished 2.88GB image and not PRs 15 or 16. The implementation to follow is [plans/offhost-image-pull.md](offhost-image-pull.md): a Dagger module builds `Dockerfile.gascity` and publishes a digest, and the host only pulls. The digest is not passed into `Gascity.rollout`. The preview token is still the 58-byte file that Doppler rejects. Do not replace it until the pull-only script is the script the host will execute. The measurements below stay as the record of why the on-host build stopped.
 
 ## Summary
 
@@ -73,12 +75,11 @@ After `ROLLOUT_OK`:
 
 ## Implementation checklist
 
-- [ ] Add the build-cache prune and the 8GiB exit to `rollout.sh` before the previous-image tag and the rollback trap.
-- [ ] Assert that order in `rollout.test.sh`.
-- [ ] Push the gate. Wait until that commit's Gas City roll-up fails at Doppler and the container is still the current image.
-- [ ] Install the preview token at `/etc/doppler/dyad-preview.token`, mode 600, root-owned. Delete every other copy.
-- [ ] Run `/usr/local/sbin/gascity-rollout` for that commit.
-- [ ] Confirm health, the new image id, IAM env, the packaged `useIam` branch, and one Discovery reply.
+Superseded by [plans/offhost-image-pull.md](offhost-image-pull.md). Do not start the items that were in this list.
+
+- [x] Recorded the invalid preview token and the on-host unpack failure.
+- [ ] ~Add an 8GiB gate and prune the build cache, then `compose up --build`.~ Replaced by a registry pull. The 8GiB number was the free-space floor for an on-host build, not the size of the runtime image.
+- [ ] Install the preview token only after the pull-only `rollout.sh` is the script on the host, as that other plan sequences it.
 
 ## Risks
 
@@ -95,6 +96,6 @@ After `ROLLOUT_OK`:
 - Swarm planning tools are not available in this session, so this plan is written directly.
 - The replacement token is valid for `dyad`/`preview` and contains the six names the env file requires. It is not installed yet.
 - The image rebuild is required because the running image predates the empty-`apiKey` IAM path. Env and settings alone cannot keep a later saved bearer from being sent.
-- The disk gate is 8GiB after `docker builder prune -af` because the previous unpack failed near 5.6G with the build cache still present.
+- The 8GiB figure was the free-space floor for an on-host build after the unpack failed near 5.6G. It is not a pull requirement. The follow-up plan retires it.
 - `weaver-plus:gascity-before-once` is not a source of free space for this roll-up.
 - Product principle: the token stays in the host file Doppler already uses. It is not copied into the repo, the image, or GitHub.
