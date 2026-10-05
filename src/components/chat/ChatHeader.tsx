@@ -6,6 +6,7 @@ import {
   SquareTerminal,
 } from "lucide-react";
 import { PanelRightClose } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { useAtom, useAtomValue } from "jotai";
 import { selectedAppIdAtom } from "@/atoms/appAtoms";
@@ -44,6 +45,7 @@ export function ChatHeader({
   onVersionClick,
 }: ChatHeaderProps) {
   const { t } = useTranslation("chat");
+  const navigate = useNavigate();
   const appId = useAtomValue(selectedAppIdAtom);
   const { versions, loading: versionsLoading } = useVersions(appId);
   const [selectedChatId] = useAtom(selectedChatIdAtom);
