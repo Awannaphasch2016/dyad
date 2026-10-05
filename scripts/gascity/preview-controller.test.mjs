@@ -145,8 +145,14 @@ test("the preview database export uses the child branch, not the parent URL", ()
 test("aws credentials fill only empty Bedrock names", () => {
   const merged = mergeAwsCredentials(
     { CLERK_PUBLISHABLE_KEY: "pk_test", AWS_REGION: "us-east-1" },
-    { AWS_ACCESS_KEY_ID: "AKIA_FROM_AWS", AWS_SECRET_ACCESS_KEY: "secret-from-aws" },
-    { AWS_ACCESS_KEY_ID: "AKIA_FROM_ENV", AWS_DEFAULT_REGION: "ap-southeast-1" },
+    {
+      AWS_ACCESS_KEY_ID: "AKIA_FROM_AWS",
+      AWS_SECRET_ACCESS_KEY: "secret-from-aws",
+    },
+    {
+      AWS_ACCESS_KEY_ID: "AKIA_FROM_ENV",
+      AWS_DEFAULT_REGION: "ap-southeast-1",
+    },
   );
   assert.equal(merged.AWS_ACCESS_KEY_ID, "AKIA_FROM_AWS");
   assert.equal(merged.AWS_SECRET_ACCESS_KEY, "secret-from-aws");

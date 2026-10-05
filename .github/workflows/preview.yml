@@ -48,11 +48,11 @@ jobs:
         run: echo "preview-image.yml updates this branch"
 
       - name: Set up Docker Buildx
-        if: "steps.decide.outputs.command == 'update' && !contains(fromJSON('[\"cursor/preview-bridge-proof-9e7a\", \"cursor/formula-preview-9e7a\", \"cursor/preview-bedrock-render-bbea\", \"cursor/session-jwt-refresh-bbea\"]'), github.head_ref)"
+        if: 'steps.decide.outputs.command == ''update'' && !contains(fromJSON(''["cursor/preview-bridge-proof-9e7a", "cursor/formula-preview-9e7a", "cursor/preview-bedrock-render-bbea", "cursor/session-jwt-refresh-bbea"]''), github.head_ref)'
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
-        if: "steps.decide.outputs.command == 'update' && !contains(fromJSON('[\"cursor/preview-bridge-proof-9e7a\", \"cursor/formula-preview-9e7a\", \"cursor/preview-bedrock-render-bbea\", \"cursor/session-jwt-refresh-bbea\"]'), github.head_ref)"
+        if: 'steps.decide.outputs.command == ''update'' && !contains(fromJSON(''["cursor/preview-bridge-proof-9e7a", "cursor/formula-preview-9e7a", "cursor/preview-bedrock-render-bbea", "cursor/session-jwt-refresh-bbea"]''), github.head_ref)'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -61,7 +61,7 @@ jobs:
 
       - name: Resolve the published digest
         id: digest
-        if: "steps.decide.outputs.command == 'update' && !contains(fromJSON('[\"cursor/preview-bridge-proof-9e7a\", \"cursor/formula-preview-9e7a\", \"cursor/preview-bedrock-render-bbea\", \"cursor/session-jwt-refresh-bbea\"]'), github.head_ref)"
+        if: 'steps.decide.outputs.command == ''update'' && !contains(fromJSON(''["cursor/preview-bridge-proof-9e7a", "cursor/formula-preview-9e7a", "cursor/preview-bedrock-render-bbea", "cursor/session-jwt-refresh-bbea"]''), github.head_ref)'
         env:
           OWNER: ${{ github.repository_owner }}
           SHA: ${{ github.event.pull_request.head.sha }}
@@ -105,7 +105,7 @@ jobs:
           inject-env-vars: true
 
       - name: Attach the Neon preview branch
-        if: "steps.decide.outputs.command == 'update' && !contains(fromJSON('[\"cursor/preview-bridge-proof-9e7a\", \"cursor/formula-preview-9e7a\", \"cursor/preview-bedrock-render-bbea\", \"cursor/session-jwt-refresh-bbea\"]'), github.head_ref)"
+        if: 'steps.decide.outputs.command == ''update'' && !contains(fromJSON(''["cursor/preview-bridge-proof-9e7a", "cursor/formula-preview-9e7a", "cursor/preview-bedrock-render-bbea", "cursor/session-jwt-refresh-bbea"]''), github.head_ref)'
         env:
           PR: ${{ github.event.pull_request.number }}
           BRANCH: ${{ github.head_ref }}
@@ -119,11 +119,11 @@ jobs:
         run: node deploy/preview/controller.mjs destroy --pr "$PR" --git-branch "$BRANCH" --vercel-project dyad
 
       - name: Log in to Namespace with the GitHub token
-        if: "steps.decide.outputs.command != 'skip' && (steps.decide.outputs.command == 'destroy' || !contains(fromJSON('[\"cursor/preview-bridge-proof-9e7a\", \"cursor/formula-preview-9e7a\", \"cursor/preview-bedrock-render-bbea\", \"cursor/session-jwt-refresh-bbea\"]'), github.head_ref))"
+        if: 'steps.decide.outputs.command != ''skip'' && (steps.decide.outputs.command == ''destroy'' || !contains(fromJSON(''["cursor/preview-bridge-proof-9e7a", "cursor/formula-preview-9e7a", "cursor/preview-bedrock-render-bbea", "cursor/session-jwt-refresh-bbea"]''), github.head_ref))'
         uses: namespacelabs/nscloud-setup@v0
 
       - name: Install the Devbox CLI
-        if: "steps.decide.outputs.command != 'skip' && (steps.decide.outputs.command == 'destroy' || !contains(fromJSON('[\"cursor/preview-bridge-proof-9e7a\", \"cursor/formula-preview-9e7a\", \"cursor/preview-bedrock-render-bbea\", \"cursor/session-jwt-refresh-bbea\"]'), github.head_ref))"
+        if: 'steps.decide.outputs.command != ''skip'' && (steps.decide.outputs.command == ''destroy'' || !contains(fromJSON(''["cursor/preview-bridge-proof-9e7a", "cursor/formula-preview-9e7a", "cursor/preview-bedrock-render-bbea", "cursor/session-jwt-refresh-bbea"]''), github.head_ref))'
         run: |
           set -euo pipefail
           ver=0.0.195
@@ -135,7 +135,7 @@ jobs:
           sudo install -m 755 "$bin" /usr/local/bin/devbox
 
       - name: Point the Devbox CLI at the federated token
-        if: "steps.decide.outputs.command != 'skip' && (steps.decide.outputs.command == 'destroy' || !contains(fromJSON('[\"cursor/preview-bridge-proof-9e7a\", \"cursor/formula-preview-9e7a\", \"cursor/preview-bedrock-render-bbea\", \"cursor/session-jwt-refresh-bbea\"]'), github.head_ref))"
+        if: 'steps.decide.outputs.command != ''skip'' && (steps.decide.outputs.command == ''destroy'' || !contains(fromJSON(''["cursor/preview-bridge-proof-9e7a", "cursor/formula-preview-9e7a", "cursor/preview-bedrock-render-bbea", "cursor/session-jwt-refresh-bbea"]''), github.head_ref))'
         run: |
           set -euo pipefail
           token_file=""
@@ -150,7 +150,7 @@ jobs:
           echo "NSC_TOKEN_FILE=${token_file}" >> "$GITHUB_ENV"
 
       - name: Update the preview on Wewebplus-ci
-        if: "steps.decide.outputs.command == 'update' && !contains(fromJSON('[\"cursor/preview-bridge-proof-9e7a\", \"cursor/formula-preview-9e7a\", \"cursor/preview-bedrock-render-bbea\", \"cursor/session-jwt-refresh-bbea\"]'), github.head_ref)"
+        if: 'steps.decide.outputs.command == ''update'' && !contains(fromJSON(''["cursor/preview-bridge-proof-9e7a", "cursor/formula-preview-9e7a", "cursor/preview-bedrock-render-bbea", "cursor/session-jwt-refresh-bbea"]''), github.head_ref)'
         env:
           PR: ${{ github.event.pull_request.number }}
           SHA: ${{ github.event.pull_request.head.sha }}
