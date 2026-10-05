@@ -12,7 +12,15 @@ import { queryKeys } from "@/lib/queryKeys";
 import { ipc } from "@/ipc/types";
 import { loadClerkBrowser } from "./loadClerkBrowser";
 import { publishSessionToken } from "./publish_session_token";
+import { refreshSessionTokenIfNeeded } from "./refresh_session_token";
 import { ClerkSessionProvider, type ClerkSessionState } from "./session";
+import {
+  SESSION_TOKEN_REFRESH_RETRY_MS,
+  sessionTokenRefreshDelayMs,
+  storedSessionTokenNeedsRefresh,
+} from "./session_token_lifetime";
+import { registerSessionTokenEnsure } from "./session_token_ipc";
+import { lastPublishedSessionToken } from "./session_token_slot";
 
 const clerkAppearance = {
   variables: {
@@ -133,18 +141,76 @@ function ClerkSessionBridge({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!auth.isLoaded) return;
     let active = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     setTokenReady(false);
-    void publishSessionToken(async () => {
+
+    const issue = async () => {
       if (!auth.isSignedIn) return null;
+      // Skip Clerk's cache. The cached JWT is the one about to expire.
       const token = await auth.getToken({ skipCache: true });
       return token || undefined;
-    })
-      .then((stored) => {
-        if (active && stored) setTokenReady(true);
-      })
-      .catch(() => undefined);
+    };
+
+    const arm = (token: string | null | undefined) => {
+      if (!active || !auth.isSignedIn) return;
+      clearTimeout(timer);
+      const delay =
+        typeof token === "string"
+          ? sessionTokenRefreshDelayMs(token)
+          : SESSION_TOKEN_REFRESH_RETRY_MS;
+      timer = setTimeout(() => {
+        void publish(false, false);
+      }, delay);
+    };
+
+    const publish = (markLoading: boolean, force: boolean) => {
+      if (!active) return Promise.resolve(false);
+      if (markLoading) setTokenReady(false);
+      let issued: string | null | undefined;
+      const read = async () => {
+        issued = await issue();
+        return issued;
+      };
+      // Identity changes always copy a new JWT. The previous one can still be
+      // inside its lifetime while naming the previous organization.
+      const storedToken = force
+        ? publishSessionToken(read)
+        : refreshSessionTokenIfNeeded(read);
+      return storedToken
+        .then((stored) => {
+          if (!active) return stored;
+          if (stored && auth.isSignedIn) setTokenReady(true);
+          arm(issued ?? lastPublishedSessionToken());
+          return stored;
+        })
+        .catch(() => {
+          if (active) arm(undefined);
+          return false;
+        });
+    };
+
+    // Chat and proposal ask the main process, which can only verify this copy.
+    registerSessionTokenEnsure(() => {
+      if (!active || !auth.isSignedIn) return null;
+      if (!storedSessionTokenNeedsRefresh(lastPublishedSessionToken())) {
+        return null;
+      }
+      return publish(false, false).then(() => undefined);
+    });
+
+    void publish(true, true);
+
+    const onVisible = () => {
+      if (document.visibilityState !== "visible" || !auth.isSignedIn) return;
+      void publish(false, false);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
     return () => {
       active = false;
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      registerSessionTokenEnsure(null);
     };
   }, [auth.isLoaded, auth.isSignedIn, auth.orgId, auth.userId, auth.getToken]);
 

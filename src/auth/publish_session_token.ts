@@ -1,4 +1,5 @@
 import { ipc } from "@/ipc/types";
+import { notePublishedSessionToken } from "./session_token_slot";
 
 type TokenRead = () => Promise<string | null | undefined>;
 
@@ -56,6 +57,7 @@ export function publishSessionToken(readToken: TokenRead): Promise<boolean> {
         current.settle(false);
         throw error;
       }
+      notePublishedSessionToken(token);
       current.settle(true);
     }
   });
@@ -64,4 +66,9 @@ export function publishSessionToken(readToken: TokenRead): Promise<boolean> {
     () => undefined,
   );
   return result;
+}
+
+/** Resolves when the newest queued token write has finished. */
+export function sessionTokenPublishSettled(): Promise<void> {
+  return chain;
 }

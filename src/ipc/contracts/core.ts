@@ -6,6 +6,7 @@ import {
   type InvocationRef,
   type InvocationClaim,
 } from "../../state_machines/invocation_ref";
+import { ensureSessionTokenBeforeIpc } from "../../auth/session_token_ipc";
 import { DyadError, DyadErrorKind, isDyadError } from "../../errors/dyad_error";
 import type { QueryInvalidationScope } from "../../window_infrastructure/types";
 
@@ -340,6 +341,9 @@ export function createClient<
         typeof ipcRenderer.invokeEnvelope === "function"
           ? ipcRenderer.invokeEnvelope
           : ipcRenderer.invoke;
+      // Store a current Clerk JWT before the handler reads the session map.
+      const pendingToken = ensureSessionTokenBeforeIpc(contract.channel);
+      if (pendingToken) await pendingToken;
       const response = await invoke(contract.channel, input);
       return isIpcInvokeEnvelope(response)
         ? unwrapIpcEnvelope(response)
@@ -652,20 +656,28 @@ export function createStreamClient<
       const ref = registryRef(key, invocationRef ?? streamId!);
       streams.register(ref, entry);
 
-      ipcRenderer.invoke(contract.channel, input).catch((err: Error) => {
-        // Only surface the failure if this start() call still owns the entry.
-        const claim = streams.claim(ref);
-        if (claim.kind !== "claimed" || claim.value !== entry) return;
-        callbacks.onError({
-          [contract.keyField]: key,
-          error: err.message,
-        } as any);
-        // The error callback may synchronously replace this stream.
-        const current = streams.claim(ref);
-        if (current.kind === "claimed" && current.value === entry) {
-          streams.delete(ref);
-        }
-      });
+      const deliver = () => {
+        // A cancel during the token refresh dropped this start.
+        const owner = streams.claim(ref);
+        if (owner.kind !== "claimed" || owner.value !== entry) return;
+        ipcRenderer.invoke(contract.channel, input).catch((err: Error) => {
+          // Only surface the failure if this start() call still owns the entry.
+          const claim = streams.claim(ref);
+          if (claim.kind !== "claimed" || claim.value !== entry) return;
+          callbacks.onError({
+            [contract.keyField]: key,
+            error: err.message,
+          } as any);
+          // The error callback may synchronously replace this stream.
+          const current = streams.claim(ref);
+          if (current.kind === "claimed" && current.value === entry) {
+            streams.delete(ref);
+          }
+        });
+      };
+      const pendingToken = ensureSessionTokenBeforeIpc(contract.channel);
+      if (pendingToken) void pendingToken.then(deliver, deliver);
+      else deliver();
       return invocationRef ?? streamId!;
     },
 

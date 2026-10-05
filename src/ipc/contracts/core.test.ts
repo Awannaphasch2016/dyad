@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import { registerSessionTokenEnsure } from "@/auth/session_token_ipc";
 import {
   createClient,
   createIpcErrorEnvelope,
@@ -86,6 +87,7 @@ describe("IPC invoke envelopes", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     delete (window as any).electron;
+    registerSessionTokenEnsure(null);
   });
 
   it("serializes and deserializes DyadError kind", () => {
@@ -188,12 +190,69 @@ describe("IPC invoke envelopes", () => {
 
     await expect(client.legacy({})).resolves.toBe("legacy");
   });
+
+  it("stores a fresh session token before the invoke", async () => {
+    const order: string[] = [];
+    let release: () => void = () => undefined;
+    registerSessionTokenEnsure(
+      () =>
+        new Promise<void>((resolve) => {
+          release = () => {
+            order.push("refresh");
+            resolve();
+          };
+        }),
+    );
+    const invokeEnvelope = vi.fn().mockImplementation(async () => {
+      order.push("invoke");
+      return createIpcSuccessEnvelope({ value: 1 });
+    });
+    (window as any).electron = { ipcRenderer: { invokeEnvelope } };
+    const client = createClient({
+      answer: defineContract({
+        channel: "answer",
+        input: z.object({}),
+        output: z.object({ value: z.number() }),
+      }),
+    });
+
+    const pending = client.answer({});
+    expect(invokeEnvelope).not.toHaveBeenCalled();
+    release();
+
+    await expect(pending).resolves.toEqual({ value: 1 });
+    expect(order).toEqual(["refresh", "invoke"]);
+  });
+
+  it("does not refresh while storing the session token", async () => {
+    const ensure = vi.fn(() => Promise.resolve());
+    registerSessionTokenEnsure(ensure);
+    const invokeEnvelope = vi
+      .fn()
+      .mockResolvedValue(createIpcSuccessEnvelope({}));
+    (window as any).electron = { ipcRenderer: { invokeEnvelope } };
+    const client = createClient({
+      setSessionToken: defineContract({
+        channel: "clerk:set-session-token",
+        input: z.object({ token: z.string().nullable() }),
+        output: z.object({}),
+      }),
+    });
+
+    await client.setSessionToken({ token: "session-token" });
+
+    expect(ensure).not.toHaveBeenCalled();
+    expect(invokeEnvelope).toHaveBeenCalledWith("clerk:set-session-token", {
+      token: "session-token",
+    });
+  });
 });
 
 describe("IPC stream callback cleanup", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     delete (window as any).electron;
+    registerSessionTokenEnsure(null);
   });
 
   it("preserves a same-key stream started synchronously from onEnd", () => {
@@ -256,6 +315,48 @@ describe("IPC stream callback cleanup", () => {
       chatId: 1,
       value: "next",
     });
+  });
+
+  it("waits to invoke a stream until the session token refresh settles", async () => {
+    const { client, invoke } = setupStreamClient();
+    let release: () => void = () => undefined;
+    registerSessionTokenEnsure(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+
+    client.start(
+      { chatId: 1 },
+      { onChunk: vi.fn(), onEnd: vi.fn(), onError: vi.fn() },
+    );
+    expect(invoke).not.toHaveBeenCalled();
+    release();
+
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledTimes(1));
+  });
+
+  it("does not invoke a stream cancelled while the session token refreshes", async () => {
+    const { client, invoke } = setupStreamClient();
+    let release: () => void = () => undefined;
+    registerSessionTokenEnsure(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+
+    client.start(
+      { chatId: 1 },
+      { onChunk: vi.fn(), onEnd: vi.fn(), onError: vi.fn() },
+    );
+    client.cancel(1);
+    release();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(invoke).not.toHaveBeenCalled();
   });
 
   it("preserves a same-key stream started after invoke rejects", async () => {
