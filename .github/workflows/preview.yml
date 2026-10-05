@@ -4,11 +4,7 @@
 # This job does not SSH. The production host is not a target.
 # A labeled pull request reuses ghcr.io/<owner>/dyad:ctx-<hash> or
 # dyad:sha-<commit>, and builds Dockerfile.gascity when neither tag exists.
-# These branches are still deployed by preview-image.yml on push. The
-# pull_request subject is trusted, and the list stays until it is removed
-# together with this skip. A label on one of them must not start a second deploy:
-# cursor/preview-bridge-proof-9e7a, cursor/formula-preview-9e7a,
-# cursor/preview-bedrock-render-bbea, cursor/session-jwt-refresh-bbea.
+# preview-image.yml no longer deploys on push. The label is the only deploy.
 name: Preview
 
 on:
@@ -28,7 +24,6 @@ jobs:
     timeout-minutes: 15
     outputs:
       command: ${{ steps.decide.outputs.command }}
-      image_managed: ${{ steps.decide.outputs.image_managed }}
       hash: ${{ steps.resolve.outputs.hash }}
       image: ${{ steps.resolve.outputs.image }}
       needs_build: ${{ steps.resolve.outputs.needs_build }}
@@ -63,30 +58,18 @@ jobs:
           LABEL: ${{ github.event.label.name }}
           CLOSED: ${{ github.event.pull_request.state == 'closed' }}
           LABELS: "${{ join(github.event.pull_request.labels.*.name, ',') }}"
-          BRANCH: ${{ github.head_ref }}
         run: |
           set -euo pipefail
           command="$(node deploy/preview/controller.mjs decide --action "$ACTION" --label "$LABEL" --labels "$LABELS" --closed "$CLOSED")"
           echo "command=${command}" >> "$GITHUB_OUTPUT"
           echo "${command}"
-          image_managed=false
-          case "$BRANCH" in
-            cursor/preview-bridge-proof-9e7a|cursor/formula-preview-9e7a|cursor/preview-bedrock-render-bbea|cursor/session-jwt-refresh-bbea)
-              image_managed=true
-              ;;
-          esac
-          echo "image_managed=${image_managed}" >> "$GITHUB_OUTPUT"
-
-      - name: Leave image-managed branches to the image workflow
-        if: steps.decide.outputs.command == 'update' && steps.decide.outputs.image_managed == 'true'
-        run: echo "preview-image.yml updates this branch"
 
       - name: Set up Docker Buildx
-        if: steps.decide.outputs.command == 'update' && steps.decide.outputs.image_managed != 'true'
+        if: steps.decide.outputs.command == 'update'
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
-        if: steps.decide.outputs.command == 'update' && steps.decide.outputs.image_managed != 'true'
+        if: steps.decide.outputs.command == 'update'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -98,7 +81,6 @@ jobs:
         if: always() && steps.decide.outcome == 'success'
         env:
           COMMAND: ${{ steps.decide.outputs.command }}
-          IMAGE_MANAGED: ${{ steps.decide.outputs.image_managed }}
           OWNER: ${{ github.repository_owner }}
           SHA: ${{ github.event.pull_request.head.sha }}
         run: |
@@ -108,7 +90,7 @@ jobs:
           image=""
           needs_build=false
           source="skip"
-          if [[ "$COMMAND" == "update" && "$IMAGE_MANAGED" != "true" ]]; then
+          if [[ "$COMMAND" == "update" ]]; then
             hash="$(node scripts/gascity/preview-image-id.mjs)"
             [[ "$hash" =~ ^[0-9a-f]{64}$ ]]
             [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
@@ -129,8 +111,6 @@ jobs:
                 source="build sha-${SHA}"
               fi
             fi
-          elif [[ "$COMMAND" == "update" && "$IMAGE_MANAGED" == "true" ]]; then
-            source="preview-image.yml updates this branch"
           fi
           echo "${source}"
           {
@@ -143,7 +123,7 @@ jobs:
 
   publish:
     needs: identify
-    if: needs.identify.outputs.command == 'update' && needs.identify.outputs.needs_build == 'true' && needs.identify.outputs.image_managed != 'true'
+    if: needs.identify.outputs.command == 'update' && needs.identify.outputs.needs_build == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 180
     concurrency:
@@ -238,7 +218,7 @@ jobs:
 
   deploy:
     needs: [identify, publish]
-    if: always() && needs.identify.result == 'success' && needs.identify.outputs.command == 'update' && needs.identify.outputs.image_managed != 'true' && (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+    if: always() && needs.identify.result == 'success' && needs.identify.outputs.command == 'update' && (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     concurrency:

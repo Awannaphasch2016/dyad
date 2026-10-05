@@ -227,7 +227,8 @@ test("preview image workflow updates the shared Devbox after publish", () => {
   assert.equal(workflow.includes("secrets.DOPPLER_TOKEN"), false);
   assert.equal(workflow.includes("secrets.NEON_API_KEY"), false);
   assert.equal(workflow.includes("secrets.AWS_ACCESS_KEY_ID"), false);
-  assert.match(workflow, /cursor\/formula-preview-9e7a/);
+  assert.equal(workflow.includes("branches:"), false);
+  assert.equal(workflow.includes("cursor/formula-preview-9e7a"), false);
   assert.equal(workflow.includes("secrets.CLOUDFLARE_API_TOKEN"), false);
   assert.equal(workflow.includes("secrets.CLOUDFLARE_ZONE_ID"), false);
   assert.equal(workflow.includes("secrets.CLOUDFLARE_ACCOUNT_ID"), false);
@@ -236,7 +237,7 @@ test("preview image workflow updates the shared Devbox after publish", () => {
   assert.equal(workflow.includes("13.251.216.187"), false);
 });
 
-test("labeled preview workflow reuses or builds the head commit and skips image-managed branches", () => {
+test("labeled preview workflow reuses or builds the head commit", () => {
   const workflow = readFileSync(
     new URL("../../.github/workflows/preview.yml", import.meta.url),
     "utf8",
@@ -256,13 +257,14 @@ test("labeled preview workflow reuses or builds the head commit and skips image-
   assert.match(workflow, /auth-method:\s*oidc/);
   assert.equal(workflow.includes("secrets.DOPPLER_TOKEN"), false);
   assert.equal(workflow.includes("secrets.NEON_API_KEY"), false);
+  assert.equal(workflow.includes("image_managed"), false);
   for (const branch of [
     "cursor/preview-bridge-proof-9e7a",
     "cursor/formula-preview-9e7a",
     "cursor/preview-bedrock-render-bbea",
     "cursor/session-jwt-refresh-bbea",
   ]) {
-    assert.equal(workflow.includes(branch), true);
+    assert.equal(workflow.includes(branch), false);
   }
   assert.match(
     controller,

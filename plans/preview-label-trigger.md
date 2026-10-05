@@ -148,10 +148,10 @@ None. `preview-up.sh <pr> <ghcr.io/...@sha256:...>` stays the deploy command.
 
 ### Phase 3: Remove the branch list
 
-- [ ] Add the `preview` label to pull requests 20 and 34 while the skip is still present.
-- [ ] Delete the push branch list from `preview-image.yml` and the `fromJSON` skips from `preview.yml` in the same change.
-- [ ] Push to `cursor/session-jwt-refresh-bbea` with the label on and confirm one deploy, not two.
-- [ ] Update `docs/gascity-docker.md` and the workflow assertions in `scripts/gascity/preview-tunnel.test.mjs`.
+- [x] Add the `preview` label to pull requests 20 and 34 while the skip is still present. Pull request 20 already had it. Pull request 34 received it before this removal. Both pull requests are merged, so that label does not deploy later pushes.
+- [x] Delete the push branch list from `preview-image.yml` and the branch skip from `preview.yml` in the same change.
+- [ ] Push this change on the open labeled pull request and confirm one Preview deploy. Preview image must not run. Pull requests 20, 27, and 29 keep the previous workflow file until their branches contain this commit. `cursor/session-jwt-refresh-bbea` is already merged, so this commit stays on the open pull request rather than closing it.
+- [x] Update `docs/gascity-docker.md` and the workflow assertions in `scripts/gascity/preview-tunnel.test.mjs`.
 
 ### Phase 4: Wake by pull request number
 
@@ -162,7 +162,7 @@ None. `preview-up.sh <pr> <ghcr.io/...@sha256:...>` stays the deploy command.
 ## Testing Strategy
 
 - [x] `node --test scripts/gascity/preview-image-id.test.mjs` covers a stable hash, a changed file, an ignored `.git` path, and the `!.env.example` exception.
-- [ ] `node --test scripts/gascity/preview-tunnel.test.mjs` asserts the label workflow checks out the head SHA, runs the context hash, builds only when the tag is missing, and no longer contains the four branch names after Phase 3.
+- [x] `node --test scripts/gascity/preview-tunnel.test.mjs` asserts the label workflow checks out the head SHA, runs the context hash, builds only when the tag is missing, and no longer contains the four branch names after Phase 3.
 - [ ] The controller tests still cover label, unlabel, close, and synchronize-without-label. `commandForPullRequest` does not change.
 - [ ] One real labeled pull request outside the old list, then one push to pull request 34 after the list is removed.
 

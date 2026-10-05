@@ -175,10 +175,13 @@ test("devbox remote scripts resume saved previews", () => {
   const workflows = [
     "../../.github/workflows/preview-image.yml",
     "../../.github/workflows/preview.yml",
-    "../../.github/workflows/preview-exec.yml",
     "../../.github/workflows/preview-secrets.yml",
     "../../.github/workflows/preview-vercel-db.yml",
   ].map((path) => readFileSync(new URL(path, import.meta.url), "utf8"));
+  const exec = readFileSync(
+    new URL("../../.github/workflows/preview-exec.yml", import.meta.url),
+    "utf8",
+  );
   for (const workflow of workflows) {
     assert.match(workflow, /preview-resume\.sh/);
   }
@@ -196,8 +199,9 @@ test("devbox remote scripts resume saved previews", () => {
   assert.ok(
     destroy.indexOf("tunnel-token") < destroy.indexOf("docker compose -p"),
   );
-  assert.match(workflows[2], /echo federated-ok/);
-  assert.equal(workflows[2].split("preview-resume.sh").length, 2);
+  assert.match(exec, /echo federated-ok/);
+  assert.match(exec, /\$\{\{ inputs\.pr \}\}/);
+  assert.equal(exec.includes("preview-resume.sh"), false);
 });
 
 test("PREVIEW_RESUME_ONLY starts that preview and does not skip it", () => {

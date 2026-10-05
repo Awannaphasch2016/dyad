@@ -6,12 +6,6 @@ name: Preview image
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - cursor/preview-bridge-proof-9e7a
-      - cursor/formula-preview-9e7a
-      - cursor/preview-bedrock-render-bbea
-      - cursor/session-jwt-refresh-bbea
 
 permissions:
   contents: read
