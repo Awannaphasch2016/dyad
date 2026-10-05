@@ -8,32 +8,52 @@ The walkthrough on `https://pr-34.anakwannaphaschaiyong.com` hit three failures.
 2. **busy-iguana-bloom could not restore.** Discovery is an ask chat. Restore of "Fatbud the bkk weed shop" returned "Could not determine a version to restore to for this message."
 3. **A red toast said `DyadError: Chat not found`.** The page still showed the transcript. A later lookup used a chat id that was no longer a row.
 
-The blueprint gate stays. It is doing what it is written to do. These fixes make a new app a real project, make Discovery restorable, and stop a chat list from deleting the app the person is looking at.
+The blueprint gate stays. It is doing what it is written to do. A missing project fails immediately. An app workspace is created only as the three phase chats.
 
-## 1. An app folder must be a project before preview runs
+## 1. Do not create an empty git folder
 
 ### Cause
 
 `getApp` calls `ensureProjectFiles` when the folder has no `.git` (`src/ipc/handlers/app_handlers.ts`, the block around the `projectFilesOnThisMachine` check).
 
-`ensureGitRepository` in `src/control_plane/file_sync.ts` creates the directory and runs `gitService.initRepoWithInitialCommit`. It does not copy a template. The existing test `creates a git repository when the app folder does not exist` expects that empty commit.
+`ensureGitRepository` in `src/control_plane/file_sync.ts` creates the directory and runs `gitService.initRepoWithInitialCommit`. It does not copy a template. The existing test `creates a git repository when the app folder does not exist` expects that empty commit. That empty commit is the fallback. The preview then runs `pnpm install` because `choosePackageManagerFromSignal` returns `pnpm` when the folder has no `package.json` and no lockfile (`src/ipc/utils/package_manager_selection.ts`). `buildPnpmInstallAndRunCommand` in `src/ipc/services/app_runtime_service.ts` is what prints `ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND`.
 
-`choosePackageManagerFromSignal` in `src/ipc/utils/package_manager_selection.ts` returns `pnpm` when the folder has no `package.json` and no lockfile. `buildPnpmInstallAndRunCommand` in `src/ipc/services/app_runtime_service.ts` then runs `pnpm install`. That is the preview error.
-
-`createApp` already copies the scaffold and records `initialCommitHash` (`createFromTemplate`, then `initRepoWithInitialCommit`, then the chat update in `src/ipc/handlers/app_handlers.ts`). The empty-folder path skips both.
+The only path that creates a project is `createApp`: `createFromTemplate`, then `initRepoWithInitialCommit`, then the `initialCommitHash` update (`src/ipc/handlers/app_handlers.ts`).
 
 ### Change
 
-- When `ensureProjectFiles` finds a missing directory, or a directory whose only content is an empty git repo, copy the same template `createApp` uses, then make the initial commit. Leave a directory that already has project files alone, including one that only has `src/pages/Index.tsx`. Do not overwrite those files with the scaffold.
-- After that commit, set `initialCommitHash` on every chat for that app whose hash is still null.
-- In `getDefaultCommand`, if `package.json` is absent, do not spawn pnpm or npm. Return a preview message: `This app has no package.json, so the preview cannot start.` The preview panel already renders `ERR_PNPM_*` lines; this message should be a normal error entry, not a pnpm stack.
+- `ensureProjectFiles` does not create a directory, does not run `git init`, and does not copy a scaffold. If the app directory is missing or has no `.git`, throw `DyadError` with kind `Precondition` and a message that the project files are missing. `getApp` lets that error reach the UI.
+- `getDefaultCommand` does not spawn pnpm or npm when `package.json` is absent. The preview entry is `This app has no package.json, so the preview cannot start.` That is a stop, not a repair.
 
 ### Tests
 
-- Extend `src/control_plane/file_sync.test.ts`: a missing folder gains `package.json` from the React scaffold and one commit. An existing `pnpm-workspace.yaml` without `package.json` is left as it is.
-- Add a unit test beside `package_manager_selection.ts` or `app_runtime_service.test.ts`: no `package.json` does not produce a `pnpm install` command.
+- Replace `creates a git repository when the app folder does not exist` in `src/control_plane/file_sync.test.ts`. A missing folder throws, and the directory is not created.
+- A folder that already has `.git` is still left on its current commit.
+- A runtime-command test: no `package.json` does not produce a `pnpm install` command.
 
 ## 2. Discovery restore must find the commit the turn already recorded
+
+### How a message and a commit relate
+
+A chat message is a row in the database. A commit is a git snapshot of the app folder. They meet on the assistant row:
+
+- `sourceCommitHash` is written when the assistant reply starts. It is `git HEAD` at that moment, the files as they were before this reply changes anything. The write is the `getCurrentCommitHash` call in `src/ipc/handlers/chat_stream_handlers.ts` when the placeholder assistant message is inserted.
+- `commitHash` is written when the reply finishes and the turn actually changed files. `commitAllChanges` creates that commit, then the handler stores it on the same assistant row (`src/pro/main/ipc/handlers/local_agent/local_agent_handler.ts`).
+
+User rows do not store either hash. Restore is offered on a user message and means "put the files back to how they were before this message." The handler finds that snapshot from the assistant rows around it.
+
+A message has no `commitHash` when the turn did not change files. Discovery is ask mode, so the turn is read-only and the handler skips `commitAllChanges` on purpose. The reply can still have `sourceCommitHash`, because that is recorded at the start from the current `HEAD`. A factory-host status row has neither hash, because `postFactoryHostMessage` inserts only role and content.
+
+### Restore lookup
+
+`resolveTargetCommitHash` in `src/ipc/handlers/version_handlers.ts`:
+
+1. Look at messages after the chosen user message. The first assistant's `sourceCommitHash` is the files at the start of the reply to that message. That is the restore target.
+2. If that assistant has no `sourceCommitHash`, stop looking forward.
+3. Look backward for an earlier assistant's `commitHash`. That commit is the files that assistant left behind, which is the state just before the chosen user message.
+4. Otherwise use the chat's `initialCommitHash`, the snapshot from Create, before any message.
+
+On the Discovery screen the user message is last, so step 1 finds nothing. The kickoff assistant has `sourceCommitHash` and no `commitHash`, so step 3 skips it. Step 4 is null, and both copies of the yellow warning in `restoreToMessage` run.
 
 ### Cause
 
@@ -56,27 +76,30 @@ Ask mode should keep skipping file commits. There is nothing to commit. The bug 
 - Unit-test `resolveTargetCommitHash` with the Discovery shape: one assistant with `sourceCommitHash` set and `commitHash` null, then the user message, and `initialCommitHash` null. The result is that `sourceCommitHash`.
 - A second case with every hash null returns null, and the restore handler test expects the new warning text.
 
-## 3. Listing chats must not delete the open app
+## 3. The three phase chats are the only app workspace
 
 ### Cause
 
-`getChats` in `src/ipc/handlers/chat_handlers.ts` calls `retainStartedFactoryPhaseChats`, then `deleteAppById` when the remaining chats are not Discovery, Implementation, and Delivery.
+An app workspace is the folder, the git repo, and the chats. Today more than one path can create part of that:
 
-`dropUnstartedChats` in `src/ipc/utils/factory_phase_chats.ts` deletes chats `factoryChatIdsToDrop` names. An app that has some phase titles but not all three loses the empty ones, then `hasFactoryPhases` fails, and the whole app is deleted. The page still shows the transcript it already loaded. The next `getChat` throws `new DyadError("Chat not found", DyadErrorKind.NotFound)` (`chat_handlers.ts` around line 209). `showError` prints `error.toString()`, which is `DyadError: Chat not found` (`src/lib/toast.tsx`).
-
-The test `deletes an app whose chats are not the three phase titles` in `src/ipc/handlers/chat_handlers.test.ts` locks in that deletion. That behavior is what the walkthrough hit.
+- `createApp` inserts Discovery, Implementation, and Delivery, then copies the template and commits (`insertFactoryPhaseChats` in `src/ipc/handlers/app_handlers.ts`). Copy and import call the same insert.
+- `createChat` still creates another chat when the three titles are not all present. `assertFactoryChatCreationOpen` returns without throwing in that case (`src/ipc/utils/factory_phase_chats.ts`).
+- The home first-prompt flow calls `ensureFactoryPhaseChats`, which creates Implementation and Delivery through `createChat` again (`src/first_prompt/ensure_factory_phase_chats.ts`).
+- Plan handoff creates a chat when "accept in a new chat" is set (`src/plan_handoff/definition.ts`). Security fix creates a chat titled `Fix: …` (`src/ipc/handlers/security_handlers.ts`).
+- `getChats` then tries to clean the variation up: it drops non-phase chats and, when the three titles are not all present, calls `deleteAppById`. The open page still has the old chat id, and `getChat` throws `Chat not found`.
 
 ### Change
 
-- Keep dropping chats whose titles are not a factory phase.
-- When a phase title is missing, call `insertFactoryPhaseChats` and keep the app. Do not call `deleteAppById` from `getChats`.
-- `insertFactoryPhaseChats` must copy `initialCommitHash` from a sibling chat, or from `HEAD`, onto every phase chat it inserts. Today it inserts the three rows with a null hash and relies on `createApp` to fill them later.
+- `insertFactoryPhaseChats` inside `createApp` is the only creation of an app workspace. It always inserts exactly Discovery, Implementation, and Delivery, then the template copy and the initial commit run. Copy and import keep calling that same function. They do not grow a fourth chat.
+- `createChat`, `ensureFactoryPhaseChats`, plan handoff's new chat, and the security-fix chat throw `DyadError` kind `Validation` with `An app workspace has its three phases.` Those flows do their work inside the existing phase chat.
+- `getChats` does not delete the app and does not insert stand-in chats. If the three phase titles are missing, it throws the same validation error. The UI shows that error. It does not toast `Chat not found` for a chat this list just deleted.
+- `assertFactoryChatCreationOpen` rejects every `createChat`, including when the three titles are not all present.
 
 ### Tests
 
-- Replace `deletes an app whose chats are not the three phase titles`. After `getChats`, the app row remains, the non-phase chat is gone, and Discovery, Implementation, and Delivery all exist.
-- A follow-up `getChat` on the phase chat that already had messages still returns that chat.
-- `insertFactoryPhaseChats` sets `initialCommitHash` when a sibling chat or `HEAD` has one.
+- Replace `deletes an app whose chats are not the three phase titles`. `getChats` throws, and the app row and its chats are still in the database.
+- `create-chat` throws for an app with no chats, an app with one phase, and an app with all three.
+- A test that `createApp` returns three chats titled Discovery, Implementation, and Delivery, and no others.
 
 ## Out of scope
 
@@ -95,6 +118,6 @@ Add the `resolveTargetCommitHash` test next to the version handler tests and inc
 
 After the tests pass, a preview walkthrough should show:
 
-- A new app's Implementation preview starts from the scaffold instead of `ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND`.
-- Restore on the first Discovery user message forks from the recorded commit instead of the yellow warning.
-- Opening the app does not replace the visible chat with `DyadError: Chat not found`.
+- Opening an app whose folder was never created fails with the missing-project error. It does not create a git directory, and it does not print `ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND`.
+- Restore on the first Discovery user message uses the kickoff reply's `sourceCommitHash`.
+- Creating an app makes exactly three phase chats. A request for any other chat is rejected, and opening the app does not delete it.
