@@ -118,7 +118,6 @@ export function skillDocument() {
     `- \`${BIN} verify --pr 27\``,
     "",
     "A refused dispatch points at Re-run all jobs on the last successful Preview image run.",
-    "",
   );
   return `${lines.join("\n")}\n`;
 }
