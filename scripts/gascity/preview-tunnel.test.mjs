@@ -163,7 +163,10 @@ test("preview-up refuses bad arguments and the production checkout", () => {
 
   const source = readFileSync(script, "utf8");
   assert.match(source, /clerk-origins-run/);
-  assert.match(source, /gc did not become healthy\. The Dyad page still starts\./);
+  assert.match(
+    source,
+    /gc did not become healthy\. The Dyad page still starts\./,
+  );
   assert.match(
     source,
     /CLOUDFLARE_API_TOKEN CLOUDFLARE_ZONE_ID CLOUDFLARE_ACCOUNT_ID/,
@@ -215,8 +218,9 @@ test("preview image workflow updates the shared Devbox after publish", () => {
   );
   assert.match(
     workflow,
-    /assign-page --pr "\$pr" --git-branch cursor\/dyad-web-frontend-bbea --vercel-project dyad/,
+    /assign-page --pr "\$pr" --git-branch "\$branch" --vercel-project dyad/,
   );
+  assert.equal(workflow.includes("cursor/dyad-web-frontend-bbea"), false);
   assert.match(workflow, /cursor\/formula-preview-9e7a/);
   assert.match(
     workflow,

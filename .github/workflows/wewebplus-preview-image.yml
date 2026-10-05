@@ -1,0 +1,71 @@
+# Publish the Wewebplus preview CLI image.
+#
+# This image does not contain the Dyad app. Pull it on any machine:
+#   docker pull ghcr.io/<owner>/wewebplus-preview:sha-<commit>
+name: Wewebplus preview CLI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cursor/formula-preview-9e7a
+      - cursor/preview-bridge-proof-9e7a
+    paths:
+      - packages/wewebplus-preview/**
+      - .github/workflows/wewebplus-preview-image.yml
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install and test the CLI
+        working-directory: packages/wewebplus-preview
+        run: |
+          set -euo pipefail
+          npm ci
+          npm test
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build, check, and push
+        env:
+          OWNER: ${{ github.repository_owner }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          owner="$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]')"
+          image="ghcr.io/${owner}/wewebplus-preview"
+          docker build \
+            -f packages/wewebplus-preview/Dockerfile \
+            -t "${image}:sha-${SHA}" \
+            -t "${image}:edge" \
+            packages/wewebplus-preview
+          docker run --rm "${image}:sha-${SHA}" --version
+          docker push "${image}:sha-${SHA}"
+          docker push "${image}:edge"

@@ -234,7 +234,7 @@ jobs:
               '  node deploy/preview/controller.mjs attach --pr "$pr" --git-branch "$branch" --vercel-project dyad --out /tmp/preview-runtime-devbox.sh' \
               '  source /tmp/preview-runtime-devbox.sh' \
               '  rm -f /tmp/preview-runtime-devbox.sh' \
-              '  node deploy/preview/controller.mjs assign-page --pr "$pr" --git-branch cursor/dyad-web-frontend-bbea --vercel-project dyad' \
+              '  node deploy/preview/controller.mjs assign-page --pr "$pr" --git-branch "$branch" --vercel-project dyad' \
               'fi' \
               'PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh "$pr" "$image"' \
               'origin="$(cat "$HOME/.local/state/wewebplus-preview/preview-${pr}.public-url")"' \

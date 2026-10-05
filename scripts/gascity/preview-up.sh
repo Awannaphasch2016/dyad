@@ -157,7 +157,9 @@ echo "Pulling ${image} for ${project}"
 "${compose[@]}" pull dyad gc
 echo "Starting ${project}"
 "${compose[@]}" up -d --wait dyad
+gc_state=healthy
 if ! "${compose[@]}" up -d --wait gc; then
+  gc_state=unhealthy
   echo "gc did not become healthy. The Dyad page still starts." >&2
   docker logs --tail 60 "${project}-gc-1" >&2 || true
 fi
@@ -212,6 +214,15 @@ for _ in 1 2 3 4 5 6 7 8 9 10; do
   fi
   sleep 5
 done
+tunnel_kind=quick
+if [[ "$tunnel" -eq 1 ]]; then
+  tunnel_kind=named
+fi
+bridge=no
+if [[ "$ok" == "1" ]]; then
+  bridge=yes
+fi
+echo "preview_result pr=${pr} action=up url=${preview_url} http=${code} bridge=${bridge} tunnel=${tunnel_kind} gc=${gc_state}"
 if [[ "$ok" != "1" ]]; then
   echo "Preview page did not return the browser bridge." >&2
   exit 1

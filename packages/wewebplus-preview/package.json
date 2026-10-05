@@ -1,0 +1,21 @@
+{
+  "name": "wewebplus-preview",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Check and control Wewebplus previews. Resume never builds an image.",
+  "type": "module",
+  "bin": {
+    "wewebplus-preview": "./bin.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/cli.test.mjs",
+    "start": "node bin.js"
+  },
+  "dependencies": {
+    "axi-sdk-js": "^0.1.12"
+  },
+  "license": "MIT"
+}

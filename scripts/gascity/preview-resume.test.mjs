@@ -48,7 +48,13 @@ exit 0
 
 function run(
   state,
-  { skip = "", memKb = 8 * 1024 * 1024, fail20 = false, marker } = {},
+  {
+    skip = "",
+    memKb = 8 * 1024 * 1024,
+    fail20 = false,
+    marker,
+    only = "",
+  } = {},
 ) {
   const root = mkdtempSync(join(tmpdir(), "preview-resume-run-"));
   const bin = join(root, "bin");
@@ -68,6 +74,7 @@ function run(
       PREVIEW_PRODUCTION_MARKER: marker ?? join(root, "missing-marker"),
       DOCKER_LOG: log,
       DOCKER_FAIL_20: fail20 ? "1" : "0",
+      ...(only ? { PREVIEW_RESUME_ONLY: only } : {}),
     },
   });
   const commands = readFileSync(log, "utf8");
@@ -84,6 +91,10 @@ test("a saved tunnel token is started and the current pull request is skipped", 
     assert.equal(result.status, 0);
     assert.match(result.stdout, /preview-27 is handled by this deploy/);
     assert.match(result.stdout, /Resuming preview-20/);
+    assert.match(
+      result.stdout,
+      /preview_result pr=20 action=resume result=started/,
+    );
     assert.match(result.commands, /compose --env-file/);
     assert.match(result.commands, /-p preview-20/);
     assert.match(
@@ -105,6 +116,10 @@ test("a preview without a tunnel token is left stopped", () => {
     const result = run(state);
     assert.equal(result.status, 0);
     assert.match(result.stdout, /preview-29 has no tunnel token/);
+    assert.match(
+      result.stdout,
+      /preview_result pr=29 action=resume result=left_stopped/,
+    );
     assert.equal(result.commands, "");
   } finally {
     rmSync(state, { recursive: true, force: true });
@@ -183,4 +198,24 @@ test("devbox remote scripts resume saved previews", () => {
   );
   assert.match(workflows[2], /echo federated-ok/);
   assert.equal(workflows[2].split("preview-resume.sh").length, 2);
+});
+
+test("PREVIEW_RESUME_ONLY starts that preview and does not skip it", () => {
+  const state = mkdtempSync(join(tmpdir(), "preview-resume-state-"));
+  try {
+    writeEnv(state, 20);
+    writeEnv(state, 27);
+    const result = run(state, { only: "27" });
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /Resuming preview-27/);
+    assert.match(
+      result.stdout,
+      /preview_result pr=27 action=resume result=started/,
+    );
+    assert.match(result.commands, /-p preview-27/);
+    assert.equal(result.commands.includes("preview-20"), false);
+    assert.equal(result.stdout.includes("handled by this deploy"), false);
+  } finally {
+    rmSync(state, { recursive: true, force: true });
+  }
 });

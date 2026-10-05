@@ -4,11 +4,11 @@
 
 ## Important points
 
-- Binary: `wewebplus-preview`, built on `axi-sdk-js`.
+- Binary: `wewebplus-preview`, built on `axi-sdk-js`, shipped as a container from `packages/wewebplus-preview`.
 - No `create` command. First `deploy` creates. Same digest again exits 0 as `already_current`.
 - `resume` starts containers that are already built. It never builds an image.
 - The agent does not pick a script, a workflow, or a transport.
-- Transport is `devbox exec` when that reaches `Wewebplus-ci`. Otherwise dispatch `preview-control.yml`.
+- Transport is local when `PREVIEW_REPO` contains the preview scripts. It is `devbox exec` when `GITHUB_ACTIONS=true` or a Namespace token file is already configured. Otherwise it dispatches `preview-control.yml`. `deploy` dispatches `preview-image.yml`.
 - A 403 stays an error that points at **Re-run all jobs**. No empty commit. No new Namespace token.
 - Secrets are reported as `present` or `absent`. Values are never printed.
 - `destroy` requires `--pr` and `--yes`. It refuses the production marker.
@@ -22,16 +22,17 @@
 - Production marker `/opt/gascity/weaver-plus` refuses the scripts.
 - `preview-resume.sh <pr>` means "skip this PR", not "start this PR".
 - `PREVIEW_SKIP_TUNNEL=1` is always set, and a named tunnel is still created when the Cloudflare token is present.
-- `assign-page` hardcodes git branch `cursor/dyad-web-frontend-bbea`.
+- `assign-page` uses the pull request head branch.
 - Namespace login exists only inside GitHub Actions (`nsc auth exchange-github-token`).
 - This agent gets HTTP 403 on dispatch, rerun, and `devbox exec`.
 - `.husky/pre-push` already rejects an empty commit.
 
 ## In scope
 
-- `deploy/preview/cli/` on `axi-sdk-js`.
+- `packages/wewebplus-preview`, built on `axi-sdk-js`. The directory is the unit to copy into a future `axi-awesome` repository. That repository does not exist yet.
+- Image `ghcr.io/<owner>/wewebplus-preview:sha-<commit>`, also tagged `edge`. The image does not contain the Dyad app.
 - Commands: home, `status`, `inspect`, `verify`, `logs`, `resume`, `deploy`, `destroy`, `db`, `env`, `run`, `setup`.
-- `preview-control.yml`, manual run only. Actions: `resume`, `deploy`, `destroy`, `status`, `logs`. No image build.
+- `preview-control.yml`, manual run only. Actions: `resume`, `deploy`, `destroy`, `status`, `logs`, `db-status`, `db-ensure`, `db-assign`. No image build.
 - One `preview_result` line from the two shell scripts: `pr`, `action`, `url`, `http`, `bridge`, `tunnel`, `gc`.
 - `assign-page` uses the PR head branch.
 - Unit tests, PATH-fake integration tests, and a skill that fails CI when it drifts.
