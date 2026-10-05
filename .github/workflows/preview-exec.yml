@@ -157,6 +157,10 @@ jobs:
               '  git -C "$repo" checkout --detach FETCH_HEAD' \
               'fi' \
               'cd "$repo"' \
+              'echo "--- preview 41 before restart ---"' \
+              'docker ps -a --filter "label=com.docker.compose.project=preview-41" --format "{{.Names}} {{.Status}}"' \
+              'docker logs --tail 40 preview-41-dyad-1 2>&1 || true' \
+              'docker logs --tail 40 preview-41-cloudflared-1 2>&1 || true' \
               'echo "--- resume preview 41 ---"' \
               'PREVIEW_REQUIRE_BEDROCK=1 PREVIEW_REQUIRE_NAMED_TUNNEL=1 PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh 41 ghcr.io/awannaphasch2016/dyad@sha256:4751c160e968bc75ab9777ff4287f44890625afd192af6f69e80b9e303076010'
           } > /tmp/preview-remote.sh
