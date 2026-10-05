@@ -25,6 +25,17 @@ if [[ -e "$marker" ]]; then
   exit 2
 fi
 
+state_dir="${PREVIEW_STATE_DIR:-${HOME}/.local/state/wewebplus-preview}"
+mkdir -p "$state_dir"
+chmod 700 "$state_dir"
+# shellcheck source=controller-env.sh
+source "$root/scripts/gascity/controller-env.sh"
+secrets_file="${state_dir}/controller.env"
+load_controller_cloudflare "$secrets_file"
+normalize_cloudflare_aliases
+upsert_controller_cloudflare "$secrets_file"
+require_controller_cloudflare || exit 2
+
 if ! command -v docker >/dev/null 2>&1; then
   echo "docker is required" >&2
   exit 2
@@ -50,9 +61,6 @@ if [[ -z "$mem_kb" || "$mem_kb" -lt "$min_mem_kb" ]]; then
 fi
 
 project="preview-${pr}"
-state_dir="${PREVIEW_STATE_DIR:-${HOME}/.local/state/wewebplus-preview}"
-mkdir -p "$state_dir"
-chmod 700 "$state_dir"
 env_file="${state_dir}/${project}.env"
 token_file="${state_dir}/${project}.tunnel-token"
 
@@ -102,17 +110,6 @@ do
   upsert_env "$key"
 done
 
-secrets_file="${HOME}/.local/state/wewebplus-preview/controller.env"
-if [[ -f "$secrets_file" ]]; then
-  echo "controller cloudflare keys:"
-  awk -F= '/^CLOUDFLARE/ { print $1 }' "$secrets_file"
-  if [[ -z "${CLOUDFLARE_API_TOKEN:-}${CLOUDFLARE_API_TOKEN_:-}" ]]; then
-    set -a
-    # shellcheck disable=SC1090
-    source "$secrets_file"
-    set +a
-  fi
-fi
 if [[ -z "${CLOUDFLARE_API_TOKEN:-}" && -n "${CLOUDFLARE_API_TOKEN_:-}" ]]; then
   export CLOUDFLARE_API_TOKEN="$CLOUDFLARE_API_TOKEN_"
 fi
@@ -216,7 +213,9 @@ for _ in 1 2 3 4 5; do
   sleep 3
 done
 if [[ "$gate_code" != "202" ]]; then
-  echo "Listener returned ${gate_code}. The Dyad page still starts." >&2
+  echo "listener refused the run with HTTP ${gate_code}" >&2
+  docker logs "${project}-gascity-1" 2>&1 | grep -E 'run (accepted|refused)' | tail -1 || true
+  exit 2
 fi
 echo "Preview project ${project} is up"
 echo "City volume pr-${pr}-city has a city"

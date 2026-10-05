@@ -12,6 +12,8 @@ import {
 } from "./render.mjs";
 import {
   assignmentLog,
+  assertRedeployed,
+  assertVercelAssignment,
   assignPreviewDatabase,
   assignPreviewVariable,
   deletePreviewDatabase,
@@ -90,14 +92,9 @@ async function attach(pr) {
 
 async function assignVercelDatabase(pr, branch) {
   const gitBranch = arg("--git-branch");
-  if (!gitBranch) return null;
   const token = process.env.VERCEL_TOKEN || "";
-  if (!token) {
-    console.log(
-      "Vercel preview database was not assigned. VERCEL_TOKEN is not set.",
-    );
-    return null;
-  }
+  assertVercelAssignment(gitBranch, token);
+  if (!gitBranch) return null;
   const assigned = await assignPreviewDatabase({
     token,
     project: arg("--vercel-project") || undefined,
@@ -112,6 +109,7 @@ async function assignVercelDatabase(pr, branch) {
     }),
   );
   const origin = previewGasCityOrigin(pr);
+  if (!origin) throw new Error("NEXT_PUBLIC_GAS_CITY_URL is required");
   const page = await assignPreviewVariable({
     token,
     project: arg("--vercel-project") || undefined,
@@ -126,24 +124,18 @@ async function assignVercelDatabase(pr, branch) {
 }
 
 async function redeployAssigned(assigned) {
-  try {
-    const rolled = await redeployPreviewBranch({
+  const rolled = assertRedeployed(
+    await redeployPreviewBranch({
       token: process.env.VERCEL_TOKEN,
       project: assigned.project,
       projectId: assigned.projectId,
       teamId: assigned.teamId,
       gitBranch: assigned.gitBranch,
-    });
-    console.log(
-      rolled.redeployed
-        ? `Redeployed Vercel preview ${rolled.url} for ${rolled.gitBranch}`
-        : `No Vercel deployment to redeploy for ${rolled.gitBranch}`,
-    );
-  } catch (error) {
-    console.log(
-      `Vercel redeploy failed after the database assignment: ${error.message}`,
-    );
-  }
+    }),
+  );
+  console.log(
+    `Redeployed Vercel preview ${rolled.url} for ${rolled.gitBranch}`,
+  );
 }
 
 async function destroy(pr) {

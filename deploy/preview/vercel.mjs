@@ -21,6 +21,20 @@ export function assertPreviewGitBranch(gitBranch) {
   }
 }
 
+export function assertVercelAssignment(gitBranch, vercelToken) {
+  if (!gitBranch) return;
+  assertPreviewGitBranch(gitBranch);
+  if (!vercelToken) throw new Error("VERCEL_TOKEN is not set");
+}
+
+export function assertRedeployed(result) {
+  if (!result?.redeployed) {
+    throw new Error(
+      `No Vercel deployment to redeploy for ${result?.gitBranch || "the preview branch"}`,
+    );
+  }
+}
+
 function scrub(text) {
   return String(text)
     .replace(/postgres(?:ql)?:\/\/\S+/gi, "postgresql://redacted")

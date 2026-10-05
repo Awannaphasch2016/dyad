@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -197,6 +197,82 @@ test("preview-up refuses bad arguments and the production checkout", () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("preview-up fails closed when Cloudflare names are missing", () => {
+  const script = new URL("./preview-up.sh", import.meta.url);
+  const dir = mkdtempSync(join(tmpdir(), "preview-cloudflare-"));
+  try {
+    const result = spawnSync("bash", [script.pathname, "20", digest], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HOME: dir,
+        PREVIEW_STATE_DIR: dir,
+        PREVIEW_PRODUCTION_MARKER: join(dir, "absent"),
+        PREVIEW_SKIP_TUNNEL: "1",
+        CLOUDFLARE_API_TOKEN_: "",
+        CLOUDFLARE_API_TOKEN: "",
+        CLOUDFLARE_ZONE_ID_: "",
+        CLOUDFLARE_ZONE_ID: "",
+        CLOUDFLARE_ACCOUNT_ID: "",
+        CLOUDFLARE_ACCOUNT_ID_: "",
+      },
+    });
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /Missing CLOUDFLARE_API_TOKEN_/);
+    assert.match(result.stderr, /Missing CLOUDFLARE_ZONE_ID_/);
+    assert.match(result.stderr, /Missing CLOUDFLARE_ACCOUNT_ID/);
+    assert.equal(result.stdout.includes("docker compose"), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("controller.env keeps existing lines and stores Cloudflare aliases by canonical name", () => {
+  const dir = mkdtempSync(join(tmpdir(), "preview-controller-env-"));
+  const file = join(dir, "controller.env");
+  writeFileSync(
+    file,
+    "WEWEBPLUS_DATABASE_URL=postgresql://role:secret@db.example/neondb\nOTHER=kept\n",
+    { mode: 0o600 },
+  );
+  const result = spawnSync(
+    "bash",
+    [
+      "-c",
+      [
+        "set -euo pipefail",
+        "source scripts/gascity/controller-env.sh",
+        "export CLOUDFLARE_API_TOKEN=cf-api-token",
+        "export CLOUDFLARE_ZONE_ID=cf-zone",
+        "export CLOUDFLARE_ACCOUNT_ID_=cf-account",
+        "normalize_cloudflare_aliases",
+        'upsert_controller_cloudflare "$FILE"',
+        "require_controller_cloudflare",
+      ].join("\n"),
+    ],
+    {
+      encoding: "utf8",
+      env: { ...process.env, FILE: file, HOME: dir },
+    },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  const stored = readFileSync(file, "utf8");
+  assert.match(stored, /^WEWEBPLUS_DATABASE_URL=/m);
+  assert.match(stored, /^OTHER=kept$/m);
+  assert.match(stored, /^CLOUDFLARE_API_TOKEN_=cf-api-token$/m);
+  assert.match(stored, /^CLOUDFLARE_ZONE_ID_=cf-zone$/m);
+  assert.match(stored, /^CLOUDFLARE_ACCOUNT_ID=cf-account$/m);
+  assert.equal(
+    stored.split("\n").filter((line) => line.startsWith("CLOUDFLARE_")).length,
+    3,
+  );
+  assert.equal(result.stdout.includes("cf-api-token"), false);
+  assert.equal(result.stdout.includes("cf-zone"), false);
+  assert.equal(result.stdout.includes("cf-account"), false);
+  assert.match(result.stdout, /CLOUDFLARE_API_TOKEN_: present/);
+  rmSync(dir, { recursive: true, force: true });
 });
 
 test("preview image workflow updates the shared Devbox after publish", () => {

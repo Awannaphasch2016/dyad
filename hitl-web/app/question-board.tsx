@@ -2,6 +2,7 @@
 
 import { UserButton } from "@clerk/nextjs";
 import { useCallback, useEffect, useState } from "react";
+import { PreviewPrompt } from "./preview-prompt";
 
 type Question = {
   id: string;
@@ -89,6 +90,7 @@ export function QuestionBoard() {
         <UserButton />
       </header>
       {error ? <p className="error">{error}</p> : null}
+      <PreviewPrompt />
       {payload && payload.questions.length === 0 ? (
         <p className="muted">No questions yet.</p>
       ) : null}
