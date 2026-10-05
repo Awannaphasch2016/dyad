@@ -6,7 +6,7 @@ import { apps, chats, chatTurnIntents } from "@/db/schema";
 import type { DistributedMachineDefinition } from "@/distributed_machines/definition";
 import { REMOTE_MACHINE_PROTOCOL_VERSION } from "@/distributed_machines/remote_protocol";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
-import { createChatForApp } from "@/ipc/utils/chat_creation_utils";
+import { FACTORY_WORKSPACE_PHASES_MESSAGE } from "@/lib/factoryPhase";
 import {
   readPlanFromDisk,
   savePlanToDisk,
@@ -233,63 +233,27 @@ function createCommandRunner(
         phase: "preparing-chat",
       });
 
-      let targetChatId = context.getSnapshot().targetChatId;
-      if (!targetChatId) {
-        if (intent.acceptInNewChat) {
-          targetChatId = await createChatForApp({
-            appId: intent.appId,
-            initialChatMode: "local-agent",
-            modelSelection: source.modelSelection ?? undefined,
-          });
-          ownedTargetChatId = targetChatId;
-          signal.throwIfAborted();
-        } else {
-          targetChatId = intent.sourceChatId;
-        }
-      }
-      // The accepted snapshot is evidence, not the working progress document.
-      // A new implementation chat needs its own panel-visible editable plan.
       if (intent.acceptInNewChat) {
-        await appOperationCoordinator.run(
-          {
-            appId: intent.appId,
-            operation: "prepare-implementation-plan",
-            resources: [{ resource: "app-path", mode: "read" }, "repository"],
-            refuseWhenRecording: "prepare implementation plan",
-          },
-          async () => {
-            signal.throwIfAborted();
-            const app = db
-              .select({ path: apps.path })
-              .from(apps)
-              .where(eq(apps.id, intent.appId))
-              .get();
-            if (!app)
-              throw new DyadError("App not found", DyadErrorKind.NotFound);
-            await savePlanToDisk({
-              appPath: getDyadAppPath(app.path),
-              chatId: targetChatId!,
-              ...intent.plan,
-              status: "accepted",
-            });
-          },
+        throw new DyadError(
+          FACTORY_WORKSPACE_PHASES_MESSAGE,
+          DyadErrorKind.Validation,
         );
       }
+      const targetChatId =
+        context.getSnapshot().targetChatId ?? intent.sourceChatId;
       emit({
         type: "CHECKPOINT",
         handoffId: intent.handoffId,
         phase: "awaiting-stream-idle",
         targetChatId,
       });
-      if (!intent.acceptInNewChat) {
-        routePlanHandoffPresentation({
-          handoffId: intent.handoffId,
-          sourceChatId: intent.sourceChatId,
-          targetChatId,
-          appId: intent.appId,
-          originWindowSessionId: intent.originWindowSessionId,
-        });
-      }
+      routePlanHandoffPresentation({
+        handoffId: intent.handoffId,
+        sourceChatId: intent.sourceChatId,
+        targetChatId,
+        appId: intent.appId,
+        originWindowSessionId: intent.originWindowSessionId,
+      });
       await waitForChatActorIdle(targetChatId, {
         cancelActive: targetChatId === intent.sourceChatId,
         signal,
@@ -353,25 +317,12 @@ function createCommandRunner(
           },
         ),
       );
-      if (!intent.acceptInNewChat) {
-        await runPostAdmissionStep("Chat mode update", () => {
-          db.update(chats)
-            .set({ chatMode: "local-agent" })
-            .where(eq(chats.id, targetChatId))
-            .run();
-        });
-      }
-      if (intent.acceptInNewChat) {
-        await runPostAdmissionStep("Presentation routing", () =>
-          routePlanHandoffPresentation({
-            handoffId: intent.handoffId,
-            sourceChatId: intent.sourceChatId,
-            targetChatId,
-            appId: intent.appId,
-            originWindowSessionId: intent.originWindowSessionId,
-          }),
-        );
-      }
+      await runPostAdmissionStep("Chat mode update", () => {
+        db.update(chats)
+          .set({ chatMode: "local-agent" })
+          .where(eq(chats.id, targetChatId))
+          .run();
+      });
       await runPostAdmissionStep("Query invalidation", () =>
         publishChatInvalidations(targetChatId),
       );

@@ -225,6 +225,25 @@ describe("app naming handlers", () => {
       );
     });
 
+    it("returns exactly Discovery, Implementation, and Delivery", async () => {
+      const result = await harness.invokeHandler<{
+        app: { id: number };
+        chatId: number;
+      }>("create-app", { name: "Phase Workspace" });
+
+      const rows = harness.db
+        .select()
+        .from(chats)
+        .where(eq(chats.appId, result.app.id))
+        .all();
+      expect(rows.map((row) => row.title).sort()).toEqual([
+        "Delivery",
+        "Discovery",
+        "Implementation",
+      ]);
+      expect(rows.some((row) => row.id === result.chatId)).toBe(true);
+    });
+
     it("auto-suffixes folder collisions from distinct display names", async () => {
       seedAppWithFolder("My App!", "my-app");
 

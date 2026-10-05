@@ -3,7 +3,10 @@ import { initialChatExecution } from "@/ipc/utils/chat_execution_selection";
 import { app, dialog } from "electron";
 import { sharingScope } from "@/control_plane/access";
 import { assertAppVisible } from "@/control_plane/guard";
-import { ensureProjectFiles } from "@/control_plane/file_sync";
+import {
+  assertPackageJsonPresent,
+  ensureProjectFiles,
+} from "@/control_plane/file_sync";
 import {
   forgetSharedApp,
   publishLocalApp,
@@ -1228,17 +1231,16 @@ export function registerAppHandlers() {
       throw new DyadError("App not found", DyadErrorKind.NotFound);
     }
 
-    // Get app files
+    // Get app files. A missing folder or a folder without package.json fails
+    // here instead of continuing into an empty git repo or pnpm install.
     const appPath = getDyadAppPath(app.path);
     let files: string[] = [];
     let projectFilesOnThisMachine = fs.existsSync(path.join(appPath, ".git"));
     if (!projectFilesOnThisMachine) {
-      try {
-        projectFilesOnThisMachine = await ensureProjectFiles(app);
-      } catch (error) {
-        logger.warn(`Could not prepare files for app ${appId}`, error);
-        projectFilesOnThisMachine = fs.existsSync(appPath);
-      }
+      projectFilesOnThisMachine = await ensureProjectFiles(app);
+    }
+    if (fs.existsSync(appPath)) {
+      assertPackageJsonPresent(appPath);
     }
 
     try {
