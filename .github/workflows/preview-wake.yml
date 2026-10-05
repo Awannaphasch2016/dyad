@@ -1,9 +1,7 @@
-# Restart an already published preview on the shared Devbox.
-#
-# The pull request number is the workflow input. This job does not build an
-# image, does not SSH, does not read the production deploy key, and does not
-# retarget DNS. The production host is not a target.
-name: Preview exec
+# Start an already published preview after the Devbox time limit stops
+# cloudflared. The pull request number is the workflow input. This does not
+# build an image, does not choose a new digest, and does not touch production.
+name: Preview wake
 
 on:
   workflow_dispatch:
@@ -22,9 +20,9 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  exec:
+  wake:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
     steps:
       - name: Log in to Namespace with the GitHub token
         uses: namespacelabs/nscloud-setup@v0
@@ -54,20 +52,6 @@ jobs:
             exit 1
           fi
           echo "NSC_TOKEN_FILE=${token_file}" >> "$GITHUB_ENV"
-          python3 - "$token_file" <<'PY'
-          import json, sys
-          with open(sys.argv[1], encoding="utf-8") as handle:
-              payload = json.load(handle)
-          names = sorted(payload)
-          if not names:
-              raise SystemExit("token file has no fields")
-          print("token fields:", ",".join(names))
-          PY
-
-      - name: Run one command on Wewebplus-ci
-        run: |
-          set -euo pipefail
-          devbox exec Wewebplus-ci -- echo federated-ok
 
       - name: Start the preview on Wewebplus-ci
         env:
@@ -80,8 +64,11 @@ jobs:
             printf '%s\n' \
               'set -euo pipefail' \
               'echo "--- wake ---"' \
+              'date -u' \
               'docker info >/dev/null' \
               'project="preview-${pr}"' \
+              'echo "containers before:"' \
+              'docker ps -a --filter "label=com.docker.compose.project=${project}" --format "{{.Names}} {{.Status}}"' \
               'dyad_id="$(docker ps -aq --filter "label=com.docker.compose.project=${project}" --filter "label=com.docker.compose.service=dyad")"' \
               'tunnel_id="$(docker ps -aq --filter "label=com.docker.compose.project=${project}" --filter "label=com.docker.compose.service=cloudflared")"' \
               'if [[ -n "$dyad_id" ]]; then' \
@@ -111,8 +98,11 @@ jobs:
               '  repo=/workspaces/weaver-plus' \
               '  test -d "$repo/.git"' \
               '  cd "$repo"' \
+              '  echo "starting from saved digest"' \
               '  PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh "$pr" "$image"' \
-              'fi'
+              'fi' \
+              'echo "containers after:"' \
+              'docker ps --filter "label=com.docker.compose.project=${project}" --format "{{.Names}} {{.Status}}"'
           } > /tmp/preview-remote.sh
           payload="$(base64 -w0 /tmp/preview-remote.sh)"
           devbox exec Wewebplus-ci -- bash -lc "printf '%s' '${payload}' | base64 -d | bash"

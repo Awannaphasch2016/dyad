@@ -1,8 +1,11 @@
 # Create, update, or destroy one preview from the preview label.
 #
 # This job does not SSH. The production host is not a target.
-# preview-image.yml deploys these branches, so a label on one of them
-# must not start a second deploy:
+# A labeled pull request reuses ghcr.io/<owner>/dyad:ctx-<hash> or
+# dyad:sha-<commit>, and builds Dockerfile.gascity when neither tag exists.
+# These branches are still deployed by preview-image.yml on push, because the
+# Doppler identity does not trust the pull_request subject yet. A label on
+# one of them must not start a second deploy:
 # cursor/preview-bridge-proof-9e7a, cursor/formula-preview-9e7a,
 # cursor/preview-bedrock-render-bbea, cursor/session-jwt-refresh-bbea.
 name: Preview
@@ -17,18 +20,24 @@ permissions:
   id-token: write
   pull-requests: read
 
-concurrency:
-  group: preview-devbox-wewebplus-ci
-  cancel-in-progress: false
-
 jobs:
-  preview:
+  identify:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 15
+    outputs:
+      command: ${{ steps.decide.outputs.command }}
+      image_managed: ${{ steps.decide.outputs.image_managed }}
+      hash: ${{ steps.resolve.outputs.hash }}
+      image: ${{ steps.resolve.outputs.image }}
+      needs_build: ${{ steps.resolve.outputs.needs_build }}
+      owner: ${{ steps.resolve.outputs.owner }}
+      source: ${{ steps.resolve.outputs.source }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Decide
         id: decide
@@ -37,55 +46,194 @@ jobs:
           LABEL: ${{ github.event.label.name }}
           CLOSED: ${{ github.event.pull_request.state == 'closed' }}
           LABELS: "${{ join(github.event.pull_request.labels.*.name, ',') }}"
+          BRANCH: ${{ github.head_ref }}
         run: |
           set -euo pipefail
           command="$(node deploy/preview/controller.mjs decide --action "$ACTION" --label "$LABEL" --labels "$LABELS" --closed "$CLOSED")"
           echo "command=${command}" >> "$GITHUB_OUTPUT"
           echo "${command}"
+          image_managed=false
+          case "$BRANCH" in
+            cursor/preview-bridge-proof-9e7a|cursor/formula-preview-9e7a|cursor/preview-bedrock-render-bbea|cursor/session-jwt-refresh-bbea)
+              image_managed=true
+              ;;
+          esac
+          echo "image_managed=${image_managed}" >> "$GITHUB_OUTPUT"
 
       - name: Leave image-managed branches to the image workflow
-        if: steps.decide.outputs.command == 'update' && contains(fromJSON('["cursor/preview-bridge-proof-9e7a", "cursor/formula-preview-9e7a", "cursor/preview-bedrock-render-bbea", "cursor/session-jwt-refresh-bbea"]'), github.head_ref)
+        if: steps.decide.outputs.command == 'update' && steps.decide.outputs.image_managed == 'true'
         run: echo "preview-image.yml updates this branch"
 
       - name: Set up Docker Buildx
-        if: 'steps.decide.outputs.command == ''update'' && !contains(fromJSON(''["cursor/preview-bridge-proof-9e7a", "cursor/formula-preview-9e7a", "cursor/preview-bedrock-render-bbea", "cursor/session-jwt-refresh-bbea"]''), github.head_ref)'
+        if: steps.decide.outputs.command == 'update' && steps.decide.outputs.image_managed != 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
-        if: 'steps.decide.outputs.command == ''update'' && !contains(fromJSON(''["cursor/preview-bridge-proof-9e7a", "cursor/formula-preview-9e7a", "cursor/preview-bedrock-render-bbea", "cursor/session-jwt-refresh-bbea"]''), github.head_ref)'
+        if: steps.decide.outputs.command == 'update' && steps.decide.outputs.image_managed != 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Resolve the published digest
-        id: digest
-        if: 'steps.decide.outputs.command == ''update'' && !contains(fromJSON(''["cursor/preview-bridge-proof-9e7a", "cursor/formula-preview-9e7a", "cursor/preview-bedrock-render-bbea", "cursor/session-jwt-refresh-bbea"]''), github.head_ref)'
+      - name: Resolve the published image
+        id: resolve
+        if: always() && steps.decide.outcome == 'success'
         env:
+          COMMAND: ${{ steps.decide.outputs.command }}
+          IMAGE_MANAGED: ${{ steps.decide.outputs.image_managed }}
           OWNER: ${{ github.repository_owner }}
           SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           owner="$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]')"
-          tag="ghcr.io/${owner}/dyad:sha-${SHA}"
+          hash=""
           image=""
-          for _ in 1 2 3 4 5 6 7 8 9 10; do
-            digest="$(docker buildx imagetools inspect "$tag" 2>/dev/null | awk 'tolower($1) == "digest:" { print $2; exit }' || true)"
-            if [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-              image="ghcr.io/${owner}/dyad@${digest}"
-              break
+          needs_build=false
+          source="skip"
+          if [[ "$COMMAND" == "update" && "$IMAGE_MANAGED" != "true" ]]; then
+            hash="$(node scripts/gascity/preview-image-id.mjs)"
+            [[ "$hash" =~ ^[0-9a-f]{64}$ ]]
+            [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
+            sha_tag="ghcr.io/${owner}/dyad:sha-${SHA}"
+            ctx_tag="ghcr.io/${owner}/dyad:ctx-${hash}"
+            ctx_digest="$(docker buildx imagetools inspect "$ctx_tag" 2>/dev/null | awk 'tolower($1) == "digest:" { print $2; exit }' || true)"
+            if [[ "$ctx_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              image="ghcr.io/${owner}/dyad@${ctx_digest}"
+              docker buildx imagetools create --tag "$sha_tag" "$image"
+              source="reused ctx-${hash}"
+            else
+              sha_digest="$(docker buildx imagetools inspect "$sha_tag" 2>/dev/null | awk 'tolower($1) == "digest:" { print $2; exit }' || true)"
+              if [[ "$sha_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+                image="ghcr.io/${owner}/dyad@${sha_digest}"
+                source="reused sha-${SHA}"
+              else
+                needs_build=true
+                source="build sha-${SHA}"
+              fi
             fi
-            sleep 30
-          done
-          if [[ ! "$image" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]]; then
-            echo "Image ${tag} was not published" >&2
-            exit 1
+          elif [[ "$COMMAND" == "update" && "$IMAGE_MANAGED" == "true" ]]; then
+            source="preview-image.yml updates this branch"
           fi
+          echo "${source}"
+          {
+            echo "hash=${hash}"
+            echo "image=${image}"
+            echo "needs_build=${needs_build}"
+            echo "owner=${owner}"
+            echo "source=${source}"
+          } >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: identify
+    if: needs.identify.outputs.command == 'update' && needs.identify.outputs.needs_build == 'true' && needs.identify.outputs.image_managed != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    concurrency:
+      group: preview-build-${{ needs.identify.outputs.hash }}
+      cancel-in-progress: false
+    outputs:
+      image: ${{ steps.final.outputs.image }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Recheck the context tag
+        id: recheck
+        env:
+          OWNER: ${{ needs.identify.outputs.owner }}
+          HASH: ${{ needs.identify.outputs.hash }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          sha_tag="ghcr.io/${OWNER}/dyad:sha-${SHA}"
+          ctx_tag="ghcr.io/${OWNER}/dyad:ctx-${HASH}"
+          digest="$(docker buildx imagetools inspect "$ctx_tag" 2>/dev/null | awk 'tolower($1) == "digest:" { print $2; exit }' || true)"
+          if [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            image="ghcr.io/${OWNER}/dyad@${digest}"
+            docker buildx imagetools create --tag "$sha_tag" "$image"
+            echo "needs_build=false" >> "$GITHUB_OUTPUT"
+            echo "image=${image}" >> "$GITHUB_OUTPUT"
+            echo "reused ctx-${HASH}"
+          else
+            echo "needs_build=true" >> "$GITHUB_OUTPUT"
+            echo "image=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Free runner disk before the image build
+        if: steps.recheck.outputs.needs_build == 'true'
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          df -h /
+
+      - name: Build and push
+        id: build
+        if: steps.recheck.outputs.needs_build == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.gascity
+          push: true
+          provenance: false
+          sbom: false
+          cache-from: type=registry,ref=ghcr.io/${{ needs.identify.outputs.owner }}/dyad:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ needs.identify.outputs.owner }}/dyad:buildcache,mode=max
+          tags: |
+            ghcr.io/${{ needs.identify.outputs.owner }}/dyad:sha-${{ github.event.pull_request.head.sha }}
+            ghcr.io/${{ needs.identify.outputs.owner }}/dyad:ctx-${{ needs.identify.outputs.hash }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.event.pull_request.head.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Report the image
+        id: final
+        env:
+          NEEDS_BUILD: ${{ steps.recheck.outputs.needs_build }}
+          RECHECK_IMAGE: ${{ steps.recheck.outputs.image }}
+          BUILD_DIGEST: ${{ steps.build.outputs.digest }}
+          OWNER: ${{ needs.identify.outputs.owner }}
+          HASH: ${{ needs.identify.outputs.hash }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$NEEDS_BUILD" != "true" ]]; then
+            image="$RECHECK_IMAGE"
+            echo "reused ctx-${HASH}"
+          else
+            image="ghcr.io/${OWNER}/dyad@${BUILD_DIGEST}"
+            echo "built sha-${SHA}"
+          fi
+          [[ "$image" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]]
           echo "image=${image}" >> "$GITHUB_OUTPUT"
 
+  deploy:
+    needs: [identify, publish]
+    if: always() && needs.identify.result == 'success' && needs.identify.outputs.command == 'update' && needs.identify.outputs.image_managed != 'true' && (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    concurrency:
+      group: preview-devbox-wewebplus-ci
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
       - name: Fetch dyad preview secrets
-        if: steps.decide.outputs.command != 'skip'
         uses: dopplerhq/secrets-fetch-action@v2.0.0
         with:
           auth-method: oidc
@@ -95,7 +243,6 @@ jobs:
           inject-env-vars: true
 
       - name: Fetch aws dev secrets
-        if: steps.decide.outputs.command != 'skip'
         uses: dopplerhq/secrets-fetch-action@v2.0.0
         with:
           auth-method: oidc
@@ -104,26 +251,27 @@ jobs:
           doppler-config: dev
           inject-env-vars: true
 
+      - name: Require named tunnel credentials
+        run: |
+          set -euo pipefail
+          token="${CLOUDFLARE_API_TOKEN_:-${CLOUDFLARE_API_TOKEN:-}}"
+          zone="${CLOUDFLARE_ZONE_ID_:-${CLOUDFLARE_ZONE_ID:-}}"
+          account="${CLOUDFLARE_ACCOUNT_ID:-${CLOUDFLARE_ACCOUNT_ID_:-}}"
+          if [[ -n "$token" ]]; then echo "CLOUDFLARE_API_TOKEN_: present"; else echo "CLOUDFLARE_API_TOKEN_: absent"; fi
+          if [[ -n "$zone" ]]; then echo "CLOUDFLARE_ZONE_ID_: present"; else echo "CLOUDFLARE_ZONE_ID_: absent"; fi
+          if [[ -n "$account" ]]; then echo "CLOUDFLARE_ACCOUNT_ID: present"; else echo "CLOUDFLARE_ACCOUNT_ID: absent"; fi
+          [[ -n "$token" && -n "$zone" && -n "$account" ]]
+
       - name: Attach the Neon preview branch
-        if: 'steps.decide.outputs.command == ''update'' && !contains(fromJSON(''["cursor/preview-bridge-proof-9e7a", "cursor/formula-preview-9e7a", "cursor/preview-bedrock-render-bbea", "cursor/session-jwt-refresh-bbea"]''), github.head_ref)'
         env:
           PR: ${{ github.event.pull_request.number }}
           BRANCH: ${{ github.head_ref }}
         run: node deploy/preview/controller.mjs attach --pr "$PR" --git-branch "$BRANCH" --vercel-project dyad --out /tmp/preview-runtime.sh
 
-      - name: Delete the Neon preview branch
-        if: steps.decide.outputs.command == 'destroy'
-        env:
-          PR: ${{ github.event.pull_request.number }}
-          BRANCH: ${{ github.head_ref }}
-        run: node deploy/preview/controller.mjs destroy --pr "$PR" --git-branch "$BRANCH" --vercel-project dyad
-
       - name: Log in to Namespace with the GitHub token
-        if: 'steps.decide.outputs.command != ''skip'' && (steps.decide.outputs.command == ''destroy'' || !contains(fromJSON(''["cursor/preview-bridge-proof-9e7a", "cursor/formula-preview-9e7a", "cursor/preview-bedrock-render-bbea", "cursor/session-jwt-refresh-bbea"]''), github.head_ref))'
         uses: namespacelabs/nscloud-setup@v0
 
       - name: Install the Devbox CLI
-        if: 'steps.decide.outputs.command != ''skip'' && (steps.decide.outputs.command == ''destroy'' || !contains(fromJSON(''["cursor/preview-bridge-proof-9e7a", "cursor/formula-preview-9e7a", "cursor/preview-bedrock-render-bbea", "cursor/session-jwt-refresh-bbea"]''), github.head_ref))'
         run: |
           set -euo pipefail
           ver=0.0.195
@@ -135,7 +283,6 @@ jobs:
           sudo install -m 755 "$bin" /usr/local/bin/devbox
 
       - name: Point the Devbox CLI at the federated token
-        if: 'steps.decide.outputs.command != ''skip'' && (steps.decide.outputs.command == ''destroy'' || !contains(fromJSON(''["cursor/preview-bridge-proof-9e7a", "cursor/formula-preview-9e7a", "cursor/preview-bedrock-render-bbea", "cursor/session-jwt-refresh-bbea"]''), github.head_ref))'
         run: |
           set -euo pipefail
           token_file=""
@@ -150,15 +297,17 @@ jobs:
           echo "NSC_TOKEN_FILE=${token_file}" >> "$GITHUB_ENV"
 
       - name: Update the preview on Wewebplus-ci
-        if: 'steps.decide.outputs.command == ''update'' && !contains(fromJSON(''["cursor/preview-bridge-proof-9e7a", "cursor/formula-preview-9e7a", "cursor/preview-bedrock-render-bbea", "cursor/session-jwt-refresh-bbea"]''), github.head_ref)'
+        id: deploy
         env:
           PR: ${{ github.event.pull_request.number }}
           SHA: ${{ github.event.pull_request.head.sha }}
-          IMAGE: ${{ steps.digest.outputs.image }}
+          IMAGE: ${{ needs.publish.outputs.image || needs.identify.outputs.image }}
           BRANCH: ${{ github.head_ref }}
           REPO_URL: https://github.com/${{ github.repository }}.git
+          SOURCE: ${{ needs.identify.outputs.source }}
         run: |
           set -euo pipefail
+          echo "${SOURCE}"
           [[ "$PR" =~ ^[0-9]+$ ]]
           [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$IMAGE" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]]
@@ -182,6 +331,15 @@ jobs:
               'bash scripts/gascity/preview-resume.sh "$pr"' \
               'state="$HOME/.local/state/wewebplus-preview"' \
               'secrets="$state/controller.env"' \
+              'if [[ ! -f "$secrets" && -f deploy/preview/sealed.key.b64 && -f deploy/preview/sealed.env.b64 && -f "$state/controller.pem" ]]; then' \
+              '  base64 -d deploy/preview/sealed.key.b64 > "$state/sealed.key.bin"' \
+              '  base64 -d deploy/preview/sealed.env.b64 > "$state/sealed.env.bin"' \
+              '  openssl pkeyutl -decrypt -inkey "$state/controller.pem" -in "$state/sealed.key.bin" -out "$state/aes.key"' \
+              '  openssl enc -d -aes-256-cbc -pbkdf2 -pass "file:$state/aes.key" -in "$state/sealed.env.bin" -out "$secrets"' \
+              '  chmod 600 "$secrets"' \
+              '  rm -f "$state/controller.pem" "$state/sealed.key.bin" "$state/sealed.env.bin" "$state/aes.key"' \
+              '  echo "controller.env installed"' \
+              'fi' \
               'if [[ -f "$secrets" ]]; then' \
               '  set -a' \
               '  source "$secrets"' \
@@ -189,15 +347,115 @@ jobs:
               '  node deploy/preview/controller.mjs attach --pr "$pr" --git-branch "$branch" --vercel-project dyad --out /tmp/preview-runtime-devbox.sh' \
               '  source /tmp/preview-runtime-devbox.sh' \
               '  rm -f /tmp/preview-runtime-devbox.sh' \
+              '  node deploy/preview/controller.mjs assign-page --pr "$pr" --git-branch cursor/dyad-web-frontend-bbea --vercel-project dyad' \
               'fi' \
-              'PREVIEW_REQUIRE_BEDROCK=1 PREVIEW_REQUIRE_NAMED_TUNNEL=1 PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh "$pr" "$image"'
+              'PREVIEW_REQUIRE_BEDROCK=1 PREVIEW_REQUIRE_NAMED_TUNNEL=1 PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh "$pr" "$image"' \
+              'origin="$(cat "$HOME/.local/state/wewebplus-preview/preview-${pr}.public-url")"' \
+              'echo "clerk step"' \
+              'PREVIEW_ORIGIN="$origin" node deploy/preview/clerk-origins-run.mjs' \
+              'echo "clerk step done"'
           } > /tmp/preview-remote.sh
           payload="$(base64 -w0 /tmp/preview-remote.sh)"
+          set -o pipefail
+          devbox exec Wewebplus-ci -- bash -lc "printf '%s' '${payload}' | base64 -d | bash" | tee /tmp/preview-devbox.log
+          url="$(grep -E '^preview_url=https://' /tmp/preview-devbox.log | tail -1 | cut -d= -f2-)"
+          if [[ ! "$url" =~ ^https:// ]]; then
+            echo "Preview did not report a URL" >&2
+            exit 1
+          fi
+          echo "url=${url}" >> "$GITHUB_OUTPUT"
           rm -f /tmp/preview-remote.sh /tmp/preview-runtime.sh
-          devbox exec Wewebplus-ci -- bash -lc "printf '%s' '${payload}' | base64 -d | bash"
+
+      - name: Check the public preview address
+        env:
+          PREVIEW_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -euo pipefail
+          url="$PREVIEW_URL"
+          if [[ ! "$url" =~ ^https:// ]]; then
+            echo "Preview URL is missing" >&2
+            exit 1
+          fi
+          ok=0
+          for _ in 1 2 3 4 5 6; do
+            code="$(curl -sS -o /tmp/preview-body -w '%{http_code}' --max-time 20 "$url" || true)"
+            echo "http ${code}"
+            if [[ "$code" == "200" ]] && grep -q 'data-dyad-browser-bridge' /tmp/preview-body; then
+              ok=1
+              break
+            fi
+            sleep 10
+          done
+          test "$ok" = "1"
+          echo "browser bridge page"
+
+  destroy:
+    needs: identify
+    if: needs.identify.result == 'success' && needs.identify.outputs.command == 'destroy'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    concurrency:
+      group: preview-devbox-wewebplus-ci
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Fetch dyad preview secrets
+        uses: dopplerhq/secrets-fetch-action@v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          doppler-project: dyad
+          doppler-config: preview
+          inject-env-vars: true
+
+      - name: Fetch aws dev secrets
+        uses: dopplerhq/secrets-fetch-action@v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          doppler-project: aws
+          doppler-config: dev
+          inject-env-vars: true
+
+      - name: Delete the Neon preview branch
+        env:
+          PR: ${{ github.event.pull_request.number }}
+          BRANCH: ${{ github.head_ref }}
+        run: node deploy/preview/controller.mjs destroy --pr "$PR" --git-branch "$BRANCH" --vercel-project dyad
+
+      - name: Log in to Namespace with the GitHub token
+        uses: namespacelabs/nscloud-setup@v0
+
+      - name: Install the Devbox CLI
+        run: |
+          set -euo pipefail
+          ver=0.0.195
+          curl -fsSL "https://get.namespace.so/packages/devbox/v${ver}/devbox_${ver}_linux_amd64.tar.gz" -o /tmp/devbox.tgz
+          mkdir -p /tmp/devbox-extract
+          tar -xzf /tmp/devbox.tgz -C /tmp/devbox-extract
+          bin="$(find /tmp/devbox-extract -type f -name devbox -print -quit)"
+          test -n "$bin"
+          sudo install -m 755 "$bin" /usr/local/bin/devbox
+
+      - name: Point the Devbox CLI at the federated token
+        run: |
+          set -euo pipefail
+          token_file=""
+          if [[ -f /var/run/nsc/token.json ]]; then
+            token_file=/var/run/nsc/token.json
+          elif [[ -f "${HOME}/.config/ns/token.json" ]]; then
+            token_file="${HOME}/.config/ns/token.json"
+          else
+            echo "Namespace login did not write a token file" >&2
+            exit 1
+          fi
+          echo "NSC_TOKEN_FILE=${token_file}" >> "$GITHUB_ENV"
 
       - name: Remove the preview from Wewebplus-ci
-        if: steps.decide.outputs.command == 'destroy'
         env:
           PR: ${{ github.event.pull_request.number }}
           SHA: ${{ github.event.pull_request.head.sha }}

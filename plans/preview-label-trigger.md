@@ -141,10 +141,10 @@ None. `preview-up.sh <pr> <ghcr.io/...@sha256:...>` stays the deploy command.
 
 ### Phase 2: Build or reuse from the label
 
-- [ ] Add `scripts/gascity/preview-image-id.mjs` and its test.
-- [ ] Split `preview.yml` into identify, publish, and deploy. Check out the head SHA. Reuse `ctx-<hash>` or `sha-<commit>`. Build otherwise, with registry layer cache and the existing disk cleanup.
-- [ ] Keep the four-branch skip in place for this phase so pull requests 20 and 34 are not deployed twice.
-- [ ] Prove it on one labeled pull request outside that list: the log shows reused or built, and the public URL returns the sign-in page.
+- [x] Add `scripts/gascity/preview-image-id.mjs` and its test.
+- [x] Split `preview.yml` into identify, publish, and deploy. Check out the head SHA. Reuse `ctx-<hash>` or `sha-<commit>`. Build otherwise, with registry layer cache and the existing disk cleanup.
+- [x] Keep the four-branch skip in place for this phase so pull requests 20 and 34 are not deployed twice.
+- [ ] Prove it on one labeled pull request outside that list: the log shows reused or built, and the public URL returns the sign-in page. The proof waits on Phase 1, because deploy fetches Doppler with the pull-request subject.
 
 ### Phase 3: Remove the branch list
 
@@ -155,9 +155,9 @@ None. `preview-up.sh <pr> <ghcr.io/...@sha256:...>` stays the deploy command.
 
 ### Phase 4: Wake by pull request number
 
-- [ ] Change `preview-wake.yml` and `preview-exec.yml` to a required numeric `pr` input.
-- [ ] Remove their `push` triggers and the hardcoded `preview-up.sh 20` / `34` lines.
-- [ ] Dispatch wake for 34 and confirm `https://pr-34.anakwannaphaschaiyong.com/sign-in` responds without a new image build.
+- [x] Change `preview-wake.yml` and `preview-exec.yml` to a required numeric `pr` input.
+- [x] Remove their `push` triggers and the hardcoded `preview-up.sh 20` / `34` lines.
+- [ ] Dispatch wake for 34 and confirm `https://pr-34.anakwannaphaschaiyong.com/sign-in` responds without a new image build. Dispatch from this branch after it is merged, or the workflow file GitHub runs is still the older copy.
 
 ## Testing Strategy
 
