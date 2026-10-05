@@ -1,4 +1,4 @@
-# Start the existing preview-20 containers after the Devbox time limit
+# Start the existing preview-34 containers after the Devbox time limit
 # stops cloudflared. This does not build an image, does not change the
 # digest, and does not touch the production host.
 name: Preview wake
@@ -8,6 +8,7 @@ on:
   push:
     branches:
       - cursor/preview-wake-tunnel-9e7a
+      - cursor/preview-wake-34-bbea
 
 permissions:
   contents: read
@@ -54,7 +55,7 @@ jobs:
           fi
           echo "NSC_TOKEN_FILE=${token_file}" >> "$GITHUB_ENV"
 
-      - name: Start preview-20 on Wewebplus-ci
+      - name: Start preview-34 on Wewebplus-ci
         run: |
           set -euo pipefail
           {
@@ -63,7 +64,7 @@ jobs:
               'echo "--- wake ---"' \
               'date -u' \
               'docker info >/dev/null' \
-              'project=preview-20' \
+              'project=preview-34' \
               'echo "containers before:"' \
               'docker ps -a --filter "label=com.docker.compose.project=${project}" --format "{{.Names}} {{.Status}}"' \
               'dyad_id="$(docker ps -aq --filter "label=com.docker.compose.project=${project}" --filter "label=com.docker.compose.service=dyad")"' \
@@ -89,14 +90,14 @@ jobs:
               '  fi' \
               'else' \
               '  state="${HOME}/.local/state/wewebplus-preview"' \
-              '  env_file="${state}/preview-20.env"' \
+              '  env_file="${state}/preview-34.env"' \
               '  test -f "$env_file"' \
               '  image="$(awk -F= '\''$1=="PREVIEW_IMAGE" { print $2; exit }'\'' "$env_file")"' \
               '  repo=/workspaces/weaver-plus' \
               '  test -d "$repo/.git"' \
               '  cd "$repo"' \
               '  echo "starting from saved digest"' \
-              '  PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh 20 "$image"' \
+              '  PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh 34 "$image"' \
               'fi' \
               'echo "containers after:"' \
               'docker ps --filter "label=com.docker.compose.project=${project}" --format "{{.Names}} {{.Status}}"'
@@ -107,7 +108,7 @@ jobs:
       - name: Check the public preview address
         run: |
           set -euo pipefail
-          url="https://pr-20.anakwannaphaschaiyong.com"
+          url="https://pr-34.anakwannaphaschaiyong.com/sign-in"
           ok=0
           for _ in $(seq 1 18); do
             code="$(curl -sS -o /tmp/preview-body -w '%{http_code}' --max-time 20 "$url" || true)"
