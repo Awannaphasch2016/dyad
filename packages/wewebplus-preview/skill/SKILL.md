@@ -29,4 +29,3 @@ Secret values are never printed. Names are `present` or `absent`.
 - `wewebplus-preview verify --pr 27`
 
 A refused dispatch points at Re-run all jobs on the last successful Preview image run.
-
