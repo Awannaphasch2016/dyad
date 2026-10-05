@@ -95,20 +95,17 @@ An app workspace is the folder, the git repo, and the chats. Today more than one
 - `getChats` does not delete the app and does not insert stand-in chats. If the three phase titles are missing, it throws the same validation error. The UI shows that error. It does not toast `Chat not found` for a chat this list just deleted.
 - `assertFactoryChatCreationOpen` rejects every `createChat`, including when the three titles are not all present.
 
-### Answers are the restore floor
+### Restore targets a message
 
-An answer is phase state. The planning questionnaire currently writes the answers only into the assistant message (`planning_questionnaire.ts` returns them as message text). Restore copies messages up to the chosen user message into a new chat (`version_handlers.ts`). Choosing a message from before that reply drops the answers, and the phase asks again.
+Restore copies the chat up to the chosen user message and, when requested, the files at that message's commit. It does not restore an answer, and an answer is not a floor.
 
-Save the submitted answers on the phase when the person submits them. The row is the app, the phase, and the answer body. The chat message can still show the reply.
-
-The latest saved answer is the earliest point restore may target in that phase. Restore to that answer's message, or to a later message, still works. Restore to an earlier message is refused: `These answers are already saved.` The questionnaire for that phase does not open again. A newer submission moves the floor forward. Code commits made after the answer can still be restored, down to the commit recorded with that answer, and no earlier.
+An answer belongs to the question that was asked in that stretch of the chat. Restoring to an older message starts again from there. The next question can be a different question, so the previous answer and the page rendered from it are not reused. The planning questionnaire keeps writing its result into the assistant message. There is no phase-level answer row and no rule that refuses restore before the latest answer.
 
 ### Tests
 
 - Replace `deletes an app whose chats are not the three phase titles`. `getChats` throws, and the app row and its chats are still in the database.
 - `create-chat` throws for an app with no chats, an app with one phase, and an app with all three.
 - A test that `createApp` returns three chats titled Discovery, Implementation, and Delivery, and no others.
-- Submitting a Discovery questionnaire writes a phase answer row. Restore to a message before that answer is refused. Restore to the answer message keeps the row and the reply.
 
 ## Out of scope
 
@@ -130,4 +127,4 @@ After the tests pass, a preview walkthrough should show:
 - Opening an app whose folder was never created fails with the missing-project error. It does not create a git directory, and it does not print `ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND`.
 - Restore on the first Discovery user message uses the kickoff reply's `sourceCommitHash`.
 - Creating an app makes exactly three phase chats. A request for any other chat is rejected, and opening the app does not delete it.
-- After a Discovery answer is submitted, restore cannot target a message from before that answer. The same questions are not asked again.
+- Restore still targets a user message from before a Discovery answer. The old answer is not reapplied.
