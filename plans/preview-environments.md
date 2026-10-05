@@ -96,7 +96,7 @@ These choices replace the open host and hostname questions below. Approving this
 | How long it stays up       | [Devbox lifecycle](https://namespace.so/docs/devbox/managing): Developer 4 hours, Team 5 hours, Business 24 hours. The limit applies while the Devbox is in use. When it stops, the preview URL stops. Files return when the Devbox starts again. A task marker does not pass the maximum. |
 | Public name                | `https://pr-<n>.anakwannaphaschaiyong.com`. The zone is Active on Cloudflare. DNS records are created by the API token, not by hand. Namespace's own `namespaced.app` address is not the Clerk origin. A custom domain on Namespace is an enterprise feature.                              |
 | Database parent            | Neon project `Wewebplus-hitl`, region `aws-ap-southeast-1`, default branch `Dev`. Child branches are `preview-pr-<n>`. Production stays on Supabase.                                                                                                                                       |
-| Secrets                    | Doppler project `dyad`, config `preview`, inheriting `aws` / `dev`. The live EC2 token file stays on config `prd` and is not replaced with this preview token.                                                                                                                             |
+| Secrets                    | Doppler project `dyad`, config `preview`, inheriting `aws` / `dev`, is the only store. The preview job reads those configs with the GitHub OIDC identity and does not keep a service token. The live EC2 token files stay in place and are not replaced by this preview path. |
 | Automation credential      | `NAMESPACE_API_TOKEN` can activate, fetch, and list Devboxes. Phase 1 does not call it. The proof runs in the Devbox terminal, or on a GitHub-hosted runner.                                                                                                                               |
 | Cloudflare names as stored | `CLOUDFLARE_API_TOKEN_`, `CLOUDFLARE_ZONE_ID_`, and `CLOUDFLARE_ACCOUNT_ID`. The first two names include a trailing underscore. Code reads those stored names.                                                                                                                             |
 | Vercel                     | `VERCEL_TOKEN` can list a project named `dyad`. It does not list `hitl-web`. Phase 6 resolves that project before it writes a preview env.                                                                                                                                                 |
@@ -155,7 +155,7 @@ Previews do not build on the production disk. GitHub Actions has the disk for th
 - One Neon **project** for the control-plane schema (`wewebplus`). Its parent branch is empty apart from migrations. Each preview is a child branch. Production Supabase is not that parent.
 - Compose project per preview, bridge network, no host network. Factory port 32100 is not published. The browser-bridge port is published only to the preview host's proxy.
 - A controller: pure lifecycle types plus a GitHub Action. It does not read a worktree and it does not SSH to production.
-- Doppler config other than the production `dyad`/`preview` token file. Shared names (Clerk, Bedrock) are copied per environment. The database URI and the host-bridge token are unique per preview.
+- Doppler project `dyad`, config `preview`, inheriting `aws` / `dev`. Shared names (Clerk, Bedrock) stay in Doppler and are read per job. The database URI is the Neon child created at start. The host-bridge token is unique per preview.
 - Code change already required by the network: `GAS_CITY_HOST_BRIDGE_HOST`, default `127.0.0.1`. Previews set `0.0.0.0` **inside** the container so another container on the same Docker network can connect. Production leaves the variable unset.
 - A reference HTTP client for `/v1/apps/...`, because `gc` does not speak that API. Each preview runs that client on the same network. A later phase teaches Gas City itself to use `WEAVER_BASE_URL`.
 
@@ -208,7 +208,7 @@ The controller writes a per-preview env file on the preview host. Values are not
 | `CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`                | shared identity provider                | Doppler. Each preview origin is added to the Clerk allow-list |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` | shared Bedrock account                  | Doppler `aws`/`dev`, region `ap-southeast-1`                  |
 
-Production `/etc/doppler/dyad-preview.token` and `/etc/doppler/aws-dev.token` stay where they are. The preview host has its own token file.
+Production `/etc/doppler/dyad-preview.token` and `/etc/doppler/aws-dev.token` stay where they are. The preview job does not keep a Doppler token file. It fetches `dyad` / `preview` and `aws` / `dev` at the start of the job with the GitHub identity `DOPPLER_SERVICE_IDENTITY_ID`. The push subject that fetch accepts is `repo:Awannaphasch2016@28061800/dyad@1384672033:ref:refs/heads/cursor/*`. A labeled pull request sends a different subject, and this identity does not allow that subject yet. The remaining product steps in this plan (Neon on the Vercel page, the `gc` service, and landing the workflow on `main`) are unchanged.
 
 ## External services
 
