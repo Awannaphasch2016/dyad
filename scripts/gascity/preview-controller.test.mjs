@@ -174,7 +174,7 @@ test("aws credentials fill only empty Bedrock names", () => {
   assert.equal(text.includes("AWS_DEFAULT_REGION"), false);
 });
 
-test("job environment fills the suffixed Cloudflare names", () => {
+test("job environment fills the Cloudflare names", () => {
   const merged = credentialsFromEnvironment(
     {},
     {
@@ -187,9 +187,10 @@ test("job environment fills the suffixed Cloudflare names", () => {
     },
   );
   const text = previewRuntime(merged, "postgresql://child.example/neondb");
-  assert.match(text, /export CLOUDFLARE_API_TOKEN_='cf-token'/);
-  assert.match(text, /export CLOUDFLARE_ZONE_ID_='zone'/);
+  assert.match(text, /export CLOUDFLARE_API_TOKEN='cf-token'/);
+  assert.match(text, /export CLOUDFLARE_ZONE_ID='zone'/);
   assert.match(text, /export CLOUDFLARE_ACCOUNT_ID='account'/);
+  assert.equal(text.includes("CLOUDFLARE_API_TOKEN_"), false);
   assert.match(text, /export CLERK_SECRET_KEY='sk_test'/);
   assert.match(text, /export VERCEL_TOKEN='vercel'/);
   assert.equal(text.includes("EC2_SSH_KEY"), false);

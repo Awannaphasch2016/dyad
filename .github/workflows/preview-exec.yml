@@ -156,6 +156,8 @@ jobs:
               '  git -C "$repo" checkout --detach FETCH_HEAD' \
               'fi' \
               'cd "$repo"' \
+              'echo "--- resume saved previews ---"' \
+              'bash scripts/gascity/preview-resume.sh 34' \
               'echo "--- resume preview 34 ---"' \
               'PREVIEW_REQUIRE_BEDROCK=1 PREVIEW_REQUIRE_NAMED_TUNNEL=1 PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh 34 ghcr.io/awannaphasch2016/dyad@sha256:72d226cdfc5caa5bf334a92d7b79ca9e3f774d7ed6aab0febdb1df198009c0bf'
           } > /tmp/preview-remote.sh
