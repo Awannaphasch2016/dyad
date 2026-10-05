@@ -45,9 +45,13 @@ export function transition(state, event) {
 // Closing the pull request, or removing the preview label, destroys that
 // preview. A synchronize event without the label does not destroy. Preview 20
 // was created before the label existed, and a push must not delete it.
+// Adding the label to an already closed pull request does not destroy again.
 export function commandForPullRequest(event) {
   const action = event.action || "";
   const labels = new Set(event.labels || []);
+  if (action === "labeled" && event.label === "preview" && event.closed) {
+    return "skip";
+  }
   if (event.closed || action === "closed") return "destroy";
   if (action === "unlabeled" && event.label === "preview") return "destroy";
   if (action === "labeled" && event.label === "preview") return "update";

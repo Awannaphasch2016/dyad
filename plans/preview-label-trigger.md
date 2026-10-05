@@ -148,7 +148,7 @@ None. `preview-up.sh <pr> <ghcr.io/...@sha256:...>` stays the deploy command.
 
 ### Phase 3: Remove the branch list
 
-- [x] Add the `preview` label to pull requests 20 and 34 while the skip is still present. Pull request 20 already had it. Pull request 34 received it before this removal. Both pull requests are merged, so that label does not deploy later pushes.
+- [x] Add the `preview` label to pull requests 20 and 34 while the skip is still present. Pull request 20 already had it. Pull request 34 was already merged, so the old workflow treated the label as close and ran destroy. Neon and the Vercel database were already gone. The new workflow skips a label added to a closed pull request.
 - [x] Delete the push branch list from `preview-image.yml` and the branch skip from `preview.yml` in the same change.
 - [ ] Push this change on the open labeled pull request and confirm one Preview deploy. Preview image must not run. Pull requests 20, 27, and 29 keep the previous workflow file until their branches contain this commit. `cursor/session-jwt-refresh-bbea` is already merged, so this commit stays on the open pull request rather than closing it.
 - [x] Update `docs/gascity-docker.md` and the workflow assertions in `scripts/gascity/preview-tunnel.test.mjs`.
