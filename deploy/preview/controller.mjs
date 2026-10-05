@@ -5,6 +5,7 @@ import { writeFileSync } from "node:fs";
 import { commandForPullRequest } from "./transition.mjs";
 import { deletePreviewBranch, ensurePreviewBranch } from "./neon.mjs";
 import {
+  credentialsFromEnvironment,
   mergeAwsCredentials,
   previewRuntime,
   withEnvironmentSecrets,
@@ -49,7 +50,10 @@ async function runtimeEnv() {
   }
   const awsToken = process.env.AWS_DOPPLER_TOKEN || "";
   const awsDownload = awsToken ? await downloadDoppler(awsToken) : {};
-  return mergeAwsCredentials(downloaded, awsDownload, process.env);
+  return credentialsFromEnvironment(
+    mergeAwsCredentials(downloaded, awsDownload, process.env),
+    process.env,
+  );
 }
 
 async function attach(pr) {

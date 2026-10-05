@@ -221,19 +221,16 @@ test("preview image workflow updates the shared Devbox after publish", () => {
     /assign-page --pr "\$pr" --git-branch "\$branch" --vercel-project dyad/,
   );
   assert.equal(workflow.includes("cursor/dyad-web-frontend-bbea"), false);
+  assert.match(workflow, /dopplerhq\/secrets-fetch-action@v2/);
+  assert.match(workflow, /auth-method:\s*oidc/);
+  assert.match(workflow, /PREVIEW_REQUIRE_NAMED_TUNNEL=1/);
+  assert.equal(workflow.includes("secrets.DOPPLER_TOKEN"), false);
+  assert.equal(workflow.includes("secrets.NEON_API_KEY"), false);
+  assert.equal(workflow.includes("secrets.AWS_ACCESS_KEY_ID"), false);
   assert.match(workflow, /cursor\/formula-preview-9e7a/);
-  assert.match(
-    workflow,
-    /CLOUDFLARE_API_TOKEN: \$\{\{ secrets\.CLOUDFLARE_API_TOKEN \}\}/,
-  );
-  assert.match(
-    workflow,
-    /CLOUDFLARE_ZONE_ID: \$\{\{ secrets\.CLOUDFLARE_ZONE_ID \}\}/,
-  );
-  assert.match(
-    workflow,
-    /CLOUDFLARE_ACCOUNT_ID: \$\{\{ secrets\.CLOUDFLARE_ACCOUNT_ID \}\}/,
-  );
+  assert.equal(workflow.includes("secrets.CLOUDFLARE_API_TOKEN"), false);
+  assert.equal(workflow.includes("secrets.CLOUDFLARE_ZONE_ID"), false);
+  assert.equal(workflow.includes("secrets.CLOUDFLARE_ACCOUNT_ID"), false);
   assert.match(workflow, /deploy\/preview\/clerk-origins-run\.mjs/);
   assert.match(workflow, /preview_url=https:\/\//);
   assert.equal(workflow.includes("13.251.216.187"), false);

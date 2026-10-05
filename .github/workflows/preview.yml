@@ -83,14 +83,29 @@ jobs:
           fi
           echo "image=${image}" >> "$GITHUB_OUTPUT"
 
+      - name: Fetch dyad preview secrets
+        if: steps.decide.outputs.command != 'skip'
+        uses: dopplerhq/secrets-fetch-action@v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          doppler-project: dyad
+          doppler-config: preview
+          inject-env-vars: true
+
+      - name: Fetch aws dev secrets
+        if: steps.decide.outputs.command != 'skip'
+        uses: dopplerhq/secrets-fetch-action@v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          doppler-project: aws
+          doppler-config: dev
+          inject-env-vars: true
+
       - name: Attach the Neon preview branch
         if: 'steps.decide.outputs.command == ''update'' && !contains(fromJSON(''["cursor/preview-bridge-proof-9e7a", "cursor/formula-preview-9e7a"]''), github.head_ref)'
         env:
-          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
-          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           PR: ${{ github.event.pull_request.number }}
           BRANCH: ${{ github.head_ref }}
         run: node deploy/preview/controller.mjs attach --pr "$PR" --git-branch "$BRANCH" --vercel-project dyad --out /tmp/preview-runtime.sh
@@ -98,8 +113,6 @@ jobs:
       - name: Delete the Neon preview branch
         if: steps.decide.outputs.command == 'destroy'
         env:
-          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
-          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           PR: ${{ github.event.pull_request.number }}
           BRANCH: ${{ github.head_ref }}
         run: node deploy/preview/controller.mjs destroy --pr "$PR" --git-branch "$BRANCH" --vercel-project dyad
@@ -176,7 +189,7 @@ jobs:
               '  source /tmp/preview-runtime-devbox.sh' \
               '  rm -f /tmp/preview-runtime-devbox.sh' \
               'fi' \
-              'PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh "$pr" "$image"'
+              'PREVIEW_REQUIRE_BEDROCK=1 PREVIEW_REQUIRE_NAMED_TUNNEL=1 PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh "$pr" "$image"'
           } > /tmp/preview-remote.sh
           payload="$(base64 -w0 /tmp/preview-remote.sh)"
           rm -f /tmp/preview-remote.sh /tmp/preview-runtime.sh

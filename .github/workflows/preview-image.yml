@@ -148,18 +148,37 @@ jobs:
           echo "number=${number}" >> "$GITHUB_OUTPUT"
           echo "Pull request ${number}"
 
+      - name: Fetch dyad preview secrets
+        uses: dopplerhq/secrets-fetch-action@v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          doppler-project: dyad
+          doppler-config: preview
+          inject-env-vars: true
+
+      - name: Fetch aws dev secrets
+        uses: dopplerhq/secrets-fetch-action@v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          doppler-project: aws
+          doppler-config: dev
+          inject-env-vars: true
+
+      - name: Require named tunnel credentials
+        run: |
+          set -euo pipefail
+          token="${CLOUDFLARE_API_TOKEN_:-${CLOUDFLARE_API_TOKEN:-}}"
+          zone="${CLOUDFLARE_ZONE_ID_:-${CLOUDFLARE_ZONE_ID:-}}"
+          account="${CLOUDFLARE_ACCOUNT_ID:-${CLOUDFLARE_ACCOUNT_ID_:-}}"
+          if [[ -n "$token" ]]; then echo "CLOUDFLARE_API_TOKEN_: present"; else echo "CLOUDFLARE_API_TOKEN_: absent"; fi
+          if [[ -n "$zone" ]]; then echo "CLOUDFLARE_ZONE_ID_: present"; else echo "CLOUDFLARE_ZONE_ID_: absent"; fi
+          if [[ -n "$account" ]]; then echo "CLOUDFLARE_ACCOUNT_ID: present"; else echo "CLOUDFLARE_ACCOUNT_ID: absent"; fi
+          [[ -n "$token" && -n "$zone" && -n "$account" ]]
+
       - name: Attach the Neon preview branch
         env:
-          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
-          AWS_DOPPLER_TOKEN: ${{ secrets.AWS_DOPPLER_TOKEN }}
-          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: ${{ secrets.AWS_REGION }}
-          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
           PR: ${{ steps.pr.outputs.number }}
         run: node deploy/preview/controller.mjs attach --pr "$PR" --out /tmp/preview-runtime.sh
 
@@ -243,7 +262,7 @@ jobs:
               '  rm -f /tmp/preview-runtime-devbox.sh' \
               '  node deploy/preview/controller.mjs assign-page --pr "$pr" --git-branch "$branch" --vercel-project dyad' \
               'fi' \
-              'PREVIEW_REQUIRE_BEDROCK=1 PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh "$pr" "$image"' \
+              'PREVIEW_REQUIRE_BEDROCK=1 PREVIEW_REQUIRE_NAMED_TUNNEL=1 PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh "$pr" "$image"' \
               'origin="$(cat "$HOME/.local/state/wewebplus-preview/preview-${pr}.public-url")"' \
               'echo "clerk step"' \
               'PREVIEW_ORIGIN="$origin" node deploy/preview/clerk-origins-run.mjs' \

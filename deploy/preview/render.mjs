@@ -11,6 +11,13 @@ const runtimeKeys = [
   "CLOUDFLARE_API_TOKEN",
   "CLOUDFLARE_ZONE_ID",
   "CLOUDFLARE_ACCOUNT_ID",
+  "VERCEL_TOKEN",
+];
+
+const cloudflareAliases = [
+  ["CLOUDFLARE_API_TOKEN_", "CLOUDFLARE_API_TOKEN"],
+  ["CLOUDFLARE_ZONE_ID_", "CLOUDFLARE_ZONE_ID"],
+  ["CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_ACCOUNT_ID_"],
 ];
 
 const legacyCloudflareNames = {
@@ -102,6 +109,24 @@ export function mergeAwsCredentials(download, extra, env) {
     nonEmpty(merged.AWS_SECRET_ACCESS_KEY)
   ) {
     merged.AWS_REGION = nonEmpty(env?.AWS_DEFAULT_REGION) || "ap-southeast-1";
+  }
+  return merged;
+}
+
+// Copy allowlisted names from the job environment. A suffixed Cloudflare
+// name wins. The unsuffixed Doppler name fills it only when the suffixed
+// one is empty.
+export function credentialsFromEnvironment(download, env = {}) {
+  const merged = { ...download };
+  for (const [canonical, alias] of cloudflareAliases) {
+    if (nonEmpty(merged[canonical])) continue;
+    const value = nonEmpty(env[canonical]) || nonEmpty(env[alias]);
+    if (value) merged[canonical] = value;
+  }
+  for (const key of runtimeKeys) {
+    if (nonEmpty(merged[key])) continue;
+    const value = nonEmpty(env[key]);
+    if (value) merged[key] = value;
   }
   return merged;
 }
