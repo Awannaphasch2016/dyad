@@ -1,9 +1,9 @@
 # Start an already published preview on the shared Devbox.
 #
 # This job does not build an image, does not SSH, and does not read the
-# production deploy key. It reconnects the named tunnel for pull request 34.
+# production deploy key. It reconnects the named tunnel for pull request 41.
 # The production host is not a target.
-# A push of this file starts the stopped Devbox and brings preview 34 back.
+# A push of this file starts the stopped Devbox and brings preview 41 back.
 # Wake after the named tunnel returned HTTP 530.
 name: Preview exec
 
@@ -101,7 +101,7 @@ jobs:
           if [[ -n "$account" ]]; then echo "CLOUDFLARE_ACCOUNT_ID: present"; else echo "CLOUDFLARE_ACCOUNT_ID: absent"; fi
           [[ -n "$token" && -n "$zone" && -n "$account" ]]
 
-      - name: Resume preview 34 on Wewebplus-ci
+      - name: Resume preview 41 on Wewebplus-ci
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -157,8 +157,8 @@ jobs:
               '  git -C "$repo" checkout --detach FETCH_HEAD' \
               'fi' \
               'cd "$repo"' \
-              'echo "--- resume preview 34 ---"' \
-              'PREVIEW_REQUIRE_BEDROCK=1 PREVIEW_REQUIRE_NAMED_TUNNEL=1 PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh 34 ghcr.io/awannaphasch2016/dyad@sha256:72d226cdfc5caa5bf334a92d7b79ca9e3f774d7ed6aab0febdb1df198009c0bf'
+              'echo "--- resume preview 41 ---"' \
+              'PREVIEW_REQUIRE_BEDROCK=1 PREVIEW_REQUIRE_NAMED_TUNNEL=1 PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh 41 ghcr.io/awannaphasch2016/dyad@sha256:4751c160e968bc75ab9777ff4287f44890625afd192af6f69e80b9e303076010'
           } > /tmp/preview-remote.sh
           payload="$(base64 -w0 /tmp/preview-remote.sh)"
           rm -f /tmp/preview-runtime.sh /tmp/preview-remote.sh
@@ -169,7 +169,7 @@ jobs:
           set -euo pipefail
           ok=0
           for _ in 1 2 3 4 5 6; do
-            code="$(curl -sS -o /tmp/preview-body -w '%{http_code}' --max-time 20 https://pr-34.anakwannaphaschaiyong.com/sign-in || true)"
+            code="$(curl -sS -o /tmp/preview-body -w '%{http_code}' --max-time 20 https://pr-41.anakwannaphaschaiyong.com/sign-in || true)"
             echo "http ${code}"
             if [[ "$code" == "200" ]] && grep -q 'data-dyad-browser-bridge' /tmp/preview-body; then
               ok=1
