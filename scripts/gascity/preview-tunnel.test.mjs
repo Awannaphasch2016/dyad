@@ -273,6 +273,11 @@ test("preview exec workflow uses GitHub federation and does not touch production
   assert.match(workflow, /namespacelabs\/nscloud-setup@v0/);
   assert.match(workflow, /devbox exec Wewebplus-ci -- echo federated-ok/);
   assert.match(workflow, /PREVIEW_SKIP_TUNNEL=1/);
+  assert.match(workflow, /preview-up\.sh 34 /);
+  assert.match(
+    workflow,
+    /https:\/\/pr-34\.anakwannaphaschaiyong\.com\/sign-in/,
+  );
   assert.equal(workflow.includes("EC2_SSH_KEY"), false);
   assert.equal(workflow.includes("13.251.216.187"), false);
   assert.equal(workflow.includes("gascity-rollout"), false);
