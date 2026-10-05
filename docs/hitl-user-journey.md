@@ -4,6 +4,10 @@ What a person sees while one organization takes a one-page site through Discover
 
 Captured 2 October 2026 from the running app at implementation commit `a4b65e8a` on branch `cursor/ipad-gate-close-bbea`. Every figure is a screenshot of that app. This document is the walkthrough and the manual check. A person should be able to decide, from the screen alone, whether a step finished.
 
+Checked again on 2026-10-05 against `main` commit `e8b66417`. The screenshots under `docs/hitl-user-journey/` and the PDF of this walkthrough were not retaken. Every VERIFIED, PARTIAL, NOT IN THIS BUILD, and UNRESOLVED label applies to commit `a4b65e8a`, not to `main` on the check date.
+
+This file lives in `docs/` in git. That is the place for this note. The wiki is not the code commit. Neon is the application database, not a copy of this walkthrough. The note is late when `main` has moved past `e8b66417` and a path named here has changed, or when a new capture is required and this header still names `a4b65e8a`.
+
 The figures show the development sign-in card and the test addresses used for the walkthrough. This text uses display names only.
 
 ## How to read the labels

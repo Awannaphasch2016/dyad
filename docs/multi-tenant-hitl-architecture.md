@@ -1,5 +1,15 @@
 # Multi-tenant HITL architecture
 
+Checked against `main` commit `e8b66417` on 2026-10-05.
+
+This note lives in `docs/` in this git repository, next to `docs/hitl-architecture.md` and `docs/hitl-user-journey.md`. That commit is the currency mark. The note is late when a later commit on `main` changes a path these notes name. A GitHub wiki page has an edit time and no code commit. Neon stores `wewebplus` rows for the running app. It does not store this note, and a database row is not tied to the commit that was read.
+
+The gate table below still matches `GATE_ROLE` in `src/control_plane/hitl.ts` and `hitl-web/lib/hitl.ts`: `plan-approve` and `review-approve-pm` are `project-manager`, and `review-approve-dev` is `developer`.
+
+People also have a second page, `hitl-web/`. It lists questions and saves an answer in Postgres. That page does not replace the Dyad chat. Gas City still posts a question to the host bridge. Closing the gate after a saved answer is `scripts/gascity/resolve_hitl_answer.py`: `hitl.py respond`, then `hitl.py release`, then stamp `gate_resolved_at`. This repository does not start that script on a timer.
+
+`docs/multi-tenant-hitl-architecture.pdf` is an earlier export of this essay. It was not regenerated for this check. Read this markdown file for the currency mark.
+
 wewebplus builds a one-page website for a customer using a team of software agents. The agents work in three phases: Discovery, Implementation, and Delivery. At three points they stop and wait for a person to approve what they have done. Those stopping points are called gates.
 
 This document explains how a person in one organization approves the gates for that organization's projects, and why nobody in another organization can see or act on them.
@@ -74,12 +84,12 @@ flowchart TB
 
 ### What this shows
 
-Who is outside the system and the two products that cooperate. People only ever use Dyad. Agents never talk to a person. Dyad and Gas City meet at a gate: Gas City opens the gate by sending a question to Dyad, and later learns the answer from the shared store.
+Who is outside the system and the two products that cooperate. A person works in the Dyad chat. The separate `hitl-web/` page can show the same question and save an answer, and it does not replace that chat. Agents never talk to a person. Dyad and Gas City meet at a gate: Gas City opens the gate by sending a question to Dyad, and later learns the answer from the shared store.
 
 ### What each box does
 
 - **Project Manager and Developer.** Sign in, open the project, read the phase chat, and answer the gate that names their role.
-- **Dyad UI.** The one place a person works. The project list, the account, the three phase chats, and the gate card inside a chat are all this one screen.
+- **Dyad UI.** The place a person works on the project. The project list, the account, the three phase chats, and the gate card inside a chat are this screen. `hitl-web/` is a second page for the same question. It is not this screen.
 - **Orchestrator.** The part of Gas City that runs the recipe, starts agents, opens a gate, and continues once the gate is closed.
 - **Web-building agents.** Produce the discovery summary, the page, the verification report, and the delivery summary, and post them into the phase chats.
 - **Clerk.** The sign-in service. It says who the person is and which organization they are acting for.
