@@ -236,6 +236,34 @@ test("preview image workflow updates the shared Devbox after publish", () => {
   assert.equal(workflow.includes("13.251.216.187"), false);
 });
 
+test("labeled preview workflow fetches Doppler and skips image-managed branches", () => {
+  const workflow = readFileSync(
+    new URL("../../.github/workflows/preview.yml", import.meta.url),
+    "utf8",
+  );
+  const controller = readFileSync(
+    new URL("../../deploy/preview/controller.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.match(workflow, /dopplerhq\/secrets-fetch-action@v2/);
+  assert.match(workflow, /auth-method:\s*oidc/);
+  assert.equal(workflow.includes("secrets.DOPPLER_TOKEN"), false);
+  assert.equal(workflow.includes("secrets.NEON_API_KEY"), false);
+  for (const branch of [
+    "cursor/preview-bridge-proof-9e7a",
+    "cursor/formula-preview-9e7a",
+    "cursor/preview-bedrock-render-bbea",
+    "cursor/session-jwt-refresh-bbea",
+  ]) {
+    assert.equal(workflow.includes(branch), true);
+  }
+  assert.match(
+    controller,
+    /NEON_API_KEY was missing from the Doppler dyad\/preview fetch/,
+  );
+  assert.equal(controller.includes("DOPPLER_TOKEN GitHub secret"), false);
+});
+
 test("preview exec workflow uses GitHub federation and does not touch production", () => {
   const workflow = readFileSync(
     new URL("../../.github/workflows/preview-exec.yml", import.meta.url),
