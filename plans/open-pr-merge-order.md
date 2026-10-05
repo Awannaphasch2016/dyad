@@ -129,7 +129,7 @@ None in the plan commit. [#30](https://github.com/Awannaphasch2016/dyad/pull/30)
 - [x] Merge [#41](https://github.com/Awannaphasch2016/dyad/pull/41) into `main`.
 - [x] Confirm [#9](https://github.com/Awannaphasch2016/dyad/pull/9) names `main` commit `e8b66417` in `docs/hitl-architecture.md`, then merge it into `main`.
 - [x] Confirm [#12](https://github.com/Awannaphasch2016/dyad/pull/12) names that same commit in `docs/multi-tenant-hitl-architecture.md` and `docs/hitl-user-journey.md`, then merge it into `main`. The journey screenshots stay the 2026-10-02 capture at `a4b65e8a`.
-- [ ] Decide whether [#13](https://github.com/Awannaphasch2016/dyad/pull/13) is still useful. Merge it only if the plan text should live in the repo. The formula graph is already on `main`.
+- [x] [#13](https://github.com/Awannaphasch2016/dyad/pull/13) stays open. It is not merged and it is not closed. The formula graph is already on `main`.
 
 ### Phase 2: Retarget the plan-only pull requests
 
@@ -156,6 +156,7 @@ None in the plan commit. [#30](https://github.com/Awannaphasch2016/dyad/pull/30)
 
 - [x] After phase 1 and phase 2, `git grep preview-image-id.mjs origin/main -- .github/workflows/preview.yml` still matches, and `git grep branches: origin/main -- .github/workflows/preview-image.yml` does not.
 - [x] After phase 3, the same two checks pass, and the preview tunnel and controller tests pass.
+- [x] After phase 5, an empty `NEXT_PUBLIC_GAS_CITY_URL` throws before `fetch` for a prompt, a question list, an answer, and a runtime capability. `hitl-web` has no `/v1/runs` route and `next.config.ts` has no `/v1` rewrite. `preview-image.yml` on `main` at `ee860071` still has no `branches:` list.
 - [ ] [#41](https://github.com/Awannaphasch2016/dyad/pull/41) keeps its own factory-phase tests inside that pull request. This plan does not re-run the whole suite for the doc merges.
 - [ ] CLA Assistant may stay red. That matches pull request 38 and is not a failure of this order.
 
@@ -167,21 +168,21 @@ None in the plan commit. [#30](https://github.com/Awannaphasch2016/dyad/pull/30)
 | Merging 31, 28, or 19 into their current base never reaches `main` | H | M | Change the base to `main` and read the diff before merging. |
 | [#30](https://github.com/Awannaphasch2016/dyad/pull/30) is merged before [#26](https://github.com/Awannaphasch2016/dyad/pull/26) and the second merge conflicts | M | M | Merge 26 first. 30’s branch contains 26. |
 | A retarget shows an empty or huge unrelated diff | M | M | Stop if the diff is not the files listed in the table. |
-| [#16](https://github.com/Awannaphasch2016/dyad/pull/16) is merged against a `main` that is not its ancestor | M | H | Leave it out of this pass. |
+| [#16](https://github.com/Awannaphasch2016/dyad/pull/16) is merged against a `main` that is not its ancestor | M | H | Rebase onto `main` first. That happened in phase 5, onto `e553a81b`, then the merge commit `ee860071`. |
 | Adding `preview` during the landing runs the old workflow or destroys a preview | M | H | Do not add the label in this pass. |
 | CLA failure is treated as a reason to stop | M | L | It was already failing when 38 merged. Continue. |
 
 ## Open Questions
 
-None. The two questions from phase 4 are decided below. Phase 5 is a draft for review. Do not start it until it is approved.
+None. Phase 5 is landed. [#16](https://github.com/Awannaphasch2016/dyad/pull/16) is merged. [#13](https://github.com/Awannaphasch2016/dyad/pull/13) stays open.
 
-## Phase 5 draft: pull request 16 fails without a GasCity URL
+## Phase 5: pull request 16 fails without a GasCity URL
 
-This draft is not approved. Revise it before any rebase or merge of [#16](https://github.com/Awannaphasch2016/dyad/pull/16).
+Landed on `main` as merge commit `ee860071` (2026-10-05). The rebased head is `05f22cbf`, on top of `e553a81b`. The `preview` label was not added.
 
-[#13](https://github.com/Awannaphasch2016/dyad/pull/13) stays open. Do not merge it and do not close it. The formula graph it describes is already on `main`.
+[#13](https://github.com/Awannaphasch2016/dyad/pull/13) stays open. It was not merged and it was not closed. The formula graph it describes is already on `main`.
 
-[#16](https://github.com/Awannaphasch2016/dyad/pull/16) stays the Vercel Dyad shell: Home sends a prompt, Gates is the question board at `/hitl`, and Runtime lists which jobs stay off Electron. It does not land with the same-origin `/v1` stand-in that is on that branch today.
+[#16](https://github.com/Awannaphasch2016/dyad/pull/16) is the Vercel Dyad shell: Home sends a prompt, Gates is the question board at `/hitl`, and Runtime lists which jobs stay off Electron. It landed without the same-origin `/v1` stand-in.
 
 ### What fails
 
@@ -189,11 +190,11 @@ Home, Gates, and Runtime call GasCity only at an absolute `https` `NEXT_PUBLIC_G
 
 - A missing URL, a relative URL such as `/v1/runs`, or a non-`https` URL fails before `fetch`. The page shows “The preview listener is not configured.” No request is sent.
 - A `fetch` that throws, or an HTTP response that is not success, fails that action and shows the error. The page does not try a second address.
-- This check applies in every environment, including local `next dev` and production. `main` today throws at build time only when `VERCEL_ENV` is `preview` (`hitl-web/lib/gas_city_url.ts`). This draft removes that limit for these three pages.
+- This check applies in every environment, including local `next dev` and production. The build-time check in `hitl-web/lib/gas_city_url.ts` still throws only when `VERCEL_ENV` is `preview`. The three pages throw at call time in every environment.
 
 ### What is removed
 
-On the rebased [#16](https://github.com/Awannaphasch2016/dyad/pull/16) branch, delete the stand-in that pretends this Vercel app is GasCity:
+The rebased [#16](https://github.com/Awannaphasch2016/dyad/pull/16) branch deleted the stand-in that pretended this Vercel app is GasCity:
 
 - The rewrite in `hitl-web/next.config.ts` from `/v1/:path*` to `/api/v1/:path*`.
 - `hitl-web/app/api/v1/runs/route.ts`, which invents `gascity-run:<random>` and returns 202.
@@ -205,16 +206,16 @@ A prompt on Home does not write a question. Gates shows questions only when GasC
 
 ### What the rebase keeps
 
-Rebase `cursor/dyad-web-frontend-bbea` onto current `origin/main` after this draft is approved. Keep `main`’s `hitl-web/lib/gas_city_url.ts`, its test, and the `assertPreviewGasCityUrl()` call in `hitl-web/next.config.ts`. Keep the label-only preview rule. Do not add the `preview` label while landing this branch.
+`cursor/dyad-web-frontend-bbea` was rebased onto `origin/main` at `e553a81b`. The rebase kept `main`’s `hitl-web/lib/gas_city_url.ts`, its test, and the `assertPreviewGasCityUrl()` call in `hitl-web/next.config.ts`. The label-only preview rule stayed. The `preview` label was not added.
 
 `main` and this branch both edit `hitl-web/next.config.ts` and the question board. Keep `main`’s GasCity URL check. Take the three shell pages from [#16](https://github.com/Awannaphasch2016/dyad/pull/16). Do not take its `/api/v1` routes.
 
 ### Checks before merge
 
-- A test shows that an empty `NEXT_PUBLIC_GAS_CITY_URL` throws before `fetch` for a prompt, a question list, an answer, and a runtime capability.
-- A test shows that `/v1/runs` on this app is not a route and that `next.config.ts` has no `/v1` rewrite.
-- `node --test hitl-web/lib/gas_city_url.test.ts scripts/gascity/preview-tunnel.test.mjs scripts/gascity/preview-controller.test.mjs` passes.
-- `preview-image.yml` on `main` still has no `branches:` list.
+- [x] A test shows that an empty `NEXT_PUBLIC_GAS_CITY_URL` throws before `fetch` for a prompt, a question list, an answer, and a runtime capability.
+- [x] A test shows that `/v1/runs` on this app is not a route and that `next.config.ts` has no `/v1` rewrite.
+- [x] `node --test hitl-web/lib/gas_city_url.test.ts scripts/gascity/preview-tunnel.test.mjs scripts/gascity/preview-controller.test.mjs` passed (31 tests). `npm --prefix hitl-web test` passed (24 tests).
+- [x] `preview-image.yml` on `main` at `ee860071` still has no `branches:` list.
 
 ## Decision Log
 
@@ -231,7 +232,7 @@ Rebase `cursor/dyad-web-frontend-bbea` onto current `origin/main` after this dra
 - HITL notes stay in `docs/` in this repository. Each note names the `main` commit it was checked against (`e8b66417` on 2026-10-05). The note is late when a later `main` commit changes a path the note names. The GitHub wiki has an edit time and no code commit. Neon is the `wewebplus` application database, not a document store, and a row there is not tied to a git commit.
 - [#9](https://github.com/Awannaphasch2016/dyad/pull/9) and [#12](https://github.com/Awannaphasch2016/dyad/pull/12) are refreshed on their branches before merge. The journey PDF and screenshots are not regenerated. Their labels still describe commit `a4b65e8a`.
 - [#13](https://github.com/Awannaphasch2016/dyad/pull/13) stays open. It is not merged and it is not closed.
-- [#16](https://github.com/Awannaphasch2016/dyad/pull/16) is still the Vercel shell, and it does not land until phase 5 is approved. The same-origin `/v1` stand-in is removed. A missing or unreachable GasCity URL fails that action. There is no second request to this app.
+- [#16](https://github.com/Awannaphasch2016/dyad/pull/16) is the Vercel shell and is merged. The same-origin `/v1` stand-in was removed before the merge. A missing, relative, or non-https GasCity URL fails that action before `fetch`. There is no second request to this app.
 
 ---
 
