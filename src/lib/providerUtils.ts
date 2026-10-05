@@ -30,6 +30,12 @@ export function isProviderSetup(
 
   const providerSettings = settings?.providerSettings[provider];
 
+  // Bedrock is configured only by the IAM pair. A saved API key or
+  // AWS_BEARER_TOKEN_BEDROCK is not a credential this app will send.
+  if (provider === "bedrock") {
+    return envVars.BEDROCK_IAM === "1";
+  }
+
   // Vertex uses service account credentials instead of an API key
   if (provider === "vertex") {
     const vertexSettings = providerSettings as VertexProviderSetting;

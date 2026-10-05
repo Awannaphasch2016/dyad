@@ -312,6 +312,33 @@ function parseRendererCrashPerformance(
   return parsed.success ? parsed.data : undefined;
 }
 
+function isStoredBedrockBearerPath(path: string[]): boolean {
+  return (
+    path.length === 3 &&
+    path[0] === "providerSettings" &&
+    path[1] === "bedrock" &&
+    path[2] === "apiKey"
+  );
+}
+
+// A saved Bedrock API key is a bearer token. Bedrock never sends one, so the
+// value cannot remain in the file.
+function omitStoredBedrockBearer(settings: UserSettings): boolean {
+  const bedrock = settings.providerSettings?.bedrock;
+  if (!bedrock?.apiKey) {
+    return false;
+  }
+  const { apiKey: _apiKey, ...rest } = bedrock;
+  const providerSettings = { ...settings.providerSettings };
+  if (Object.keys(rest).length === 0) {
+    delete providerSettings.bedrock;
+  } else {
+    providerSettings.bedrock = rest;
+  }
+  settings.providerSettings = providerSettings;
+  return true;
+}
+
 export function readSettings(): UserSettings {
   try {
     const filePath = getSettingsFilePath();
@@ -319,7 +346,16 @@ export function readSettings(): UserSettings {
       fs.writeFileSync(filePath, JSON.stringify(DEFAULT_SETTINGS, null, 2));
       return DEFAULT_SETTINGS;
     }
-    return readExistingSettingsFile(filePath).settings;
+    const { settings } = readExistingSettingsFile(filePath);
+    if (omitStoredBedrockBearer(settings)) {
+      logger.info("removed stored bedrock bearer");
+      try {
+        writeSettings({ providerSettings: settings.providerSettings });
+      } catch (error) {
+        logger.error("Failed to remove stored bedrock bearer:", error);
+      }
+    }
+    return settings;
   } catch (error) {
     logger.error("Error reading settings:", error);
     return DEFAULT_SETTINGS;
@@ -400,7 +436,8 @@ export function writeSettings(settings: Partial<UserSettings>): void {
       settings,
       settingsForWrite.settings,
       settingsForWrite.preserved,
-    );
+    ).filter((entry) => !isStoredBedrockBearerPath(entry.path));
+    omitStoredBedrockBearer(newSettings);
     if (newSettings.githubAccessToken) {
       newSettings.githubAccessToken = encrypt(
         newSettings.githubAccessToken.value,

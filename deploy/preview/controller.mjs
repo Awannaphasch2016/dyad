@@ -4,7 +4,11 @@
 import { writeFileSync } from "node:fs";
 import { commandForPullRequest } from "./transition.mjs";
 import { deletePreviewBranch, ensurePreviewBranch } from "./neon.mjs";
-import { previewRuntime, withEnvironmentSecrets } from "./render.mjs";
+import {
+  mergeAwsCredentials,
+  previewRuntime,
+  withEnvironmentSecrets,
+} from "./render.mjs";
 import {
   assignmentLog,
   assignPreviewDatabase,
@@ -36,14 +40,16 @@ async function downloadDoppler(token) {
 
 async function runtimeEnv() {
   const token = process.env.DOPPLER_TOKEN || "";
+  let downloaded = {};
   if (token) {
-    const downloaded = await downloadDoppler(token);
+    downloaded = await downloadDoppler(token);
     if (!process.env.NEON_API_KEY && downloaded.NEON_API_KEY) {
       process.env.NEON_API_KEY = downloaded.NEON_API_KEY;
     }
-    return downloaded;
   }
-  return {};
+  const awsToken = process.env.AWS_DOPPLER_TOKEN || "";
+  const awsDownload = awsToken ? await downloadDoppler(awsToken) : {};
+  return mergeAwsCredentials(downloaded, awsDownload, process.env);
 }
 
 async function attach(pr) {

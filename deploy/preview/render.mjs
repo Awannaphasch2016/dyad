@@ -75,6 +75,37 @@ export function withEnvironmentSecrets(download, env = {}) {
   return merged;
 }
 
+function nonEmpty(value) {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : "";
+}
+
+// Fill only the three Bedrock IAM names. A later source does not replace a
+// value that is already present. The region falls back to AWS_DEFAULT_REGION,
+// then ap-southeast-1, only when both keys are set.
+export function mergeAwsCredentials(download, extra, env) {
+  const merged = { ...download };
+  const fill = (key, value) => {
+    if (nonEmpty(merged[key])) return;
+    const next = nonEmpty(value);
+    if (next) merged[key] = next;
+  };
+  for (const source of [extra || {}, env || {}]) {
+    fill("AWS_ACCESS_KEY_ID", source.AWS_ACCESS_KEY_ID);
+    fill("AWS_SECRET_ACCESS_KEY", source.AWS_SECRET_ACCESS_KEY);
+    fill("AWS_REGION", source.AWS_REGION);
+  }
+  if (
+    !nonEmpty(merged.AWS_REGION) &&
+    nonEmpty(merged.AWS_ACCESS_KEY_ID) &&
+    nonEmpty(merged.AWS_SECRET_ACCESS_KEY)
+  ) {
+    merged.AWS_REGION = nonEmpty(env?.AWS_DEFAULT_REGION) || "ap-southeast-1";
+  }
+  return merged;
+}
+
 export function previewRuntime(download, childUri) {
   return runtimeExports({
     ...dopplerAllowlist(download),

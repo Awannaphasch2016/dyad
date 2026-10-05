@@ -179,12 +179,16 @@ export function ProviderSettingsPage({ provider }: ProviderSettingsPageProps) {
       ? azureHasSavedSettings || azureHasEnvConfiguration
       : false;
 
+  const isBedrock = provider === "bedrock";
+  const bedrockIamReady = isBedrock && envVars.BEDROCK_IAM === "1";
   const isConfigured =
     provider === "azure"
       ? isAzureConfigured
       : provider === "vertex"
         ? isVertexConfigured
-        : isValidUserKey || hasEnvKey; // Configured if either is set
+        : isBedrock
+          ? bedrockIamReady
+          : isValidUserKey || hasEnvKey; // Configured if either is set
 
   const shouldValidateApiKey = VALIDATED_API_KEY_PROVIDERS.has(provider);
 
@@ -538,6 +542,12 @@ export function ProviderSettingsPage({ provider }: ProviderSettingsPageProps) {
                 Could not load configuration data: {settingsError.message}
               </AlertDescription>
             </Alert>
+          ) : isBedrock ? (
+            <p className="text-sm text-muted-foreground">
+              {bedrockIamReady
+                ? "Requests are signed with the AWS credentials on the server."
+                : "Bedrock requires AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY on the server."}
+            </p>
           ) : (
             <ApiKeyConfiguration
               provider={provider}
