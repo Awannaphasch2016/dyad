@@ -678,8 +678,15 @@ describe("local_agent_prompt", () => {
     });
 
     expect(prompt).toContain("initial questionnaire was already completed");
+    expect(prompt).not.toContain("completed in this chat");
     expect(prompt).toContain("questionnaire answers already recorded");
+    expect(prompt).toContain(
+      "approved Discovery summary in the user's message is that questionnaire",
+    );
     expect(prompt).toContain("Do not call `planning_questionnaire` again");
+    expect(prompt).not.toContain(
+      "Successfully complete `planning_questionnaire`",
+    );
     expect(prompt).not.toContain(
       "You MUST call this tool even when the initial request seems concrete",
     );

@@ -103,7 +103,10 @@ import {
 import { SUMMARIZE_CHAT_SYSTEM_PROMPT } from "../../prompts/summarize_chat_system_prompt";
 import { SECURITY_REVIEW_SYSTEM_PROMPT } from "../../prompts/security_review_prompt";
 import { appendFactoryPhaseSystemPrompt } from "../../prompts/factory_phase_prompt";
-import { phaseFromTitle } from "@/lib/factoryPhase";
+import {
+  phaseFromTitle,
+  shouldSkipFactoryBlueprintQuestionnaire,
+} from "@/lib/factoryPhase";
 import fs from "node:fs";
 import * as path from "path";
 import * as crypto from "crypto";
@@ -2215,8 +2218,16 @@ ${componentSnippet}
           settings.agentToolConsents?.["planning_questionnaire"] !== "never";
         const appBlueprint = getAppBlueprintForChat(updatedChat.id);
         const hasAppBlueprint = Boolean(appBlueprint);
+        const blueprintStillRequired = Boolean(
+          settings.enableAppBlueprint && updatedChat.app.needsAppBlueprint,
+        );
         const appBlueprintQuestionnaireCompleted =
-          hasCompletedAppBlueprintQuestionnaire(updatedChat.messages);
+          hasCompletedAppBlueprintQuestionnaire(updatedChat.messages) ||
+          shouldSkipFactoryBlueprintQuestionnaire({
+            chatTitle: updatedChat.title,
+            userMessage: req.prompt,
+            blueprintStillRequired,
+          });
         const initialSupabaseProviderToolsAvailable = Boolean(
           updatedChat.app.supabaseProjectId &&
           hasSupabaseCredentialsForOrganization(
@@ -2324,8 +2335,7 @@ ${componentSnippet}
           freeModelMode,
           frameworkType,
           hasSupabaseProject: !!updatedChat.app?.supabaseProjectId,
-          enableAppBlueprint:
-            settings.enableAppBlueprint && updatedChat.app.needsAppBlueprint,
+          enableAppBlueprint: blueprintStillRequired,
           hasAppBlueprint,
           planningQuestionnaireAvailable,
           appBlueprintQuestionnaireCompleted,

@@ -24,12 +24,23 @@ describe("factoryPhaseSystemPrompt", () => {
     expect(prompt).toContain("## Discovery summary");
   });
 
-  it("keeps Delivery read-only and Implementation building", () => {
-    expect(factoryPhaseSystemPrompt("delivery")).toContain(
-      "Do not edit code in this phase",
-    );
-    expect(factoryPhaseSystemPrompt("implementation")).toContain(
-      "Build exactly that one-page website",
+  it("keeps Delivery read-only", () => {
+    const prompt = factoryPhaseSystemPrompt("delivery");
+    expect(prompt).toContain("Do not edit code in this phase");
+    expect(prompt).not.toContain("write_app_blueprint");
+  });
+
+  it("writes the blueprint before the page, then builds once the gate is gone", () => {
+    const prompt = factoryPhaseSystemPrompt("implementation");
+    expect(prompt).toContain("write_app_blueprint");
+    expect(prompt).toContain("Do not call `planning_questionnaire`");
+    expect(prompt).toContain("Required App Blueprint Gate");
+    expect(prompt).toContain("Do not call `write_file`");
+    expect(prompt).toContain("`search_replace`");
+    expect(prompt).toContain("Build exactly that one-page website");
+    expect(prompt).toContain("template_id");
+    expect(factoryPhaseSystemPrompt("discovery")).not.toContain(
+      "write_app_blueprint",
     );
   });
 

@@ -47,6 +47,7 @@ import {
 } from "@/lib/schemas";
 import type { SqlConsentMetadata } from "@/shared/sqlConsentMetadata";
 import { isFreeProModel } from "@/lib/freeProModel";
+import { shouldSkipFactoryBlueprintQuestionnaire } from "@/lib/factoryPhase";
 import { readSettings } from "@/main/settings";
 import { getDyadAppPath } from "@/paths/paths";
 import { detectFrameworkType } from "@/ipc/utils/framework_utils";
@@ -1034,9 +1035,15 @@ export async function handleLocalAgentStream(
       preCommitHookAvailable,
       testingEnabled: Boolean(chat.app.testingEnabled),
       testRunAttempts: new Map(),
-      appBlueprintQuestionnaireCompleted: hasCompletedAppBlueprintQuestionnaire(
-        chat.messages,
-      ),
+      appBlueprintQuestionnaireCompleted:
+        hasCompletedAppBlueprintQuestionnaire(chat.messages) ||
+        shouldSkipFactoryBlueprintQuestionnaire({
+          chatTitle: chat.title,
+          userMessage: req.prompt,
+          blueprintStillRequired: Boolean(
+            settings.enableAppBlueprint && chat.app.needsAppBlueprint,
+          ),
+        }),
       isDyadPro: isDyadProEnabled(settings),
       canUseExplorerSubagent:
         !buildMode &&

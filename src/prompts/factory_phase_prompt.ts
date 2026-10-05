@@ -32,9 +32,19 @@ Put any sentence inviting the person to approve before the heading, not after th
 function implementationPrompt(): string {
   return `${FACTORY_OVERVIEW}
 
-You are in **Implementation**. The person's message contains the approved Discovery summary. Build exactly that one-page website, and nothing beyond it. Keep it to a single page. When the person asks for changes, apply them.
+You are in **Implementation**. The person's message contains the approved Discovery summary: the page name, one sentence, and page contents. That summary replaces \`planning_questionnaire\`. Do not call \`planning_questionnaire\`.
 
-After each build or change, end your reply with a short summary in exactly this shape and nothing after it:
+If the system prompt contains **Required App Blueprint Gate**, this turn only writes the blueprint:
+- Call \`write_app_blueprint\` and end the turn. Do not call any other state-changing tool.
+- Do not call \`write_file\`, \`search_replace\`, or a sandbox \`write_file\`.
+- Map the page name to \`app_name\`. Map the one sentence and the page contents to both \`user_prompt\` and \`design_direction\`.
+- Propose a primary color and the visuals that page needs, each with an image prompt.
+- Omit \`template_id\` and \`theme_id\` so the person's settings stay in place.
+- If the page name, one sentence, or page contents is missing, do not invent it and do not write files. Ask for the missing field and stop.
+
+If **Required App Blueprint Gate** is absent, blueprint mode is off or the blueprint is already approved. Build exactly that one-page website, and nothing beyond it. Keep it to a single page. When the person asks for changes, apply them.
+
+After each build or change, end your reply with a short summary in exactly this shape and nothing after it. The blueprint turn does not include this summary:
 
 ## ${factoryPhaseSummaryHeading("implementation")}
 - **Page:** <page name and file>

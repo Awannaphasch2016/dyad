@@ -39,6 +39,66 @@ export function previewOpenForPhase(phase: FactoryPhase): boolean {
   return phase === "implementation";
 }
 
+/**
+ * Implementation is the only factory phase that writes a blueprint.
+ * Its approved Discovery summary stands in for planning_questionnaire.
+ */
+export function factoryPhaseSkipsBlueprintQuestionnaire(
+  phase: FactoryPhase,
+): boolean {
+  return phase === "implementation";
+}
+
+const DISCOVERY_SUMMARY_FIELDS = [
+  "page name",
+  "one sentence",
+  "page contents",
+] as const;
+
+function discoverySummaryFieldsPresent(text: string): boolean {
+  return DISCOVERY_SUMMARY_FIELDS.every((field) => {
+    const pattern = new RegExp(
+      `(?:^|\\n)\\s*[-*]\\s+\\*{0,2}${field}\\*{0,2}\\s*:`,
+      "i",
+    );
+    return pattern.test(text);
+  });
+}
+
+/**
+ * True when this turn's message carries the approved Discovery summary.
+ * That is the three labeled bullets from Continue (which has no heading) or
+ * the same bullets under a Discovery summary heading. A heading alone, or a
+ * summary missing one field, does not count.
+ */
+export function userMessageHasApprovedDiscoverySummary(
+  content: string | null | undefined,
+): boolean {
+  if (!content?.trim()) return false;
+  const visible = content.replace(/<think>[\s\S]*?<\/think>/gi, "");
+  return discoverySummaryFieldsPresent(visible);
+}
+
+/**
+ * Lets write_app_blueprint run on an Implementation chat that still needs a
+ * blueprint and whose current message includes the approved Discovery summary.
+ * A renamed chat and an ordinary build chat stay on the questionnaire.
+ */
+export function shouldSkipFactoryBlueprintQuestionnaire({
+  chatTitle,
+  userMessage,
+  blueprintStillRequired,
+}: {
+  chatTitle: string | null | undefined;
+  userMessage: string | null | undefined;
+  blueprintStillRequired: boolean;
+}): boolean {
+  if (!blueprintStillRequired) return false;
+  const phase = phaseFromTitle(chatTitle);
+  if (!phase || !factoryPhaseSkipsBlueprintQuestionnaire(phase)) return false;
+  return userMessageHasApprovedDiscoverySummary(userMessage);
+}
+
 export function nextFactoryPhase(phase: FactoryPhase): FactoryPhase | null {
   const next = FACTORY_PHASES[FACTORY_PHASES.indexOf(phase) + 1];
   return next ?? null;
