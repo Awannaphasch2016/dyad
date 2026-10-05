@@ -136,15 +136,15 @@ None. `preview-up.sh <pr> <ghcr.io/...@sha256:...>` stays the deploy command.
 
 ### Phase 1: Trust the pull-request subject
 
-- [ ] On the Doppler service identity in `DOPPLER_SERVICE_IDENTITY_ID`, allow subject `repo:Awannaphasch2016@28061800/dyad@1384672033:pull_request` for `dyad/preview` and `aws/dev`.
-- [ ] Label one pull request that is not one of the four branches and confirm the existing `preview.yml` fetch step succeeds. The image lookup may still fail. That is expected until Phase 2. The fetch log must not print secret values.
+- [x] On the Doppler service identity in `DOPPLER_SERVICE_IDENTITY_ID`, allow subject `repo:Awannaphasch2016@28061800/dyad@1384672033:pull_request` for `dyad/preview` and `aws/dev`. The saved subject is the wildcard `repo:Awannaphasch2016@28061800/dyad@1384672033:*` on the preview identity.
+- [x] Label one pull request that is not one of the four branches and confirm the existing `preview.yml` fetch step succeeds. Pull request 38 run 37322245582 fetched `dyad/preview` and `aws/dev`. The fetch log did not print secret values.
 
 ### Phase 2: Build or reuse from the label
 
 - [x] Add `scripts/gascity/preview-image-id.mjs` and its test.
 - [x] Split `preview.yml` into identify, publish, and deploy. Check out the head SHA. Reuse `ctx-<hash>` or `sha-<commit>`. Build otherwise, with registry layer cache and the existing disk cleanup.
 - [x] Keep the four-branch skip in place for this phase so pull requests 20 and 34 are not deployed twice.
-- [ ] Prove it on one labeled pull request outside that list: the log shows reused or built, and the public URL returns the sign-in page. The proof waits on Phase 1, because deploy fetches Doppler with the pull-request subject.
+- [x] Prove it on one labeled pull request outside that list: the log shows reused or built, and the public URL returns the sign-in page. Run 37322245582 built `sha-52e878c86aa7bd0304e5bbaf0c2bcc0e1e4428b0`, deployed it, and `https://pr-38.anakwannaphaschaiyong.com/sign-in` returned the wewebplus page.
 
 ### Phase 3: Remove the branch list
 
@@ -161,7 +161,7 @@ None. `preview-up.sh <pr> <ghcr.io/...@sha256:...>` stays the deploy command.
 
 ## Testing Strategy
 
-- [ ] `node --test scripts/gascity/preview-image-id.test.mjs` covers a stable hash, a changed file, an ignored `.git` path, and the `!.env.example` exception.
+- [x] `node --test scripts/gascity/preview-image-id.test.mjs` covers a stable hash, a changed file, an ignored `.git` path, and the `!.env.example` exception.
 - [ ] `node --test scripts/gascity/preview-tunnel.test.mjs` asserts the label workflow checks out the head SHA, runs the context hash, builds only when the tag is missing, and no longer contains the four branch names after Phase 3.
 - [ ] The controller tests still cover label, unlabel, close, and synchronize-without-label. `commandForPullRequest` does not change.
 - [ ] One real labeled pull request outside the old list, then one push to pull request 34 after the list is removed.
