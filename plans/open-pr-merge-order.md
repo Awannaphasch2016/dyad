@@ -27,7 +27,7 @@ The person merging needs one order, a reason to retarget some bases, and an expl
 ### Out of Scope (Follow-up)
 
 - Updating the already-merged branches for pull requests 20, 27, and 29. A push to those names can still start the old image workflow. Nobody needs to push them for this landing.
-- Rewriting the HITL docs, the Supabase cutover plan, or the factory blueprint. This pass lands the existing pull requests.
+- Rewriting the Supabase cutover plan or the factory blueprint. The HITL notes in [#9](https://github.com/Awannaphasch2016/dyad/pull/9) and [#12](https://github.com/Awannaphasch2016/dyad/pull/12) are refreshed on their own branches before merge. They stay in `docs/`.
 - Closing the skipped pull requests. Leaving them open records why they were not merged.
 - Adding the `preview` label to any of these pull requests. A label on a branch that does not yet contain the new workflow runs the old file. A label on a closed pull request used to destroy the preview.
 - Rebasing [#16](https://github.com/Awannaphasch2016/dyad/pull/16). That happens only if the Vercel UI is still wanted after group 3, because both touch `hitl-web/next.config.ts`.
@@ -111,7 +111,8 @@ Skip:
 - `deploy/preview/transition.mjs` — do not drop the closed-label skip while resolving those conflicts.
 - `scripts/gascity/preview-tunnel.test.mjs` — 26, 30, and 40 all differ from `main`. Take `main`’s assertions that the label workflow has no branch list, then re-apply only the Gas City hostname assertions from 26 and 30.
 - `hitl-web/next.config.ts` — conflict point between 30 and 16. Out of scope until 16 is rebased.
-- Factory, HITL doc, and plan-only pull requests — merge their existing diffs. Do not edit them in this plan’s branch.
+- Factory and plan-only pull requests — merge their existing diffs. Do not edit them in this plan’s branch.
+- HITL notes — refresh [#9](https://github.com/Awannaphasch2016/dyad/pull/9) and [#12](https://github.com/Awannaphasch2016/dyad/pull/12) on their own branches before merging them. The currency mark is `main` at `e8b66417`.
 
 ### Data Model Changes
 
@@ -126,8 +127,8 @@ None in the plan commit. [#30](https://github.com/Awannaphasch2016/dyad/pull/30)
 ### Phase 1: Land the disjoint pull requests
 
 - [ ] Merge [#41](https://github.com/Awannaphasch2016/dyad/pull/41) into `main`.
-- [ ] Merge [#9](https://github.com/Awannaphasch2016/dyad/pull/9) into `main`.
-- [ ] Merge [#12](https://github.com/Awannaphasch2016/dyad/pull/12) into `main`.
+- [ ] Confirm [#9](https://github.com/Awannaphasch2016/dyad/pull/9) names `main` commit `e8b66417` in `docs/hitl-architecture.md`, then merge it into `main`.
+- [ ] Confirm [#12](https://github.com/Awannaphasch2016/dyad/pull/12) names that same commit in `docs/multi-tenant-hitl-architecture.md` and `docs/hitl-user-journey.md`, then merge it into `main`. The journey screenshots stay the 2026-10-02 capture at `a4b65e8a`.
 - [ ] Decide whether [#13](https://github.com/Awannaphasch2016/dyad/pull/13) is still useful. Merge it only if the plan text should live in the repo. The formula graph is already on `main`.
 
 ### Phase 2: Retarget the plan-only pull requests
@@ -187,6 +188,8 @@ None in the plan commit. [#30](https://github.com/Awannaphasch2016/dyad/pull/30)
 - [#40](https://github.com/Awannaphasch2016/dyad/pull/40) is obsolete because pull request 34 is merged.
 - Branches 20, 27, and 29 stay stale on purpose. Refreshing them is not part of landing the open pull requests.
 - Merge commits, not squashes, for the stack. Squashing 30 would hide that it contains 26.
+- HITL notes stay in `docs/` in this repository. Each note names the `main` commit it was checked against (`e8b66417` on 2026-10-05). The note is late when a later `main` commit changes a path the note names. The GitHub wiki has an edit time and no code commit. Neon is the `wewebplus` application database, not a document store, and a row there is not tied to a git commit.
+- [#9](https://github.com/Awannaphasch2016/dyad/pull/9) and [#12](https://github.com/Awannaphasch2016/dyad/pull/12) are refreshed on their branches before merge. The journey PDF and screenshots are not regenerated. Their labels still describe commit `a4b65e8a`.
 
 ---
 
