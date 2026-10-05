@@ -173,8 +173,48 @@ None in the plan commit. [#30](https://github.com/Awannaphasch2016/dyad/pull/30)
 
 ## Open Questions
 
-- Should [#13](https://github.com/Awannaphasch2016/dyad/pull/13) be merged as a historical note, or left open because the formula graph is already on `main`?
-- After phase 3, is the Vercel UI in [#16](https://github.com/Awannaphasch2016/dyad/pull/16) still wanted? If yes, rebase it onto the `main` that contains 30, then merge it alone.
+None. The two questions from phase 4 are decided below. Phase 5 is a draft for review. Do not start it until it is approved.
+
+## Phase 5 draft: pull request 16 fails without a GasCity URL
+
+This draft is not approved. Revise it before any rebase or merge of [#16](https://github.com/Awannaphasch2016/dyad/pull/16).
+
+[#13](https://github.com/Awannaphasch2016/dyad/pull/13) stays open. Do not merge it and do not close it. The formula graph it describes is already on `main`.
+
+[#16](https://github.com/Awannaphasch2016/dyad/pull/16) stays the Vercel Dyad shell: Home sends a prompt, Gates is the question board at `/hitl`, and Runtime lists which jobs stay off Electron. It does not land with the same-origin `/v1` stand-in that is on that branch today.
+
+### What fails
+
+Home, Gates, and Runtime call GasCity only at an absolute `https` `NEXT_PUBLIC_GAS_CITY_URL`.
+
+- A missing URL, a relative URL such as `/v1/runs`, or a non-`https` URL fails before `fetch`. The page shows “The preview listener is not configured.” No request is sent.
+- A `fetch` that throws, or an HTTP response that is not success, fails that action and shows the error. The page does not try a second address.
+- This check applies in every environment, including local `next dev` and production. `main` today throws at build time only when `VERCEL_ENV` is `preview` (`hitl-web/lib/gas_city_url.ts`). This draft removes that limit for these three pages.
+
+### What is removed
+
+On the rebased [#16](https://github.com/Awannaphasch2016/dyad/pull/16) branch, delete the stand-in that pretends this Vercel app is GasCity:
+
+- The rewrite in `hitl-web/next.config.ts` from `/v1/:path*` to `/api/v1/:path*`.
+- `hitl-web/app/api/v1/runs/route.ts`, which invents `gascity-run:<random>` and returns 202.
+- `hitl-web/app/api/v1/hitl/questions/route.ts` and `hitl-web/app/api/v1/hitl/questions/[id]/answers/route.ts`, which read and update the `wewebplus` question table as if that were GasCity.
+- `hitl-web/app/api/v1/capabilities/electron/route.ts`, which returns “electron required” without calling GasCity.
+- The branch in `hitl-web/lib/gascity/browser_client.ts` that calls the Vercel app itself when `NEXT_PUBLIC_GAS_CITY_URL` is empty.
+
+A prompt on Home does not write a question. Gates shows questions only when GasCity returns them. An empty URL does not list rows from `WEWEBPLUS_DATABASE_URL`.
+
+### What the rebase keeps
+
+Rebase `cursor/dyad-web-frontend-bbea` onto current `origin/main` after this draft is approved. Keep `main`’s `hitl-web/lib/gas_city_url.ts`, its test, and the `assertPreviewGasCityUrl()` call in `hitl-web/next.config.ts`. Keep the label-only preview rule. Do not add the `preview` label while landing this branch.
+
+`main` and this branch both edit `hitl-web/next.config.ts` and the question board. Keep `main`’s GasCity URL check. Take the three shell pages from [#16](https://github.com/Awannaphasch2016/dyad/pull/16). Do not take its `/api/v1` routes.
+
+### Checks before merge
+
+- A test shows that an empty `NEXT_PUBLIC_GAS_CITY_URL` throws before `fetch` for a prompt, a question list, an answer, and a runtime capability.
+- A test shows that `/v1/runs` on this app is not a route and that `next.config.ts` has no `/v1` rewrite.
+- `node --test hitl-web/lib/gas_city_url.test.ts scripts/gascity/preview-tunnel.test.mjs scripts/gascity/preview-controller.test.mjs` passes.
+- `preview-image.yml` on `main` still has no `branches:` list.
 
 ## Decision Log
 
@@ -190,6 +230,8 @@ None in the plan commit. [#30](https://github.com/Awannaphasch2016/dyad/pull/30)
 - Merge commits, not squashes, for the stack. Squashing 30 would hide that it contains 26.
 - HITL notes stay in `docs/` in this repository. Each note names the `main` commit it was checked against (`e8b66417` on 2026-10-05). The note is late when a later `main` commit changes a path the note names. The GitHub wiki has an edit time and no code commit. Neon is the `wewebplus` application database, not a document store, and a row there is not tied to a git commit.
 - [#9](https://github.com/Awannaphasch2016/dyad/pull/9) and [#12](https://github.com/Awannaphasch2016/dyad/pull/12) are refreshed on their branches before merge. The journey PDF and screenshots are not regenerated. Their labels still describe commit `a4b65e8a`.
+- [#13](https://github.com/Awannaphasch2016/dyad/pull/13) stays open. It is not merged and it is not closed.
+- [#16](https://github.com/Awannaphasch2016/dyad/pull/16) is still the Vercel shell, and it does not land until phase 5 is approved. The same-origin `/v1` stand-in is removed. A missing or unreachable GasCity URL fails that action. There is no second request to this app.
 
 ---
 
