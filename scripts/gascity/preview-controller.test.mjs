@@ -77,6 +77,15 @@ test("a push without the preview label does not destroy an existing preview", ()
     commandForPullRequest({ action: "closed", labels: ["preview"] }),
     "destroy",
   );
+  assert.equal(
+    commandForPullRequest({
+      action: "labeled",
+      label: "preview",
+      labels: ["preview"],
+      closed: true,
+    }),
+    "skip",
+  );
 });
 
 test("the preview database export uses the child branch, not the parent URL", () => {

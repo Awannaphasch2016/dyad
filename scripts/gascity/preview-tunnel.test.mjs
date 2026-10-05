@@ -227,7 +227,8 @@ test("preview image workflow updates the shared Devbox after publish", () => {
   assert.equal(workflow.includes("secrets.DOPPLER_TOKEN"), false);
   assert.equal(workflow.includes("secrets.NEON_API_KEY"), false);
   assert.equal(workflow.includes("secrets.AWS_ACCESS_KEY_ID"), false);
-  assert.match(workflow, /cursor\/formula-preview-9e7a/);
+  assert.equal(workflow.includes("branches:"), false);
+  assert.equal(workflow.includes("cursor/formula-preview-9e7a"), false);
   assert.equal(workflow.includes("secrets.CLOUDFLARE_API_TOKEN"), false);
   assert.equal(workflow.includes("secrets.CLOUDFLARE_ZONE_ID"), false);
   assert.equal(workflow.includes("secrets.CLOUDFLARE_ACCOUNT_ID"), false);
@@ -236,7 +237,7 @@ test("preview image workflow updates the shared Devbox after publish", () => {
   assert.equal(workflow.includes("13.251.216.187"), false);
 });
 
-test("labeled preview workflow fetches Doppler and skips image-managed branches", () => {
+test("labeled preview workflow reuses or builds the head commit", () => {
   const workflow = readFileSync(
     new URL("../../.github/workflows/preview.yml", import.meta.url),
     "utf8",
@@ -245,17 +246,25 @@ test("labeled preview workflow fetches Doppler and skips image-managed branches"
     new URL("../../deploy/preview/controller.mjs", import.meta.url),
     "utf8",
   );
+  assert.match(workflow, /github\.event\.pull_request\.head\.sha/);
+  assert.match(workflow, /scripts\/gascity\/preview-image-id\.mjs/);
+  assert.match(workflow, /docker\/build-push-action@v6/);
+  assert.match(workflow, /type=registry,ref=/);
+  assert.match(workflow, /reused ctx-/);
+  assert.match(workflow, /built sha-/);
+  assert.equal(workflow.includes("was not published"), false);
   assert.match(workflow, /dopplerhq\/secrets-fetch-action@v2/);
   assert.match(workflow, /auth-method:\s*oidc/);
   assert.equal(workflow.includes("secrets.DOPPLER_TOKEN"), false);
   assert.equal(workflow.includes("secrets.NEON_API_KEY"), false);
+  assert.equal(workflow.includes("image_managed"), false);
   for (const branch of [
     "cursor/preview-bridge-proof-9e7a",
     "cursor/formula-preview-9e7a",
     "cursor/preview-bedrock-render-bbea",
     "cursor/session-jwt-refresh-bbea",
   ]) {
-    assert.equal(workflow.includes(branch), true);
+    assert.equal(workflow.includes(branch), false);
   }
   assert.match(
     controller,
@@ -273,13 +282,27 @@ test("preview exec workflow uses GitHub federation and does not touch production
   assert.match(workflow, /namespacelabs\/nscloud-setup@v0/);
   assert.match(workflow, /devbox exec Wewebplus-ci -- echo federated-ok/);
   assert.match(workflow, /PREVIEW_SKIP_TUNNEL=1/);
-  assert.match(workflow, /dopplerhq\/secrets-fetch-action@v2/);
-  assert.match(workflow, /preview-up\.sh 34 /);
-  assert.equal(workflow.includes("secrets.DOPPLER_TOKEN"), false);
-  assert.match(
-    workflow,
-    /https:\/\/pr-34\.anakwannaphaschaiyong\.com\/sign-in/,
+  assert.match(workflow, /inputs:/);
+  assert.match(workflow, /\$\{\{ inputs\.pr \}\}/);
+  assert.equal(workflow.includes("preview-up.sh 20"), false);
+  assert.equal(workflow.includes("push:"), false);
+  assert.equal(workflow.includes("EC2_SSH_KEY"), false);
+  assert.equal(workflow.includes("13.251.216.187"), false);
+  assert.equal(workflow.includes("gascity-rollout"), false);
+});
+
+test("preview wake workflow restarts one pull request and does not build", () => {
+  const workflow = readFileSync(
+    new URL("../../.github/workflows/preview-wake.yml", import.meta.url),
+    "utf8",
   );
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.match(workflow, /\$\{\{ inputs\.pr \}\}/);
+  assert.match(workflow, /PREVIEW_SKIP_TUNNEL=1/);
+  assert.match(workflow, /namespacelabs\/nscloud-setup@v0/);
+  assert.equal(workflow.includes("push:"), false);
+  assert.equal(workflow.includes("preview-34"), false);
+  assert.equal(workflow.includes("docker/build-push-action"), false);
   assert.equal(workflow.includes("EC2_SSH_KEY"), false);
   assert.equal(workflow.includes("13.251.216.187"), false);
   assert.equal(workflow.includes("gascity-rollout"), false);
