@@ -15,14 +15,14 @@ The blueprint gate stays. A missing project fails immediately. An app workspace 
 ### Change
 
 - Delete `ensureGitRepository`. If the folder is missing and there is nothing to clone, throw `DyadError` kind `Precondition`: the project files are missing. Do not create a directory and do not run `git init`.
+- If the folder is present and `package.json` is absent, throw the same kind of error: `This app has no package.json.` Do not spawn pnpm or npm. This check runs in `getApp` and again before `getDefaultCommand`, so a preview cannot start on that folder.
 - Remove the `catch` in `getApp` that logs `Could not prepare files` and continues. The error reaches the UI.
-- `getDefaultCommand` does not spawn pnpm or npm when `package.json` is absent. The preview says `This app has no package.json, so the preview cannot start.`
 
 ### Tests
 
 - Replace `creates a git repository when the app folder does not exist`. A missing folder with no GitHub repo throws, and the directory is not created.
 - A folder that already has `.git` stays on its current commit.
-- No `package.json` does not produce a `pnpm install` command.
+- A folder with `.git` and no `package.json` throws, and no install command is built.
 
 ## 2. Restore a message by the commit that reply already recorded
 
@@ -31,7 +31,9 @@ A message is a database row. A commit is a git snapshot of the app folder. Only 
 - `sourceCommitHash` is `git HEAD` when the reply starts, before that reply changes files. It is set in `src/ipc/handlers/chat_stream_handlers.ts` when the placeholder assistant message is inserted.
 - `commitHash` is the new snapshot when the reply finishes and the turn changed files. Read-only Discovery skips `commitAllChanges`, so this stays empty (`src/pro/main/ipc/handlers/local_agent/local_agent_handler.ts`).
 
-A user message stores neither hash. Restore on a user message means put the files back to how they were before that message. `resolveTargetCommitHash` in `src/ipc/handlers/version_handlers.ts` looks forward for the next assistant's `sourceCommitHash`, then backward only for `commitHash`, then `initialCommitHash`.
+The user message is still stored. `acceptChatTurn` in `src/ipc/handlers/chat_turn_acceptance.ts` inserts it as a `messages` row with its text, in order, in that chat. It has no commit hash because the hash is the file snapshot, and a user row does not change files. The row is the trace of what was asked. The original chat keeps that row. Restore creates a new chat from the messages before the chosen one and does not delete the source chat, so the path that got here stays in the original history.
+
+Restore on a user message means put the files back to how they were before that message. `resolveTargetCommitHash` in `src/ipc/handlers/version_handlers.ts` looks forward for the next assistant's `sourceCommitHash`, then backward only for `commitHash`, then `initialCommitHash`.
 
 On the Discovery screen the user message is last, so the forward look finds nothing. The kickoff reply has `sourceCommitHash` and no `commitHash`, so the backward look skips it. `initialCommitHash` is null, and the yellow warning is returned. Ask mode still does not commit. The lookup is what changes.
 
@@ -44,6 +46,7 @@ On the Discovery screen the user message is last, so the forward look finds noth
 
 - Discovery shape: assistant with `sourceCommitHash` only, then the user message, `initialCommitHash` null. The result is that `sourceCommitHash`.
 - Every hash null returns null, and the handler test expects the new warning.
+- After restore, the source chat still contains the chosen user message. The new chat contains the messages from before it.
 
 ## 3. Three phase chats are the only workspace
 
