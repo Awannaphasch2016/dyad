@@ -126,36 +126,36 @@ None in the plan commit. [#30](https://github.com/Awannaphasch2016/dyad/pull/30)
 
 ### Phase 1: Land the disjoint pull requests
 
-- [ ] Merge [#41](https://github.com/Awannaphasch2016/dyad/pull/41) into `main`.
-- [ ] Confirm [#9](https://github.com/Awannaphasch2016/dyad/pull/9) names `main` commit `e8b66417` in `docs/hitl-architecture.md`, then merge it into `main`.
-- [ ] Confirm [#12](https://github.com/Awannaphasch2016/dyad/pull/12) names that same commit in `docs/multi-tenant-hitl-architecture.md` and `docs/hitl-user-journey.md`, then merge it into `main`. The journey screenshots stay the 2026-10-02 capture at `a4b65e8a`.
+- [x] Merge [#41](https://github.com/Awannaphasch2016/dyad/pull/41) into `main`.
+- [x] Confirm [#9](https://github.com/Awannaphasch2016/dyad/pull/9) names `main` commit `e8b66417` in `docs/hitl-architecture.md`, then merge it into `main`.
+- [x] Confirm [#12](https://github.com/Awannaphasch2016/dyad/pull/12) names that same commit in `docs/multi-tenant-hitl-architecture.md` and `docs/hitl-user-journey.md`, then merge it into `main`. The journey screenshots stay the 2026-10-02 capture at `a4b65e8a`.
 - [ ] Decide whether [#13](https://github.com/Awannaphasch2016/dyad/pull/13) is still useful. Merge it only if the plan text should live in the repo. The formula graph is already on `main`.
 
 ### Phase 2: Retarget the plan-only pull requests
 
-- [ ] Change the base of [#31](https://github.com/Awannaphasch2016/dyad/pull/31), [#28](https://github.com/Awannaphasch2016/dyad/pull/28), and [#19](https://github.com/Awannaphasch2016/dyad/pull/19) to `main`.
-- [ ] Read each retargeted diff. Merge only if the diff is still the plan file named in the table.
-- [ ] Merge those three in any order.
+- [x] Change the base of [#31](https://github.com/Awannaphasch2016/dyad/pull/31), [#28](https://github.com/Awannaphasch2016/dyad/pull/28), and [#19](https://github.com/Awannaphasch2016/dyad/pull/19) to `main`.
+- [x] Read each retargeted diff. Merge only if the diff is still the plan file named in the table.
+- [x] Merge those three in any order.
 
 ### Phase 3: Rebase the Gas City stack, then merge it
 
-- [ ] Rebase `cursor/gas-city-fail-fast-9e7a` onto current `origin/main`.
-- [ ] In conflicts, keep `main`’s label workflow: head SHA checkout, `preview-image-id.mjs`, no `branches:` list in `preview-image.yml`, and the closed-label skip in `deploy/preview/transition.mjs`.
-- [ ] Re-apply the Gas City hostname failure behavior from [#26](https://github.com/Awannaphasch2016/dyad/pull/26) on top of that workflow.
-- [ ] Retarget [#26](https://github.com/Awannaphasch2016/dyad/pull/26) to `main` and merge it.
-- [ ] Rebase `cursor/single-surface-impl-d237` onto the rebased 26.
-- [ ] Retarget [#30](https://github.com/Awannaphasch2016/dyad/pull/30) to `main` and merge it.
-- [ ] Run `node --test scripts/gascity/preview-tunnel.test.mjs scripts/gascity/preview-controller.test.mjs` on the rebased result.
+- [x] Rebase `cursor/gas-city-fail-fast-9e7a` onto current `origin/main`.
+- [x] In conflicts, keep `main`’s label workflow: head SHA checkout, `preview-image-id.mjs`, no `branches:` list in `preview-image.yml`, and the closed-label skip in `deploy/preview/transition.mjs`.
+- [x] Re-apply the Gas City hostname failure behavior from [#26](https://github.com/Awannaphasch2016/dyad/pull/26) on top of that workflow.
+- [x] Retarget [#26](https://github.com/Awannaphasch2016/dyad/pull/26) to `main` and merge it.
+- [x] Rebase `cursor/single-surface-impl-d237` onto the rebased 26.
+- [x] Retarget [#30](https://github.com/Awannaphasch2016/dyad/pull/30) to `main` and merge it.
+- [x] Run `node --test scripts/gascity/preview-tunnel.test.mjs scripts/gascity/preview-controller.test.mjs` on the rebased result.
 
 ### Phase 4: Leave the rest
 
-- [ ] Do not update or merge [#14](https://github.com/Awannaphasch2016/dyad/pull/14), [#15](https://github.com/Awannaphasch2016/dyad/pull/15), [#40](https://github.com/Awannaphasch2016/dyad/pull/40), or [#16](https://github.com/Awannaphasch2016/dyad/pull/16).
-- [ ] Do not push `cursor/preview-bridge-proof-9e7a`, `cursor/formula-preview-9e7a`, or `cursor/preview-bedrock-render-bbea` to refresh their old workflow files.
+- [x] Do not update or merge [#14](https://github.com/Awannaphasch2016/dyad/pull/14), [#15](https://github.com/Awannaphasch2016/dyad/pull/15), [#40](https://github.com/Awannaphasch2016/dyad/pull/40), or [#16](https://github.com/Awannaphasch2016/dyad/pull/16).
+- [x] Do not push `cursor/preview-bridge-proof-9e7a`, `cursor/formula-preview-9e7a`, or `cursor/preview-bedrock-render-bbea` to refresh their old workflow files.
 
 ## Testing Strategy
 
-- [ ] After phase 1 and phase 2, `git grep preview-image-id.mjs origin/main -- .github/workflows/preview.yml` still matches, and `git grep branches: origin/main -- .github/workflows/preview-image.yml` does not.
-- [ ] After phase 3, the same two checks pass, and the preview tunnel and controller tests pass.
+- [x] After phase 1 and phase 2, `git grep preview-image-id.mjs origin/main -- .github/workflows/preview.yml` still matches, and `git grep branches: origin/main -- .github/workflows/preview-image.yml` does not.
+- [x] After phase 3, the same two checks pass, and the preview tunnel and controller tests pass.
 - [ ] [#41](https://github.com/Awannaphasch2016/dyad/pull/41) keeps its own factory-phase tests inside that pull request. This plan does not re-run the whole suite for the doc merges.
 - [ ] CLA Assistant may stay red. That matches pull request 38 and is not a failure of this order.
 
