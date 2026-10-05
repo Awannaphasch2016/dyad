@@ -168,7 +168,7 @@ jobs:
           echo "number=${number}" >> "$GITHUB_OUTPUT"
           echo "Pull request ${number}"
 
-      # The Wewebplus identity subject is repo:Awannaphasch2016/dyad:ref:refs/heads/cursor/*
+      # Subject: repo:Awannaphasch2016@28061800/dyad@1384672033:ref:refs/heads/cursor/*
       - name: Fetch dyad preview secrets
         uses: dopplerhq/secrets-fetch-action@v2.0.0
         with:
