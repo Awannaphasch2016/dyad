@@ -61,4 +61,3 @@ export async function run() {
   }
   console.log(`Clerk allows ${origin} (${next.origins.length} origins)`);
 }
-
