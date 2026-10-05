@@ -4,7 +4,7 @@
 # production deploy key. It reconnects the named tunnel for pull request 41.
 # The production host is not a target.
 # A push of this file starts the stopped Devbox and brings preview 41 back.
-# Wake after the named tunnel returned HTTP 530.
+# Wake after the named tunnel returned HTTP 530 again.
 name: Preview exec
 
 on:
