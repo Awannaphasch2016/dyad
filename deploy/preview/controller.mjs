@@ -5,6 +5,7 @@ import { writeFileSync } from "node:fs";
 import { commandForPullRequest } from "./transition.mjs";
 import { deletePreviewBranch, ensurePreviewBranch } from "./neon.mjs";
 import {
+  credentialsFromEnvironment,
   mergeAwsCredentials,
   previewRuntime,
   withEnvironmentSecrets,
@@ -49,7 +50,10 @@ async function runtimeEnv() {
   }
   const awsToken = process.env.AWS_DOPPLER_TOKEN || "";
   const awsDownload = awsToken ? await downloadDoppler(awsToken) : {};
-  return mergeAwsCredentials(downloaded, awsDownload, process.env);
+  return credentialsFromEnvironment(
+    mergeAwsCredentials(downloaded, awsDownload, process.env),
+    process.env,
+  );
 }
 
 async function attach(pr) {
@@ -59,7 +63,7 @@ async function attach(pr) {
   if (!apiKey) {
     writeFileSync(out, "", { mode: 0o600 });
     console.log(
-      "Neon preview branch was not attached. Add the DOPPLER_TOKEN GitHub secret for the dyad preview config.",
+      "Neon preview branch was not attached. NEON_API_KEY was missing from the Doppler dyad/preview fetch.",
     );
     return;
   }
@@ -147,7 +151,9 @@ async function destroy(pr) {
     await runtimeEnv();
   }
   if (!process.env.NEON_API_KEY) {
-    console.log("Neon branch was not deleted. DOPPLER_TOKEN is not set.");
+    console.log(
+      "Neon branch was not deleted. NEON_API_KEY was missing from the Doppler dyad/preview fetch.",
+    );
     return;
   }
   const result = await deletePreviewBranch({

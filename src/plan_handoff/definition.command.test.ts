@@ -81,6 +81,7 @@ vi.mock("@/paths/paths", () => ({
   getDyadAppPath: (path: string) => path,
 }));
 
+import { FACTORY_WORKSPACE_PHASES_MESSAGE } from "@/lib/factoryPhase";
 import { planHandoffDefinition } from "./definition";
 import { serializePlanDocument, type PlanHandoffIntent } from "./transport";
 import type { PlanHandoffHostEvent } from "./host_state";
@@ -143,105 +144,21 @@ describe("plan handoff command ownership", () => {
     mocks.deleteOwnedChatAfterSettlingActors.mockResolvedValue(undefined);
   });
 
-  it("compensates a new target chat when implementation admission fails", async () => {
-    const failure = new Error("implementation admission failed");
-    mocks.dispatchPlanImplementationTurn.mockRejectedValueOnce(failure);
+  it("refuses to open a new chat when a plan is accepted", async () => {
     const { runner, removeTask } = commandRunner();
     const emit = vi.fn<(event: PlanHandoffHostEvent) => void>();
 
     await runner({ type: "run-handoff", intent: intent() }, emit);
 
-    expect(mocks.savePlanToDisk).toHaveBeenCalledTimes(2);
-    expect(mocks.savePlanToDisk).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({ status: "draft" }),
-    );
-    expect(mocks.deleteOwnedChatAfterSettlingActors).toHaveBeenCalledWith(99);
-    expect(mocks.routePlanHandoffPresentation).not.toHaveBeenCalled();
+    expect(mocks.createChatForApp).not.toHaveBeenCalled();
+    expect(mocks.dispatchPlanImplementationTurn).not.toHaveBeenCalled();
+    expect(mocks.deleteOwnedChatAfterSettlingActors).not.toHaveBeenCalled();
     expect(emit).toHaveBeenCalledWith({
       type: "FAILED",
       handoffId: "handoff-1",
-      error: failure.message,
+      error: FACTORY_WORKSPACE_PHASES_MESSAGE,
     });
     expect(removeTask).toHaveBeenCalledWith("handoff:handoff-1");
-  });
-
-  it("releases ownership after implementation admission succeeds", async () => {
-    const { runner } = commandRunner();
-    const emit = vi.fn<(event: PlanHandoffHostEvent) => void>();
-
-    await runner({ type: "run-handoff", intent: intent() }, emit);
-
-    expect(mocks.savePlanToDisk).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({ status: "draft" }),
-    );
-    expect(mocks.savePlanToDisk).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({ status: "accepted", chatId: 99 }),
-    );
-    expect(
-      mocks.dispatchPlanImplementationTurn.mock.invocationCallOrder[0],
-    ).toBeLessThan(mocks.savePlanToDisk.mock.invocationCallOrder[2]);
-    expect(mocks.savePlanToDisk).toHaveBeenNthCalledWith(
-      2,
-      expect.not.objectContaining({ immutableVersion: expect.anything() }),
-    );
-    expect(mocks.savePlanToDisk.mock.invocationCallOrder[1]).toBeLessThan(
-      mocks.dispatchPlanImplementationTurn.mock.invocationCallOrder[0],
-    );
-    expect(mocks.deleteOwnedChatAfterSettlingActors).not.toHaveBeenCalled();
-    expect(mocks.routePlanHandoffPresentation).toHaveBeenCalledWith({
-      handoffId: "handoff-1",
-      sourceChatId: 7,
-      targetChatId: 99,
-      appId: 3,
-      originWindowSessionId: "window-session",
-    });
-    expect(
-      mocks.dispatchPlanImplementationTurn.mock.invocationCallOrder[0],
-    ).toBeLessThan(
-      mocks.routePlanHandoffPresentation.mock.invocationCallOrder[0],
-    );
-    expect(emit).toHaveBeenCalledWith({
-      type: "CHECKPOINT",
-      handoffId: "handoff-1",
-      phase: "started",
-      targetChatId: 99,
-    });
-  });
-
-  it("does not offer a retry when metadata fails after admission", async () => {
-    const metadataFailure = new Error("accepted plan write failed");
-    mocks.savePlanToDisk
-      .mockResolvedValueOnce("draft-plan")
-      .mockResolvedValueOnce("working-plan")
-      .mockRejectedValueOnce(metadataFailure);
-    const consoleError = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
-    const { runner } = commandRunner();
-    const emit = vi.fn<(event: PlanHandoffHostEvent) => void>();
-
-    await runner({ type: "run-handoff", intent: intent() }, emit);
-
-    expect(emit).toHaveBeenCalledWith({
-      type: "CHECKPOINT",
-      handoffId: "handoff-1",
-      phase: "started",
-      targetChatId: 99,
-    });
-    expect(emit).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: "FAILED" }),
-    );
-    expect(mocks.deleteOwnedChatAfterSettlingActors).not.toHaveBeenCalled();
-    expect(mocks.routePlanHandoffPresentation).toHaveBeenCalled();
-    expect(consoleError).toHaveBeenCalledWith(
-      "[plan-handoff] Plan status update failed after implementation admission",
-      { error: metadataFailure },
-    );
-
-    consoleError.mockRestore();
   });
 
   it("changes the current chat mode only after implementation admission", async () => {
@@ -304,7 +221,10 @@ it("still publishes admitted success when the final checkpoint cannot be saved",
   const { runner } = commandRunner();
   const emit = vi.fn();
   try {
-    await runner({ type: "run-handoff", intent: intent() }, emit);
+    await runner(
+      { type: "run-handoff", intent: { ...intent(), acceptInNewChat: false } },
+      emit,
+    );
     expect(emit).toHaveBeenCalledWith(
       expect.objectContaining({ type: "CHECKPOINT", phase: "started" }),
     );
@@ -335,7 +255,9 @@ it("re-reads the app path after the planning turn drains", async () => {
       immutableVersion: intent().planHash,
     }),
   );
-  expect(emit).not.toHaveBeenCalledWith(
-    expect.objectContaining({ type: "FAILED" }),
-  );
+  expect(emit).toHaveBeenCalledWith({
+    type: "FAILED",
+    handoffId: "handoff-1",
+    error: FACTORY_WORKSPACE_PHASES_MESSAGE,
+  });
 });

@@ -122,13 +122,19 @@ fi
 if [[ -z "${CLOUDFLARE_ACCOUNT_ID:-}" && -n "${CLOUDFLARE_ACCOUNT_ID_:-}" ]]; then
   export CLOUDFLARE_ACCOUNT_ID="$CLOUDFLARE_ACCOUNT_ID_"
 fi
+missing_tunnel=0
 for cloudflare_name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ZONE_ID CLOUDFLARE_ACCOUNT_ID; do
   if [[ -n "${!cloudflare_name:-}" ]]; then
     echo "${cloudflare_name}: present"
   else
     echo "${cloudflare_name}: absent"
+    missing_tunnel=1
   fi
 done
+if [[ "${PREVIEW_REQUIRE_NAMED_TUNNEL:-}" == "1" && "$missing_tunnel" == "1" ]]; then
+  echo "Named tunnel credentials are required." >&2
+  exit 1
+fi
 
 if [[ "${PREVIEW_SKIP_TUNNEL:-}" != "1" || -n "${CLOUDFLARE_API_TOKEN:-}" ]]; then
   if ! command -v node >/dev/null 2>&1; then

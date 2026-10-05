@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { apps, chats, messages } from "@/db/schema";
 import { DyadErrorKind } from "@/errors/dyad_error";
+import { FACTORY_WORKSPACE_PHASES_MESSAGE } from "@/lib/factoryPhase";
 import {
   type HandlerTestHarness,
   setupHandlerTestHarness,
@@ -359,12 +360,16 @@ describe("registerChatHandlers", () => {
     ).resolves.toEqual({ isFavorite: false });
   });
 
-  it("refuses another chat once the three phase titles exist", async () => {
+  it.each([
+    ["no chats", []],
+    ["one phase", ["Discovery"]],
+    ["all three phases", ["Discovery", "Implementation", "Delivery"]],
+  ])("refuses create-chat for an app with %s", async (_label, titles) => {
     const appId = Number(
       harness.db.insert(apps).values({ name: "phased", path: "phased" }).run()
         .lastInsertRowid,
     );
-    for (const title of ["Discovery", "Implementation", "Delivery"]) {
+    for (const title of titles) {
       harness.db.insert(chats).values({ appId, title }).run();
     }
 
@@ -372,11 +377,14 @@ describe("registerChatHandlers", () => {
       harness.invokeHandler("create-chat", { appId }),
     ).rejects.toMatchObject({
       kind: DyadErrorKind.Validation,
-      message: "This app already has its three phases.",
+      message: FACTORY_WORKSPACE_PHASES_MESSAGE,
     });
+    expect(
+      harness.db.select().from(chats).where(eq(chats.appId, appId)).all(),
+    ).toHaveLength(titles.length);
   });
 
-  it("deletes an app whose chats are not the three phase titles", async () => {
+  it("throws when the chats are not the three phase titles and keeps the app", async () => {
     const appId = Number(
       harness.db
         .insert(apps)
@@ -401,16 +409,18 @@ describe("registerChatHandlers", () => {
       .run();
     harness.db.insert(chats).values({ appId, title: "Discovery" }).run();
 
-    const summaries = await harness.invokeHandler<
-      Array<{ id: number; title: string | null }>
-    >("get-chats", appId);
-    expect(summaries).toEqual([]);
+    await expect(
+      harness.invokeHandler("get-chats", appId),
+    ).rejects.toMatchObject({
+      kind: DyadErrorKind.Validation,
+      message: FACTORY_WORKSPACE_PHASES_MESSAGE,
+    });
     expect(
       harness.db.select().from(apps).where(eq(apps.id, appId)).get(),
-    ).toBeUndefined();
+    ).toBeDefined();
     expect(
       harness.db.select().from(chats).where(eq(chats.appId, appId)).all(),
-    ).toEqual([]);
+    ).toHaveLength(3);
   });
 
   it("throws NotFound when favoriting a missing chat", async () => {

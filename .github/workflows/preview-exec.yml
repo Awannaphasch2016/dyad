@@ -1,9 +1,9 @@
-# Prove GitHub can run a preview on the shared Devbox.
+# Start an already published preview on the shared Devbox.
 #
-# This job does not SSH, does not read the production deploy key, and does not
-# retarget DNS. The tunnel on Wewebplus-ci already serves the public name.
+# This job does not build an image, does not SSH, and does not read the
+# production deploy key. It reconnects the named tunnel for pull request 34.
 # The production host is not a target.
-# A push of this file starts the stopped Devbox and brings preview 20 back.
+# A push of this file starts the stopped Devbox and brings preview 34 back.
 name: Preview exec
 
 on:
@@ -11,6 +11,7 @@ on:
   push:
     branches:
       - cursor/preview-bridge-proof-9e7a
+      - cursor/preview-exec-resume-bbea
     paths:
       - .github/workflows/preview-exec.yml
 
@@ -70,41 +71,112 @@ jobs:
           set -euo pipefail
           devbox exec Wewebplus-ci -- echo federated-ok
 
-      - name: Run preview-20 on Wewebplus-ci without moving DNS
+      - name: Fetch dyad preview secrets
+        uses: dopplerhq/secrets-fetch-action@v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          doppler-project: dyad
+          doppler-config: preview
+          inject-env-vars: true
+
+      - name: Fetch aws dev secrets
+        uses: dopplerhq/secrets-fetch-action@v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          doppler-project: aws
+          doppler-config: dev
+          inject-env-vars: true
+
+      - name: Require named tunnel credentials
         run: |
           set -euo pipefail
-          payload="$(base64 -w0 <<'REMOTE'
+          token="${CLOUDFLARE_API_TOKEN_:-${CLOUDFLARE_API_TOKEN:-}}"
+          zone="${CLOUDFLARE_ZONE_ID_:-${CLOUDFLARE_ZONE_ID:-}}"
+          account="${CLOUDFLARE_ACCOUNT_ID:-${CLOUDFLARE_ACCOUNT_ID_:-}}"
+          if [[ -n "$token" ]]; then echo "CLOUDFLARE_API_TOKEN_: present"; else echo "CLOUDFLARE_API_TOKEN_: absent"; fi
+          if [[ -n "$zone" ]]; then echo "CLOUDFLARE_ZONE_ID_: present"; else echo "CLOUDFLARE_ZONE_ID_: absent"; fi
+          if [[ -n "$account" ]]; then echo "CLOUDFLARE_ACCOUNT_ID: present"; else echo "CLOUDFLARE_ACCOUNT_ID: absent"; fi
+          [[ -n "$token" && -n "$zone" && -n "$account" ]]
+
+      - name: Resume preview 34 on Wewebplus-ci
+        run: |
           set -euo pipefail
-          echo "--- machine ---"
-          uname -m
-          command -v docker
-          docker version
-          df -h /
-          awk '/MemTotal|MemAvailable/ { print }' /proc/meminfo
-          if ! command -v git >/dev/null 2>&1; then
-            echo "git is missing" >&2
-            exit 1
-          fi
-          repo=/workspaces/weaver-plus
-          if [[ ! -d "$repo/.git" ]]; then
-            git clone --depth 1 --branch cursor/preview-bridge-proof-9e7a https://github.com/Awannaphasch2016/dyad.git "$repo"
-          else
-            git -C "$repo" fetch --depth 1 origin cursor/preview-bridge-proof-9e7a
-            git -C "$repo" checkout --detach FETCH_HEAD
-          fi
-          cd "$repo"
-          echo "--- preview without moving DNS ---"
-          bash scripts/gascity/preview-resume.sh 20
-          PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh 20 ghcr.io/awannaphasch2016/dyad@sha256:8e5be8469cd4a7caaa1611e41e9906b4f5a8ddb7b87bf6a9b0dcad101296789a
-          REMOTE
-          )"
+          python3 - <<'PY'
+          import os
+          import shlex
+
+          aliases = {
+              "CLOUDFLARE_API_TOKEN_": "CLOUDFLARE_API_TOKEN",
+              "CLOUDFLARE_ZONE_ID_": "CLOUDFLARE_ZONE_ID",
+              "CLOUDFLARE_ACCOUNT_ID": "CLOUDFLARE_ACCOUNT_ID_",
+          }
+          keys = [
+              "CLOUDFLARE_API_TOKEN_",
+              "CLOUDFLARE_ZONE_ID_",
+              "CLOUDFLARE_ACCOUNT_ID",
+              "AWS_ACCESS_KEY_ID",
+              "AWS_SECRET_ACCESS_KEY",
+              "AWS_REGION",
+              "CLERK_PUBLISHABLE_KEY",
+              "CLERK_SECRET_KEY",
+          ]
+          lines = []
+          for key in keys:
+              value = os.environ.get(key) or os.environ.get(aliases.get(key, ""), "")
+              if value:
+                  lines.append(f"export {key}={shlex.quote(value)}")
+          with open("/tmp/preview-runtime.sh", "w", encoding="utf-8") as handle:
+              handle.write("\n".join(lines) + "\n")
+          os.chmod("/tmp/preview-runtime.sh", 0o600)
+          print(f"exported {len(lines)} names")
+          PY
+          {
+            if [[ -s /tmp/preview-runtime.sh ]]; then
+              cat /tmp/preview-runtime.sh
+            fi
+            printf '%s\n' \
+              'set -euo pipefail' \
+              'echo "--- machine ---"' \
+              'uname -m' \
+              'command -v docker' \
+              'docker version' \
+              'df -h /' \
+              'awk '"'"'/MemTotal|MemAvailable/ { print }'"'"' /proc/meminfo' \
+              'if ! command -v git >/dev/null 2>&1; then' \
+              '  echo "git is missing" >&2' \
+              '  exit 1' \
+              'fi' \
+              'repo=/workspaces/weaver-plus' \
+              'if [[ ! -d "$repo/.git" ]]; then' \
+              '  git clone --depth 1 --branch cursor/session-jwt-refresh-bbea https://github.com/Awannaphasch2016/dyad.git "$repo"' \
+              'else' \
+              '  git -C "$repo" fetch --depth 1 origin cursor/session-jwt-refresh-bbea' \
+              '  git -C "$repo" checkout --detach FETCH_HEAD' \
+              'fi' \
+              'cd "$repo"' \
+              'echo "--- resume saved previews ---"' \
+              'bash scripts/gascity/preview-resume.sh 34' \
+              'echo "--- resume preview 34 ---"' \
+              'PREVIEW_REQUIRE_BEDROCK=1 PREVIEW_REQUIRE_NAMED_TUNNEL=1 PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh 34 ghcr.io/awannaphasch2016/dyad@sha256:72d226cdfc5caa5bf334a92d7b79ca9e3f774d7ed6aab0febdb1df198009c0bf'
+          } > /tmp/preview-remote.sh
+          payload="$(base64 -w0 /tmp/preview-remote.sh)"
+          rm -f /tmp/preview-runtime.sh /tmp/preview-remote.sh
           devbox exec Wewebplus-ci -- bash -lc "printf '%s' '${payload}' | base64 -d | bash"
 
       - name: Check the public preview address
         run: |
           set -euo pipefail
-          code="$(curl -sS -o /tmp/preview-body -w '%{http_code}' https://pr-20.anakwannaphaschaiyong.com)"
-          echo "http $code"
-          test "$code" = "200"
-          grep -q 'data-dyad-browser-bridge' /tmp/preview-body
+          ok=0
+          for _ in 1 2 3 4 5 6; do
+            code="$(curl -sS -o /tmp/preview-body -w '%{http_code}' --max-time 20 https://pr-34.anakwannaphaschaiyong.com/sign-in || true)"
+            echo "http ${code}"
+            if [[ "$code" == "200" ]] && grep -q 'data-dyad-browser-bridge' /tmp/preview-body; then
+              ok=1
+              break
+            fi
+            sleep 10
+          done
+          test "$ok" = "1"
           echo "browser bridge page"

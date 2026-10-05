@@ -25,6 +25,7 @@ import {
   invocationRegistryKey,
   sameInvocationRef,
 } from "@/state_machines/invocation_ref";
+import { assertPackageJsonPresent } from "@/control_plane/file_sync";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import { addLog, clearLogs } from "@/lib/log_store";
 import { getDyadAppPath } from "@/paths/paths";
@@ -167,6 +168,7 @@ async function getDefaultCommand({
   appPath: string;
   onPnpmMinimumReleaseAgeWarning?: (message: string) => void;
 }): Promise<AppRuntimeCommand> {
+  assertPackageJsonPresent(appPath);
   const port = getAppPort(appId);
   if (runtimeMode === "docker") {
     const allowBuildsResult = await ensurePnpmAllowBuildsConfigured({

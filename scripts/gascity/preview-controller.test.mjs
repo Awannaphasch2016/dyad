@@ -8,6 +8,7 @@ import {
 } from "../../deploy/preview/transition.mjs";
 import { previewBranchName } from "../../deploy/preview/neon.mjs";
 import {
+  credentialsFromEnvironment,
   mergeAwsCredentials,
   previewRuntime,
   shellQuote,
@@ -171,6 +172,28 @@ test("aws credentials fill only empty Bedrock names", () => {
   assert.match(text, /export AWS_ACCESS_KEY_ID='AKIA_FROM_ENV'/);
   assert.match(text, /export AWS_REGION='us-east-1'/);
   assert.equal(text.includes("AWS_DEFAULT_REGION"), false);
+});
+
+test("job environment fills the Cloudflare names", () => {
+  const merged = credentialsFromEnvironment(
+    {},
+    {
+      CLOUDFLARE_API_TOKEN: "cf-token",
+      CLOUDFLARE_ZONE_ID: "zone",
+      CLOUDFLARE_ACCOUNT_ID: "account",
+      CLERK_SECRET_KEY: "sk_test",
+      VERCEL_TOKEN: "vercel",
+      EC2_SSH_KEY: "must-not-export",
+    },
+  );
+  const text = previewRuntime(merged, "postgresql://child.example/neondb");
+  assert.match(text, /export CLOUDFLARE_API_TOKEN='cf-token'/);
+  assert.match(text, /export CLOUDFLARE_ZONE_ID='zone'/);
+  assert.match(text, /export CLOUDFLARE_ACCOUNT_ID='account'/);
+  assert.equal(text.includes("CLOUDFLARE_API_TOKEN_"), false);
+  assert.match(text, /export CLERK_SECRET_KEY='sk_test'/);
+  assert.match(text, /export VERCEL_TOKEN='vercel'/);
+  assert.equal(text.includes("EC2_SSH_KEY"), false);
 });
 
 test("the controller decides from pull request events", () => {

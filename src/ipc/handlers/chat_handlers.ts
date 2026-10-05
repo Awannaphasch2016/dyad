@@ -14,8 +14,10 @@ import type { ChatSearchResult, ChatSummary } from "../../lib/schemas";
 
 import log from "electron-log";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
-import { hasFactoryPhases } from "@/lib/factoryPhase";
-import { deleteAppById } from "./app_handlers";
+import {
+  FACTORY_WORKSPACE_PHASES_MESSAGE,
+  hasFactoryPhases,
+} from "@/lib/factoryPhase";
 import { createTypedHandler } from "./base";
 import { getHandlerContext } from "./handler_context";
 import { entityDisposalBus } from "@/window_infrastructure/main/entity_disposal_bus";
@@ -299,15 +301,17 @@ export function registerChatHandlers() {
     if (appId != null) {
       await assertAppVisible(event, appId);
       await syncOneApp(appId);
-      await retainStartedFactoryPhaseChats(appId);
       const phaseRows = await db.query.chats.findMany({
         where: eq(chats.appId, appId),
         columns: { id: true, title: true },
       });
       if (!hasFactoryPhases(phaseRows)) {
-        await deleteAppById(appId);
-        return [];
+        throw new DyadError(
+          FACTORY_WORKSPACE_PHASES_MESSAGE,
+          DyadErrorKind.Validation,
+        );
       }
+      await retainStartedFactoryPhaseChats(appId);
     }
     const scope = await sharingScope(event);
     // If appId is provided, filter chats for that app

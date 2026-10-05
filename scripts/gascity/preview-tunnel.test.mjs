@@ -221,22 +221,47 @@ test("preview image workflow updates the shared Devbox after publish", () => {
     /assign-page --pr "\$pr" --git-branch "\$branch" --vercel-project dyad/,
   );
   assert.equal(workflow.includes("cursor/dyad-web-frontend-bbea"), false);
+  assert.match(workflow, /dopplerhq\/secrets-fetch-action@v2/);
+  assert.match(workflow, /auth-method:\s*oidc/);
+  assert.match(workflow, /PREVIEW_REQUIRE_NAMED_TUNNEL=1/);
+  assert.equal(workflow.includes("secrets.DOPPLER_TOKEN"), false);
+  assert.equal(workflow.includes("secrets.NEON_API_KEY"), false);
+  assert.equal(workflow.includes("secrets.AWS_ACCESS_KEY_ID"), false);
   assert.match(workflow, /cursor\/formula-preview-9e7a/);
-  assert.match(
-    workflow,
-    /CLOUDFLARE_API_TOKEN: \$\{\{ secrets\.CLOUDFLARE_API_TOKEN \}\}/,
-  );
-  assert.match(
-    workflow,
-    /CLOUDFLARE_ZONE_ID: \$\{\{ secrets\.CLOUDFLARE_ZONE_ID \}\}/,
-  );
-  assert.match(
-    workflow,
-    /CLOUDFLARE_ACCOUNT_ID: \$\{\{ secrets\.CLOUDFLARE_ACCOUNT_ID \}\}/,
-  );
+  assert.equal(workflow.includes("secrets.CLOUDFLARE_API_TOKEN"), false);
+  assert.equal(workflow.includes("secrets.CLOUDFLARE_ZONE_ID"), false);
+  assert.equal(workflow.includes("secrets.CLOUDFLARE_ACCOUNT_ID"), false);
   assert.match(workflow, /deploy\/preview\/clerk-origins-run\.mjs/);
   assert.match(workflow, /preview_url=https:\/\//);
   assert.equal(workflow.includes("13.251.216.187"), false);
+});
+
+test("labeled preview workflow fetches Doppler and skips image-managed branches", () => {
+  const workflow = readFileSync(
+    new URL("../../.github/workflows/preview.yml", import.meta.url),
+    "utf8",
+  );
+  const controller = readFileSync(
+    new URL("../../deploy/preview/controller.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.match(workflow, /dopplerhq\/secrets-fetch-action@v2/);
+  assert.match(workflow, /auth-method:\s*oidc/);
+  assert.equal(workflow.includes("secrets.DOPPLER_TOKEN"), false);
+  assert.equal(workflow.includes("secrets.NEON_API_KEY"), false);
+  for (const branch of [
+    "cursor/preview-bridge-proof-9e7a",
+    "cursor/formula-preview-9e7a",
+    "cursor/preview-bedrock-render-bbea",
+    "cursor/session-jwt-refresh-bbea",
+  ]) {
+    assert.equal(workflow.includes(branch), true);
+  }
+  assert.match(
+    controller,
+    /NEON_API_KEY was missing from the Doppler dyad\/preview fetch/,
+  );
+  assert.equal(controller.includes("DOPPLER_TOKEN GitHub secret"), false);
 });
 
 test("preview exec workflow uses GitHub federation and does not touch production", () => {
@@ -248,6 +273,13 @@ test("preview exec workflow uses GitHub federation and does not touch production
   assert.match(workflow, /namespacelabs\/nscloud-setup@v0/);
   assert.match(workflow, /devbox exec Wewebplus-ci -- echo federated-ok/);
   assert.match(workflow, /PREVIEW_SKIP_TUNNEL=1/);
+  assert.match(workflow, /dopplerhq\/secrets-fetch-action@v2/);
+  assert.match(workflow, /preview-up\.sh 34 /);
+  assert.equal(workflow.includes("secrets.DOPPLER_TOKEN"), false);
+  assert.match(
+    workflow,
+    /https:\/\/pr-34\.anakwannaphaschaiyong\.com\/sign-in/,
+  );
   assert.equal(workflow.includes("EC2_SSH_KEY"), false);
   assert.equal(workflow.includes("13.251.216.187"), false);
   assert.equal(workflow.includes("gascity-rollout"), false);

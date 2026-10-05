@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { DyadErrorKind } from "@/errors/dyad_error";
 import { ensureProjectFiles } from "./file_sync";
 
 const execFileAsync = promisify(execFile);
@@ -44,7 +45,7 @@ afterEach(async () => {
 });
 
 describe("ensureProjectFiles", () => {
-  it("creates a git repository when the app folder does not exist", async () => {
+  it("throws when the app folder does not exist and there is nothing to clone", async () => {
     const parent = await tempDir();
     const appPath = path.join(parent, "new-app");
 
@@ -56,15 +57,15 @@ describe("ensureProjectFiles", () => {
         ownerType: "org",
         ownerId: "org_test",
       }),
-    ).resolves.toBe(true);
+    ).rejects.toMatchObject({
+      kind: DyadErrorKind.Precondition,
+      message: "The project files are missing.",
+    });
 
-    expect((await fs.stat(path.join(appPath, ".git"))).isDirectory()).toBe(
-      true,
-    );
-    expect(await commitCount(appPath)).toBe(1);
+    await expect(fs.stat(appPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("adds a git repository to an existing folder that has no .git", async () => {
+  it("throws when the folder has no package.json and does not create a git repo", async () => {
     const appPath = await tempDir();
     await fs.writeFile(
       path.join(appPath, "pnpm-workspace.yaml"),
@@ -79,20 +80,38 @@ describe("ensureProjectFiles", () => {
         ownerType: null,
         ownerId: null,
       }),
-    ).resolves.toBe(true);
+    ).rejects.toMatchObject({
+      kind: DyadErrorKind.Precondition,
+      message: "This app has no package.json.",
+    });
 
-    expect(await commitCount(appPath)).toBe(1);
-    const { stdout } = await execFileAsync(
-      "git",
-      ["ls-files", "pnpm-workspace.yaml"],
-      { cwd: appPath },
-    );
-    expect(stdout.trim()).toBe("pnpm-workspace.yaml");
+    await expect(fs.stat(path.join(appPath, ".git"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("throws when a git repository has no package.json", async () => {
+    const appPath = await tempDir();
+    await execFileAsync("git", ["init", "-b", "main"], { cwd: appPath });
+
+    await expect(
+      ensureProjectFiles({
+        path: appPath,
+        githubOrg: null,
+        githubRepo: null,
+        ownerType: null,
+        ownerId: null,
+      }),
+    ).rejects.toMatchObject({
+      kind: DyadErrorKind.Precondition,
+      message: "This app has no package.json.",
+    });
   });
 
   it("leaves an existing repository on its current commit", async () => {
     const appPath = await tempDir();
     await execFileAsync("git", ["init", "-b", "main"], { cwd: appPath });
+    await fs.writeFile(path.join(appPath, "package.json"), "{}\n");
     await fs.writeFile(path.join(appPath, "keep.txt"), "keep\n");
     await execFileAsync("git", ["add", "keep.txt"], { cwd: appPath });
     await execFileAsync(

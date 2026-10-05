@@ -9,9 +9,14 @@ vi.mock("@/ipc/types", () => ({
 }));
 
 import { publishSessionToken } from "./publish_session_token";
+import {
+  clearPublishedSessionTokenForTesting,
+  lastPublishedSessionToken,
+} from "./session_token_slot";
 
 beforeEach(() => {
   setSessionToken.mockClear();
+  clearPublishedSessionTokenForTesting();
 });
 
 it("drops a token read that started for the previous account", async () => {
@@ -43,6 +48,16 @@ it("reports that a session token was stored", async () => {
 
   expect(setSessionToken).toHaveBeenCalledTimes(1);
   expect(setSessionToken).toHaveBeenCalledWith({ token: "session-token" });
+  expect(lastPublishedSessionToken()).toBe("session-token");
+});
+
+it("keeps the remembered JWT when the main process does not store the next one", async () => {
+  await publishSessionToken(async () => "kept");
+  setSessionToken.mockRejectedValueOnce(new Error("bridge down"));
+
+  await expect(publishSessionToken(async () => "next")).resolves.toBe(false);
+
+  expect(lastPublishedSessionToken()).toBe("kept");
 });
 
 it("clears the stored token on sign-out", async () => {

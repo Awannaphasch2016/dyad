@@ -4,6 +4,10 @@ export const FACTORY_PHASES = [
   "delivery",
 ] as const;
 
+/** Extra chats are refused. The workspace is these three phases. */
+export const FACTORY_WORKSPACE_PHASES_MESSAGE =
+  "An app workspace has its three phases.";
+
 export type FactoryPhase = (typeof FACTORY_PHASES)[number];
 
 const TITLE_TO_PHASE: Record<string, FactoryPhase> = {
