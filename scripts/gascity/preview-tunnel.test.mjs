@@ -273,7 +273,9 @@ test("preview exec workflow uses GitHub federation and does not touch production
   assert.match(workflow, /namespacelabs\/nscloud-setup@v0/);
   assert.match(workflow, /devbox exec Wewebplus-ci -- echo federated-ok/);
   assert.match(workflow, /PREVIEW_SKIP_TUNNEL=1/);
+  assert.match(workflow, /dopplerhq\/secrets-fetch-action@v2/);
   assert.match(workflow, /preview-up\.sh 34 /);
+  assert.equal(workflow.includes("secrets.DOPPLER_TOKEN"), false);
   assert.match(
     workflow,
     /https:\/\/pr-34\.anakwannaphaschaiyong\.com\/sign-in/,
