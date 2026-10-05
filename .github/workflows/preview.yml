@@ -1,4 +1,5 @@
 # Create, update, or destroy one preview from the preview label.
+# A labeled pull request fetches Doppler with the pull_request OIDC subject.
 #
 # This job does not SSH. The production host is not a target.
 # A labeled pull request reuses ghcr.io/<owner>/dyad:ctx-<hash> or
