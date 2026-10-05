@@ -4,7 +4,7 @@ import log from "electron-log";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { apps } from "@/db/schema";
-import { gitService } from "@/ipc/services/git_service";
+import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import { gitClone, gitPush, gitSetRemoteUrl } from "@/ipc/utils/git_utils";
 import { getDyadAppPath } from "@/paths/paths";
 import { getControlPlaneDb } from "./db";
@@ -24,10 +24,12 @@ export async function githubTokenFor(
   return decryptSecret(row.ciphertext);
 }
 
-async function ensureGitRepository(appPath: string): Promise<void> {
-  if (fs.existsSync(path.join(appPath, ".git"))) return;
-  fs.mkdirSync(appPath, { recursive: true });
-  await gitService.initRepoWithInitialCommit({ path: appPath });
+export function assertPackageJsonPresent(appPath: string): void {
+  if (fs.existsSync(path.join(appPath, "package.json"))) return;
+  throw new DyadError(
+    "This app has no package.json.",
+    DyadErrorKind.Precondition,
+  );
 }
 
 export async function ensureProjectFiles(app: {
@@ -38,7 +40,10 @@ export async function ensureProjectFiles(app: {
   ownerId: string | null;
 }): Promise<boolean> {
   const appPath = getDyadAppPath(app.path);
-  if (fs.existsSync(path.join(appPath, ".git"))) return true;
+  if (fs.existsSync(path.join(appPath, ".git"))) {
+    assertPackageJsonPresent(appPath);
+    return true;
+  }
   if (
     !fs.existsSync(appPath) &&
     app.githubOrg &&
@@ -57,9 +62,16 @@ export async function ensureProjectFiles(app: {
       accessToken: token,
       singleBranch: false,
     });
+    assertPackageJsonPresent(appPath);
     return true;
   }
-  await ensureGitRepository(appPath);
+  if (!fs.existsSync(appPath)) {
+    throw new DyadError(
+      "The project files are missing.",
+      DyadErrorKind.Precondition,
+    );
+  }
+  assertPackageJsonPresent(appPath);
   return true;
 }
 

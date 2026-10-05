@@ -308,7 +308,10 @@ async function getRestoreTargetTurnOutcomeForMessage({
   return getStoredTurnOutcome(target, nextMessage);
 }
 
-function resolveTargetCommitHash({
+export const NO_RESTORABLE_VERSION_MESSAGE =
+  "This message did not change the project files, so there is no version to restore.";
+
+export function resolveTargetCommitHash({
   chatMessages,
   targetIndex,
   initialCommitHash,
@@ -329,13 +332,14 @@ function resolveTargetCommitHash({
     }
   }
 
-  // Fallback: the preceding assistant's final commit is the state immediately
-  // before the target user message.
+  // The nearest earlier assistant records the files before this message.
+  // commitHash is the snapshot after that reply changed files. sourceCommitHash
+  // is HEAD when the reply started, including a read-only Discovery reply.
   for (let index = targetIndex - 1; index >= 0; index--) {
     const message = chatMessages[index];
-    if (message.role === "assistant" && message.commitHash) {
-      return message.commitHash;
-    }
+    if (message.role !== "assistant") continue;
+    if (message.commitHash) return message.commitHash;
+    if (message.sourceCommitHash) return message.sourceCommitHash;
   }
 
   return initialCommitHash;
@@ -1342,8 +1346,7 @@ export function registerVersionHandlers() {
             // of "navigating" to the same one (which would look like a no-op).
             return {
               status: "warn" as const,
-              warningMessage:
-                "Could not determine a version to restore to for this message.",
+              warningMessage: NO_RESTORABLE_VERSION_MESSAGE,
             };
           }
           // The hash was resolved from stored DB fields, so a garbage-collected
@@ -1554,7 +1557,7 @@ export function registerVersionHandlers() {
               notification: {
                 kind: "warning",
                 message: appendInterruptedGenerationWarning(
-                  "Could not determine a version to restore to for this message.",
+                  NO_RESTORABLE_VERSION_MESSAGE,
                   preservedByActiveCancellation,
                 ),
               },

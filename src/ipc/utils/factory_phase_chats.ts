@@ -8,6 +8,7 @@ import {
   factoryPhaseChatMode,
   factoryPhaseChats,
   factoryPhaseLabel,
+  FACTORY_WORKSPACE_PHASES_MESSAGE,
   hasFactoryPhases,
 } from "@/lib/factoryPhase";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
@@ -108,15 +109,10 @@ async function dropUnstartedChats(appId: number): Promise<void> {
 }
 
 export async function assertFactoryChatCreationOpen(
-  appId: number,
-): Promise<void> {
-  const rows = await db.query.chats.findMany({
-    where: eq(chats.appId, appId),
-    columns: { id: true, title: true },
-  });
-  if (!hasFactoryPhases(rows)) return;
+  _appId: number,
+): Promise<never> {
   throw new DyadError(
-    "This app already has its three phases.",
+    FACTORY_WORKSPACE_PHASES_MESSAGE,
     DyadErrorKind.Validation,
   );
 }

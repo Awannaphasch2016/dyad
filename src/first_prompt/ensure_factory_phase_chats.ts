@@ -1,16 +1,7 @@
-import {
-  FACTORY_PHASES,
-  factoryPhaseChatMode,
-  factoryPhaseLabel,
-  type FactoryPhase,
-} from "@/lib/factoryPhase";
+import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import { FACTORY_WORKSPACE_PHASES_MESSAGE } from "@/lib/factoryPhase";
 
-export async function ensureFactoryPhaseChats({
-  appId,
-  discoveryChatId,
-  createChat,
-  updateChat,
-}: {
+export async function ensureFactoryPhaseChats(_input: {
   appId: number;
   discoveryChatId: number;
   createChat: (params: {
@@ -23,21 +14,8 @@ export async function ensureFactoryPhaseChats({
     chatMode: "ask" | "build";
   }) => Promise<void>;
 }): Promise<void> {
-  const namePhase = async (chatId: number, phase: FactoryPhase) => {
-    await updateChat({
-      chatId,
-      title: factoryPhaseLabel(phase),
-      chatMode: factoryPhaseChatMode(phase),
-    });
-  };
-
-  await namePhase(discoveryChatId, "discovery");
-  for (const phase of FACTORY_PHASES) {
-    if (phase === "discovery") continue;
-    const chatId = await createChat({
-      appId,
-      initialChatMode: factoryPhaseChatMode(phase),
-    });
-    await namePhase(chatId, phase);
-  }
+  throw new DyadError(
+    FACTORY_WORKSPACE_PHASES_MESSAGE,
+    DyadErrorKind.Validation,
+  );
 }

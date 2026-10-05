@@ -253,7 +253,9 @@ async function waitForAssertion(assertion: () => void): Promise<void> {
 }
 
 describe("executeApp", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await mkdir("/tmp/app", { recursive: true });
+    await writeFile("/tmp/app/package.json", "{}\n");
     runningApps.clear();
     processCounter.value = 0;
     getPnpmMinimumReleaseAgeSupportMock.mockReset();
@@ -579,6 +581,7 @@ describe("executeApp", () => {
   it("warns when a pnpm-preferring app falls back to npm because pnpm is unavailable", async () => {
     const appPath = await createTempAppDir();
     try {
+      await writePackageJson(appPath, {});
       await createMarker(appPath, "pnpm-lock.yaml");
       const process = new FakeChildProcess(101);
       spawnMock.mockReturnValueOnce(process);
@@ -776,6 +779,7 @@ describe("executeApp", () => {
   ])("%s", async (_, arrangeApp, { pnpmAvailable, expectedCommandPrefix }) => {
     const appPath = await createTempAppDir();
     try {
+      await writePackageJson(appPath, {});
       await arrangeApp(appPath);
       const process = new FakeChildProcess(101);
       spawnMock.mockReturnValueOnce(process);
@@ -794,6 +798,27 @@ describe("executeApp", () => {
       expect(
         String(spawnMock.mock.calls[0][0]).startsWith(expectedCommandPrefix),
       ).toBe(true);
+    } finally {
+      await rm(appPath, { recursive: true, force: true });
+    }
+  });
+
+  it("does not build an install command when package.json is missing", async () => {
+    const appPath = await createTempAppDir();
+    try {
+      await mkdir(path.join(appPath, ".git"));
+      await expect(
+        executeApp({
+          appPath,
+          appId: 1,
+          output: createOutput(),
+          isNeon: false,
+        }),
+      ).rejects.toMatchObject({
+        kind: DyadErrorKind.Precondition,
+        message: "This app has no package.json.",
+      });
+      expect(spawnMock).not.toHaveBeenCalled();
     } finally {
       await rm(appPath, { recursive: true, force: true });
     }

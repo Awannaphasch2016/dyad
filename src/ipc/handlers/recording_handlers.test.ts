@@ -87,6 +87,8 @@ import {
   RECORDED_TEST_DRAFT_VERSION,
   type RecordedTestDraft,
 } from "@/lib/test_recorder/draft";
+import { DyadErrorKind } from "@/errors/dyad_error";
+import { FACTORY_WORKSPACE_PHASES_MESSAGE } from "@/lib/factoryPhase";
 import { createChatForApp } from "../utils/chat_creation_utils";
 
 registerRecordingHandlers();
@@ -535,52 +537,14 @@ describe("recording:start / recording:stop", () => {
     expect(ranWhileRecording).toBe(true);
   });
 
-  it("creates a chat while the session owns the working tree", async () => {
-    mocks.prepareIsolatedTestDatabase.mockResolvedValue(makePrepared());
-    const { event } = makeEvent();
-    await startHandler(event, { appId: 1 });
-
-    let releaseWriter!: () => void;
-    const writer = appOperationCoordinator.run(
-      {
-        appId: 1,
-        operation: "write-repository",
-        resources: ["repository"],
-      },
-      () =>
-        new Promise<void>((resolve) => {
-          releaseWriter = resolve;
-        }),
-    );
-    const runSpy = vi.spyOn(appOperationCoordinator, "run");
-    const chatId = await createChatForApp({ appId: 1, title: "New chat" });
-
-    expect(chatId).toBe(42);
-    expect(runSpy).toHaveBeenCalledWith(
-      {
-        appId: 1,
-        operation: "create-chat",
-        resources: [
-          readAppResource("app-path"),
-          "chat-membership",
-          readAppResource("repository-ref"),
-        ],
-      },
-      expect.any(Function),
-    );
-    expect(mocks.insertValues).toHaveBeenCalledWith({
-      appId: 1,
-      title: "New chat",
-      executionBackend: "dyad",
-      modelSelection: undefined,
-      initialCommitHash: "abc123",
-      chatMode: null,
+  it("refuses to create a chat outside the three phase chats", async () => {
+    await expect(
+      createChatForApp({ appId: 1, title: "New chat" }),
+    ).rejects.toMatchObject({
+      kind: DyadErrorKind.Validation,
+      message: FACTORY_WORKSPACE_PHASES_MESSAGE,
     });
-    runSpy.mockRestore();
-    await stopHandler(event, { appId: 1 });
-    await vi.waitFor(() => expect(releaseWriter).toBeTypeOf("function"));
-    releaseWriter();
-    await writer;
+    expect(mocks.insert).not.toHaveBeenCalled();
   });
 
   it("returns the infra error and does not start when isolation fails", async () => {
