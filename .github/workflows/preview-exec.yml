@@ -4,7 +4,8 @@
 # production deploy key. It starts preview 43 from the dialog-fix image.
 # The labeled deploy stopped before the tunnel existed because
 # NEON_PARENT_BRANCH_ID is still the unsanitized Dev branch.
-# This job reuses the existing preview-pr-41 Neon branch. The connection
+# The project only has the unsanitized Dev branch. This job creates
+# preview-pr-43 schema-only so Dev rows are not copied. The connection
 # URI is masked and is not printed.
 # The production host is not a target.
 name: Preview exec
@@ -110,6 +111,8 @@ jobs:
           import json
           import os
           import shlex
+          import time
+          import urllib.error
           import urllib.parse
           import urllib.request
 
@@ -118,16 +121,27 @@ jobs:
               raise SystemExit("NEON_API_KEY is missing")
           project = "mute-credit-71067312"
 
-          def neon(path):
+          def neon(path, method="GET", body=None):
+              payload = None if body is None else json.dumps(body).encode()
               request = urllib.request.Request(
                   "https://console.neon.tech/api/v2" + path,
+                  data=payload,
+                  method=method,
                   headers={
                       "Authorization": f"Bearer {api_key}",
                       "Accept": "application/json",
+                      "Content-Type": "application/json",
                   },
               )
-              with urllib.request.urlopen(request) as response:
-                  return json.load(response)
+              try:
+                  with urllib.request.urlopen(request) as response:
+                      return json.load(response)
+              except urllib.error.HTTPError as error:
+                  detail = error.read().decode("utf-8", "replace")
+                  detail = detail.replace("postgres://", "postgresql://redacted")
+                  raise SystemExit(
+                      f"Neon {method} {path.split('?', 1)[0]} {error.code} {detail[:240]}"
+                  ) from None
 
           listed = neon(f"/projects/{project}/branches")
           branches = listed.get("branches") or []
@@ -135,11 +149,46 @@ jobs:
           for branch in branches:
               print(f"branch {branch.get('name', '')} {branch.get('id', '')}")
           chosen = next(
-              (branch for branch in branches if branch.get("name") == "preview-pr-41"),
+              (branch for branch in branches if branch.get("name") == "preview-pr-43"),
               None,
           )
           if not chosen:
-              raise SystemExit("preview-pr-41 branch was not found")
+              # Schema only. The Dev branch still holds account ciphertext, so
+              # this child must not copy its rows.
+              created = neon(
+                  f"/projects/{project}/branches",
+                  "POST",
+                  {
+                      "branch": {
+                          "parent_id": "br-mute-shadow-b3jxqoho",
+                          "name": "preview-pr-43",
+                          "init_source": "schema-only",
+                      },
+                      "endpoints": [{"type": "read_write"}],
+                  },
+              )
+              chosen = created.get("branch") or {}
+              print(
+                  f"created {chosen.get('name', '')} {chosen.get('id', '')} schema-only"
+              )
+              for operation in created.get("operations") or []:
+                  operation_id = operation.get("id")
+                  if not operation_id:
+                      continue
+                  for _ in range(30):
+                      current = neon(
+                          f"/projects/{project}/operations/{operation_id}"
+                      )
+                      status = (current.get("operation") or {}).get("status")
+                      if status == "finished":
+                          break
+                      if status in ("failed", "cancelled"):
+                          raise SystemExit(f"Neon operation {status}")
+                      time.sleep(2)
+                  else:
+                      raise SystemExit("Neon operation did not finish")
+          if not chosen.get("id"):
+              raise SystemExit("preview-pr-43 branch was not created")
           query = urllib.parse.urlencode(
               {
                   "branch_id": chosen["id"],
@@ -158,7 +207,7 @@ jobs:
               print(f"::add-mask::{parsed.password}")
               print(f"::add-mask::{urllib.parse.unquote(parsed.password)}")
           os.environ["WEWEBPLUS_DATABASE_URL"] = uri
-          print("preview-pr-41 connection uri: present")
+          print("preview-pr-43 connection uri: present")
 
           aliases = {
               "CLOUDFLARE_API_TOKEN_": "CLOUDFLARE_API_TOKEN",
