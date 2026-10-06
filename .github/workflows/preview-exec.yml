@@ -1,10 +1,12 @@
 # Start an already published preview on the shared Devbox.
 #
 # This job does not build an image, does not SSH, and does not read the
-# production deploy key. It reconnects the named tunnel for pull request 41.
+# production deploy key. It starts preview 43 from the dialog-fix image.
+# The labeled deploy stopped before the tunnel existed because
+# NEON_PARENT_BRANCH_ID is still the unsanitized Dev branch.
+# The database URL already stored for preview 41 is reused on the Devbox
+# and is not printed. Preview 41 is stopped first so the box has memory.
 # The production host is not a target.
-# A push of this file starts the stopped Devbox and brings preview 41 back.
-# Wake after the named tunnel returned HTTP 530 again.
 name: Preview exec
 
 on:
@@ -101,7 +103,7 @@ jobs:
           if [[ -n "$account" ]]; then echo "CLOUDFLARE_ACCOUNT_ID: present"; else echo "CLOUDFLARE_ACCOUNT_ID: absent"; fi
           [[ -n "$token" && -n "$zone" && -n "$account" ]]
 
-      - name: Resume preview 41 on Wewebplus-ci
+      - name: Start preview 43 on Wewebplus-ci
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -157,12 +159,36 @@ jobs:
               '  git -C "$repo" checkout --detach FETCH_HEAD' \
               'fi' \
               'cd "$repo"' \
-              'echo "--- preview 41 before restart ---"' \
+              'echo "--- preview 41 before stop ---"' \
               'docker ps -a --filter "label=com.docker.compose.project=preview-41" --format "{{.Names}} {{.Status}}"' \
-              'docker logs --tail 40 preview-41-dyad-1 2>&1 || true' \
-              'docker logs --tail 40 preview-41-cloudflared-1 2>&1 || true' \
-              'echo "--- resume preview 41 ---"' \
-              'PREVIEW_REQUIRE_BEDROCK=1 PREVIEW_REQUIRE_NAMED_TUNNEL=1 PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh 41 ghcr.io/awannaphasch2016/dyad@sha256:4751c160e968bc75ab9777ff4287f44890625afd192af6f69e80b9e303076010'
+              'if [[ -f "$HOME/.local/state/wewebplus-preview/preview-41.env" ]]; then' \
+              '  docker compose --env-file "$HOME/.local/state/wewebplus-preview/preview-41.env" -p preview-41 -f compose.preview.yml down || true' \
+              'fi' \
+              'python3 - <<'"'"'PY'"'"'' \
+              'import pathlib, shlex' \
+              'src = pathlib.Path.home() / ".local/state/wewebplus-preview/preview-41.env"' \
+              'keys = ["WEWEBPLUS_DATABASE_URL", "WEWEBPLUS_SECRETS_KEY"]' \
+              'vals = {}' \
+              'if src.exists():' \
+              '    for line in src.read_text(encoding="utf-8").splitlines():' \
+              '        if not line or line.startswith("#") or "=" not in line:' \
+              '            continue' \
+              '        key, value = line.split("=", 1)' \
+              '        if key in keys and value:' \
+              '            vals[key] = value' \
+              'if "WEWEBPLUS_DATABASE_URL" not in vals:' \
+              '    raise SystemExit("preview 41 env is missing WEWEBPLUS_DATABASE_URL")' \
+              'path = pathlib.Path("/tmp/preview-43-db.sh")' \
+              'path.write_text("".join(f"export {key}={shlex.quote(value)}\n" for key, value in vals.items()), encoding="utf-8")' \
+              'path.chmod(0o600)' \
+              'print("copied", len(vals), "runtime names")' \
+              'PY' \
+              'set -a' \
+              'source /tmp/preview-43-db.sh' \
+              'set +a' \
+              'rm -f /tmp/preview-43-db.sh' \
+              'echo "--- start preview 43 ---"' \
+              'PREVIEW_REQUIRE_BEDROCK=1 PREVIEW_REQUIRE_NAMED_TUNNEL=1 PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh 43 ghcr.io/awannaphasch2016/dyad@sha256:53d9dbfe462e16c7ddb6d23f0f97b0a0750688de4cc60cf30feb0673d7c7d290'
           } > /tmp/preview-remote.sh
           payload="$(base64 -w0 /tmp/preview-remote.sh)"
           rm -f /tmp/preview-runtime.sh /tmp/preview-remote.sh
@@ -173,7 +199,7 @@ jobs:
           set -euo pipefail
           ok=0
           for _ in 1 2 3 4 5 6; do
-            code="$(curl -sS -o /tmp/preview-body -w '%{http_code}' --max-time 20 https://pr-41.anakwannaphaschaiyong.com/sign-in || true)"
+            code="$(curl -sS -o /tmp/preview-body -w '%{http_code}' --max-time 20 https://pr-43.anakwannaphaschaiyong.com/sign-in || true)"
             echo "http ${code}"
             if [[ "$code" == "200" ]] && grep -q 'data-dyad-browser-bridge' /tmp/preview-body; then
               ok=1
