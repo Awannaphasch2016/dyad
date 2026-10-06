@@ -8,12 +8,14 @@ const workflow = readFileSync(
 );
 
 test("the Neon endpoint map prints branch ids and host labels only", () => {
-  assert.match(workflow, /pull_request:/);
+  assert.match(workflow, /push:/);
+  assert.match(workflow, /cursor\/ecs-hitl-cutover-bbea/);
   assert.match(workflow, /\.github\/workflows\/neon-endpoints\.yml/);
   assert.match(
     workflow,
-    /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/,
+    /github\.ref == 'refs\/heads\/cursor\/ecs-hitl-cutover-bbea'/,
   );
+  assert.doesNotMatch(workflow, /pull_request:/);
   assert.match(
     workflow,
     /doppler-identity-id: 18edf96d-89e6-40f6-87aa-073c11a02e14/,
