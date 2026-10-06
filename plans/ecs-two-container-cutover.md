@@ -232,6 +232,8 @@ Decided on 2026-10-06:
 - Neon project `Wewebplus-hitl` (`mute-credit-71067312`) still holds branch `prd` (`br-winter-salad-b3mkewwm`, endpoint `ep-royal-term-b3paoprp`) and canary branch `pre` (`br-quiet-frog-b3l8isvn`, endpoint `ep-muddy-sky-b31adt7z`). Both were created 2026-10-06 from parent `Dev` (`br-mute-shadow-b3jxqoho`, endpoint `ep-wild-paper-b3yf26si`). Those connection strings were not written into Doppler at creation. `dyad/preview` still points at `Dev`.
 - Creating the new ECS cluster, EC2 capacity instance, and ECR repositories was approved and done on 2026-10-06. No Dyad or GasCity task is running there.
 
+The pass/fail run that has to succeed before promotion is `plans/pre-promotion-verification.md`. A pass does not move the apex.
+
 Still required before a canary task starts:
 
 - A registry image for Dyad and a GasCity supervisor image that calls `http://dyad:32100`.
