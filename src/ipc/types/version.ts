@@ -23,7 +23,10 @@ export const VersionSchema = z.object({
 export type Version = z.infer<typeof VersionSchema>;
 
 export const BranchResultSchema = z.object({
-  branch: z.string(),
+  /** False until the app folder has both `.git` and `package.json`. */
+  projectReady: z.boolean(),
+  /** Set when `projectReady` is true. */
+  branch: z.string().nullable(),
 });
 
 export type BranchResult = z.infer<typeof BranchResultSchema>;

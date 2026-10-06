@@ -1,5 +1,6 @@
 import { useAtomValue, useSetAtom } from "jotai";
 import { previewModeAtom, selectedAppIdAtom } from "../../atoms/appAtoms";
+import { selectedChatIdAtom } from "@/atoms/chatAtoms";
 import { previewNativeViewAppIdAtom } from "@/atoms/previewAtoms";
 import { currentTestRunStateAtom } from "@/atoms/testRuntimeAtoms";
 import { usePreviewReloadToken } from "@/hooks/useAppRun";
@@ -36,7 +37,13 @@ import { useTranslation } from "react-i18next";
 import { ipc } from "@/ipc/types";
 import { useLoadApp } from "@/hooks/useLoadApp";
 import { useChats } from "@/hooks/useChats";
-import { hasFactoryPhases } from "@/lib/factoryPhase";
+import {
+  hasFactoryPhases,
+  phaseFromTitle,
+  previewVisibility,
+  shouldStartAppPreview,
+} from "@/lib/factoryPhase";
+import { useCurrentBranch } from "@/hooks/useCurrentBranch";
 import { useQuery } from "@tanstack/react-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queryKeys";
@@ -120,10 +127,21 @@ const ConsoleHeader = ({
 export function PreviewPanel() {
   const previewMode = useAtomValue(previewModeAtom);
   const selectedAppId = useAtomValue(selectedAppIdAtom);
+  const selectedChatId = useAtomValue(selectedChatIdAtom);
   const [isConsoleOpen, setIsConsoleOpen] = useState(false);
   const { runApp, loading } = useRunApp();
   const { app } = useLoadApp(selectedAppId);
   const { chats } = useChats(selectedAppId);
+  const openChat = chats.find((chat) => chat.id === selectedChatId);
+  const visibility = previewVisibility({
+    chatTitleKnown: openChat != null,
+    phase: phaseFromTitle(openChat?.title),
+  });
+  const { branchInfo } = useCurrentBranch(selectedAppId);
+  const projectReady = branchInfo?.projectReady === true;
+  const startPreview = shouldStartAppPreview({ visibility, projectReady });
+  const projectNotReady =
+    visibility === "open" && branchInfo?.projectReady === false;
   const hideSystemMessages = hasFactoryPhases(chats);
   const { settings, updateSettings } = useSettings();
   const queryClient = useQueryClient();
@@ -213,9 +231,9 @@ export function PreviewPanel() {
       // If the effect was cleaned up while awaiting, don't proceed
       if (cancelled) return;
 
-      // Start the app if it's selected
-      // The backend will handle the case where the app is already running
-      if (selectedAppId !== null) {
+      // Start only after the preview is open for this phase and the folder
+      // is a finished project. The selected app alone is not enough.
+      if (startPreview && selectedAppId !== null) {
         if (!nodeVersion) {
           return;
         }
@@ -241,7 +259,7 @@ export function PreviewPanel() {
     // 1. User manually stops them
     // 2. App is deleted
     // 3. Garbage collector determines they've been idle too long
-  }, [selectedAppId, runApp, notifyAppSelected, nodeVersion]);
+  }, [selectedAppId, runApp, notifyAppSelected, nodeVersion, startPreview]);
 
   // Note: We no longer stop all apps on unmount. The garbage collector
   // will handle cleanup of idle apps, and users may want apps to keep
@@ -315,6 +333,13 @@ export function PreviewPanel() {
                       }
                     }}
                   />
+                ) : previewMode === "preview" && projectNotReady ? (
+                  <p
+                    data-testid="preview-project-not-ready"
+                    className="p-4 text-sm text-muted-foreground"
+                  >
+                    {t("preview.projectNotReady")}
+                  </p>
                 ) : previewMode === "preview" ? (
                   useNativePreview ? (
                     <PreviewWebContentsView
