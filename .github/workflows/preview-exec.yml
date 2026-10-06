@@ -5,9 +5,10 @@
 # preview image a017b66c.
 # The labeled deploy stopped before the tunnel existed because
 # NEON_PARENT_BRANCH_ID is still the unsanitized Dev branch.
-# The project only has the unsanitized Dev branch. This job creates
-# preview-pr-46 schema-only so Dev rows are not copied. The connection
-# URI is masked and is not printed.
+# The project only has the unsanitized Dev branch, and it is already at
+# its root branch limit. This job reuses the existing schema-only preview
+# branch so Dev rows are not copied. The connection URI is masked and is
+# not printed.
 # Wake preview 46 after the labeled deploy refused the Neon parent.
 # Running preview containers are stopped without deleting volumes so the
 # chat database stays and the box has memory for the new image.
@@ -152,47 +153,20 @@ jobs:
           print(f"neon branches: {len(branches)}")
           for branch in branches:
               print(f"branch {branch.get('name', '')} {branch.get('id', '')}")
+          # A new branch is refused: this project is already at its root
+          # branch limit. Reuse the schema-only preview branch that is
+          # already there. Do not copy Dev rows and do not delete a branch.
           chosen = next(
-              (branch for branch in branches if branch.get("name") == "preview-pr-46"),
+              (
+                  branch
+                  for branch in branches
+                  if branch.get("name") in ("preview-pr-46", "preview-pr-44")
+              ),
               None,
           )
-          if not chosen:
-              # Schema only. The Dev branch still holds account ciphertext, so
-              # this child must not copy its rows.
-              created = neon(
-                  f"/projects/{project}/branches",
-                  "POST",
-                  {
-                      "branch": {
-                          "parent_id": "br-mute-shadow-b3jxqoho",
-                          "name": "preview-pr-46",
-                          "init_source": "schema-only",
-                      },
-                      "endpoints": [{"type": "read_write"}],
-                  },
-              )
-              chosen = created.get("branch") or {}
-              print(
-                  f"created {chosen.get('name', '')} {chosen.get('id', '')} schema-only"
-              )
-              for operation in created.get("operations") or []:
-                  operation_id = operation.get("id")
-                  if not operation_id:
-                      continue
-                  for _ in range(30):
-                      current = neon(
-                          f"/projects/{project}/operations/{operation_id}"
-                      )
-                      status = (current.get("operation") or {}).get("status")
-                      if status == "finished":
-                          break
-                      if status in ("failed", "cancelled"):
-                          raise SystemExit(f"Neon operation {status}")
-                      time.sleep(2)
-                  else:
-                      raise SystemExit("Neon operation did not finish")
-          if not chosen.get("id"):
-              raise SystemExit("preview-pr-46 branch was not created")
+          if not chosen or not chosen.get("id"):
+              raise SystemExit("no existing preview branch to attach")
+          print(f"using {chosen.get('name', '')} {chosen.get('id', '')}")
           query = urllib.parse.urlencode(
               {
                   "branch_id": chosen["id"],
@@ -289,7 +263,7 @@ jobs:
         run: |
           set -euo pipefail
           ok=0
-          for _ in 1 2 3 4 5 6; do
+          for _ in $(seq 1 18); do
             code="$(curl -sS -o /tmp/preview-body -w '%{http_code}' --max-time 20 https://pr-46.anakwannaphaschaiyong.com/sign-in || true)"
             echo "http ${code}"
             if [[ "$code" == "200" ]] && grep -q 'data-dyad-browser-bridge' /tmp/preview-body; then
