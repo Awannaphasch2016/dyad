@@ -4,8 +4,8 @@
 # production deploy key. It starts preview 43 from the dialog-fix image.
 # The labeled deploy stopped before the tunnel existed because
 # NEON_PARENT_BRANCH_ID is still the unsanitized Dev branch.
-# The database URL already stored for preview 41 is reused on the Devbox
-# and is not printed. Preview 41 is stopped first so the box has memory.
+# This job reuses the existing preview-pr-41 Neon branch. The connection
+# URI is masked and is not printed.
 # The production host is not a target.
 name: Preview exec
 
@@ -107,8 +107,58 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
+          import json
           import os
           import shlex
+          import urllib.parse
+          import urllib.request
+
+          api_key = os.environ.get("NEON_API_KEY", "")
+          if not api_key:
+              raise SystemExit("NEON_API_KEY is missing")
+          project = "mute-credit-71067312"
+
+          def neon(path):
+              request = urllib.request.Request(
+                  "https://console.neon.tech/api/v2" + path,
+                  headers={
+                      "Authorization": f"Bearer {api_key}",
+                      "Accept": "application/json",
+                  },
+              )
+              with urllib.request.urlopen(request) as response:
+                  return json.load(response)
+
+          listed = neon(f"/projects/{project}/branches")
+          branches = listed.get("branches") or []
+          print(f"neon branches: {len(branches)}")
+          for branch in branches:
+              print(f"branch {branch.get('name', '')} {branch.get('id', '')}")
+          chosen = next(
+              (branch for branch in branches if branch.get("name") == "preview-pr-41"),
+              None,
+          )
+          if not chosen:
+              raise SystemExit("preview-pr-41 branch was not found")
+          query = urllib.parse.urlencode(
+              {
+                  "branch_id": chosen["id"],
+                  "database_name": "neondb",
+                  "role_name": "neondb_owner",
+                  "pooled": "true",
+              }
+          )
+          connection = neon(f"/projects/{project}/connection_uri?{query}")
+          uri = connection.get("uri") or ""
+          if not uri.startswith("postgres"):
+              raise SystemExit("Neon did not return a connection URI")
+          print(f"::add-mask::{uri}")
+          parsed = urllib.parse.urlparse(uri)
+          if parsed.password:
+              print(f"::add-mask::{parsed.password}")
+              print(f"::add-mask::{urllib.parse.unquote(parsed.password)}")
+          os.environ["WEWEBPLUS_DATABASE_URL"] = uri
+          print("preview-pr-41 connection uri: present")
 
           aliases = {
               "CLOUDFLARE_API_TOKEN_": "CLOUDFLARE_API_TOKEN",
@@ -124,6 +174,8 @@ jobs:
               "AWS_REGION",
               "CLERK_PUBLISHABLE_KEY",
               "CLERK_SECRET_KEY",
+              "WEWEBPLUS_DATABASE_URL",
+              "WEWEBPLUS_SECRETS_KEY",
           ]
           lines = []
           for key in keys:
@@ -159,34 +211,6 @@ jobs:
               '  git -C "$repo" checkout --detach FETCH_HEAD' \
               'fi' \
               'cd "$repo"' \
-              'echo "--- preview 41 before stop ---"' \
-              'docker ps -a --filter "label=com.docker.compose.project=preview-41" --format "{{.Names}} {{.Status}}"' \
-              'if [[ -f "$HOME/.local/state/wewebplus-preview/preview-41.env" ]]; then' \
-              '  docker compose --env-file "$HOME/.local/state/wewebplus-preview/preview-41.env" -p preview-41 -f compose.preview.yml down || true' \
-              'fi' \
-              'python3 - <<'"'"'PY'"'"'' \
-              'import pathlib, shlex' \
-              'src = pathlib.Path.home() / ".local/state/wewebplus-preview/preview-41.env"' \
-              'keys = ["WEWEBPLUS_DATABASE_URL", "WEWEBPLUS_SECRETS_KEY"]' \
-              'vals = {}' \
-              'if src.exists():' \
-              '    for line in src.read_text(encoding="utf-8").splitlines():' \
-              '        if not line or line.startswith("#") or "=" not in line:' \
-              '            continue' \
-              '        key, value = line.split("=", 1)' \
-              '        if key in keys and value:' \
-              '            vals[key] = value' \
-              'if "WEWEBPLUS_DATABASE_URL" not in vals:' \
-              '    raise SystemExit("preview 41 env is missing WEWEBPLUS_DATABASE_URL")' \
-              'path = pathlib.Path("/tmp/preview-43-db.sh")' \
-              'path.write_text("".join(f"export {key}={shlex.quote(value)}\n" for key, value in vals.items()), encoding="utf-8")' \
-              'path.chmod(0o600)' \
-              'print("copied", len(vals), "runtime names")' \
-              'PY' \
-              'set -a' \
-              'source /tmp/preview-43-db.sh' \
-              'set +a' \
-              'rm -f /tmp/preview-43-db.sh' \
               'echo "--- start preview 43 ---"' \
               'PREVIEW_REQUIRE_BEDROCK=1 PREVIEW_REQUIRE_NAMED_TUNNEL=1 PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh 43 ghcr.io/awannaphasch2016/dyad@sha256:53d9dbfe462e16c7ddb6d23f0f97b0a0750688de4cc60cf30feb0673d7c7d290'
           } > /tmp/preview-remote.sh
