@@ -182,7 +182,7 @@ None. These stay exactly as they are:
 
 - [ ] Stop `gc` and `weaver-plus` on `gascity-server`. Leave the instance running and the previous image in place.
 - [ ] Copy the live user-data volume and `/opt/gascity/projects` to the ECS volumes.
-- [ ] Point the ECS tasks at the production Neon URL and move the production tunnel hostname to the Dyad task.
+- [ ] Point the ECS tasks at the production Neon URL and move `https://anakwannaphaschaiyong.com` to the Dyad task. The canary hostname stays `https://pre.anakwannaphaschaiyong.com` and is never the apex.
 - [ ] Run one real production question and one real answer on that hostname. A canary-branch question does not count.
 - [ ] Until that pair succeeds, do not terminate the instance.
 
@@ -226,12 +226,16 @@ Already available to the implementation agent:
 - No GasCity ECR repository exists yet.
 - GitHub CLI is authenticated for this repo.
 
-Still required before phase 3, and not present in the agent environment:
+Decided on 2026-10-06:
 
-- The production browser hostname that `cloudflared` on `gascity-server` serves today. SSM cannot read it from here.
-- Read access to Doppler project `dyad` config `prd`, and confirmation that `aws` config `dev` is the Bedrock config the ECS task should keep using. Preferred grant: the existing GitHub OIDC identity (`DOPPLER_SERVICE_IDENTITY_ID`, audience `https://github.com/Awannaphasch2016`) can read `dyad/prd` the same way it already reads `dyad/preview`. The host’s service-token files stay on `gascity-server` and are not copied into git.
-- The Neon project name that the production `WEWEBPLUS_DATABASE_URL` points at, and permission to create a child branch for the canary. Preview branches today use project `Wewebplus-hitl`. The production project may differ. The API key can stay in Doppler.
-- A yes to create the new cluster, the new EC2 capacity instance, and the ECR repositories in this account.
+- Production hostname is `https://anakwannaphaschaiyong.com`, with no `pr-` prefix. Canary hostname is `https://pre.anakwannaphaschaiyong.com`. The apex is not moved until phase 5.
+- Neon project stays `Wewebplus-hitl` (`mute-credit-71067312`). Canary branch name is `pre`, parent `Dev` (`br-mute-shadow-b3jxqoho`). This agent cannot create it yet: `NEON_API_KEY` is only in Doppler `dyad/preview`.
+- Creating the new ECS cluster, EC2 capacity instance, and ECR repositories is approved. Those resources are not created until Doppler `dyad/prd` is readable, so a new instance is not billed before the tasks can receive secrets.
+
+Still required before phase 3:
+
+- Doppler project `dyad`, config `prd`, readable by the existing GitHub OIDC identity. `aws/dev` stays the Bedrock config. Setup steps are in the decision log. The host’s service-token files stay on `gascity-server`.
+- Branch `pre` created in the Neon console from parent `Dev`. Do not send the connection string.
 
 Not required for the canary:
 
@@ -240,9 +244,7 @@ Not required for the canary:
 
 ## Open Questions
 
-- Who submits the proof question on the production hostname, and which artifacts count as success: sqlite row, Neon mirror row, and the answer visible in the Dyad window?
-- Is the production Neon project `Wewebplus-hitl`, or a different project?
-- What is the production browser hostname?
+- Who submits the proof question on `https://anakwannaphaschaiyong.com`, and which artifacts count as success: sqlite row, Neon mirror row, and the answer visible in the Dyad window?
 
 ## Decision Log
 
@@ -254,6 +256,10 @@ Not required for the canary:
 - `gascity-server` is not modified to become the ECS host. The migration is the rehearsal. The instance stays stopped, not terminated, through the proof question.
 - User-app Vercel deploy stays. Bridge, don’t replace: Clerk, Neon, Cloudflare, and Doppler stay the external services.
 - EFS was not granted to the IAM user, so the plan does not depend on it.
+- Production hostname is the zone apex `https://anakwannaphaschaiyong.com`. Preview names `pr-<n>` and `gc-pr-<n>` stay preview names. Canary uses `https://pre.anakwannaphaschaiyong.com`.
+- Neon canary branch is `pre` under `Wewebplus-hitl`, parent `Dev`. It is a copy of `Dev` at creation, not a copy of the branch stored in `dyad/prd`. If `Dev` has no `wewebplus` tables, the canary schema has to be applied to `pre` before phase 4.
+- Doppler grant, decided with the operator: reuse the service account that owns identity `18edf96d-89e6-40f6-87aa-073c11a02e14`. Add environment `prd` on project `dyad`. Do not create a service token. The saved subject `repo:Awannaphasch2016@28061800/dyad@1384672033:*` means any Actions job in this repo can request `prd` after that grant. Preview workflows keep requesting `preview` only.
+- ECS resources are approved and deferred until that Doppler grant and the Neon `pre` branch exist.
 
 ---
 
