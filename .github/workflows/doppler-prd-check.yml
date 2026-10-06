@@ -1,6 +1,7 @@
 # Read Doppler dyad/prd with the production identity and report names only.
 # The identity subject is repo:Awannaphasch2016@28061800/dyad@1384672033:ref:refs/heads/main.
 # This job does not print secret values and does not touch the EC2 host.
+# Pushing this file re-reads dyad/prd after a database URL change.
 
 name: Doppler production read check
 
