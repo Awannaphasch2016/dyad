@@ -34,3 +34,28 @@ export function restoredChatCandidateIds(input: {
   for (const id of open) push(id);
   return ids;
 }
+
+export type ChatRouteConfirmPlan =
+  | { action: "passthrough" }
+  | { action: "open"; chatId: number; appId: number }
+  | { action: "wait" }
+  | { action: "ask-server" };
+
+/**
+ * A chat already in the loaded list opens immediately.
+ * While that list is still loading, wait without asking and without clearing
+ * the selected chat. Ask the server only after the list has settled without it.
+ */
+export function chatRouteConfirmPlan(input: {
+  candidates: readonly number[];
+  loadedChats: readonly { id: number; appId: number }[];
+  listLoading: boolean;
+}): ChatRouteConfirmPlan {
+  if (input.candidates.length === 0) return { action: "passthrough" };
+  for (const id of input.candidates) {
+    const chat = input.loadedChats.find((item) => item.id === id);
+    if (chat) return { action: "open", chatId: chat.id, appId: chat.appId };
+  }
+  if (input.listLoading) return { action: "wait" };
+  return { action: "ask-server" };
+}

@@ -22,6 +22,7 @@ import { ipc } from "@/ipc/types";
 import { phaseFromTitle, previewOpenForPhase } from "@/lib/factoryPhase";
 import { Button } from "@/components/ui/button";
 import {
+  chatRouteConfirmPlan,
   isMissingChatOrAppError,
   restoredChatCandidateIds,
 } from "./chatMissingRoute";
@@ -63,6 +64,24 @@ export default function ChatPage() {
   const selectedAppId = useAtomValue(selectedAppIdAtom);
   const setSelectedAppId = useSetAtom(selectedAppIdAtom);
   const { chats, loading } = useChats(selectedAppId);
+  const loadedChatKey = chats
+    .map((chat) => `${chat.id}:${chat.appId}`)
+    .join(",");
+  const confirmPlan = useMemo(
+    () =>
+      chatRouteConfirmPlan({
+        candidates,
+        loadedChats: chats,
+        listLoading: loading,
+      }),
+    [candidateKey, candidates, chats, loadedChatKey, loading],
+  );
+  const confirmKey =
+    confirmPlan.action === "open"
+      ? `open:${confirmPlan.chatId}:${confirmPlan.appId}`
+      : confirmPlan.action;
+  const confirmPlanRef = useRef(confirmPlan);
+  confirmPlanRef.current = confirmPlan;
   const previousSizeRef = useRef<number>(DEFAULT_CHAT_PANEL_SIZE);
   const isInitialMountRef = useRef(true);
   const selectedAppIdRef = useRef(selectedAppId);
@@ -72,14 +91,34 @@ export default function ChatPage() {
   }, [selectedAppId]);
 
   useEffect(() => {
-    if (candidates.length === 0) {
+    const plan = confirmPlanRef.current;
+    if (plan.action === "passthrough") {
       setGate({ kind: "passthrough", key: candidateKey });
+      return;
+    }
+    if (plan.action === "open") {
+      const opened = plan;
+      setGate({
+        kind: "ready",
+        key: candidateKey,
+        chatId: opened.chatId,
+        appId: opened.appId,
+      });
+      if (chatId !== opened.chatId || routeAppId !== opened.appId) {
+        void navigate({
+          to: "/chat",
+          search: { id: opened.chatId, appId: opened.appId },
+          replace: true,
+        });
+      }
+      return;
+    }
+    if (plan.action === "wait") {
+      setGate({ kind: "checking", key: candidateKey });
       return;
     }
     let cancelled = false;
     setGate({ kind: "checking", key: candidateKey });
-    setSelectedChatId(null);
-    setSelectedAppId(null);
     void (async () => {
       let missing = false;
       for (const id of candidates) {
@@ -112,8 +151,6 @@ export default function ChatPage() {
         }
       }
       if (cancelled || !missing) return;
-      setSelectedChatId(null);
-      setSelectedAppId(null);
       setGate({ kind: "missing", key: candidateKey });
     })();
     return () => {
@@ -123,6 +160,7 @@ export default function ChatPage() {
     candidateKey,
     candidates,
     chatId,
+    confirmKey,
     navigate,
     routeAppId,
     setSelectedAppId,
@@ -134,11 +172,12 @@ export default function ChatPage() {
       setSelectedChatId(gate.chatId);
       return;
     }
-    if (gate.kind === "error" || gate.kind === "passthrough") {
+    if (
+      (gate.kind === "error" || gate.kind === "passthrough") &&
+      gate.key === candidateKey
+    ) {
       setSelectedChatId(chatId ?? null);
-      return;
     }
-    setSelectedChatId(null);
   }, [candidateKey, chatId, gate, setSelectedChatId]);
 
   useEffect(() => {
@@ -171,7 +210,7 @@ export default function ChatPage() {
   }, [chatId, chats, loading, navigate, selectedAppId, setSelectedAppId]);
 
   useEffect(() => {
-    if (gate.kind === "checking" || gate.kind === "missing") {
+    if (gate.kind === "missing") {
       return;
     }
     if (gate.kind === "ready") {
@@ -216,7 +255,12 @@ export default function ChatPage() {
     };
   }, [chatId, chats, gate, routeAppId, setSelectedAppId]);
 
-  const visibleChatId = gate.kind === "ready" ? gate.chatId : chatId;
+  const visibleChatId =
+    confirmPlan.action === "open"
+      ? confirmPlan.chatId
+      : gate.kind === "ready"
+        ? gate.chatId
+        : chatId;
   const factoryPhase = phaseFromTitle(
     chats.find((chat) => chat.id === visibleChatId)?.title,
   );
@@ -259,7 +303,11 @@ export default function ChatPage() {
     }
   }, [isChatPanelHidden]);
 
-  if (candidates.length > 0 && (!gateSettled || gate.kind === "checking")) {
+  if (
+    confirmPlan.action === "wait" ||
+    (confirmPlan.action === "ask-server" &&
+      (!gateSettled || gate.kind === "checking"))
+  ) {
     return (
       <p
         className="px-6 py-6 text-sm text-muted-foreground"
