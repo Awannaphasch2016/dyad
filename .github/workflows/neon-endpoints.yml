@@ -56,7 +56,8 @@ jobs:
           if not key:
               print("NEON_API_KEY absent")
               raise SystemExit(1)
-          project = os.environ["PROJECT"]
+          target = "ep-young-wave-b3cwe0rz"
+          known = os.environ["PROJECT"]
           def get(path):
               req = urllib.request.Request(
                   "https://console.neon.tech/api/v2" + path,
@@ -64,9 +65,38 @@ jobs:
               )
               with urllib.request.urlopen(req, timeout=30) as resp:
                   return json.load(resp)
-          branches = {b["id"]: b["name"] for b in get(f"/projects/{project}/branches").get("branches", [])}
-          for ep in get(f"/projects/{project}/endpoints").get("endpoints", []):
-              host = ep.get("host") or ""
-              label = host.split(".")[0]
-              print(f"{branches.get(ep.get('branch_id'), '?')} {ep.get('branch_id')} {label}")
+          def pages(path, field):
+              items = []
+              cursor = ""
+              while True:
+                  sep = "&" if "?" in path else "?"
+                  payload = get(path + (f"{sep}cursor={cursor}" if cursor else ""))
+                  items.extend(payload.get(field, []))
+                  cursor = (payload.get("pagination") or {}).get("cursor") or ""
+                  if not cursor:
+                      return items
+          projects = pages("/projects", "projects")
+          print(f"project_count={len(projects)}")
+          matched = 0
+          for project in projects:
+              pid = project.get("id") or ""
+              pname = project.get("name") or ""
+              branches = {b["id"]: b.get("name") for b in pages(f"/projects/{pid}/branches", "branches")}
+              endpoints = pages(f"/projects/{pid}/endpoints", "endpoints")
+              print(f"project {pname} {pid} endpoints={len(endpoints)} known={'yes' if pid == known else 'no'}")
+              for ep in endpoints:
+                  host = ep.get("host") or ""
+                  label = host.split(".")[0]
+                  bare = label.removesuffix("-pooler")
+                  eid = ep.get("id") or ""
+                  if target in (bare, eid):
+                      matched += 1
+                      print(
+                          "match "
+                          + f"{pname} {pid} {branches.get(ep.get('branch_id'), '?')} "
+                          + f"{ep.get('branch_id')} {eid} {label}"
+                      )
+          print(f"match_count={matched}")
+          if matched == 0:
+              raise SystemExit(2)
           PY
