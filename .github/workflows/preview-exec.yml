@@ -7,6 +7,7 @@
 # The project only has the unsanitized Dev branch. This job creates
 # preview-pr-43 schema-only so Dev rows are not copied. The connection
 # URI is masked and is not printed.
+# Wake after the named tunnel returned HTTP 530.
 # The production host is not a target.
 name: Preview exec
 
