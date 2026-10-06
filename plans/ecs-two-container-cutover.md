@@ -230,12 +230,13 @@ Decided on 2026-10-06:
 
 - Production hostname is `https://anakwannaphaschaiyong.com`, with no `pr-` prefix. Canary hostname is `https://pre.anakwannaphaschaiyong.com`. The apex is not moved until phase 5.
 - Neon project stays `Wewebplus-hitl` (`mute-credit-71067312`). Production branch `prd` is `br-winter-salad-b3mkewwm`. Canary branch `pre` is `br-quiet-frog-b3l8isvn`. Both were created 2026-10-06 from parent `Dev` (`br-mute-shadow-b3jxqoho`). No connection string was changed. `dyad/preview` still points at `Dev`.
-- Creating the new ECS cluster, EC2 capacity instance, and ECR repositories is approved. Those resources wait until a GitHub Actions job on `main` can read Doppler `dyad/prd` with identity `5a844bf1-8def-47f4-8ae1-9520f7bf109b` and print only present or absent.
+- Creating the new ECS cluster, EC2 capacity instance, and ECR repositories was approved and done on 2026-10-06. No Dyad or GasCity task is running there.
 
-Still required before phase 3:
+Still required before a canary task starts:
 
-- The subject claim on identity `5a844bf1-8def-47f4-8ae1-9520f7bf109b`. It must be `repo:Awannaphasch2016@28061800/dyad@1384672033:ref:refs/heads/main`. The preview wildcard must stay on identity `18edf96d-89e6-40f6-87aa-073c11a02e14` only.
-- Nothing else from Neon. Branches `prd` and `pre` exist. Do not send connection strings.
+- A registry image for Dyad and a GasCity supervisor image that calls `http://dyad:32100`.
+- The Neon `pre` branch connection string injected into the canary only. `dyad/prd` still points at Dev (`ep-wild-paper-b3yf26si`). Do not send that string in chat.
+- Cloudflare hostname `pre.anakwannaphaschaiyong.com` pointed at the canary tunnel. The apex stays on `gascity-server`.
 
 Not required for the canary:
 
@@ -259,7 +260,8 @@ Not required for the canary:
 - Production hostname is the zone apex `https://anakwannaphaschaiyong.com`. Preview names `pr-<n>` and `gc-pr-<n>` stay preview names. Canary uses `https://pre.anakwannaphaschaiyong.com`.
 - Neon production branch is `prd` (`br-winter-salad-b3mkewwm`) and canary branch is `pre` (`br-quiet-frog-b3l8isvn`). Both are children of `Dev`, created 2026-10-06. `Dev` remains the branch `dyad/preview` connects to. Pointing production at `prd` is a later cutover step, not this creation.
 - Doppler production identity is `5a844bf1-8def-47f4-8ae1-9520f7bf109b` on the service account that has only `dyad/prd`. No service account API token. The preview identity `18edf96d-89e6-40f6-87aa-073c11a02e14` stays on `dyad/preview` and `aws/dev`. The production subject must be `repo:Awannaphasch2016@28061800/dyad@1384672033:ref:refs/heads/main`, because this workplace allows one environment per service account and a wildcard subject would let a pull request read `prd`.
-- ECS resources are approved and deferred until that production identity reads `dyad/prd` from a job on `main`. The Neon branches already exist.
+- The production identity read `dyad/prd` from `main` on run 37466995678. Subject was `repo:Awannaphasch2016@28061800/dyad@1384672033:ref:refs/heads/main`. Required names were present. `WEWEBPLUS_DATABASE_URL` still uses the Dev endpoint `ep-wild-paper-b3yf26si`, not Neon branch `prd`.
+- Canary capacity created 2026-10-06 in `ap-southeast-1`: ECS cluster `wewebplus`, ECR `wewebplus-dyad` and `wewebplus-gascity`, instance `i-023d741ed3a1b3b25` (`wewebplus-ecs`, `m7i.xlarge`), security group `sg-0d19518d244fede2d` with no inbound rules. `gascity-server` was not changed. No task is running.
 
 ---
 
