@@ -1,14 +1,15 @@
 # Start an already published preview on the shared Devbox.
 #
 # This job does not build an image, does not SSH, and does not read the
-# production deploy key. It starts preview 44 from the tab-restore image.
+# production deploy key. It starts preview 44 from the selection-wait image.
 # The labeled deploy stopped before the tunnel existed because
 # NEON_PARENT_BRANCH_ID is still the unsanitized Dev branch.
 # The project only has the unsanitized Dev branch. This job creates
 # preview-pr-44 schema-only so Dev rows are not copied. The connection
 # URI is masked and is not printed.
 # Wake preview 44 after the labeled deploy refused the Neon parent.
-# Preview 43 is stopped first so the box has memory. Volumes stay.
+# Running preview containers are stopped without deleting volumes so the
+# chat database stays and the box has memory for the new image.
 # The production host is not a target.
 name: Preview exec
 
@@ -269,8 +270,15 @@ jobs:
               'else' \
               '  docker compose -p preview-43 -f compose.preview.yml down || true' \
               'fi' \
+              'echo "--- preview 44 before stop ---"' \
+              'docker ps -a --filter "label=com.docker.compose.project=preview-44" --format "{{.Names}} {{.Status}}"' \
+              'if [[ -f "$HOME/.local/state/wewebplus-preview/preview-44.env" ]]; then' \
+              '  docker compose --env-file "$HOME/.local/state/wewebplus-preview/preview-44.env" -p preview-44 -f compose.preview.yml down || true' \
+              'else' \
+              '  docker compose -p preview-44 -f compose.preview.yml down || true' \
+              'fi' \
               'echo "--- start preview 44 ---"' \
-              'PREVIEW_REQUIRE_BEDROCK=1 PREVIEW_REQUIRE_NAMED_TUNNEL=1 PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh 44 ghcr.io/awannaphasch2016/dyad@sha256:a169bd5c6f7501116ab3019c7d06afd5cf8173ec5ac575b8a143b62a91f4a06e'
+              'PREVIEW_REQUIRE_BEDROCK=1 PREVIEW_REQUIRE_NAMED_TUNNEL=1 PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh 44 ghcr.io/awannaphasch2016/dyad@sha256:158ea57e7d244f9a8ea842bc41917adf7448465adc9b27411f09a9b2302b2fb8'
           } > /tmp/preview-remote.sh
           payload="$(base64 -w0 /tmp/preview-remote.sh)"
           rm -f /tmp/preview-runtime.sh /tmp/preview-remote.sh
