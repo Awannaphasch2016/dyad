@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import {
   PanelGroup,
   Panel,
@@ -13,15 +14,46 @@ import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { isPreviewOpenAtom, isChatPanelHiddenAtom } from "@/atoms/viewAtoms";
 import { useChats } from "@/hooks/useChats";
 import { selectedAppIdAtom } from "@/atoms/appAtoms";
-import { selectedChatIdAtom } from "@/atoms/chatAtoms";
+import {
+  chatTabSessionStorageAtom,
+  selectedChatIdAtom,
+} from "@/atoms/chatAtoms";
 import { ipc } from "@/ipc/types";
 import { phaseFromTitle, previewOpenForPhase } from "@/lib/factoryPhase";
+import { Button } from "@/components/ui/button";
+import {
+  isMissingChatOrAppError,
+  restoredChatCandidateIds,
+} from "./chatMissingRoute";
+
+type ChatRouteGate =
+  | { kind: "checking"; key: string }
+  | { kind: "ready"; key: string; chatId: number; appId: number }
+  | { kind: "missing"; key: string }
+  | { kind: "error"; key: string }
+  | { kind: "passthrough"; key: string };
 
 const DEFAULT_CHAT_PANEL_SIZE = 50;
 
 export default function ChatPage() {
+  const { t } = useTranslation("chat");
   const { id: chatId, appId: routeAppId } = useSearch({ from: "/chat" });
   const navigate = useNavigate();
+  const storedSession = useAtomValue(chatTabSessionStorageAtom);
+  const candidates = useMemo(
+    () =>
+      restoredChatCandidateIds({
+        urlChatId: chatId,
+        openChatIds: storedSession.openChatIds,
+        selectedChatId: storedSession.selectedChatId,
+      }),
+    [chatId, storedSession.openChatIds, storedSession.selectedChatId],
+  );
+  const candidateKey = candidates.join(",");
+  const [gate, setGate] = useState<ChatRouteGate>({
+    kind: "checking",
+    key: "",
+  });
   const [isPreviewOpen, setIsPreviewOpen] = useAtom(isPreviewOpenAtom);
   const [isChatPanelHidden, setIsChatPanelHidden] = useAtom(
     isChatPanelHiddenAtom,
@@ -39,10 +71,75 @@ export default function ChatPage() {
     selectedAppIdRef.current = selectedAppId;
   }, [selectedAppId]);
 
-  // Sync selectedChatIdAtom with the chatId from the URL
   useEffect(() => {
-    setSelectedChatId(chatId ?? null);
-  }, [chatId, setSelectedChatId]);
+    if (candidates.length === 0) {
+      setGate({ kind: "passthrough", key: candidateKey });
+      return;
+    }
+    let cancelled = false;
+    setGate({ kind: "checking", key: candidateKey });
+    setSelectedChatId(null);
+    setSelectedAppId(null);
+    void (async () => {
+      let missing = false;
+      for (const id of candidates) {
+        try {
+          const chat = await ipc.chat.getChat(id);
+          if (cancelled) return;
+          setSelectedChatId(chat.id);
+          selectedAppIdRef.current = chat.appId;
+          setSelectedAppId(chat.appId);
+          setGate({
+            kind: "ready",
+            key: candidateKey,
+            chatId: chat.id,
+            appId: chat.appId,
+          });
+          if (chatId !== chat.id || routeAppId !== chat.appId) {
+            void navigate({
+              to: "/chat",
+              search: { id: chat.id, appId: chat.appId },
+              replace: true,
+            });
+          }
+          return;
+        } catch (error) {
+          if (!isMissingChatOrAppError(error)) {
+            if (!cancelled) setGate({ kind: "error", key: candidateKey });
+            return;
+          }
+          missing = true;
+        }
+      }
+      if (cancelled || !missing) return;
+      setSelectedChatId(null);
+      setSelectedAppId(null);
+      setGate({ kind: "missing", key: candidateKey });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    candidateKey,
+    candidates,
+    chatId,
+    navigate,
+    routeAppId,
+    setSelectedAppId,
+    setSelectedChatId,
+  ]);
+
+  useEffect(() => {
+    if (gate.kind === "ready" && gate.key === candidateKey) {
+      setSelectedChatId(gate.chatId);
+      return;
+    }
+    if (gate.kind === "error" || gate.kind === "passthrough") {
+      setSelectedChatId(chatId ?? null);
+      return;
+    }
+    setSelectedChatId(null);
+  }, [candidateKey, chatId, gate, setSelectedChatId]);
 
   useEffect(() => {
     if (chatId || loading) {
@@ -74,6 +171,16 @@ export default function ChatPage() {
   }, [chatId, chats, loading, navigate, selectedAppId, setSelectedAppId]);
 
   useEffect(() => {
+    if (gate.kind === "checking" || gate.kind === "missing") {
+      return;
+    }
+    if (gate.kind === "ready") {
+      if (gate.appId !== selectedAppIdRef.current) {
+        selectedAppIdRef.current = gate.appId;
+        setSelectedAppId(gate.appId);
+      }
+      return;
+    }
     if (!chatId) {
       return;
     }
@@ -107,11 +214,13 @@ export default function ChatPage() {
     return () => {
       isCancelled = true;
     };
-  }, [chatId, routeAppId, chats, setSelectedAppId]);
+  }, [chatId, chats, gate, routeAppId, setSelectedAppId]);
 
+  const visibleChatId = gate.kind === "ready" ? gate.chatId : chatId;
   const factoryPhase = phaseFromTitle(
-    chats.find((chat) => chat.id === chatId)?.title,
+    chats.find((chat) => chat.id === visibleChatId)?.title,
   );
+  const gateSettled = gate.key === candidateKey;
 
   useEffect(() => {
     if (!factoryPhase) return;
@@ -150,6 +259,46 @@ export default function ChatPage() {
     }
   }, [isChatPanelHidden]);
 
+  if (candidates.length > 0 && (!gateSettled || gate.kind === "checking")) {
+    return (
+      <p
+        className="px-6 py-6 text-sm text-muted-foreground"
+        data-testid="chat-route-loading"
+      >
+        {t("loadingChats")}
+      </p>
+    );
+  }
+  if (gateSettled && gate.kind === "missing") {
+    return (
+      <div
+        className="flex h-full items-center justify-center p-6"
+        data-testid="chat-missing-from-preview"
+        role="status"
+        aria-live="polite"
+      >
+        <div className="max-w-md space-y-3 text-center">
+          <h1 className="text-lg font-semibold">
+            {t("chatMissingFromPreviewTitle")}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {t("chatMissingFromPreviewBody")}
+          </p>
+          <Button
+            className="min-h-11 min-w-11"
+            onClick={() => {
+              setSelectedChatId(null);
+              setSelectedAppId(null);
+              void navigate({ to: "/", replace: true });
+            }}
+          >
+            {t("appList")}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <PanelGroup autoSaveId="persistence" direction="horizontal">
       <Panel
@@ -162,7 +311,7 @@ export default function ChatPage() {
         <div className="h-full w-full">
           {!isChatPanelHidden && (
             <ChatPanel
-              chatId={chatId}
+              chatId={visibleChatId}
               isPreviewOpen={isPreviewOpen}
               onTogglePreview={() => {
                 if (factoryPhase && factoryPhase !== "implementation") {

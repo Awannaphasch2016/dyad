@@ -398,6 +398,25 @@ describe("per-window chat tab session storage", () => {
     ).toBeNull();
   });
 
+  it("deletes a saved session when cleanup keeps only a different window", () => {
+    const storage = createChatTabSessionStorage(localStorage);
+    configureChatTabWindowSession(firstWindow, {
+      mayMigrateLegacySession: true,
+    });
+    storage.setItem(LEGACY_CHAT_TAB_SESSION_STORAGE_KEY, {
+      openChatIds: [20],
+      selectedChatId: 20,
+      closedChatIds: [10],
+      updatedAt: 5,
+    });
+
+    pruneChatTabWindowSessions(localStorage, [secondWindow]);
+
+    expect(
+      localStorage.getItem(chatTabSessionStorageKey(firstWindow)),
+    ).toBeNull();
+  });
+
   it("reconciles a crash-window duplicate identity into the newest session", () => {
     const duplicate = "60000000-0000-4000-8000-000000000006" as TabInstanceId;
     const first: StoredWindowChatTabSession = {

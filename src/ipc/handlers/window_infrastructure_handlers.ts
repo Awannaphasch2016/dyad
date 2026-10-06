@@ -16,6 +16,8 @@ import {
 import type { ChatResponseChunk } from "../types/chat";
 import { getWindowProductController } from "../../window_infrastructure/main/window_product_controller";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import { WEB_BRIDGE_SENDER_ID } from "@/control_plane/session_store";
+import { chatTabSessionRestorePlan } from "@/window_infrastructure/chat_tab_session_restore";
 import { ChatTabTransferCoordinator } from "@/window_infrastructure/main/chat_tab_transfer_coordinator";
 import { readSettings } from "@/main/settings";
 import {
@@ -55,6 +57,15 @@ export function registerWindowInfrastructureHandlers(): void {
           initialChatAppId = existingChat.appId;
         }
       }
+      const restore = chatTabSessionRestorePlan({
+        senderIsBrowserBridge: event.sender.id === WEB_BRIDGE_SENDER_ID,
+        mayMigrateLegacyChatTabSession:
+          controller?.mayMigrateLegacyChatTabSession(windowSessionId) ?? true,
+        productWindowSessionIds: controller
+          ? Array.from(controller.restorableWindowSessionIds())
+          : [windowSessionId],
+        windowSessionId,
+      });
       return {
         windowSessionId,
         currentQueryInvalidationEpoch: synchronization.currentEpoch,
@@ -62,11 +73,8 @@ export function registerWindowInfrastructureHandlers(): void {
         recoveryScopes: synchronization.recoveryScopes,
         initialEntity,
         initialChatAppId,
-        mayMigrateLegacyChatTabSession:
-          controller?.mayMigrateLegacyChatTabSession(windowSessionId) ?? true,
-        restorableWindowSessionIds: Array.from(
-          controller?.restorableWindowSessionIds() ?? [windowSessionId],
-        ),
+        mayMigrateLegacyChatTabSession: restore.adoptPriorSession,
+        restorableWindowSessionIds: restore.restorableWindowSessionIds,
       };
     },
   );
