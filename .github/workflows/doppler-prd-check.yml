@@ -1,0 +1,76 @@
+# Read Doppler dyad/prd with the production identity and report names only.
+# The identity subject is repo:Awannaphasch2016@28061800/dyad@1384672033:ref:refs/heads/main.
+# This job does not print secret values and does not touch the EC2 host.
+
+name: Doppler production read check
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/doppler-prd-check.yml
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  read-prd:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Print the GitHub OIDC subject
+        env:
+          AUDIENCE: https://github.com/Awannaphasch2016
+        run: |
+          set -euo pipefail
+          response="$(curl -sS -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${AUDIENCE}")"
+          python3 -c 'import json,base64,sys
+          response=json.loads(sys.stdin.read())
+          payload=response["value"].split(".")[1]
+          payload += "=" * ((4 - len(payload) % 4) % 4)
+          claims=json.loads(base64.urlsafe_b64decode(payload))
+          print("aud="+json.dumps(claims.get("aud")))
+          print("sub="+str(claims.get("sub","")))
+          print("ref="+str(claims.get("ref","")))' <<<"$response"
+
+      - name: Fetch dyad prd secrets
+        uses: dopplerhq/secrets-fetch-action@v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: 5a844bf1-8def-47f4-8ae1-9520f7bf109b
+          doppler-project: dyad
+          doppler-config: prd
+          inject-env-vars: true
+
+      - name: Report required names
+        env:
+          DEV_ENDPOINT: ep-wild-paper-b3yf26si
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in NOVNC_PASSWORD GAS_CITY_HOST_BRIDGE_TOKEN CLERK_SECRET_KEY CLERK_PUBLISHABLE_KEY WEWEBPLUS_DATABASE_URL WEWEBPLUS_SECRETS_KEY; do
+            if [ -n "${!name:-}" ]; then
+              echo "$name present"
+            else
+              echo "$name absent"
+              missing=1
+            fi
+          done
+          python3 - << 'PY'
+          import os
+          from urllib.parse import urlparse
+          host = urlparse(os.environ.get("WEWEBPLUS_DATABASE_URL", "")).hostname or ""
+          label = host.split(".")[0] if host else ""
+          print("db_endpoint=" + (label or "absent"))
+          dev = os.environ.get("DEV_ENDPOINT", "")
+          print("db_is_dev_branch=" + ("yes" if label == dev else "no"))
+          PY
+          if [ "$missing" -ne 0 ]; then
+            echo "dyad/prd is missing a required name"
+            exit 1
+          fi
+          echo "dyad/prd names present"
