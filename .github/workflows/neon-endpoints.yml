@@ -14,6 +14,10 @@ permissions:
   contents: read
   id-token: write
 
+concurrency:
+  group: neon-endpoint-map
+  cancel-in-progress: true
+
 jobs:
   map:
     if: github.ref == 'refs/heads/cursor/ecs-hitl-cutover-bbea'
@@ -78,16 +82,24 @@ jobs:
           def pages(path, field):
               items = []
               cursor = ""
-              while True:
+              seen = set()
+              for _ in range(10):
                   query = path
                   if cursor:
+                      if cursor in seen:
+                          print(f"cursor_repeat path={path.split('?')[0]}")
+                          return items
+                      seen.add(cursor)
                       sep = "&" if "?" in path else "?"
                       query = path + sep + "cursor=" + urllib.parse.quote(cursor)
                   payload = get(query)
-                  items.extend(payload.get(field, []))
+                  batch = payload.get(field, [])
+                  items.extend(batch)
                   cursor = (payload.get("pagination") or {}).get("cursor") or ""
-                  if not cursor:
+                  if not cursor or not batch:
                       return items
+              print(f"page_cap path={path.split('?')[0]} count={len(items)}")
+              return items
           orgs = get("/users/me/organizations").get("organizations", [])
           print(f"org_count={len(orgs)}")
           matched = 0
