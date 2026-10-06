@@ -1,13 +1,14 @@
 # Start an already published preview on the shared Devbox.
 #
 # This job does not build an image, does not SSH, and does not read the
-# production deploy key. It starts preview 43 from the dialog-fix image.
+# production deploy key. It starts preview 44 from the tab-restore image.
 # The labeled deploy stopped before the tunnel existed because
 # NEON_PARENT_BRANCH_ID is still the unsanitized Dev branch.
 # The project only has the unsanitized Dev branch. This job creates
-# preview-pr-43 schema-only so Dev rows are not copied. The connection
+# preview-pr-44 schema-only so Dev rows are not copied. The connection
 # URI is masked and is not printed.
-# Wake after the named tunnel returned HTTP 530.
+# Wake preview 44 after the labeled deploy refused the Neon parent.
+# Preview 43 is stopped first so the box has memory. Volumes stay.
 # The production host is not a target.
 name: Preview exec
 
@@ -105,7 +106,7 @@ jobs:
           if [[ -n "$account" ]]; then echo "CLOUDFLARE_ACCOUNT_ID: present"; else echo "CLOUDFLARE_ACCOUNT_ID: absent"; fi
           [[ -n "$token" && -n "$zone" && -n "$account" ]]
 
-      - name: Start preview 43 on Wewebplus-ci
+      - name: Start preview 44 on Wewebplus-ci
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -150,7 +151,7 @@ jobs:
           for branch in branches:
               print(f"branch {branch.get('name', '')} {branch.get('id', '')}")
           chosen = next(
-              (branch for branch in branches if branch.get("name") == "preview-pr-43"),
+              (branch for branch in branches if branch.get("name") == "preview-pr-44"),
               None,
           )
           if not chosen:
@@ -162,7 +163,7 @@ jobs:
                   {
                       "branch": {
                           "parent_id": "br-mute-shadow-b3jxqoho",
-                          "name": "preview-pr-43",
+                          "name": "preview-pr-44",
                           "init_source": "schema-only",
                       },
                       "endpoints": [{"type": "read_write"}],
@@ -189,7 +190,7 @@ jobs:
                   else:
                       raise SystemExit("Neon operation did not finish")
           if not chosen.get("id"):
-              raise SystemExit("preview-pr-43 branch was not created")
+              raise SystemExit("preview-pr-44 branch was not created")
           query = urllib.parse.urlencode(
               {
                   "branch_id": chosen["id"],
@@ -208,7 +209,7 @@ jobs:
               print(f"::add-mask::{parsed.password}")
               print(f"::add-mask::{urllib.parse.unquote(parsed.password)}")
           os.environ["WEWEBPLUS_DATABASE_URL"] = uri
-          print("preview-pr-43 connection uri: present")
+          print("preview-pr-44 connection uri: present")
 
           aliases = {
               "CLOUDFLARE_API_TOKEN_": "CLOUDFLARE_API_TOKEN",
@@ -261,8 +262,15 @@ jobs:
               '  git -C "$repo" checkout --detach FETCH_HEAD' \
               'fi' \
               'cd "$repo"' \
-              'echo "--- start preview 43 ---"' \
-              'PREVIEW_REQUIRE_BEDROCK=1 PREVIEW_REQUIRE_NAMED_TUNNEL=1 PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh 43 ghcr.io/awannaphasch2016/dyad@sha256:53d9dbfe462e16c7ddb6d23f0f97b0a0750688de4cc60cf30feb0673d7c7d290'
+              'echo "--- preview 43 before stop ---"' \
+              'docker ps -a --filter "label=com.docker.compose.project=preview-43" --format "{{.Names}} {{.Status}}"' \
+              'if [[ -f "$HOME/.local/state/wewebplus-preview/preview-43.env" ]]; then' \
+              '  docker compose --env-file "$HOME/.local/state/wewebplus-preview/preview-43.env" -p preview-43 -f compose.preview.yml down || true' \
+              'else' \
+              '  docker compose -p preview-43 -f compose.preview.yml down || true' \
+              'fi' \
+              'echo "--- start preview 44 ---"' \
+              'PREVIEW_REQUIRE_BEDROCK=1 PREVIEW_REQUIRE_NAMED_TUNNEL=1 PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh 44 ghcr.io/awannaphasch2016/dyad@sha256:a169bd5c6f7501116ab3019c7d06afd5cf8173ec5ac575b8a143b62a91f4a06e'
           } > /tmp/preview-remote.sh
           payload="$(base64 -w0 /tmp/preview-remote.sh)"
           rm -f /tmp/preview-runtime.sh /tmp/preview-remote.sh
@@ -273,7 +281,7 @@ jobs:
           set -euo pipefail
           ok=0
           for _ in 1 2 3 4 5 6; do
-            code="$(curl -sS -o /tmp/preview-body -w '%{http_code}' --max-time 20 https://pr-43.anakwannaphaschaiyong.com/sign-in || true)"
+            code="$(curl -sS -o /tmp/preview-body -w '%{http_code}' --max-time 20 https://pr-44.anakwannaphaschaiyong.com/sign-in || true)"
             echo "http ${code}"
             if [[ "$code" == "200" ]] && grep -q 'data-dyad-browser-bridge' /tmp/preview-body; then
               ok=1
