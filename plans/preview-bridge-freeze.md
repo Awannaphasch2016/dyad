@@ -124,26 +124,26 @@ None.
 
 ### Phase 1: Stop the preview dialog from freezing the process
 
-- [ ] Add `showMainProcessErrorDialog`.
-- [ ] Use it as `showDialog` in `src/main.ts`.
-- [ ] Cover unset, `"0"`, and `"1"`.
-- [ ] Run `npm test -- src/main/main_process_error_dialog.test.ts`.
+- [x] Add `showMainProcessErrorDialog`.
+- [x] Use it as `showDialog` in `src/main.ts`.
+- [x] Cover unset, `"0"`, and `"1"`.
+- [x] Run `npm test -- src/main/main_process_error_dialog.test.ts`.
 
 ## Testing Strategy
 
-- [ ] Unit test the env gate. Do not import `src/main.ts` in that test.
+- [x] Unit test the env gate. Do not import `src/main.ts` in that test.
 - [ ] Do not add a Postgres, Neon, or Playwright test. The throw is inside the driver. The change is the dialog flag.
 - [ ] Manual check on the next preview: a factory run stays on the bridge past the first few minutes. The container log may still contain the TypeError. It must not be followed by a hung origin or HTTP 530 from this crash.
 
 ## Risks & Mitigations
 
-| Risk | Likelihood | Impact | Mitigation |
-| --- | --- | --- | --- |
-| Node treats the process as undefined after `uncaughtException` | Medium | Medium | The socket is already closed and the driver has already handled `closed()`. The event loop keeps running because the dialog no longer blocks. The bridge stays up. |
-| The same TypeError logs on every later Neon close | Medium | Low | It no longer freezes the tunnel. A driver upgrade waits until the null guard is released. |
-| Gas City also sets `DYAD_BROWSER_BRIDGE=1`, so it loses the native crash box | Low | Low | Gas City is headless too. The banner and stack still go to the log. |
-| A preview entrypoint forgets the env var | Low | High | `compose.preview.yml` already sets it. The unit test locks the flag to that value. |
-| One in-flight control-plane call was on the closed socket | Low | Low | That call fails on its own. It does not close the bridge. |
+| Risk                                                                         | Likelihood | Impact | Mitigation                                                                                                                                                         |
+| ---------------------------------------------------------------------------- | ---------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Node treats the process as undefined after `uncaughtException`               | Medium     | Medium | The socket is already closed and the driver has already handled `closed()`. The event loop keeps running because the dialog no longer blocks. The bridge stays up. |
+| The same TypeError logs on every later Neon close                            | Medium     | Low    | It no longer freezes the tunnel. A driver upgrade waits until the null guard is released.                                                                          |
+| Gas City also sets `DYAD_BROWSER_BRIDGE=1`, so it loses the native crash box | Low        | Low    | Gas City is headless too. The banner and stack still go to the log.                                                                                                |
+| A preview entrypoint forgets the env var                                     | Low        | High   | `compose.preview.yml` already sets it. The unit test locks the flag to that value.                                                                                 |
+| One in-flight control-plane call was on the closed socket                    | Low        | Low    | That call fails on its own. It does not close the bridge.                                                                                                          |
 
 ## Open Questions
 
