@@ -1,0 +1,227 @@
+# One-shot setup of Doppler dyad/canary. Prints names and the database host label.
+# Removed after the canary config exists. Does not roll the EC2 host.
+
+name: Doppler canary setup
+
+on:
+  push:
+    branches:
+      - cursor/ecs-hitl-cutover-bbea
+    paths:
+      - .github/workflows/doppler-canary-setup.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: doppler-canary-setup
+  cancel-in-progress: false
+
+jobs:
+  setup:
+    if: github.ref == 'refs/heads/cursor/ecs-hitl-cutover-bbea'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Create the canary config
+        env:
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+        run: |
+          set -euo pipefail
+          python3 - << 'PY'
+          import json, os, re, urllib.error, urllib.parse, urllib.request
+
+          token = os.environ.get("DOPPLER_ADMIN_TOKEN", "")
+          if not token:
+              print("DOPPLER_ADMIN_TOKEN absent")
+              raise SystemExit(1)
+
+          RUNTIME = [
+              "NOVNC_PASSWORD",
+              "GAS_CITY_HOST_BRIDGE_TOKEN",
+              "CLERK_SECRET_KEY",
+              "CLERK_PUBLISHABLE_KEY",
+              "WEWEBPLUS_SECRETS_KEY",
+          ]
+          AWS = ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION"]
+          PRE_BRANCH = "br-quiet-frog-b3l8isvn"
+          PRE_ENDPOINT = "ep-muddy-sky-b31adt7z"
+          NEON_PROJECT = "mute-credit-71067312"
+
+          def redact(text):
+              text = re.sub(r"postgres(?:ql)?://\S+", "postgres://redacted", text)
+              text = re.sub(r"dp\.(?:st|pt|sa|ct|said)\.[A-Za-z0-9._-]+", "dp.redacted", text)
+              return text[:180]
+
+          def call(method, url, body=None, headers=None, allow=()):
+              data = None if body is None else json.dumps(body).encode()
+              req = urllib.request.Request(url, data=data, method=method)
+              for key, value in (headers or {}).items():
+                  req.add_header(key, value)
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as resp:
+                      raw = resp.read().decode()
+                      return json.loads(raw) if raw else {}
+              except urllib.error.HTTPError as err:
+                  raw = err.read().decode("utf-8", "replace")
+                  if err.code in allow:
+                      return None
+                  message = raw
+                  try:
+                      message = json.loads(raw).get("message", raw)
+                  except json.JSONDecodeError:
+                      pass
+                  path = urllib.parse.urlparse(url).path
+                  print(f"http_error status={err.code} method={method} path={path} message={redact(str(message))}")
+                  raise SystemExit(1)
+
+          def doppler(method, path, body=None):
+              return call(
+                  method,
+                  "https://api.doppler.com" + path,
+                  body,
+                  {"Authorization": "Bearer " + token, "Accept": "application/json", "Content-Type": "application/json"},
+              )
+
+          def download(project, config):
+              payload = doppler(
+                  "GET",
+                  f"/v3/configs/config/secrets/download?project={project}&config={config}&format=json",
+              )
+              if not isinstance(payload, dict):
+                  print(f"download_failed project={project} config={config}")
+                  raise SystemExit(1)
+              return {key: value for key, value in payload.items() if isinstance(value, str)}
+
+          def endpoint_label(url):
+              host = urllib.parse.urlparse(url).hostname or ""
+              return host.split(".")[0]
+
+          prd = download("dyad", "prd")
+          preview = download("dyad", "preview")
+          aws = download("aws", "dev")
+          missing = [name for name in RUNTIME if not prd.get(name)]
+          if missing:
+              print("prd_missing " + ",".join(missing))
+              raise SystemExit(1)
+          neon_key = preview.get("NEON_API_KEY", "")
+          if not neon_key:
+              print("NEON_API_KEY absent")
+              raise SystemExit(1)
+          query = urllib.parse.urlencode(
+              {
+                  "branch_id": PRE_BRANCH,
+                  "database_name": preview.get("NEON_DATABASE") or "neondb",
+                  "role_name": preview.get("NEON_ROLE") or "neondb_owner",
+                  "pooled": "true",
+              }
+          )
+          neon = call(
+              "GET",
+              f"https://console.neon.tech/api/v2/projects/{NEON_PROJECT}/connection_uri?{query}",
+              headers={"Authorization": "Bearer " + neon_key, "Accept": "application/json"},
+          )
+          database_url = neon.get("uri") or ""
+          label = endpoint_label(database_url)
+          bare = label.removesuffix("-pooler")
+          print("pre_endpoint=" + (label or "absent"))
+          if bare != PRE_ENDPOINT:
+              print("pre_endpoint_mismatch")
+              raise SystemExit(2)
+
+          environments = doppler("GET", "/v3/environments?project=dyad").get("environments", [])
+          slugs = {item.get("id") or item.get("slug") for item in environments}
+          print("dyad_environments=" + ",".join(sorted(str(item) for item in slugs if item)))
+          if "canary" in slugs:
+              print("canary_env=exists")
+          else:
+              created = call(
+                  "POST",
+                  "https://api.doppler.com/v3/environments?project=dyad",
+                  {"name": "Canary", "slug": "canary", "personal_configs": False},
+                  {"Authorization": "Bearer " + token, "Accept": "application/json", "Content-Type": "application/json"},
+                  allow=(409,),
+              )
+              print("canary_env=" + ("exists" if created is None else "created"))
+
+          canary = {}
+          payload = call(
+              "GET",
+              "https://api.doppler.com/v3/configs/config/secrets/download?project=dyad&config=canary&format=json",
+              headers={"Authorization": "Bearer " + token, "Accept": "application/json"},
+              allow=(404,),
+          )
+          if isinstance(payload, dict):
+              canary = {key: value for key, value in payload.items() if isinstance(value, str)}
+
+          secrets = {name: prd[name] for name in RUNTIME}
+          secrets["WEWEBPLUS_DATABASE_URL"] = database_url
+          for name in AWS:
+              if not canary.get(name) and aws.get(name):
+                  secrets[name] = aws[name]
+          doppler("POST", "/v3/configs/config/secrets", {"project": "dyad", "config": "canary", "secrets": secrets})
+          print("canary_runtime=written")
+          for name in AWS:
+              print(f"canary_{name}={'present' if canary.get(name) or aws.get(name) else 'absent'}")
+
+          def add_missing_aws(config, current):
+              missing_aws = {name: aws[name] for name in AWS if aws.get(name) and not current.get(name)}
+              if not missing_aws:
+                  print(f"{config}_aws=present")
+                  return
+              doppler(
+                  "POST",
+                  "/v3/configs/config/secrets",
+                  {"project": "dyad", "config": config, "secrets": missing_aws},
+              )
+              print(f"{config}_aws=added " + ",".join(sorted(missing_aws)))
+
+          add_missing_aws("prd", prd)
+          add_missing_aws("preview", preview)
+
+          accounts = doppler("GET", "/v3/workplace/service_accounts").get("service_accounts", [])
+          account = next((item for item in accounts if item.get("name") == "wewebplus-canary"), None)
+          if account is None:
+              created = doppler("POST", "/v3/workplace/service_accounts", {"name": "wewebplus-canary"})
+              account = created.get("service_account") or {}
+              print("service_account=created")
+          else:
+              print("service_account=exists")
+          slug = account.get("slug") or ""
+          if not slug:
+              print("service_account_slug_absent")
+              raise SystemExit(1)
+          member_body = {"type": "service_account", "slug": slug, "role": "viewer", "environments": ["canary"]}
+          member_status = "added"
+          req = urllib.request.Request(
+              "https://api.doppler.com/v3/projects/project/members?project=dyad",
+              data=json.dumps(member_body).encode(),
+              method="POST",
+              headers={"Authorization": "Bearer " + token, "Accept": "application/json", "Content-Type": "application/json"},
+          )
+          try:
+              with urllib.request.urlopen(req, timeout=30) as resp:
+                  resp.read()
+          except urllib.error.HTTPError as err:
+              err.read()
+              if err.code not in (409, 422):
+                  print(f"http_error status={err.code} method=POST path=/v3/projects/project/members")
+                  raise SystemExit(1)
+              doppler(
+                  "PATCH",
+                  f"/v3/projects/project/members/member/service_account/{urllib.parse.quote(slug)}?project=dyad",
+                  {"role": "viewer", "environments": ["canary"]},
+              )
+              member_status = "updated"
+          print(f"service_account_access=dyad/canary {member_status}")
+
+          saved = download("dyad", "canary")
+          absent = [name for name in RUNTIME + ["WEWEBPLUS_DATABASE_URL"] if not saved.get(name)]
+          if absent:
+              print("canary_missing " + ",".join(absent))
+              raise SystemExit(1)
+          saved_label = endpoint_label(saved.get("WEWEBPLUS_DATABASE_URL", ""))
+          print("canary_db_endpoint=" + saved_label)
+          print("canary_db_is_pre_branch=" + ("yes" if saved_label.removesuffix("-pooler") == PRE_ENDPOINT else "no"))
+          print("canary_config=ready")
+          PY
