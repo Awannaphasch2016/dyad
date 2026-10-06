@@ -51,7 +51,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 - << 'PY'
-          import json, os, urllib.request
+          import json, os, urllib.parse, urllib.request, urllib.error
           key = os.environ.get("NEON_API_KEY", "")
           if not key:
               print("NEON_API_KEY absent")
@@ -63,39 +63,65 @@ jobs:
                   "https://console.neon.tech/api/v2" + path,
                   headers={"Authorization": "Bearer " + key, "Accept": "application/json"},
               )
-              with urllib.request.urlopen(req, timeout=30) as resp:
-                  return json.load(resp)
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as resp:
+                      return json.load(resp)
+              except urllib.error.HTTPError as err:
+                  raw = err.read().decode("utf-8", "replace")[:180]
+                  message = raw
+                  try:
+                      message = json.loads(raw).get("message", raw)
+                  except json.JSONDecodeError:
+                      pass
+                  print(f"http_error status={err.code} path={path.split('?')[0]} message={message}")
+                  raise
           def pages(path, field):
               items = []
               cursor = ""
               while True:
-                  sep = "&" if "?" in path else "?"
-                  payload = get(path + (f"{sep}cursor={cursor}" if cursor else ""))
+                  query = path
+                  if cursor:
+                      sep = "&" if "?" in path else "?"
+                      query = path + sep + "cursor=" + urllib.parse.quote(cursor)
+                  payload = get(query)
                   items.extend(payload.get(field, []))
                   cursor = (payload.get("pagination") or {}).get("cursor") or ""
                   if not cursor:
                       return items
-          projects = pages("/projects", "projects")
-          print(f"project_count={len(projects)}")
+          orgs = get("/users/me/organizations").get("organizations", [])
+          print(f"org_count={len(orgs)}")
           matched = 0
-          for project in projects:
-              pid = project.get("id") or ""
-              pname = project.get("name") or ""
-              branches = {b["id"]: b.get("name") for b in pages(f"/projects/{pid}/branches", "branches")}
-              endpoints = pages(f"/projects/{pid}/endpoints", "endpoints")
-              print(f"project {pname} {pid} endpoints={len(endpoints)} known={'yes' if pid == known else 'no'}")
-              for ep in endpoints:
-                  host = ep.get("host") or ""
-                  label = host.split(".")[0]
-                  bare = label.removesuffix("-pooler")
-                  eid = ep.get("id") or ""
-                  if target in (bare, eid):
-                      matched += 1
-                      print(
-                          "match "
-                          + f"{pname} {pid} {branches.get(ep.get('branch_id'), '?')} "
-                          + f"{ep.get('branch_id')} {eid} {label}"
-                      )
+          project_count = 0
+          for org in orgs:
+              oid = org.get("id") or ""
+              print(f"org {org.get('name')} {oid}")
+              projects = pages(f"/projects?org_id={urllib.parse.quote(oid)}&limit=400", "projects")
+              project_count += len(projects)
+              for project in projects:
+                  pid = project.get("id") or ""
+                  pname = project.get("name") or ""
+                  branches = {
+                      b["id"]: b.get("name")
+                      for b in pages(f"/projects/{pid}/branches?limit=400", "branches")
+                  }
+                  endpoints = pages(f"/projects/{pid}/endpoints?limit=400", "endpoints")
+                  print(
+                      f"project {pname} {pid} endpoints={len(endpoints)} "
+                      + f"known={'yes' if pid == known else 'no'}"
+                  )
+                  for ep in endpoints:
+                      host = ep.get("host") or ""
+                      label = host.split(".")[0]
+                      bare = label.removesuffix("-pooler")
+                      eid = ep.get("id") or ""
+                      if target in (bare, eid):
+                          matched += 1
+                          print(
+                              "match "
+                              + f"{pname} {pid} {branches.get(ep.get('branch_id'), '?')} "
+                              + f"{ep.get('branch_id')} {eid} {label}"
+                          )
+          print(f"project_count={project_count}")
           print(f"match_count={matched}")
           if matched == 0:
               raise SystemExit(2)

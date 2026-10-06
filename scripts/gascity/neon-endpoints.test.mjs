@@ -24,6 +24,8 @@ test("the Neon endpoint map prints branch ids and host labels only", () => {
   assert.match(workflow, /doppler-config: preview/);
   assert.match(workflow, /PROJECT: mute-credit-71067312/);
   assert.match(workflow, /ep-young-wave-b3cwe0rz/);
+  assert.match(workflow, /\/users\/me\/organizations/);
+  assert.match(workflow, /org_id/);
   assert.match(workflow, /match_count/);
   assert.doesNotMatch(workflow, /printenv/);
   assert.doesNotMatch(workflow, /connection_uri/);
