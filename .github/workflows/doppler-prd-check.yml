@@ -65,9 +65,10 @@ jobs:
           from urllib.parse import urlparse
           host = urlparse(os.environ.get("WEWEBPLUS_DATABASE_URL", "")).hostname or ""
           label = host.split(".")[0] if host else ""
+          bare = label.removesuffix("-pooler")
           print("db_endpoint=" + (label or "absent"))
           dev = os.environ.get("DEV_ENDPOINT", "")
-          print("db_is_dev_branch=" + ("yes" if label == dev else "no"))
+          print("db_is_dev_branch=" + ("yes" if bare == dev else "no"))
           PY
           if [ "$missing" -ne 0 ]; then
             echo "dyad/prd is missing a required name"
