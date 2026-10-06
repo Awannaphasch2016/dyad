@@ -1,0 +1,54 @@
+# One-shot map of Neon branch names to endpoint ids. Prints no secrets.
+# Removed after the production database host is identified.
+
+name: Neon endpoint map
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/neon-endpoints.yml
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  map:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Fetch dyad preview secrets
+        uses: dopplerhq/secrets-fetch-action@v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: 18edf96d-89e6-40f6-87aa-073c11a02e14
+          doppler-project: dyad
+          doppler-config: preview
+          inject-env-vars: true
+
+      - name: Print branch endpoint ids
+        env:
+          PROJECT: mute-credit-71067312
+        run: |
+          set -euo pipefail
+          python3 - << 'PY'
+          import json, os, urllib.request
+          key = os.environ.get("NEON_API_KEY", "")
+          if not key:
+              print("NEON_API_KEY absent")
+              raise SystemExit(1)
+          project = os.environ["PROJECT"]
+          def get(path):
+              req = urllib.request.Request(
+                  "https://console.neon.tech/api/v2" + path,
+                  headers={"Authorization": "Bearer " + key, "Accept": "application/json"},
+              )
+              with urllib.request.urlopen(req, timeout=30) as resp:
+                  return json.load(resp)
+          branches = {b["id"]: b["name"] for b in get(f"/projects/{project}/branches").get("branches", [])}
+          for ep in get(f"/projects/{project}/endpoints").get("endpoints", []):
+              host = ep.get("host") or ""
+              label = host.split(".")[0]
+              print(f"{branches.get(ep.get('branch_id'), '?')} {ep.get('branch_id')} {label}")
+          PY
