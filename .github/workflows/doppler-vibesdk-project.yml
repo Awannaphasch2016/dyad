@@ -1,0 +1,35 @@
+# Create the empty Doppler project vibesdk.
+# Does not inherit dyad and does not copy secret values.
+# Runs from this branch only. Remove this file after the project exists.
+
+name: Ensure vibesdk Doppler project
+
+on:
+  push:
+    branches:
+      - cursor/vibesdk-doppler-project-fd29
+    paths:
+      - .github/workflows/doppler-vibesdk-project.yml
+      - scripts/doppler/ensure-vibesdk-project.mjs
+      - scripts/doppler/vibesdk-project.mjs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: doppler-vibesdk-project
+  cancel-in-progress: false
+
+jobs:
+  ensure:
+    if: github.ref == 'refs/heads/cursor/vibesdk-doppler-project-fd29'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Create the vibesdk project
+        env:
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+        run: node scripts/doppler/ensure-vibesdk-project.mjs
