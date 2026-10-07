@@ -12,9 +12,12 @@ import {
   findNamed,
   gatewayCreateBody,
   labConfigViolations,
+  failureTail,
   labPassword,
   labWranglerConfig,
   optionalLabSecrets,
+  shouldMask,
+  takeOpenRouter,
   parseWorkersDevUrl,
   patchThinkModel,
   patchWorkerExports,
@@ -138,4 +141,37 @@ test("the deploy script does not copy dyad database urls or production routes", 
     false,
   );
   assert.deepEqual(optionalLabSecrets, ["OPENROUTER_API_KEY"]);
+});
+
+test("masking skips short values and private keys, and OpenRouter reads one name", () => {
+  assert.equal(shouldMask("dev"), false);
+  assert.equal(shouldMask("vibesdk"), false);
+  assert.equal(
+    shouldMask(
+      "-----BEGIN RSA PRIVATE KEY-----\nabc\n-----END RSA PRIVATE KEY-----",
+    ),
+    false,
+  );
+  assert.equal(shouldMask("sk-or-example-value-123456"), true);
+  const payload = {
+    secrets: {
+      OPENROUTER_API_KEY: {
+        raw: "sk-or-example-value-123456",
+        computed: "sk-or-example-value-123456",
+      },
+      SOME_PRIVATE_KEY: {
+        raw: "-----BEGIN RSA PRIVATE KEY-----\nsecret\n-----END RSA PRIVATE KEY-----",
+      },
+    },
+  };
+  const found = takeOpenRouter(payload);
+  assert.equal(found.key, "sk-or-example-value-123456");
+  assert.deepEqual(found.privateKeyNames, ["SOME_PRIVATE_KEY"]);
+  assert.equal(payload.secrets.SOME_PRIVATE_KEY.raw, undefined);
+  assert.equal(JSON.stringify(payload).includes("BEGIN RSA"), false);
+  const tail = failureTail(
+    "banner\n-----BEGIN RSA PRIVATE KEY-----\nsecret\n-----END RSA PRIVATE KEY-----\nUpload failed: binding DB\n",
+  );
+  assert.equal(tail.includes("secret"), false);
+  assert.match(tail, /binding DB/);
 });

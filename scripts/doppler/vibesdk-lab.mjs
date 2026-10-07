@@ -306,3 +306,55 @@ export function promptOutcome(text) {
 export function labPassword(randomText) {
   return `Aa1${randomText}`;
 }
+
+export function shouldMask(value) {
+  if (typeof value !== "string") return false;
+  const text = value.trim();
+  if (text.length < 20) return false;
+  if (/[\r\n]/.test(text)) return false;
+  return true;
+}
+
+export function takeOpenRouter(payload) {
+  const secrets = payload?.secrets;
+  const privateKeyNames = [];
+  let key = "";
+  if (!secrets || typeof secrets !== "object" || Array.isArray(secrets)) {
+    return { key, privateKeyNames };
+  }
+  for (const [name, entry] of Object.entries(secrets)) {
+    const raw = String(entry?.raw ?? "");
+    const computed = String(entry?.computed ?? "");
+    if (raw.includes("PRIVATE KEY") || computed.includes("PRIVATE KEY")) {
+      privateKeyNames.push(name);
+    }
+    if (name === "OPENROUTER_API_KEY") {
+      const candidate = (computed || raw).trim();
+      if (
+        candidate &&
+        !candidate.startsWith("${") &&
+        !/[\r\n]/.test(candidate)
+      ) {
+        key = candidate;
+      }
+    }
+    if (entry && typeof entry === "object") {
+      entry.raw = undefined;
+      entry.computed = undefined;
+      entry.value = undefined;
+    }
+  }
+  return { key, privateKeyNames };
+}
+
+export function failureTail(output) {
+  const text = String(output).replace(
+    /-----BEGIN [A-Z0-9 ]+-----[\s\S]*?-----END [A-Z0-9 ]+-----/g,
+    "[redacted-pem]",
+  );
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return lines.slice(-25).join("\n").slice(-1200);
+}

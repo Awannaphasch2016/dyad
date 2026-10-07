@@ -34,6 +34,9 @@ import {
   labConfigViolations,
   labPassword,
   labWranglerConfig,
+  shouldMask,
+  takeOpenRouter,
+  failureTail,
   parseWorkersDevUrl,
   patchThinkModel,
   patchWorkerExports,
@@ -45,9 +48,8 @@ import {
 } from "./vibesdk-lab.mjs";
 
 function mask(value) {
-  if (typeof value === "string" && value.length > 0) {
-    console.log(`::add-mask::${value}`);
-  }
+  if (!shouldMask(value)) return;
+  console.log(`::add-mask::${value.trim()}`);
 }
 
 async function doppler(token, path) {
@@ -122,7 +124,7 @@ function run(command, args, { cwd, input, env } = {}) {
       if (code !== 0) {
         reject(
           new Error(
-            `${command} ${args[0] ?? ""} ${code} ${redact(output).slice(0, 700)}`,
+            `${args[0] ?? command} ${code}\n${redact(failureTail(output))}`,
           ),
         );
         return;
@@ -261,19 +263,20 @@ async function openRouterFromDyad(adminToken) {
     try {
       payload = await doppler(
         adminToken,
-        `/v3/configs/config/secrets/download?project=dyad&config=${encodeURIComponent(config)}&format=json`,
+        `/v3/configs/config/secrets?project=dyad&config=${encodeURIComponent(config)}`,
       );
     } catch (error) {
       console.log(`openrouter_dyad_${config}=skipped ${redact(error.message)}`);
       continue;
     }
-    for (const value of Object.values(payload)) {
-      if (typeof value === "string") mask(value);
+    const found = takeOpenRouter(payload);
+    for (const name of found.privateKeyNames) {
+      console.log(`private_key_name=${name} config=${config}`);
     }
-    const key = String(payload.OPENROUTER_API_KEY ?? "").trim();
-    if (referenceResolved(key) === "yes") {
+    if (found.key) {
+      mask(found.key);
       console.log(`OPENROUTER_API_KEY_source=dyad/${config}`);
-      return key;
+      return found.key;
     }
   }
   return "";
