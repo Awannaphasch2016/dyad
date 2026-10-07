@@ -12,6 +12,8 @@ export const LAB_CONFIG_NAME = "wrangler.jsonc";
 export const VIBESDK_SHA = "9da158d82c597a0e8f4bf033cdccd1053fb6fb15";
 export const LAB_PROMPT =
   "Reply with the single word pong. Do not write files.";
+export const LAB_THINK_MODEL_ID = "anthropic/claude-sonnet-4.5";
+export const LAB_THINK_PROVIDER = "openrouter";
 
 export const requiredLabSecrets = [
   "CLOUDFLARE_API_TOKEN",
@@ -225,16 +227,61 @@ export function patchThinkModel(source) {
   const next = source
     .replace(
       "export const THINK_MODEL_ID = 'google-ai-studio/gemini-3.6-flash';",
-      "export const THINK_MODEL_ID = 'anthropic/claude-sonnet-4-5';",
+      `export const THINK_MODEL_ID = '${LAB_THINK_MODEL_ID}';`,
     )
     .replace("name: 'Gemini 3.6 Flash',", "name: 'Claude Sonnet 4.5',")
-    .replace("provider: 'google-ai-studio',", "provider: 'anthropic',");
+    .replace(
+      "provider: 'google-ai-studio',",
+      `provider: '${LAB_THINK_PROVIDER}',\n\tdirectOverride: true,`,
+    );
   if (
     next.includes("gemini") ||
     next.includes("google-ai-studio") ||
-    !next.includes("anthropic/claude-sonnet-4-5")
+    next.includes("provider: 'anthropic'") ||
+    next.includes("anthropic/claude-sonnet-4-5") ||
+    !next.includes(`'${LAB_THINK_MODEL_ID}'`) ||
+    !next.includes(`provider: '${LAB_THINK_PROVIDER}'`) ||
+    !next.includes("directOverride: true")
   ) {
     throw new Error("think model patch did not apply");
+  }
+  return next;
+}
+
+export function patchThinkRouting(source) {
+  const usesStoredKeys =
+    "const usesStoredKeys = !conf.defaultHeaders?.['cf-aig-authorization'];";
+  const gatewayHeader =
+    "if (gatewayToken && !headers['cf-aig-authorization']) {";
+  const gatewayUrl =
+    "if (env.CLOUDFLARE_ACCOUNT_ID && env.CLOUDFLARE_AI_GATEWAY) {";
+  if (
+    !source.includes(usesStoredKeys) ||
+    !source.includes(gatewayHeader) ||
+    !source.includes(gatewayUrl)
+  ) {
+    throw new Error("think routing patch did not match");
+  }
+  const next = source
+    .replace(
+      usesStoredKeys,
+      "const directOpenRouter = aiModelConfig.provider === 'openrouter';\n\t\tconst usesStoredKeys = directOpenRouter ? false : !conf.defaultHeaders?.['cf-aig-authorization'];",
+    )
+    .replace(
+      gatewayHeader,
+      "if (!directOpenRouter && gatewayToken && !headers['cf-aig-authorization']) {",
+    )
+    .replace(
+      gatewayUrl,
+      "if (!directOpenRouter && env.CLOUDFLARE_ACCOUNT_ID && env.CLOUDFLARE_AI_GATEWAY) {",
+    );
+  if (
+    !next.includes("directOpenRouter") ||
+    next.includes(usesStoredKeys) ||
+    next.includes(gatewayHeader) ||
+    next.includes(gatewayUrl)
+  ) {
+    throw new Error("think routing patch did not apply");
   }
   return next;
 }
@@ -306,6 +353,47 @@ export function promptOutcome(text) {
     }
   }
   return { agent, error, reply };
+}
+
+export function labWebsocketUrl(row, pageUrl) {
+  const raw = String(row?.websocketUrl ?? "");
+  let expectedHost = "";
+  try {
+    expectedHost = new URL(pageUrl).host;
+  } catch {
+    return "";
+  }
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol === "wss:" && parsed.host === expectedHost) {
+      return parsed.toString();
+    }
+  } catch {
+    return "";
+  }
+  return "";
+}
+
+export function modelTurnOutcome(messages) {
+  let error = "";
+  let reply = "absent";
+  for (const message of messages ?? []) {
+    if (!message || typeof message !== "object") continue;
+    const blob = JSON.stringify(message);
+    if (/credit balance is too low|Anthropic API/i.test(blob) && !error) {
+      error = "Anthropic credit balance";
+    }
+    if (message.type === "error" && message.error) {
+      error = String(message.error);
+    }
+    if (message.type !== "conversation_response") continue;
+    const text = String(message.message ?? "");
+    if (text.trim()) reply = /\bpong\b/i.test(text) ? "pong" : "present";
+    if (message.tool && message.tool.status !== "error" && reply === "absent") {
+      reply = "present";
+    }
+  }
+  return { error, reply };
 }
 
 export function labPassword(randomText) {

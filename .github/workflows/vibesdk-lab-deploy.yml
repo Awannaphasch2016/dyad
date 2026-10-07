@@ -1,10 +1,17 @@
-# One-shot isolated vibeSDK lab deploy. Remove this workflow after the lab URL
-# answers a prompt. It does not deploy vibesdk-production or build.cloudflare.dev.
+# Isolated vibeSDK lab deploy. The push trigger exists so this branch can
+# republish Think on OpenRouter. Remove that trigger after the run. This
+# workflow does not deploy vibesdk-production or build.cloudflare.dev.
 
 name: VibeSDK lab deploy
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - cursor/vibesdk-doppler-project-fd29
+    paths:
+      - .github/workflows/vibesdk-lab-deploy.yml
+      - scripts/doppler/**
 
 permissions:
   contents: read
@@ -19,6 +26,10 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
       - uses: oven-sh/setup-bun@v2
 

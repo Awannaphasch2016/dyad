@@ -6,6 +6,8 @@ import {
   LAB_D1_NAME,
   LAB_GATEWAY_ID,
   LAB_PUBLIC_HOST,
+  LAB_THINK_MODEL_ID,
+  LAB_THINK_PROVIDER,
   PRODUCTION_DATABASE_ID,
   PRODUCTION_KV_ID,
   csrfTokenFromJar,
@@ -19,8 +21,11 @@ import {
   optionalLabSecrets,
   shouldMask,
   takeOpenRouter,
+  labWebsocketUrl,
+  modelTurnOutcome,
   parseWorkersDevUrl,
   patchThinkModel,
+  patchThinkRouting,
   patchWorkerExports,
   promptOutcome,
   providerConfigBody,
@@ -98,9 +103,34 @@ test("resource bodies use lab names", () => {
 
 test("the checkout patches leave Gemini and the sandbox export behind", () => {
   const patched = patchThinkModel(thinkModel);
-  assert.match(patched, /anthropic\/claude-sonnet-4-5/);
+  assert.match(patched, new RegExp(LAB_THINK_MODEL_ID.replaceAll(".", "\\.")));
+  assert.match(patched, new RegExp(`provider: '${LAB_THINK_PROVIDER}'`));
+  assert.match(patched, /directOverride: true/);
   assert.equal(patched.includes("gemini"), false);
   assert.equal(patched.includes("google-ai-studio"), false);
+  assert.equal(patched.includes("provider: 'anthropic'"), false);
+  assert.equal(patched.includes("anthropic/claude-sonnet-4-5"), false);
+  const routing =
+    patchThinkRouting(`const usesStoredKeys = !conf.defaultHeaders?.['cf-aig-authorization'];
+		const headers: Record<string, string> = { ...(conf.defaultHeaders ?? {}) };
+		if (gatewayToken && !headers['cf-aig-authorization']) {
+			headers['cf-aig-authorization'] = \`Bearer \${gatewayToken}\`;
+		}
+		if (env.CLOUDFLARE_ACCOUNT_ID && env.CLOUDFLARE_AI_GATEWAY) {
+			baseURL = \`https://gateway.ai.cloudflare.com/v1/\${env.CLOUDFLARE_ACCOUNT_ID}/\${env.CLOUDFLARE_AI_GATEWAY}/compat\`;
+		}
+`);
+  assert.match(routing, /directOpenRouter/);
+  assert.match(
+    routing,
+    /if \(!directOpenRouter && env\.CLOUDFLARE_ACCOUNT_ID && env\.CLOUDFLARE_AI_GATEWAY\)/,
+  );
+  assert.equal(
+    routing.includes(
+      "if (env.CLOUDFLARE_ACCOUNT_ID && env.CLOUDFLARE_AI_GATEWAY)",
+    ),
+    false,
+  );
   const entry =
     "export { UserAppSandboxService } from './services/sandbox/sandboxSdkClient';\nexport { CodeGeneratorAgent } from './agents/core/codingAgent';\n";
   const worker = patchWorkerExports(entry);
@@ -128,6 +158,46 @@ test("deploy output and the smoke prompt stay free of secret values", () => {
   assert.equal(csrfTokenFromJar(jar), "abc");
   assert.equal(jar.accessToken, "jwt-value");
   assert.match(labPassword("zzzzzzzz"), /^Aa1/);
+  assert.equal(
+    labWebsocketUrl(
+      {
+        websocketUrl:
+          "wss://vibesdk-lab.example.workers.dev/api/agent/agent-1/ws",
+      },
+      "https://vibesdk-lab.example.workers.dev",
+    ),
+    "wss://vibesdk-lab.example.workers.dev/api/agent/agent-1/ws",
+  );
+  assert.equal(
+    labWebsocketUrl(
+      { websocketUrl: "wss://evil.example/api/agent/agent-1/ws" },
+      "https://vibesdk-lab.example.workers.dev",
+    ),
+    "",
+  );
+  const turn = modelTurnOutcome([
+    { type: "conversation_response", message: "", isStreaming: true },
+    { type: "conversation_response", message: "pon", isDelta: true },
+    { type: "conversation_response", message: "g", isDelta: true },
+  ]);
+  assert.equal(turn.reply, "present");
+  assert.equal(turn.error, "");
+  assert.equal(
+    modelTurnOutcome([
+      { type: "conversation_response", message: "pong", isStreaming: false },
+    ]).reply,
+    "pong",
+  );
+  assert.equal(
+    modelTurnOutcome([
+      {
+        type: "error",
+        error:
+          "Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.",
+      },
+    ]).error.includes("Anthropic"),
+    true,
+  );
 });
 
 test("the deploy script does not copy dyad database urls or production routes", () => {
@@ -139,10 +209,9 @@ test("the deploy script does not copy dyad database urls or production routes", 
   assert.match(deployScript, /labConfigViolations/);
   assert.match(deployScript, /durable_objects=pricing_required/);
   assert.equal(deployScript.includes("GEMINI_API_KEY"), false);
-  assert.equal(
-    deployScript.includes("OPENROUTER_API_KEY is not available"),
-    false,
-  );
+  assert.match(deployScript, /OPENROUTER_API_KEY is not available/);
+  assert.match(deployScript, /patchThinkRouting/);
+  assert.match(deployScript, /model reply absent/);
   assert.deepEqual(optionalLabSecrets, ["OPENROUTER_API_KEY"]);
 });
 

@@ -20,6 +20,8 @@ import {
   LAB_KV_TITLE,
   LAB_PROMPT,
   LAB_R2_NAME,
+  LAB_THINK_MODEL_ID,
+  LAB_THINK_PROVIDER,
   optionalLabSecrets,
   requiredLabSecrets,
   PRODUCTION_DATABASE_ID,
@@ -37,8 +39,11 @@ import {
   shouldMask,
   takeOpenRouter,
   failureTail,
+  labWebsocketUrl,
+  modelTurnOutcome,
   parseWorkersDevUrl,
   patchThinkModel,
+  patchThinkRouting,
   patchWorkerExports,
   promptOutcome,
   providerConfigBody,
@@ -244,8 +249,8 @@ async function smoke(url, password) {
     }),
     signal: AbortSignal.timeout(180000),
   });
-  const promptText = await prompt.text();
-  const outcome = promptOutcome(promptText);
+  const streamed = await readPromptStream(prompt, url, jar.accessToken);
+  const outcome = promptOutcome(streamed.text);
   console.log(
     `prompt=${prompt.status} agent=${outcome.agent} reply=${outcome.reply} error=${redact(outcome.error) || "none"}`,
   );
@@ -255,6 +260,101 @@ async function smoke(url, password) {
   if (outcome.error) {
     throw new Error(`prompt error ${redact(outcome.error)}`);
   }
+  const turn = streamed.turn ?? { error: "", reply: "absent" };
+  console.log(
+    `model_reply=${turn.reply} model_error=${redact(turn.error) || "none"}`,
+  );
+  if (turn.error) {
+    throw new Error(`model error ${redact(turn.error)}`);
+  }
+  if (turn.reply === "absent") {
+    throw new Error("model reply absent");
+  }
+}
+
+async function readPromptStream(response, pageUrl, accessToken) {
+  const reader = response.body?.getReader();
+  if (!reader) {
+    return { text: await response.text(), turn: null };
+  }
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let text = "";
+  let turn = null;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const chunk = decoder.decode(value, { stream: true });
+    text += chunk;
+    buffer += chunk;
+    let newline = buffer.indexOf("\n");
+    while (newline >= 0) {
+      const line = buffer.slice(0, newline);
+      buffer = buffer.slice(newline + 1);
+      newline = buffer.indexOf("\n");
+      if (turn) continue;
+      let row;
+      try {
+        row = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      const websocketUrl = labWebsocketUrl(row, pageUrl);
+      if (row?.agentId && websocketUrl) {
+        turn = watchModelTurn(websocketUrl, accessToken);
+      }
+    }
+  }
+  return { text, turn: turn ? await turn : null };
+}
+
+function watchModelTurn(websocketUrl, accessToken) {
+  return new Promise((resolve) => {
+    const messages = [];
+    let settled = false;
+    let socket;
+    let timer;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try {
+        socket?.close();
+      } catch {
+        // The socket may already be closed.
+      }
+      resolve(modelTurnOutcome(messages));
+    };
+    try {
+      socket = new WebSocket(websocketUrl, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Cookie: `accessToken=${encodeURIComponent(accessToken)}`,
+        },
+      });
+    } catch {
+      console.log("model_ws=unsupported");
+      resolve({ error: "websocket client unavailable", reply: "absent" });
+      return;
+    }
+    timer = setTimeout(finish, 150000);
+    socket.addEventListener("open", () => {
+      console.log("model_ws=open");
+    });
+    socket.addEventListener("message", (event) => {
+      try {
+        messages.push(JSON.parse(String(event.data)));
+      } catch {
+        return;
+      }
+      const outcome = modelTurnOutcome(messages);
+      if (outcome.error || outcome.reply !== "absent") finish();
+    });
+    socket.addEventListener("error", () => {
+      console.log("model_ws=error");
+    });
+    socket.addEventListener("close", finish);
+  });
 }
 
 async function openRouterFromDyad(adminToken) {
@@ -328,6 +428,9 @@ async function main() {
   console.log(
     `OPENROUTER_API_KEY=${referenceResolved(openRouterKey) === "yes" ? "yes" : "absent"}`,
   );
+  if (referenceResolved(openRouterKey) !== "yes") {
+    throw new Error("OPENROUTER_API_KEY is not available");
+  }
 
   const cf = (method, path, body) =>
     cloudflare(cloudflareToken, method, path, body);
@@ -415,10 +518,18 @@ async function main() {
   console.log(`checkout=${VIBESDK_SHA}`);
 
   const modelPath = join(checkout, "worker/agents/think/model-config.ts");
+  const routingPath = join(checkout, "worker/agents/core/behaviors/think.ts");
   const entryPath = join(checkout, "worker/index.ts");
   await writeFile(
     modelPath,
     patchThinkModel(await readFile(modelPath, "utf8")),
+  );
+  await writeFile(
+    routingPath,
+    patchThinkRouting(await readFile(routingPath, "utf8")),
+  );
+  console.log(
+    `think_provider=${LAB_THINK_PROVIDER} think_model=${LAB_THINK_MODEL_ID}`,
   );
   await writeFile(
     entryPath,
