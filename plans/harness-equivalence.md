@@ -330,6 +330,8 @@ This is the decision the experiments are for. The **Until experiments pass** col
 
 ## Migration order
 
+The schedule for running these phases, including who acts and when to stop, is [plans/harness-experiment-run.md](harness-experiment-run.md).
+
 Start the next phase only when the listed experiments pass. A failed experiment stops that phase.
 
 1. **Mirror CI.** Run experiment 2 beside `ci.yml` for three pull requests. GitHub Actions stays the required check. Add experiment 14 on the first failure.
