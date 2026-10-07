@@ -39,6 +39,9 @@ const logger = log.scope("browser_bridge");
 export const BROWSER_BRIDGE_HOST = "127.0.0.1";
 export const BROWSER_BRIDGE_PORT = 8372;
 export const BROWSER_BRIDGE_SOCKET_PATH = "/dyad-browser-ipc";
+// A proxied websocket with no traffic is closed while the page is still up.
+// A data frame inside that window keeps the chat socket open.
+export const BROWSER_BRIDGE_HEARTBEAT_MS = 30_000;
 const SESSION_TOKEN_CHANNEL = "clerk:set-session-token";
 const BRIDGE_MARKER = "data-dyad-browser-bridge";
 
@@ -128,6 +131,7 @@ export function browserBridgeClientScript(): string {
     }
     function onMessage(event) {
       const message = JSON.parse(event.data);
+      if (message.type === "heartbeat") return;
       if (message.type === "event") {
         const set = listeners.get(message.channel);
         if (!set) return;
@@ -215,6 +219,11 @@ export function browserBridgeClientScript(): string {
         },
       },
     };
+    setInterval(() => {
+      if (socket && socket.readyState === 1) {
+        socket.send(JSON.stringify({ type: "heartbeat" }));
+      }
+    }, ${BROWSER_BRIDGE_HEARTBEAT_MS});
     ensure();
   })();`;
 }
@@ -582,6 +591,7 @@ async function serveRendererFile(
 export type BrowserBridgeOptions = {
   port?: number;
   host?: string;
+  heartbeatMs?: number;
 } & (
   | { devServerUrl: string; rendererDir?: undefined }
   | { rendererDir: string; devServerUrl?: undefined }
@@ -594,6 +604,7 @@ export function startBrowserBridge(
   const rendererDir = options.rendererDir;
   const host = options.host ?? BROWSER_BRIDGE_HOST;
   const port = options.port ?? BROWSER_BRIDGE_PORT;
+  const heartbeatMs = options.heartbeatMs ?? BROWSER_BRIDGE_HEARTBEAT_MS;
   const sockets = new Set<WebSocket>();
   const push = (event: BrowserBridgePush) => {
     const message: BridgeSocketMessage = {
@@ -629,12 +640,18 @@ export function startBrowserBridge(
   socketServer.on("connection", (socket) => {
     sockets.add(socket);
     sender.noteSocketOpened();
+    const heartbeat = setInterval(() => {
+      if (socket.readyState !== socket.OPEN) return;
+      socket.send(JSON.stringify({ type: "heartbeat" }));
+    }, heartbeatMs);
+    heartbeat.unref();
     socket.on("message", (data) => {
       void handleSocketMessage(data, push, sender).then((response) => {
         if (response) sendSocketMessage(socket, response);
       });
     });
     socket.on("close", () => {
+      clearInterval(heartbeat);
       sockets.delete(socket);
       sender.noteSocketClosed(sockets.size);
     });
