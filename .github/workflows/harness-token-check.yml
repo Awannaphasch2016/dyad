@@ -1,0 +1,73 @@
+# Confirm the Harness token secret is present and print the account id.
+# The token value is not printed. Removed after the check.
+
+name: Harness token check
+
+on:
+  push:
+    branches:
+      - cursor/harness-equivalence-5527
+    paths:
+      - .github/workflows/harness-token-check.yml
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read the account id
+        env:
+          HARNESS_API_TOKEN: ${{ secrets.HARNESS_API_TOKEN }}
+          HARNESS_API_KEY: ${{ secrets.HARNESS_API_KEY }}
+        run: |
+          set -euo pipefail
+          python3 - << 'PY'
+          import json, os, urllib.error, urllib.parse, urllib.request
+
+          def present(name):
+              value = os.environ.get(name) or ""
+              print(f"{name}={'present' if value else 'absent'}")
+              return value
+
+          token = present("HARNESS_API_TOKEN") or present("HARNESS_API_KEY")
+          if not token:
+              raise SystemExit(1)
+
+          urls = [
+              "https://app.harness.io/ng/api/user/currentUser",
+              "https://app.harness.io/gateway/api/users/currentUser",
+          ]
+
+          def redact(text):
+              return text.replace(token, "redacted")[:180]
+
+          for url in urls:
+              request = urllib.request.Request(url, headers={"x-api-key": token, "Accept": "application/json"})
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      status = response.status
+                      raw = response.read().decode()
+              except urllib.error.HTTPError as error:
+                  print(f"http_status={error.code} path={urllib.parse.urlparse(url).path}")
+                  print("http_message=" + redact(error.read().decode("utf-8", "replace")))
+                  continue
+              payload = json.loads(raw)
+              data = payload.get("data") or payload
+              if isinstance(data, dict) and "token" in data:
+                  data = {key: value for key, value in data.items() if key != "token"}
+              account = ""
+              names = []
+              if isinstance(data, dict):
+                  account = data.get("defaultAccountId") or ""
+                  for item in data.get("accounts") or []:
+                      if isinstance(item, dict):
+                          names.append(f"{item.get('uuid', '')}:{item.get('accountName', '')}")
+              print(f"http_status={status} path={urllib.parse.urlparse(url).path}")
+              print("default_account=" + (account or "absent"))
+              print("accounts=" + (",".join(names) or "absent"))
+              if account or names:
+                  break
+          PY
