@@ -4,7 +4,7 @@ import test from "node:test";
 import {
   branchIdForEndpoint,
   formaHostLabel,
-  schemaOnlyBranchBody,
+  formaBranchBody,
 } from "./forma-neon-branch.mjs";
 
 const workflow = readFileSync(
@@ -37,15 +37,15 @@ test("the dev endpoint resolves to its Neon branch", () => {
 });
 
 test("a forma branch copies schema and no rows", () => {
-  assert.deepEqual(schemaOnlyBranchBody("br-dev-source"), {
+  assert.deepEqual(formaBranchBody("br-dev-source"), {
     branch: {
       parent_id: "br-dev-source",
       name: "forma",
-      init_source: "schema-only",
+      init_source: "parent-schema",
     },
     endpoints: [{ type: "read_write" }],
   });
-  assert.throws(() => schemaOnlyBranchBody("not-a-branch"), /schema source/);
+  assert.throws(() => formaBranchBody("not-a-branch"), /schema source/);
 });
 
 test("forma refuses the shared dev and production endpoints", () => {
@@ -69,7 +69,8 @@ test("the forma branch workflow does not print a database url", () => {
   assert.equal(workflow.includes("printenv"), false);
   assert.equal(workflow.includes("dyad/prd"), false);
   assert.equal(script.includes("parent-data"), false);
-  assert.match(script, /schema-only/);
+  assert.equal(script.includes("schema-only"), false);
+  assert.match(script, /parent-schema/);
   assert.match(script, /mute-credit-71067312/);
   assert.equal(script.includes("proud-salad-68182047"), false);
 });

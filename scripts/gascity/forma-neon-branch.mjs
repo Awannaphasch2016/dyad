@@ -1,4 +1,4 @@
-// Create a schema-only Neon branch for forma and store its URL in forma/dev.
+// Create the forma Neon branch and store its URL in forma/dev.
 // The branch copies schema from the Dyad dev endpoint and copies no rows.
 // Prints branch ids and host labels only.
 
@@ -40,7 +40,7 @@ function endpointMatches(item, endpointId) {
   });
 }
 
-export function schemaOnlyBranchBody(parentId, name = formaBranchName) {
+export function formaBranchBody(parentId, name = formaBranchName) {
   if (!branchPattern.test(String(parentId))) {
     throw new Error("schema source branch is invalid");
   }
@@ -51,7 +51,7 @@ export function schemaOnlyBranchBody(parentId, name = formaBranchName) {
     branch: {
       parent_id: parentId,
       name,
-      init_source: "schema-only",
+      init_source: "parent-schema",
     },
     endpoints: [{ type: "read_write" }],
   };
@@ -269,7 +269,7 @@ async function createFormaBranch() {
       `/projects/${neonProjectId}/branches`,
       {
         method: "POST",
-        body: schemaOnlyBranchBody(parentId),
+        body: formaBranchBody(parentId),
       },
     );
     branch = created.branch;
@@ -280,7 +280,7 @@ async function createFormaBranch() {
     throw new Error("forma branch id is missing");
   }
   console.log(`forma_branch_id=${branch.id}`);
-  console.log("init_source=schema-only");
+  console.log("init_source=parent-schema");
 
   const uri = await connectionUriReady(apiKey, branch.id);
   const host = new URL(uri).hostname;
@@ -306,7 +306,7 @@ async function createFormaBranch() {
     throw new Error("forma database host did not stick");
   }
   console.log(`forma_db_endpoint=${savedLabel}`);
-  console.log("forma_database=schema-only");
+  console.log("forma_rows=not_copied");
 }
 
 const entry = process.argv[1];

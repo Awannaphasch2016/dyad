@@ -1,5 +1,5 @@
-# Create the schema-only Neon branch forma in Wewebplus-hitl and point
-# Doppler forma/dev at that branch. Rows are not copied from Dyad.
+# Create the Neon branch forma in Wewebplus-hitl and point Doppler forma/dev
+# at that branch. The branch copies schema and no rows from Dyad.
 # This job does not read the production dyad config and does not print URLs.
 
 name: Forma Neon branch
