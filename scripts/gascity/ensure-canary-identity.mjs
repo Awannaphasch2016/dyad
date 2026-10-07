@@ -8,7 +8,7 @@ import {
   matchingIdentity,
   secretsToCopy,
 } from "./canary-identity.mjs";
-import { assertDistinctHosts } from "./canary-hosts.mjs";
+import { assertDistinctHosts, hostLabel } from "./canary-hosts.mjs";
 
 function redact(text) {
   return String(text)
@@ -55,6 +55,14 @@ async function download(token, config) {
   return Object.fromEntries(
     Object.entries(payload).filter((entry) => typeof entry[1] === "string"),
   );
+}
+
+function safeHostLabel(databaseUrl) {
+  try {
+    return hostLabel(databaseUrl);
+  } catch {
+    return "absent";
+  }
 }
 
 function identityUuid(identity) {
@@ -184,12 +192,14 @@ export async function main() {
 
   const canary = await download(token, "canary");
   const prd = await download(token, "prd");
-  const labels = assertDistinctHosts(
+  const canaryLabel = safeHostLabel(canary.WEWEBPLUS_DATABASE_URL);
+  const prdLabel = safeHostLabel(prd.WEWEBPLUS_DATABASE_URL);
+  console.log(`canary_db=${canaryLabel}`);
+  console.log(`prd_db=${prdLabel}`);
+  assertDistinctHosts(
     canary.WEWEBPLUS_DATABASE_URL,
     prd.WEWEBPLUS_DATABASE_URL,
   );
-  console.log(`canary_db=${labels.canary}`);
-  console.log(`prd_db=${labels.production}`);
 
   const preview = await download(token, "preview");
   const copy = secretsToCopy(preview, canary);
