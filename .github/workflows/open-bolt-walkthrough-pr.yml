@@ -1,4 +1,5 @@
 name: Open bolt walkthrough pull request
+# Re-run after bolt.diy was added to the dyad-harness installation.
 
 on:
   workflow_dispatch:
