@@ -125,3 +125,23 @@ for (const [name, url] of probes) {
     `cloudflare_${name}=${probeResult(result.status, result.payload)}${detail ? ` ${detail}` : ""}`,
   );
 }
+
+const anthropicKey = downloaded.ANTHROPIC_API_KEY;
+mask(anthropicKey);
+if (referenceResolved(anthropicKey) === "yes") {
+  const models = await apiStatus("https://api.anthropic.com/v1/models", {
+    "x-api-key": anthropicKey,
+    "anthropic-version": "2023-06-01",
+    Accept: "application/json",
+  });
+  const rows = models.payload?.data ?? [];
+  const claude = rows.filter(
+    (model) =>
+      typeof model?.id === "string" &&
+      model.id.toLowerCase().includes("claude"),
+  );
+  const summary = errorSummary(models.payload);
+  console.log(
+    `anthropic_models=${probeResult(models.status, models.payload)} count=${rows.length} claude=${claude.length} code=${redact(summary.code) || "none"} message=${redact(summary.message) || "none"}`,
+  );
+}
