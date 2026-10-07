@@ -107,15 +107,39 @@ def installation_token(pem_text):
     return token
 
 
+def load_pem():
+    candidates = [
+        os.environ.get("GH_APP_KEY_FILE", ""),
+        os.environ.get("GH_APP_KEY", ""),
+    ]
+    saw = ""
+    for candidate in candidates:
+        if not candidate:
+            continue
+        saw = candidate
+        if os.path.isfile(candidate):
+            text = open(candidate, encoding="utf-8").read()
+            if "PRIVATE KEY" in text:
+                return text
+        if "PRIVATE KEY" in candidate:
+            return candidate
+    if not saw:
+        kind = "empty"
+    elif saw.startswith("<+"):
+        kind = "expression"
+    elif saw.startswith("/"):
+        kind = "path"
+    else:
+        kind = "other"
+    sys.stderr.write(f"missing_app_key kind={kind} length={len(saw)}\n")
+    raise SystemExit(1)
+
+
 def main():
     if len(sys.argv) > 1 and sys.argv[1] == "--self-test":
         self_test()
         return
-    pem_text = os.environ.get("GH_APP_KEY", "")
-    if "PRIVATE KEY" not in pem_text:
-        sys.stderr.write("missing_app_key\n")
-        raise SystemExit(1)
-    sys.stdout.write(installation_token(pem_text))
+    sys.stdout.write(installation_token(load_pem()))
 
 
 if __name__ == "__main__":

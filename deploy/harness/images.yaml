@@ -40,7 +40,14 @@ pipeline:
                           GH_APP_KEY: '<+secrets.getValue("account.dyad_harness_app_key_pkcs8")>'
                         command: |
                           set -euo pipefail
-                          python3 scripts/harness/ghcr_app_login.py | docker login ghcr.io -u x-access-token --password-stdin
+                          umask 077
+                          key_file="${HOME}/.harness-gh-app.pem"
+                          rm -f "${key_file}"
+                          cat > "${key_file}" << 'END_KEY'
+                          <+secrets.getValue("account.dyad_harness_app_key_pkcs8")>
+                          END_KEY
+                          GH_APP_KEY_FILE="${key_file}" python3 scripts/harness/ghcr_app_login.py | docker login ghcr.io -u x-access-token --password-stdin
+                          rm -f "${key_file}"
                           echo "ghcr_login=ok"
                   - step:
                       type: Run
@@ -79,7 +86,14 @@ pipeline:
                           GH_APP_KEY: '<+secrets.getValue("account.dyad_harness_app_key_pkcs8")>'
                         command: |
                           set -euo pipefail
-                          python3 scripts/harness/ghcr_app_login.py | docker login ghcr.io -u x-access-token --password-stdin
+                          umask 077
+                          key_file="${HOME}/.harness-gh-app.pem"
+                          rm -f "${key_file}"
+                          cat > "${key_file}" << 'END_KEY'
+                          <+secrets.getValue("account.dyad_harness_app_key_pkcs8")>
+                          END_KEY
+                          GH_APP_KEY_FILE="${key_file}" python3 scripts/harness/ghcr_app_login.py | docker login ghcr.io -u x-access-token --password-stdin
+                          rm -f "${key_file}"
                           echo "ghcr_login=ok"
                   - step:
                       type: Run
