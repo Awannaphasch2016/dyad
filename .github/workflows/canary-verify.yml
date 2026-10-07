@@ -25,6 +25,8 @@ on:
       - scripts/gascity/canary-hosts.mjs
       - scripts/gascity/model-keys.mjs
       - scripts/gascity/copy-canary-model-keys.mjs
+      - src/main/browser_bridge.ts
+      - src/main/browser_bridge.test.ts
       - deploy/canary/**
       - services/gascity-supervisor/**
 
