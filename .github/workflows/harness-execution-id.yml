@@ -41,18 +41,49 @@ jobs:
               ],
               text=True, capture_output=True,
           )
-          print("http", result.stdout.strip())
+          print("summary_http", result.stdout.strip())
           body = json.loads(out.read_text() or "{}")
-          print("status", body.get("status"), "message", str(body.get("message") or "")[:300])
           content = ((body.get("data") or {}).get("content") or [])
-          for item in content[:5]:
-              plan = item.get("planExecutionId") or item.get("executionId")
-              status = item.get("status")
-              print(f"execution {plan} status={status}")
-          if not content:
-              data = body.get("data")
-              if isinstance(data, dict):
-                  print("data_keys", ",".join(data.keys()))
-              else:
-                  print("data_type", type(data).__name__)
+          plan = "nI911DyPQC2Gd1sIV6yQOw"
+          for item in content[:3]:
+              print("execution", item.get("planExecutionId"), "status=" + str(item.get("status")))
+          detail_url = (
+              "https://app.harness.io/pipeline/api/pipelines/execution/v2/"
+              f"{plan}?accountIdentifier={account}&orgIdentifier=default"
+              "&projectIdentifier=dyad&renderFullBottomGraph=true"
+          )
+          result = subprocess.run(
+              [
+                  "curl", "-sS", "-o", str(out), "-w", "%{http_code}",
+                  "-H", f"x-api-key: {api_key}",
+                  detail_url,
+              ],
+              text=True, capture_output=True,
+          )
+          print("detail_http", result.stdout.strip())
+          detail = json.loads(out.read_text() or "{}")
+          summary = (detail.get("data") or {}).get("pipelineExecutionSummary") or {}
+          print("pipeline_status", summary.get("status"))
+          failure = summary.get("failureInfo") or {}
+          print("pipeline_failure", str(failure.get("message") or failure)[:500])
+          graph = (detail.get("data") or {}).get("executionGraph") or {}
+          node_map = graph.get("nodeMap") or {}
+          layout = (detail.get("data") or {}).get("layoutNodeMap") or {}
+          nodes = node_map or layout
+          if not nodes:
+              data = detail.get("data") or {}
+              print("detail_keys", ",".join(data.keys()) if isinstance(data, dict) else type(data).__name__)
+          for node_id, node in list(nodes.items())[:40]:
+              if not isinstance(node, dict):
+                  continue
+              status = node.get("status")
+              name = node.get("name") or node.get("identifier")
+              message = ""
+              info = node.get("failureInfo") or {}
+              if isinstance(info, dict):
+                  message = str(info.get("message") or "")
+              elif info:
+                  message = str(info)
+              if status or message:
+                  print(f"node {name} status={status} failure={message[:300]}")
           PY
