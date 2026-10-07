@@ -1,0 +1,100 @@
+# Prove the canary Doppler identity and database host.
+# The identity subject is this workflow on cursor/ecs-hitl-cutover-bbea.
+# It does not roll gascity-server, move the apex, or promote canary to prd.
+
+name: Canary verify
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Publish the canary images and register the ECS service
+        required: false
+        type: boolean
+        default: false
+  push:
+    branches:
+      - cursor/ecs-hitl-cutover-bbea
+    paths:
+      - .github/workflows/canary-verify.yml
+      - scripts/gascity/canary-identity.mjs
+      - scripts/gascity/ensure-canary-identity.mjs
+      - scripts/gascity/canary-hosts.mjs
+      - deploy/canary/**
+      - services/gascity-supervisor/**
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: canary-verify
+  cancel-in-progress: false
+
+jobs:
+  identity:
+    if: github.ref == 'refs/heads/cursor/ecs-hitl-cutover-bbea'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      identity_id: ${{ steps.ensure.outputs.identity_id }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Ensure the canary identity and compare host labels
+        id: ensure
+        env:
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+        run: node scripts/gascity/ensure-canary-identity.mjs
+
+  read:
+    needs: identity
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Fetch dyad canary secrets
+        uses: dopplerhq/secrets-fetch-action@v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ needs.identity.outputs.identity_id }}
+          doppler-project: dyad
+          doppler-config: canary
+          inject-env-vars: true
+
+      - name: Print the canary database host
+        run: |
+          set -euo pipefail
+          node --input-type=module << 'JS'
+          import { hostLabel } from "./scripts/gascity/canary-hosts.mjs";
+          import { bareEndpoint, canaryEndpoint } from "./scripts/gascity/pre-promotion-verdict.mjs";
+          const label = hostLabel(process.env.WEWEBPLUS_DATABASE_URL ?? "");
+          if (bareEndpoint(label) !== canaryEndpoint) {
+            console.error("canary_db_mismatch");
+            process.exit(1);
+          }
+          console.log(`canary_db=${label}`);
+          JS
+
+      - name: Confirm the canary identity cannot read production
+        id: prd
+        continue-on-error: true
+        uses: dopplerhq/secrets-fetch-action@v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ needs.identity.outputs.identity_id }}
+          doppler-project: dyad
+          doppler-config: prd
+          inject-env-vars: false
+
+      - name: Require the production read to fail
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.prd.outcome }}" = "success" ]; then
+            echo "canary identity read dyad/prd"
+            exit 1
+          fi
+          echo "prd_read=denied"

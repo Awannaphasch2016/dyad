@@ -5,8 +5,13 @@ const PREVIEW_ORIGINS = [
   /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/,
 ];
 
+export const canaryOrigin = "https://pre.anakwannaphaschaiyong.com";
+
 export function originsWith(existing, origin) {
-  if (!PREVIEW_ORIGINS.some((pattern) => pattern.test(origin))) {
+  const allowed =
+    origin === canaryOrigin ||
+    PREVIEW_ORIGINS.some((pattern) => pattern.test(origin));
+  if (!allowed) {
     throw new Error("Preview origin is not a pr-<number> hostname");
   }
   const origins = [];
@@ -21,9 +26,12 @@ export function originsWith(existing, origin) {
 export async function run() {
   const origin = process.env.PREVIEW_ORIGIN ?? "";
   const key = process.env.CLERK_SECRET_KEY ?? "";
-  if (!PREVIEW_ORIGINS.some((pattern) => pattern.test(origin))) {
+  if (
+    origin !== canaryOrigin &&
+    !PREVIEW_ORIGINS.some((pattern) => pattern.test(origin))
+  ) {
     console.error(
-      "PREVIEW_ORIGIN must be the named preview host or a trycloudflare host",
+      "PREVIEW_ORIGIN must be the canary host, a named preview host, or a trycloudflare host",
     );
     process.exitCode = 2;
     return;

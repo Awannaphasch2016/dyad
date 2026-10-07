@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { originsWith } from "./clerk-origins.mjs";
+import { canaryOrigin, originsWith } from "./clerk-origins.mjs";
 
 test("a new preview origin is appended to the existing Clerk list", () => {
   const existing = [
@@ -33,6 +33,15 @@ test("a temporary tunnel origin is appended", () => {
     "https://pr-20.anakwannaphaschaiyong.com",
     "https://example-preview.trycloudflare.com",
   ]);
+});
+
+test("the canary hostname is appended", () => {
+  const next = originsWith(
+    ["https://pr-20.anakwannaphaschaiyong.com"],
+    canaryOrigin,
+  );
+  assert.equal(next.added, true);
+  assert.equal(next.origins.at(-1), canaryOrigin);
 });
 
 test("a non-preview origin is refused", () => {
