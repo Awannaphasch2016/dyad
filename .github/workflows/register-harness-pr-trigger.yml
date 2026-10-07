@@ -81,7 +81,7 @@ jobs:
               f"?accountIdentifier={account}&orgIdentifier={org}&projectIdentifier={project}"
               f"&targetIdentifier={pipeline}"
           )
-          code, body = request("POST", create_url, trigger_yaml, as_json=True)
+          code, body = request("POST", create_url, trigger_yaml)
           message = str(body.get("message") or "")
           print("create_trigger", code, body.get("status"), scrub(message)[:300])
           if code not in {"200", "201"} and "already" not in message.lower() and "exist" not in message.lower():
@@ -92,7 +92,7 @@ jobs:
                   f"{trigger}?accountIdentifier={account}&orgIdentifier={org}&projectIdentifier={project}"
                   f"&targetIdentifier={pipeline}"
               )
-              code, body = request("PUT", update_url, trigger_yaml, as_json=True)
+              code, body = request("PUT", update_url, trigger_yaml)
               print("update_trigger", code, body.get("status"), scrub(str(body.get("message") or ""))[:300])
               if code not in {"200", "201"}:
                   raise SystemExit(1)
