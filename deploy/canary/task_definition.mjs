@@ -60,7 +60,12 @@ export function canaryTaskDefinition({
   );
   return {
     family: "wewebplus-canary",
-    networkMode: "awsvpc",
+    // Host networking uses the capacity instance's existing public address.
+    // An awsvpc task interface is requester-managed and cannot take an
+    // egress address, so cloudflared never reached Cloudflare. Port mappings
+    // are omitted: host mode binds in the container, and the security group
+    // still has no public 32100, 6080, or 8373.
+    networkMode: "host",
     requiresCompatibilities: ["EC2"],
     cpu: "2048",
     memory: "8192",
@@ -71,10 +76,6 @@ export function canaryTaskDefinition({
         essential: true,
         logConfiguration: awslogs("dyad"),
         linuxParameters: { sharedMemorySize: 1024 },
-        portMappings: [
-          { name: "dyad", containerPort: 32100, protocol: "tcp" },
-          { containerPort: 8373, protocol: "tcp" },
-        ],
         environment: [
           { name: "GAS_CITY_HOST_BRIDGE_ENABLED", value: "true" },
           { name: "GAS_CITY_HOST_BRIDGE_HOST", value: "0.0.0.0" },
@@ -101,6 +102,7 @@ export function canaryTaskDefinition({
         essential: true,
         logConfiguration: awslogs("gascity"),
         environment: [{ name: "WEAVER_BASE_URL", value: "http://dyad:32100" }],
+        extraHosts: [{ hostname: "dyad", ipAddress: "127.0.0.1" }],
         dependsOn: [{ containerName: "dyad", condition: "START" }],
       },
       {
@@ -133,36 +135,12 @@ export function canaryTaskDefinition({
   };
 }
 
-export function canaryService({
-  taskDefinition,
-  subnets,
-  namespace = "wewebplus",
-}) {
-  if (!Array.isArray(subnets) || subnets.length === 0) {
-    throw new Error("Canary service needs a subnet");
-  }
+export function canaryService({ taskDefinition }) {
   return {
     serviceName: "wewebplus-canary",
     taskDefinition,
     desiredCount: 1,
     launchType: "EC2",
-    networkConfiguration: {
-      awsvpcConfiguration: {
-        securityGroups: [canarySecurityGroup],
-        subnets,
-      },
-    },
-    serviceConnectConfiguration: {
-      enabled: true,
-      namespace,
-      services: [
-        {
-          portName: "dyad",
-          discoveryName: "dyad",
-          clientAliases: [{ port: 32100, dnsName: "dyad" }],
-        },
-      ],
-    },
   };
 }
 

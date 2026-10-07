@@ -78,7 +78,7 @@ Three stacks stay distinct.
 | Preview compose | `gc` sleeps; `services/gascity-browser` listens on 8787 | Fail if this is what is running |
 | EC2 `gascity-server` | `weaver-plus` on the apex | Must stay up and unchanged |
 
-On ECS, GasCity calls `http://dyad:32100`. `127.0.0.1:32100` is the EC2 host-network address and fails this run if it is the canary supervisor’s target. The host bridge binds `0.0.0.0` only inside the ECS task. The security group does not publish 32100, 6080, or 8373. Dyad `desiredCount` stays 1 because sqlite is local to the task volume. Shared memory is 1024. Volumes are new canary disks, not the live EC2 mounts.
+On ECS, GasCity calls `http://dyad:32100`. The canary task uses host networking on `wewebplus-ecs` and maps that name to `127.0.0.1`, because an awsvpc task interface is requester-managed and could not reach Cloudflare. `127.0.0.1:32100` on `gascity-server` is still the production address and is not this task. The host bridge binds `0.0.0.0` only inside the canary task. The security group does not publish 32100, 6080, or 8373. Dyad `desiredCount` stays 1 because sqlite is local to the task volume. Shared memory is 1024. Volumes are new canary disks, not the live EC2 mounts.
 
 The browser bridge marker is `data-dyad-browser-bridge`. The canary sets `DYAD_BROWSER_BRIDGE_PORT=8373`. cloudflared is a sidecar on the Dyad task. The public page is the canary hostname. The bridge process itself stays on loopback inside the task.
 
@@ -134,12 +134,12 @@ Service account `wewebplus-canary` has viewer access to `dyad/canary` only. Its 
 
 ### Phase 2: Canary task
 
-- [ ] Publish a Dyad image and a GasCity supervisor image to `wewebplus-dyad` and `wewebplus-gascity`. The supervisor stays running and calls `http://dyad:32100`.
-- [ ] Register one Dyad task, `desiredCount` 1, shared memory 1024, new volumes, browser bridge on 8373, host bridge bound to `0.0.0.0` only in this task, Doppler `dyad/canary`.
-- [ ] Register the GasCity task on Service Connect name `dyad`, port 32100.
-- [ ] Add cloudflared as a sidecar. Route `https://pre.anakwannaphaschaiyong.com` to it. Leave the apex where it is.
-- [ ] Keep security group `sg-0d19518d244fede2d` from accepting public 32100, 6080, and 8373.
-- [ ] Add the canary hostname to the Clerk allowed origins, using the Clerk secret already in `dyad/canary`.
+- [x] Publish a Dyad image and a GasCity supervisor image to `wewebplus-dyad` and `wewebplus-gascity`. The supervisor stays running and calls `http://dyad:32100`.
+- [x] Register one Dyad task, `desiredCount` 1, shared memory 1024, new volumes, browser bridge on 8373, host bridge bound to `0.0.0.0` only in this task, Doppler `dyad/canary`.
+- [x] Run that task with host networking on `wewebplus-ecs`. `dyad` resolves to `127.0.0.1` so the supervisor still calls `http://dyad:32100`.
+- [x] Add cloudflared as a sidecar. Route `https://pre.anakwannaphaschaiyong.com` to `http://127.0.0.1:6080`. Leave the apex where it is.
+- [x] Keep security group `sg-0d19518d244fede2d` from accepting public 32100, 6080, and 8373.
+- [x] Add the canary hostname to the Clerk allowed origins, using the Clerk secret already in `dyad/canary`.
 
 ### Phase 3: Prove the copy
 
@@ -192,7 +192,7 @@ Service account `wewebplus-canary` has viewer access to `dyad/canary` only. Its 
 - Promotion is a later operation. This plan ends at a recorded verdict.
 - The canary database stays Neon branch `pre` on `Wewebplus-hitl`. `dyad/prd` stays `wewebplus-production` (`ep-young-wave-b3cwe0rz-pooler`). Making those the same URL is not a verification step.
 - The `Wewebplus-hitl` branch named `prd` (`ep-royal-term-b3paoprp`) is neither the canary nor the production URL.
-- GasCity on ECS calls `http://dyad:32100`. The EC2 loopback address stays on `gascity-server` only.
+- GasCity on ECS calls `http://dyad:32100`. The canary task uses host networking so cloudflared can use the capacity instance's existing public address. The EC2 loopback address stays on `gascity-server` only.
 - The checklist is text from the checker. A new verification page in the product is deferred. Production visitors see no banner.
 - `verify_bridge.mjs` looks for apps `sparkling-platypus-soar` and `hopping-quokka-buzz`. Those apps are on the EC2 volume, which this run does not copy.
 - Vercel `/api/questions` remaining is a failed gate. Deleting the Vercel project is follow-up, after promotion.

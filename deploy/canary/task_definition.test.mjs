@@ -25,14 +25,15 @@ test("the canary task keeps the bridge private and the supervisor on dyad:32100"
       .value,
     "0.0.0.0",
   );
-  assert.equal(
-    dyad.portMappings.some((item) => item.hostPort),
-    false,
-  );
+  assert.equal(task.networkMode, "host");
+  assert.equal(dyad.portMappings, undefined);
   assert.equal(
     gascity.environment.find((item) => item.name === "WEAVER_BASE_URL").value,
     "http://dyad:32100",
   );
+  assert.deepEqual(gascity.extraHosts, [
+    { hostname: "dyad", ipAddress: "127.0.0.1" },
+  ]);
   assert.equal(JSON.stringify(task).includes("8787"), false);
   assert.equal(JSON.stringify(task).includes("sleep"), false);
   assert.deepEqual(
@@ -44,13 +45,10 @@ test("the canary task keeps the bridge private and the supervisor on dyad:32100"
 test("the canary service runs one task and does not open the bridge", () => {
   const service = canaryService({
     taskDefinition: "wewebplus-canary:1",
-    subnets: ["subnet-canary"],
   });
   assert.equal(service.desiredCount, 1);
-  assert.equal(
-    service.serviceConnectConfiguration.services[0].discoveryName,
-    "dyad",
-  );
+  assert.equal(service.networkConfiguration, undefined);
+  assert.equal(service.serviceConnectConfiguration, undefined);
   assert.doesNotThrow(() => assertPrivateBridge([]));
   assert.throws(
     () => assertPrivateBridge([{ cidr: "0.0.0.0/0", port: 32100 }]),

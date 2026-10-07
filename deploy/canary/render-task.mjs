@@ -14,8 +14,6 @@ const task = canaryTaskDefinition({
 });
 const service = canaryService({
   taskDefinition: args.get("--task-definition"),
-  subnets: [args.get("--subnet")],
-  namespace: args.get("--namespace") || "wewebplus",
 });
 writeFileSync(args.get("--task-out"), `${JSON.stringify(task)}\n`);
 writeFileSync(args.get("--service-out"), `${JSON.stringify(service)}\n`);

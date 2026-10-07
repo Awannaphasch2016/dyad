@@ -182,6 +182,25 @@ writeFileSync("/tmp/canary-service.json", JSON.stringify(service));
 JS
 existing="$(aws ecs describe-services --cluster "$cluster" --services wewebplus-canary \
   --query 'services[0].status' --output text 2>/dev/null || true)"
+# An awsvpc service cannot be updated onto host networking. Replace it.
+if [[ "$existing" == "ACTIVE" ]]; then
+  current_mode="$(aws ecs describe-task-definition \
+    --task-definition "$(aws ecs describe-services --cluster "$cluster" --services wewebplus-canary --query 'services[0].taskDefinition' --output text)" \
+    --query 'taskDefinition.networkMode' --output text)"
+  echo "current_network=$current_mode"
+  if [[ "$current_mode" != "host" ]]; then
+    aws ecs delete-service --cluster "$cluster" --service wewebplus-canary --force >/dev/null
+    for _ in $(seq 1 60); do
+      existing="$(aws ecs describe-services --cluster "$cluster" --services wewebplus-canary \
+        --query 'services[0].status' --output text)"
+      echo "service_status=$existing"
+      if [[ "$existing" == "INACTIVE" ]]; then
+        break
+      fi
+      sleep 5
+    done
+  fi
+fi
 if [[ "$existing" == "ACTIVE" ]]; then
   aws ecs update-service --cluster "$cluster" --service wewebplus-canary \
     --task-definition "$revision" --desired-count 1 >/dev/null
