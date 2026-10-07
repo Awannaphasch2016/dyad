@@ -33,7 +33,7 @@ jobs:
         uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ vars.DYAD_GITHUB_APP_ID || '5221649' }}
-          private-key: ${{ secrets.DYAD_GITHUB_APP_PRIVATE_KEY || secrets.DYAD_GITHUB_APP_PEM_KEY }}
+          private-key: ${{ secrets.DYAD_GITHUB_APP_PEM_KEY }}
           owner: Awannaphasch2016
           repositories: bolt.diy
           permission-contents: write
