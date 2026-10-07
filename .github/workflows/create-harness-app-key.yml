@@ -101,8 +101,8 @@ jobs:
           spec = {
               "secret": {
                   "type": "SecretFile",
-                  "name": "dyad-harness-app-key",
-                  "identifier": "dyad_harness_app_key",
+                  "name": "dyad-harness-app-key-pkcs8",
+                  "identifier": "dyad_harness_app_key_pkcs8",
                   "description": "GitHub App dyad-harness private key, PKCS8",
                   "spec": {"secretManagerIdentifier": "harnessSecretManager"},
               }
@@ -183,29 +183,9 @@ jobs:
           )
           print("create_http", code)
           created = brief(body)
-          message = str(created.get("message") or "")
-          if code not in {"200", "201"} and (
-              "already exists" in message.lower() or "duplicate" in message.lower()
-          ):
-              update_url = (
-                  "https://app.harness.io/ng/api/v2/secrets/files/"
-                  f"dyad_harness_app_key?{query}"
-              )
-              code, body = curl(
-                  "PUT",
-                  update_url,
-                  [
-                      "-F",
-                      f"spec=<{spec_path};type=application/json",
-                      "-F",
-                      f"file=@{converted};type=application/x-pem-file",
-                  ],
-              )
-              print("update_http", code)
-              created = brief(body)
           if code not in {"200", "201"} or created.get("status") not in {None, "SUCCESS"}:
               fail("SECRET_CREATE_FAILED")
-          print("SECRET_READY account.dyad_harness_app_key")
+          print("SECRET_READY account.dyad_harness_app_key_pkcs8")
 
           get_url = f"https://app.harness.io/ng/api/connectors/Dyad?{query}"
           code, body = curl("GET", get_url, ["-H", "Content-Type: application/json"])
@@ -220,7 +200,7 @@ jobs:
               if isinstance(node, dict):
                   for key, value in node.items():
                       if key == "privateKeyRef":
-                          node[key] = "account.dyad_harness_app_key"
+                          node[key] = "account.dyad_harness_app_key_pkcs8"
                       else:
                           replace_refs(value)
               elif isinstance(node, list):
