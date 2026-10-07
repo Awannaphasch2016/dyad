@@ -146,7 +146,7 @@ jobs:
                           if not text or "PRIVATE KEY" in text or "BEGIN " in text:
                               continue
                           if not re.search(
-                              r"missing_app_key|installation_token|openssl|ghcr_login|error|Error|python|docker|exit|command not found|No such",
+                              r"missing_app_key|installation_token|openssl|ghcr_login|credential_shape|mounted_pem|docker_login|error|Error|python|docker|exit|command not found|No such",
                               text,
                           ):
                               continue

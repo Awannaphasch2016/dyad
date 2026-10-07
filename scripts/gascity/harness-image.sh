@@ -58,7 +58,7 @@ print_config() {
   docker image inspect --format 'user={{json .Config.User}}' "${tag}"
   docker image inspect --format 'ports={{json .Config.ExposedPorts}}' "${tag}"
   docker image inspect --format 'env={{json .Config.Env}}' "${tag}"
-  docker image inspect --format 'healthcheck={{json .Config.Healthcheck.Test}}' "${tag}"
+  docker image inspect --format 'healthcheck={{if .Config.Healthcheck}}{{json .Config.Healthcheck.Test}}{{else}}null{{end}}' "${tag}"
 }
 
 install_go() {
