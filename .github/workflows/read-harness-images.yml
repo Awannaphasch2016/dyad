@@ -1,0 +1,98 @@
+name: Read Harness image executions
+
+on:
+  push:
+    branches:
+      - cursor/harness-images-5527
+    paths:
+      - .github/workflows/read-harness-images.yml
+
+permissions:
+  contents: read
+
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Read recent image executions
+        env:
+          HARNESS_API_KEY: ${{ secrets.HARNESS_API_KEY }}
+          HARNESS_ACCOUNT: WKxXBnSFTRaOF64-h90PyQ
+        run: |
+          python3 << 'PY'
+          import json, os, re, subprocess
+          from pathlib import Path
+
+          api_key = os.environ["HARNESS_API_KEY"]
+          account = os.environ["HARNESS_ACCOUNT"]
+          long_token = re.compile(r"[A-Za-z0-9+/=]{40,}")
+
+          def scrub(text):
+              return long_token.sub("[redacted]", text or "")
+
+          def request(method, url, payload=None):
+              out = Path("/tmp/harness-image-read.bin")
+              out.unlink(missing_ok=True)
+              cmd = [
+                  "curl", "-sS", "--max-time", "60", "-o", str(out), "-w", "%{http_code}",
+                  "-X", method, url, "-H", f"x-api-key: {api_key}",
+              ]
+              if payload is not None:
+                  body = Path("/tmp/harness-image-read.json")
+                  body.write_text(json.dumps(payload))
+                  cmd += ["-H", "Content-Type: application/json", "--data-binary", f"@{body}"]
+              result = subprocess.run(cmd, text=True, capture_output=True)
+              raw = out.read_text("utf-8", "replace") if out.exists() else ""
+              try:
+                  parsed = json.loads(raw) if raw else {}
+              except json.JSONDecodeError:
+                  parsed = {"raw": scrub(raw)[:200]}
+              return result.stdout.strip(), parsed
+
+          summary = (
+              "https://app.harness.io/pipeline/api/pipelines/execution/summary"
+              f"?accountIdentifier={account}&orgIdentifier=default&projectIdentifier=dyad"
+              "&pipelineIdentifier=dyad_harness_images&page=0&size=3"
+          )
+          code, body = request("POST", summary, {"filterType": "PipelineExecution"})
+          rows = ((body.get("data") or {}).get("content") or []) if isinstance(body.get("data"), dict) else []
+          print("summary_http", code, "count", len(rows))
+          for row in rows:
+              execution = row.get("planExecutionId")
+              trigger = row.get("executionTriggerInfo") or {}
+              print(json.dumps({
+                  "execution": execution,
+                  "status": row.get("status"),
+                  "run_sequence": row.get("runSequence"),
+                  "trigger_type": trigger.get("triggerType"),
+                  "start_ts": row.get("startTs"),
+                  "end_ts": row.get("endTs"),
+              }))
+              if not execution:
+                  continue
+              detail_url = (
+                  "https://app.harness.io/pipeline/api/pipelines/execution/v2/"
+                  f"{execution}?accountIdentifier={account}&orgIdentifier=default"
+                  "&projectIdentifier=dyad&renderFullBottomGraph=true"
+              )
+              detail_code, detail = request("GET", detail_url)
+              data = detail.get("data") if isinstance(detail.get("data"), dict) else {}
+              graph = ((data.get("executionGraph") or {}).get("nodeMap") or {})
+              steps = {}
+              for node in graph.values():
+                  if not isinstance(node, dict):
+                      continue
+                  ident = node.get("identifier")
+                  if ident in {
+                      "gascity_image", "dyad_image", "gascity_ghcr_login", "dyad_ghcr_login",
+                      "gascity_build", "dyad_build",
+                  }:
+                      steps[ident] = node.get("status")
+              failure = ""
+              for node in graph.values():
+                  if isinstance(node, dict) and node.get("status") in {"Failed", "Errored"}:
+                      failure = node.get("failureInfo") or node.get("skipInfo") or ""
+                      break
+              print("detail", execution, detail_code, json.dumps(steps), scrub(str(failure))[:240])
+          PY
