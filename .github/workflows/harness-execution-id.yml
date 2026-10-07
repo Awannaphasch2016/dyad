@@ -1,0 +1,58 @@
+name: Print Harness fast-check execution id
+
+on:
+  push:
+    branches:
+      - cursor/harness-equivalence-5527
+    paths:
+      - .github/workflows/harness-execution-id.yml
+
+permissions:
+  contents: read
+
+jobs:
+  print:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print the latest execution id
+        env:
+          HARNESS_API_KEY: ${{ secrets.HARNESS_API_KEY }}
+          HARNESS_ACCOUNT: WKxXBnSFTRaOF64-h90PyQ
+        run: |
+          python3 << 'PY'
+          import json, os, subprocess
+          from pathlib import Path
+
+          api_key = os.environ["HARNESS_API_KEY"]
+          account = os.environ["HARNESS_ACCOUNT"]
+          url = (
+              "https://app.harness.io/pipeline/api/pipelines/execution/summary"
+              f"?accountIdentifier={account}&orgIdentifier=default"
+              "&projectIdentifier=dyad&pipelineIdentifier=dyad_fast_check&page=0&size=5"
+          )
+          out = Path("/tmp/exec.json")
+          result = subprocess.run(
+              [
+                  "curl", "-sS", "-o", str(out), "-w", "%{http_code}",
+                  "-H", f"x-api-key: {api_key}",
+                  "-H", "Content-Type: application/json",
+                  "-X", "POST", url,
+                  "--data", '{"filterType":"PipelineExecution"}',
+              ],
+              text=True, capture_output=True,
+          )
+          print("http", result.stdout.strip())
+          body = json.loads(out.read_text() or "{}")
+          print("status", body.get("status"), "message", str(body.get("message") or "")[:200])
+          content = ((body.get("data") or {}).get("content") or [])
+          if not content and isinstance(body.get("data"), list):
+              content = body["data"]
+          for item in content[:5]:
+              plan = item.get("planExecutionId") or item.get("executionId")
+              status = item.get("status")
+              name = item.get("name") or item.get("pipelineIdentifier")
+              print(f"execution {plan} status={status} name={name}")
+          if not content:
+              print("NO_EXECUTIONS")
+              print("keys", ",".join((body.get("data") or {}).keys()) if isinstance(body.get("data"), dict) else type(body.get("data")).__name__)
+          PY
