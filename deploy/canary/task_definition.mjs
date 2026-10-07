@@ -5,13 +5,30 @@ export const canarySecurityGroup = "sg-0d19518d244fede2d";
 export const blockedPublicPorts = [32100, 6080, 8373];
 
 const secretNames = new Set([
-  "WEWEBPLUS_DATABASE_URL",
-  "GAS_CITY_HOST_BRIDGE_TOKEN",
+  "AWS_ACCESS_KEY_ID",
+  "AWS_REGION",
+  "AWS_SECRET_ACCESS_KEY",
+  "CLERK_PUBLISHABLE_KEY",
   "CLERK_SECRET_KEY",
+  "GAS_CITY_HOST_BRIDGE_TOKEN",
+  "NOVNC_PASSWORD",
   "TUNNEL_TOKEN",
+  "WEWEBPLUS_DATABASE_URL",
+  "WEWEBPLUS_SECRETS_KEY",
 ]);
 
 const ecrHost = /^[0-9]{12}\.dkr\.ecr\.ap-southeast-1\.amazonaws\.com$/;
+
+function awslogs(streamPrefix) {
+  return {
+    logDriver: "awslogs",
+    options: {
+      "awslogs-group": "/ecs/wewebplus-canary",
+      "awslogs-region": "ap-southeast-1",
+      "awslogs-stream-prefix": streamPrefix,
+    },
+  };
+}
 
 function assertRepositoryImage(image, repository) {
   const slash = String(image || "").indexOf("/");
@@ -35,6 +52,12 @@ export function canaryTaskDefinition({
       throw new Error("Canary secrets must be references");
     }
   }
+  const dyadSecrets = secrets.filter(
+    (secret) => secret.name !== "TUNNEL_TOKEN",
+  );
+  const tunnelSecrets = secrets.filter(
+    (secret) => secret.name === "TUNNEL_TOKEN",
+  );
   return {
     family: "wewebplus-canary",
     networkMode: "awsvpc",
@@ -46,6 +69,7 @@ export function canaryTaskDefinition({
         name: "dyad",
         image: dyadImage,
         essential: true,
+        logConfiguration: awslogs("dyad"),
         linuxParameters: { sharedMemorySize: 1024 },
         portMappings: [
           { name: "dyad", containerPort: 32100, protocol: "tcp" },
@@ -59,7 +83,7 @@ export function canaryTaskDefinition({
           { name: "DYAD_BROWSER_BRIDGE_PORT", value: "8373" },
           { name: "DOPPLER_CONFIG", value: "canary" },
         ],
-        secrets,
+        secrets: dyadSecrets,
         mountPoints: [
           {
             sourceVolume: "canary-user-data",
@@ -75,21 +99,45 @@ export function canaryTaskDefinition({
         name: "gascity",
         image: supervisorImage,
         essential: true,
+        logConfiguration: awslogs("gascity"),
         environment: [{ name: "WEAVER_BASE_URL", value: "http://dyad:32100" }],
         dependsOn: [{ containerName: "dyad", condition: "START" }],
       },
       {
         name: "cloudflared",
         image: cloudflaredImage,
-        essential: true,
+        essential: tunnelSecrets.length > 0,
+        logConfiguration: awslogs("cloudflared"),
         command: ["tunnel", "--no-autoupdate", "run"],
+        secrets: tunnelSecrets,
       },
     ],
-    volumes: [{ name: "canary-user-data" }, { name: "canary-projects" }],
+    volumes: [
+      {
+        name: "canary-user-data",
+        dockerVolumeConfiguration: {
+          scope: "shared",
+          autoprovision: true,
+          driver: "local",
+        },
+      },
+      {
+        name: "canary-projects",
+        dockerVolumeConfiguration: {
+          scope: "shared",
+          autoprovision: true,
+          driver: "local",
+        },
+      },
+    ],
   };
 }
 
-export function canaryService({ taskDefinition, subnets }) {
+export function canaryService({
+  taskDefinition,
+  subnets,
+  namespace = "wewebplus",
+}) {
   if (!Array.isArray(subnets) || subnets.length === 0) {
     throw new Error("Canary service needs a subnet");
   }
@@ -102,12 +150,11 @@ export function canaryService({ taskDefinition, subnets }) {
       awsvpcConfiguration: {
         securityGroups: [canarySecurityGroup],
         subnets,
-        assignPublicIp: "DISABLED",
       },
     },
     serviceConnectConfiguration: {
       enabled: true,
-      namespace: "wewebplus",
+      namespace,
       services: [
         {
           portName: "dyad",

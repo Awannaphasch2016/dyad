@@ -116,3 +116,88 @@ jobs:
             exit 1
           fi
           echo "prd_read=denied"
+
+  deploy:
+    needs: [identity, read]
+    if: github.ref == 'refs/heads/cursor/ecs-hitl-cutover-bbea'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Copy missing edge names
+        env:
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+        run: node scripts/gascity/copy-canary-edge.mjs
+
+      - name: Fetch dyad canary secrets
+        uses: dopplerhq/secrets-fetch-action@v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ needs.identity.outputs.identity_id }}
+          doppler-project: dyad
+          doppler-config: canary
+          inject-env-vars: true
+
+      - name: Require canary runtime names
+        run: |
+          set -euo pipefail
+          node --input-type=module << 'JS'
+          import { missingNames } from "./deploy/canary/preflight.mjs";
+          import { cloudflareConfig } from "./deploy/canary/tunnel.mjs";
+          const missing = missingNames(process.env);
+          console.log(`missing=${missing.join(",") || "none"}`);
+          const edge = cloudflareConfig(process.env);
+          console.log(`cloudflare=${edge.apiToken && edge.zoneId && edge.accountId ? "present" : "absent"}`);
+          if (missing.length > 0 || !edge.apiToken || !edge.zoneId || !edge.accountId) process.exit(1);
+          JS
+
+      - name: Allow the canary hostname in Clerk
+        env:
+          PREVIEW_ORIGIN: https://pre.anakwannaphaschaiyong.com
+        run: |
+          set -euo pipefail
+          node --input-type=module << 'JS'
+          import { run } from "./deploy/preview/clerk-origins.mjs";
+          await run();
+          JS
+
+      - name: Route the canary hostname
+        run: |
+          set -euo pipefail
+          node --input-type=module << 'JS'
+          import { writeFile } from "node:fs/promises";
+          import { cloudflareConfig, ensureCanaryTunnel } from "./deploy/canary/tunnel.mjs";
+          const config = cloudflareConfig(process.env);
+          const result = await ensureCanaryTunnel({
+            ...config,
+            writeToken: (token) => writeFile("/tmp/tunnel-token", token, { mode: 0o600 }),
+          });
+          console.log(`canary_hostname=${result.hostname}`);
+          console.log(`tunnel_id=${result.tunnelId}`);
+          JS
+
+      - name: Free runner disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          df -h /
+
+      - name: Publish the canary images
+        run: |
+          set -euo pipefail
+          export AWS_DEFAULT_REGION=ap-southeast-1
+          account="$(aws sts get-caller-identity --query Account --output text)"
+          registry="${account}.dkr.ecr.ap-southeast-1.amazonaws.com"
+          aws ecr get-login-password --region ap-southeast-1 | docker login --username AWS --password-stdin "$registry"
+          dyad="${registry}/wewebplus-dyad:canary"
+          supervisor="${registry}/wewebplus-gascity:supervisor"
+          docker build -f services/gascity-supervisor/Dockerfile -t "$supervisor" services/gascity-supervisor
+          docker build -f Dockerfile.gascity -t "$dyad" .
+          docker push "$supervisor"
+          docker push "$dyad"
+          echo "DYAD_IMAGE=$dyad" >> "$GITHUB_ENV"
+          echo "SUPERVISOR_IMAGE=$supervisor" >> "$GITHUB_ENV"
+
+      - name: Register the canary service
+        run: bash deploy/canary/register.sh
