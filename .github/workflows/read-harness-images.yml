@@ -1,3 +1,4 @@
+# Reads the latest dyad_harness_images executions. A push of this file does not rebuild images.
 name: Read Harness image executions
 
 on:
