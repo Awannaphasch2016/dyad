@@ -1,0 +1,58 @@
+name: Print Harness fast-check execution id
+
+on:
+  push:
+    branches:
+      - cursor/harness-equivalence-5527
+    paths:
+      - .github/workflows/harness-execution-id.yml
+
+permissions:
+  contents: read
+
+jobs:
+  print:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print the latest execution status
+        env:
+          HARNESS_API_KEY: ${{ secrets.HARNESS_API_KEY }}
+          HARNESS_ACCOUNT: WKxXBnSFTRaOF64-h90PyQ
+        run: |
+          python3 << 'PY'
+          import json, os, subprocess
+          from pathlib import Path
+
+          api_key = os.environ["HARNESS_API_KEY"]
+          account = os.environ["HARNESS_ACCOUNT"]
+          url = (
+              "https://app.harness.io/pipeline/api/pipelines/execution/summary"
+              f"?accountIdentifier={account}&orgIdentifier=default"
+              "&projectIdentifier=dyad&pipelineIdentifier=dyad_fast_check&page=0&size=5"
+          )
+          out = Path("/tmp/exec.json")
+          result = subprocess.run(
+              [
+                  "curl", "-sS", "-o", str(out), "-w", "%{http_code}",
+                  "-H", f"x-api-key: {api_key}",
+                  "-H", "Content-Type: application/json",
+                  "-X", "POST", url,
+                  "--data", '{"filterType":"PipelineExecution"}',
+              ],
+              text=True, capture_output=True,
+          )
+          print("http", result.stdout.strip())
+          body = json.loads(out.read_text() or "{}")
+          print("status", body.get("status"), "message", str(body.get("message") or "")[:300])
+          content = ((body.get("data") or {}).get("content") or [])
+          for item in content[:5]:
+              plan = item.get("planExecutionId") or item.get("executionId")
+              status = item.get("status")
+              print(f"execution {plan} status={status}")
+          if not content:
+              data = body.get("data")
+              if isinstance(data, dict):
+                  print("data_keys", ",".join(data.keys()))
+              else:
+                  print("data_type", type(data).__name__)
+          PY
