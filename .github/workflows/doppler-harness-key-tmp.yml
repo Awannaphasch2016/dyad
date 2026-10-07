@@ -62,9 +62,9 @@ jobs:
 
           code, body = request(
               "DELETE",
-              "https://api.doppler.com/v3/configs/config?project=dyad&config=harness-tmp",
+              "https://api.doppler.com/v3/environments/harness-tmp?project=dyad",
           )
-          print("delete_config_http", code)
+          print("delete_environment_http", code)
           print("delete_success", body.get("success"))
           if body.get("messages"):
               print("delete_messages", scrub(json.dumps(body.get("messages")))[:300])
