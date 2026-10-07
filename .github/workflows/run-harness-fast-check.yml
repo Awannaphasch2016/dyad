@@ -155,9 +155,14 @@ jobs:
           data = detail.get("data") if isinstance(detail.get("data"), dict) else {}
           nodes = ((data.get("executionGraph") or {}).get("nodeMap") or {})
           for node in nodes.values():
-              if isinstance(node, dict) and node.get("identifier") == "check_changes":
-                  print("check_status", node.get("status"))
-                  outcomes = node.get("outcomes") or node.get("stepDetails") or {}
+              if not isinstance(node, dict):
+                  continue
+              name = node.get("name") or node.get("identifier")
+              status = node.get("status")
+              if name and status:
+                  print("node", name, status)
+              if node.get("identifier") == "check_changes":
+                  outcomes = node.get("outcomes") or {}
                   print("check_outcomes", scrub(json.dumps(outcomes))[:500])
           if plan in previous:
               print("UNEXPECTED_PREVIOUS_EXECUTION")

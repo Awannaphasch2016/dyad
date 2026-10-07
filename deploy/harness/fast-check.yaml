@@ -68,6 +68,9 @@ pipeline:
                   type: Run
                   name: Install Node 24.13.1
                   identifier: install_node
+                  when:
+                    stageStatus: Success
+                    condition: '<+execution.steps.check_changes.output.outputVariables.should_run_tests> == "true"'
                   spec:
                     shell: Bash
                     command: |
@@ -85,6 +88,9 @@ pipeline:
                   type: Run
                   name: Install npm 11.8.0
                   identifier: install_npm
+                  when:
+                    stageStatus: Success
+                    condition: '<+execution.steps.check_changes.output.outputVariables.should_run_tests> == "true"'
                   spec:
                     shell: Bash
                     command: |
@@ -100,6 +106,9 @@ pipeline:
                   type: Run
                   name: Install node modules
                   identifier: install_node_modules
+                  when:
+                    stageStatus: Success
+                    condition: '<+execution.steps.check_changes.output.outputVariables.should_run_tests> == "true"'
                   spec:
                     shell: Bash
                     command: |
@@ -110,6 +119,9 @@ pipeline:
                   type: Run
                   name: Prep test server
                   identifier: prep_test_server
+                  when:
+                    stageStatus: Success
+                    condition: '<+execution.steps.check_changes.output.outputVariables.should_run_tests> == "true"'
                   spec:
                     shell: Bash
                     command: |
@@ -120,6 +132,9 @@ pipeline:
                   type: Run
                   name: Presubmit check
                   identifier: presubmit
+                  when:
+                    stageStatus: Success
+                    condition: '<+execution.steps.check_changes.output.outputVariables.should_run_tests> == "true"'
                   spec:
                     shell: Bash
                     command: |
@@ -130,6 +145,9 @@ pipeline:
                   type: Run
                   name: Type-checking
                   identifier: typecheck
+                  when:
+                    stageStatus: Success
+                    condition: '<+execution.steps.check_changes.output.outputVariables.should_run_tests> == "true"'
                   spec:
                     shell: Bash
                     command: |
@@ -140,6 +158,9 @@ pipeline:
                   type: Run
                   name: Browser bridge and file sync tests
                   identifier: browser_bridge_and_file_sync
+                  when:
+                    stageStatus: Success
+                    condition: '<+execution.steps.check_changes.output.outputVariables.should_run_tests> == "true"'
                   spec:
                     shell: Bash
                     command: |
@@ -150,6 +171,9 @@ pipeline:
                   type: Run
                   name: Rollout helper tests
                   identifier: rollout_helper_tests
+                  when:
+                    stageStatus: Success
+                    condition: '<+execution.steps.check_changes.output.outputVariables.should_run_tests> == "true"'
                   spec:
                     shell: Bash
                     command: |
