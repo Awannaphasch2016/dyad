@@ -1,0 +1,161 @@
+name: Store Harness key in Doppler temporarily
+
+on:
+  push:
+    branches:
+      - cursor/harness-equivalence-5527
+    paths:
+      - .github/workflows/doppler-harness-key-tmp.yml
+
+permissions:
+  contents: read
+
+jobs:
+  store:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Put the converted key in an unused Doppler config
+        env:
+          DYAD_HARNESS_APP_PEM: ${{ secrets.DYAD_HARNESS_APP_PEM }}
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+        run: |
+          python3 << 'PY'
+          import json, os, re, subprocess
+          from pathlib import Path
+
+          pem = os.environ.get("DYAD_HARNESS_APP_PEM") or ""
+          token = os.environ.get("DOPPLER_ADMIN_TOKEN") or ""
+          original = Path("/tmp/original.pem")
+          converted = Path("/tmp/converted.pem")
+          project = "dyad"
+          config = "harness-tmp"
+          secret_name = "DYAD_HARNESS_APP_KEY_PKCS8"
+
+          def scrub(text):
+              text = re.sub(
+                  r"-----BEGIN [A-Z0-9 ]+-----[\s\S]*?-----END [A-Z0-9 ]+-----",
+                  "[pem]",
+                  text,
+              )
+              text = re.sub(r"[A-Za-z0-9+/=]{40,}", "[blob]", text)
+              text = re.sub(r"dp\.(ct|st|pt|sa)\.[A-Za-z0-9]+", "[token]", text)
+              return text
+
+          def fail(message):
+              print(scrub(message))
+              raise SystemExit(1)
+
+          if not pem.strip():
+              fail("PEM_ABSENT")
+          if not token.strip():
+              fail("DOPPLER_ADMIN_TOKEN_ABSENT")
+
+          normalized = pem.replace("\r\n", "\n").replace("\r", "\n").strip("\n") + "\n"
+          original.write_bytes(normalized.encode())
+          original.chmod(0o600)
+          if "-----BEGIN RSA PRIVATE KEY-----" not in normalized:
+              fail("PEM_MISSING_BEGIN")
+          if not normalized.rstrip("\n").endswith("-----END RSA PRIVATE KEY-----"):
+              fail("PEM_MISSING_END")
+
+          convert = subprocess.run(
+              [
+                  "openssl", "pkcs8", "-topk8", "-inform", "PEM", "-outform", "PEM",
+                  "-in", str(original), "-out", str(converted), "-nocrypt",
+              ],
+              text=True, capture_output=True,
+          )
+          if convert.returncode != 0:
+              fail("OPENSSL_CONVERT_FAILED " + scrub(convert.stderr))
+          check = subprocess.run(
+              ["openssl", "pkey", "-in", str(converted), "-noout"],
+              text=True, capture_output=True,
+          )
+          if check.returncode != 0:
+              fail("OPENSSL_CHECK_FAILED " + scrub(check.stderr))
+          converted_text = converted.read_text()
+          print("converted_begin", converted_text.splitlines()[0])
+          last = [line for line in converted_text.splitlines() if line]
+          print("converted_end", last[-1])
+
+          def request(method, url, payload=None):
+              out = Path("/tmp/doppler-response.json")
+              if out.exists():
+                  out.unlink()
+              cmd = [
+                  "curl", "-sS", "-o", str(out), "-w", "%{http_code}",
+                  "-X", method, url,
+                  "-H", f"Authorization: Bearer {token}",
+                  "-H", "Accept: application/json",
+              ]
+              if payload is not None:
+                  body = Path("/tmp/doppler-request.json")
+                  body.write_text(json.dumps(payload))
+                  body.chmod(0o600)
+                  cmd += ["-H", "Content-Type: application/json", "--data-binary", f"@{body}"]
+              result = subprocess.run(cmd, text=True, capture_output=True)
+              if result.returncode != 0:
+                  fail("CURL_FAILED " + scrub(result.stderr))
+              raw = out.read_text() if out.exists() else ""
+              out.unlink(missing_ok=True)
+              try:
+                  parsed = json.loads(raw) if raw else {}
+              except json.JSONDecodeError:
+                  fail("DOPPLER_NON_JSON " + scrub(raw)[:300])
+              return result.stdout.strip(), parsed
+
+          code, projects_body = request("GET", "https://api.doppler.com/v3/projects")
+          print("projects_http", code)
+          if code != "200":
+              fail("PROJECTS_FAILED " + scrub(json.dumps(projects_body.get("messages", "")))[:300])
+          slugs = []
+          for item in projects_body.get("projects") or []:
+              slug = item.get("slug") or item.get("id") or item.get("name")
+              slugs.append(slug)
+          print("project_slugs", ",".join(slugs))
+          if project not in slugs:
+              fail("PROJECT_DYAD_NOT_FOUND")
+
+          code, created = request(
+              "POST",
+              f"https://api.doppler.com/v3/environments?project={project}",
+              {"name": "Harness tmp", "slug": config},
+          )
+          print("environment_http", code)
+          if code not in {"200", "201"}:
+              message = scrub(json.dumps(created.get("messages", created.get("message", ""))))
+              if code == "409" or "already exists" in message.lower() or "duplicate" in message.lower():
+                  print("environment_exists")
+              else:
+                  fail("ENVIRONMENT_CREATE_FAILED " + message[:300])
+
+          code, saved = request(
+              "POST",
+              "https://api.doppler.com/v3/configs/config/secrets",
+              {
+                  "project": project,
+                  "config": config,
+                  "secrets": {secret_name: converted_text},
+              },
+          )
+          print("secret_http", code)
+          print("secret_success", saved.get("success"))
+          if saved.get("messages"):
+              print("secret_messages", scrub(json.dumps(saved.get("messages")))[:300])
+          if code not in {"200", "201"} or saved.get("success") is False:
+              fail("SECRET_WRITE_FAILED")
+
+          code, names = request(
+              "GET",
+              "https://api.doppler.com/v3/configs/config/secrets/names"
+              f"?project={project}&config={config}",
+          )
+          print("names_http", code)
+          name_list = names.get("names") or []
+          print("has_target_secret", secret_name in name_list)
+          if secret_name not in name_list:
+              fail("SECRET_NOT_LISTED")
+          print(f"DOPPLER_READY project={project} config={config} secret={secret_name}")
+          original.unlink(missing_ok=True)
+          converted.unlink(missing_ok=True)
+          PY
