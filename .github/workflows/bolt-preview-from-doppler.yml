@@ -67,9 +67,14 @@ jobs:
           NODE_ENV: production
 
       - name: Deploy the walkthrough preview
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ env.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: bolt
-          command: deploy --env-name=preview-cursor-website-walkthrough-55d6 --branch=cursor/website-walkthrough-55d6
+        working-directory: bolt
+        run: |
+          set -euo pipefail
+          set +x
+          pnpm exec wrangler deploy --name bolt-walkthrough-55d6 | tee /tmp/wrangler-deploy.txt
+          url="$(grep -oE 'https://[A-Za-z0-9._-]+\.workers\.dev' /tmp/wrangler-deploy.txt | head -1 || true)"
+          echo "preview_url=${url:-absent}"
+          {
+            echo "preview_url=${url:-absent}"
+          } >> "$GITHUB_STEP_SUMMARY"
+          test -n "$url"
