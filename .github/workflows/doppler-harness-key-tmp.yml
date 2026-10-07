@@ -62,7 +62,7 @@ jobs:
 
           code, body = request(
               "DELETE",
-              "https://api.doppler.com/v3/environments/harness-tmp?project=dyad",
+              "https://api.doppler.com/v3/environments/environment?project=dyad&environment=harness-tmp",
           )
           print("delete_environment_http", code)
           print("delete_success", body.get("success"))
