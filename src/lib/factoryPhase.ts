@@ -313,6 +313,12 @@ export function latestFactoryPhaseSummary(
     : null;
 }
 
+/** Discovery and Delivery opening lines. Implementation's prefill is not a kickoff. */
+export function isFactoryKickoffPrompt(prompt: string): boolean {
+  const text = prompt.trim();
+  return text === "Start Discovery." || text.startsWith("Start Delivery.");
+}
+
 /** Discovery and Delivery start with Dyad's turn; Implementation waits for the person to send. */
 export function factoryPhaseKickoff(
   phase: FactoryPhase,

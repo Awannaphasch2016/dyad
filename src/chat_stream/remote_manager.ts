@@ -576,6 +576,15 @@ export class ChatStreamRemoteManager {
       if (receipt.kind === "rejected") {
         throw new Error(`Chat submission rejected: ${receipt.reason}`);
       }
+      if (
+        receipt.kind === "ignored" &&
+        receipt.reason === "duplicate-in-flight"
+      ) {
+        const pending = this.takePendingSubmission(intentId);
+        this.notifySnapshotListeners(request.chatId);
+        pending?.request.onSettled?.({ success: true });
+        return true;
+      }
       return true;
     } catch (error) {
       const pending = this.takePendingSubmission(intentId);
@@ -701,6 +710,15 @@ export class ChatStreamRemoteManager {
           pending.request.onAccepted?.();
           const replayedCompletion = snapshot.lastCompletion;
           if (
+            acceptance.acceptance === "message-accepted" &&
+            acceptance.acceptedMessageId === undefined &&
+            snapshot.phase === "idle"
+          ) {
+            // A kickoff that finds an existing user message returns to idle
+            // without a saved message id. Settle it so the composer is not left waiting.
+            pending.request.onSettled?.({ success: true });
+            this.takePendingSubmission(acceptance.intentId);
+          } else if (
             acceptance.acceptance === "message-accepted" &&
             replayedCompletion?.intentId === acceptance.intentId &&
             this.lastCompletionByChat.get(chatId) === acceptance.intentId
