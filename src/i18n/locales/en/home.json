@@ -257,6 +257,7 @@
   },
   "preview": {
     "title": "Preview",
+    "projectNotReady": "This project is not ready to preview.",
     "problems": "Problems",
     "code": "Code",
     "diff": "Diff",

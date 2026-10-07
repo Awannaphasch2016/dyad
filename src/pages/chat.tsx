@@ -15,7 +15,12 @@ import { useChats } from "@/hooks/useChats";
 import { selectedAppIdAtom } from "@/atoms/appAtoms";
 import { selectedChatIdAtom } from "@/atoms/chatAtoms";
 import { ipc } from "@/ipc/types";
-import { phaseFromTitle, previewOpenForPhase } from "@/lib/factoryPhase";
+import {
+  applyPreviewVisibility,
+  phaseFromTitle,
+  previewVisibility,
+  type PreviewOpenMemory,
+} from "@/lib/factoryPhase";
 
 const DEFAULT_CHAT_PANEL_SIZE = 50;
 
@@ -109,14 +114,30 @@ export default function ChatPage() {
     };
   }, [chatId, routeAppId, chats, setSelectedAppId]);
 
-  const factoryPhase = phaseFromTitle(
-    chats.find((chat) => chat.id === chatId)?.title,
-  );
+  const openChat = chats.find((chat) => chat.id === chatId);
+  const factoryPhase = phaseFromTitle(openChat?.title);
+  const visibility = previewVisibility({
+    chatTitleKnown: openChat != null,
+    phase: factoryPhase,
+  });
+  const previewMemoryRef = useRef<PreviewOpenMemory>({
+    implementationChatId: null,
+    restoreOrdinaryPreview: false,
+  });
 
   useEffect(() => {
-    if (!factoryPhase) return;
-    setIsPreviewOpen(previewOpenForPhase(factoryPhase));
-  }, [factoryPhase, setIsPreviewOpen]);
+    const next = applyPreviewVisibility({
+      visibility,
+      phase: factoryPhase,
+      chatId: chatId ?? null,
+      isPreviewOpen,
+      memory: previewMemoryRef.current,
+    });
+    previewMemoryRef.current = next.memory;
+    if (next.isPreviewOpen !== isPreviewOpen) {
+      setIsPreviewOpen(next.isPreviewOpen);
+    }
+  }, [chatId, factoryPhase, isPreviewOpen, setIsPreviewOpen, visibility]);
 
   useEffect(() => {
     if (isPreviewOpen) {
