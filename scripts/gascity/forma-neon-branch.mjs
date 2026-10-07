@@ -9,16 +9,21 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+export const orgLookupProjectId = "mute-credit-71067312";
 export const devEndpointId = "ep-wild-paper-b3yf26si";
 export const productionEndpointId = "ep-young-wave-b3cwe0rz";
 const neonApi = "https://console.neon.tech/api/v2";
 
 const branchPattern = /^br-[a-z0-9-]+$/;
 
-export function formaProjectBody() {
+export function formaProjectBody(orgId) {
+  if (typeof orgId !== "string" || !orgId.startsWith("org-")) {
+    throw new Error("neon org id is missing");
+  }
   return {
     project: {
       name: "forma",
+      org_id: orgId,
       region_id: "aws-ap-southeast-1",
       pg_version: 17,
     },
@@ -103,12 +108,12 @@ function neonRequest(apiKey, path, options = {}) {
   });
 }
 
-async function listCollection(apiKey, path, collection) {
+async function listCollection(apiKey, path, collection, query = {}) {
   const all = [];
   const seen = new Set();
   let cursor = "";
   for (let page = 0; page < 20; page += 1) {
-    const params = new URLSearchParams({ limit: "100" });
+    const params = new URLSearchParams({ limit: "100", ...query });
     if (cursor) params.set("cursor", cursor);
     const body = await neonRequest(apiKey, `${path}?${params}`);
     const batch = body[collection];
@@ -232,8 +237,21 @@ async function branchesReady(apiKey, projectId) {
   return branches;
 }
 
+async function neonOrgId(apiKey) {
+  const body = await neonRequest(apiKey, `/projects/${orgLookupProjectId}`);
+  const orgId = body.project?.org_id;
+  if (typeof orgId !== "string" || !orgId.startsWith("org-")) {
+    throw new Error("neon org id is missing");
+  }
+  return orgId;
+}
+
 async function ensureFormaProject(apiKey) {
-  const projects = await listCollection(apiKey, "/projects", "projects");
+  const orgId = await neonOrgId(apiKey);
+  console.log(`neon_org=${orgId}`);
+  const projects = await listCollection(apiKey, "/projects", "projects", {
+    org_id: orgId,
+  });
   const existing = projects.find((item) => item.name === "forma");
   if (typeof existing?.id === "string" && existing.id.length > 0) {
     console.log("forma_neon_project=exists");
@@ -242,7 +260,7 @@ async function ensureFormaProject(apiKey) {
   }
   const created = await neonRequest(apiKey, "/projects", {
     method: "POST",
-    body: formaProjectBody(),
+    body: formaProjectBody(orgId),
   });
   const projectId = created.project?.id;
   if (typeof projectId !== "string" || projectId.length === 0) {

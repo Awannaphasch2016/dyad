@@ -17,13 +17,15 @@ const script = readFileSync(
 );
 
 test("forma is a new empty Neon project in Singapore", () => {
-  assert.deepEqual(formaProjectBody(), {
+  assert.deepEqual(formaProjectBody("org-example"), {
     project: {
       name: "forma",
+      org_id: "org-example",
       region_id: "aws-ap-southeast-1",
       pg_version: 17,
     },
   });
+  assert.throws(() => formaProjectBody(""), /org id/);
 });
 
 test("the default branch id is preferred", () => {
@@ -58,7 +60,8 @@ test("the forma branch workflow does not print a database url", () => {
   assert.equal(workflow.includes("printenv"), false);
   assert.equal(workflow.includes("dyad/prd"), false);
   assert.equal(script.includes("parent-data"), false);
-  assert.equal(script.includes("mute-credit-71067312"), false);
+  assert.equal(script.includes("parent_id"), false);
   assert.equal(script.includes("proud-salad-68182047"), false);
+  assert.match(script, /orgLookupProjectId/);
   assert.match(script, /aws-ap-southeast-1/);
 });
