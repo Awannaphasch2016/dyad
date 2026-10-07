@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   cloudflareReferencePlan,
   configReport,
+  previewEnvironmentBody,
   previewInheritsBody,
   prdInheritsBody,
   takeSecretNames,
@@ -51,6 +52,10 @@ test("a missing cloudflare name is reported and not invented", () => {
   const plan = cloudflareReferencePlan(["CLOUDFLARE_API_TOKEN"]);
   assert.deepEqual(plan.missing, ["CLOUDFLARE_ACCOUNT_ID"]);
   assert.equal(plan.secrets.CLOUDFLARE_ACCOUNT_ID, undefined);
+});
+
+test("preview is its own environment so the config name is preview", () => {
+  assert.equal(previewEnvironmentBody().slug, "preview");
 });
 
 test("preview inherits bolt dev and prd inherits nothing", () => {

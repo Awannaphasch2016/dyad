@@ -32,11 +32,10 @@ export function devInheritableBody() {
   };
 }
 
-export function previewConfigBody() {
+export function previewEnvironmentBody() {
   return {
-    project: BOLT_PROJECT_NAME,
-    environment: "dev",
-    name: "preview",
+    name: "Preview",
+    slug: "preview",
   };
 }
 

@@ -11,7 +11,7 @@ import {
   configReport,
   credentialShape,
   devInheritableBody,
-  previewConfigBody,
+  previewEnvironmentBody,
   previewInheritsBody,
   prdInheritsBody,
   projectBody,
@@ -126,7 +126,12 @@ async function ensureBoltProject() {
     process.exit(1);
   }
   if (!names.has("preview")) {
-    await doppler(token, "POST", "/v3/configs", previewConfigBody());
+    await doppler(
+      token,
+      "POST",
+      `/v3/environments?project=${encodeURIComponent(BOLT_PROJECT_NAME)}`,
+      previewEnvironmentBody(),
+    );
     console.log("bolt_preview=created");
   } else {
     console.log("bolt_preview=exists");
