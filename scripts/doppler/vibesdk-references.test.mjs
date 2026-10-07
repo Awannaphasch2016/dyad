@@ -8,6 +8,8 @@ import {
   cloudflareProbes,
   credentialShape,
   errorSummary,
+  claudeSourceName,
+  chooseProjectReference,
   probeResult,
   referenceResolved,
   takeSecretNames,
@@ -71,11 +73,27 @@ test("secret payloads are reduced to names", () => {
 test("credential reports name the kind of token and not its value", () => {
   assert.equal(credentialShape("napi_example"), "napi length=12");
   assert.equal(credentialShape("sk-or-example"), "openrouter length=13");
+  assert.equal(credentialShape("sk-ant-example"), "anthropic length=14");
   assert.equal(
     errorSummary({ errors: [{ code: 10000, message: "Authentication error" }] })
       .code,
     "10000",
   );
+});
+
+test("the Claude key is taken from ai-pilot/dev", () => {
+  const names = ["VERCEL_TOKEN", "ANTHROPIC_API_KEY", "WEWEBPLUS_DATABASE_URL"];
+  assert.equal(claudeSourceName(names), "ANTHROPIC_API_KEY");
+  assert.equal(claudeSourceName(["CLAUDE_SECRET"]), "CLAUDE_SECRET");
+  assert.equal(claudeSourceName(["VERCEL_TOKEN"]), null);
+  const choice = chooseProjectReference(
+    "ai-pilot",
+    ["dev", "prd"],
+    { dev: new Set(["ANTHROPIC_API_KEY"]) },
+    claudeSourceName(["ANTHROPIC_API_KEY"]) ? ["ANTHROPIC_API_KEY"] : [],
+    "ANTHROPIC_API_KEY",
+  );
+  assert.equal(choice.reference, "${ai-pilot.dev.ANTHROPIC_API_KEY}");
 });
 
 test("resolution and probe words do not include the secret", () => {

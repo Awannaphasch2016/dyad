@@ -1,0 +1,36 @@
+# Reference ai-pilot/dev Claude key into vibesdk/dev and check it.
+# Prints names and HTTP results. Does not print the key.
+# Runs from this branch only. Remove this file after the check.
+
+name: Reference vibesdk Claude key
+
+on:
+  push:
+    branches:
+      - cursor/vibesdk-doppler-project-fd29
+    paths:
+      - .github/workflows/doppler-vibesdk-claude.yml
+      - scripts/doppler/reference-claude.mjs
+      - scripts/doppler/vibesdk-references.mjs
+      - scripts/doppler/vibesdk-project.mjs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: doppler-vibesdk-claude
+  cancel-in-progress: false
+
+jobs:
+  reference:
+    if: github.ref == 'refs/heads/cursor/vibesdk-doppler-project-fd29'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Reference the Claude key
+        env:
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+        run: node scripts/doppler/reference-claude.mjs

@@ -73,6 +73,47 @@ export function chooseReference(wanted, namesByConfig) {
   return null;
 }
 
+export const claudeKeySources = [
+  "ANTHROPIC_API_KEY",
+  "CLAUDE_API_KEY",
+  "CLAUDE_API_TOKEN",
+  "ANTHROPIC_AUTH_TOKEN",
+];
+
+export function chooseProjectReference(
+  project,
+  configsInOrder,
+  namesByConfig,
+  sources,
+  dest,
+) {
+  for (const config of configsInOrder) {
+    const names = namesByConfig?.[config];
+    if (!names) continue;
+    for (const source of sources) {
+      if (names.has(source)) {
+        return {
+          dest,
+          project,
+          config,
+          source,
+          reference: `\${${project}.${config}.${source}}`,
+        };
+      }
+    }
+  }
+  return null;
+}
+
+export function claudeSourceName(names) {
+  for (const source of claudeKeySources) {
+    if (names.includes(source)) return source;
+  }
+  return (
+    names.find((name) => /^(ANTHROPIC|CLAUDE)_[A-Z0-9_]+$/.test(name)) ?? null
+  );
+}
+
 export function referenceResolved(value) {
   if (typeof value !== "string" || value.trim() === "") return "absent";
   if (value.trim().startsWith("${")) return "unresolved";
@@ -83,6 +124,7 @@ export function credentialShape(value) {
   const text = String(value ?? "").trim();
   if (text.startsWith("napi_")) return `napi length=${text.length}`;
   if (text.startsWith("sk-or-")) return `openrouter length=${text.length}`;
+  if (text.startsWith("sk-ant-")) return `anthropic length=${text.length}`;
   if (text.startsWith("${")) return "reference";
   if (text === "") return "absent";
   return `other length=${text.length}`;
