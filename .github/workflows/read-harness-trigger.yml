@@ -62,33 +62,47 @@ jobs:
           summary = (
               "https://app.harness.io/pipeline/api/pipelines/execution/summary"
               f"?accountIdentifier={account}&orgIdentifier=default&projectIdentifier=dyad"
-              "&pipelineIdentifier=dyad_fast_check&page=0&size=8"
+              "&pipelineIdentifier=dyad_fast_check&page=0&size=12"
           )
           code, body = request("POST", summary, {"filterType": "PipelineExecution"})
           rows = ((body.get("data") or {}).get("content") or []) if isinstance(body.get("data"), dict) else []
           print("summary_http", code, "count", len(rows))
-          interesting_key = re.compile(
-              r"branch|pull|prNumber|commit|sha|status|identifier|name|should_run|repo",
-              re.I,
-          )
-
-          def scalars(node, path="", out=None, depth=0):
-              if out is None:
-                  out = []
-              if depth > 14 or len(out) > 300:
-                  return out
-              if isinstance(node, dict):
-                  for key, value in node.items():
-                      child = f"{path}.{key}" if path else str(key)
-                      if isinstance(value, (str, int, float, bool)) or value is None:
-                          if interesting_key.search(str(key)):
-                              out.append(f"{child}={scrub(str(value))[:160]}")
-                      else:
-                          scalars(value, child, out, depth + 1)
-              elif isinstance(node, list) and depth < 10:
-                  for index, value in enumerate(node[:30]):
-                      scalars(value, f"{path}[{index}]", out, depth + 1)
-              return out
+          def compact(data):
+              summary = data.get("pipelineExecutionSummary") or {}
+              module = ((summary.get("moduleInfo") or {}).get("ci") or {})
+              stage_info = module.get("ciPipelineStageModuleInfo") or {}
+              pull = ((module.get("ciExecutionInfoDTO") or {}).get("pullRequest") or {})
+              flags = {}
+              stages = {}
+              steps = {}
+              wanted_steps = {
+                  "check_changes", "presubmit", "typecheck",
+                  "schema_postgres", "schema_unit_tests", "schema_integration_tests",
+                  "schema_typecheck", "classifier_typecheck", "classifier_tests",
+              }
+              graph = ((data.get("executionGraph") or {}).get("nodeMap") or {})
+              for node in graph.values():
+                  if not isinstance(node, dict):
+                      continue
+                  ident = node.get("identifier")
+                  status = node.get("status")
+                  outcomes = ((node.get("outcomes") or {}).get("output") or {}).get("outputVariables") or {}
+                  if isinstance(outcomes, dict):
+                      for key, value in outcomes.items():
+                          if "should_run" in str(key):
+                              flags[key] = value
+                  if ident in {"fast_check", "schema_diff_tests", "schema_classifier_tests"}:
+                      stages[ident] = status
+                  if ident in wanted_steps:
+                      steps[ident] = status
+              return {
+                  "pr": module.get("prNumber"),
+                  "source": pull.get("sourceBranch") or stage_info.get("sourceBranch"),
+                  "commit": scrub(str(stage_info.get("commitMessage") or ""))[:80],
+                  "flags": flags,
+                  "stages": stages,
+                  "steps": steps,
+              }
 
           for row in rows:
               trigger = row.get("executionTriggerInfo") or {}
@@ -110,6 +124,6 @@ jobs:
               )
               detail_code, detail_body = request("GET", detail)
               print("detail_http", execution, detail_code, "status", detail_body.get("status"))
-              for line in scalars(detail_body.get("data") if isinstance(detail_body, dict) else {}):
-                  print("field", execution, line)
+              data = detail_body.get("data") if isinstance(detail_body, dict) else {}
+              print("compact", json.dumps({"execution": execution, **compact(data if isinstance(data, dict) else {})}))
           PY
