@@ -69,11 +69,16 @@ jobs:
           print("summary_http", code, "count", len(rows))
           for row in rows:
               trigger = row.get("executionTriggerInfo") or {}
-              print(json.dumps({
+              interesting = {
                   "execution": row.get("planExecutionId"),
                   "status": row.get("status"),
                   "run_sequence": row.get("runSequence"),
                   "trigger_type": trigger.get("triggerType"),
                   "start_ts": row.get("startTs"),
-              }))
+                  "end_ts": row.get("endTs"),
+              }
+              for key, value in row.items():
+                  if isinstance(value, str) and re.search(r"branch|pull|prNumber|repo|name", key, re.I):
+                      interesting[key] = value[:120]
+              print(json.dumps(interesting))
           PY
