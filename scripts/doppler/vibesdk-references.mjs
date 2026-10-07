@@ -114,6 +114,13 @@ export function claudeSourceName(names) {
   );
 }
 
+export function storedSecretKind(raw) {
+  const state = referenceResolved(raw);
+  if (state === "unresolved") return "reference";
+  if (state === "yes") return "direct";
+  return "absent";
+}
+
 export function referenceResolved(value) {
   if (typeof value !== "string" || value.trim() === "") return "absent";
   if (value.trim().startsWith("${")) return "unresolved";

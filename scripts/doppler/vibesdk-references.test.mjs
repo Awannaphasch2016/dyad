@@ -11,6 +11,7 @@ import {
   claudeSourceName,
   chooseProjectReference,
   probeResult,
+  storedSecretKind,
   referenceResolved,
   takeSecretNames,
   vibesdkReferences,
@@ -18,6 +19,10 @@ import {
 
 const copyScript = readFileSync(
   new URL("./copy-vibesdk-references.mjs", import.meta.url),
+  "utf8",
+);
+const verifyScript = readFileSync(
+  new URL("./verify-vibesdk-cloudflare.mjs", import.meta.url),
   "utf8",
 );
 
@@ -97,6 +102,11 @@ test("the Claude key is taken from ai-pilot/dev", () => {
 });
 
 test("resolution and probe words do not include the secret", () => {
+  assert.equal(
+    storedSecretKind("${dyad.preview.CLOUDFLARE_API_TOKEN}"),
+    "reference",
+  );
+  assert.equal(storedSecretKind("direct-token"), "direct");
   assert.equal(referenceResolved(""), "absent");
   assert.equal(referenceResolved("${dyad.dev.NEON_API_KEY}"), "unresolved");
   assert.equal(referenceResolved("present"), "yes");
@@ -134,6 +144,8 @@ test("the copy script does not print downloads or create resources", () => {
   assert.equal(copyScript.includes("connection_uri"), false);
   assert.equal(copyScript.includes("read_write"), false);
   assert.match(copyScript, /openrouter\/auto/);
+  assert.equal(verifyScript.includes('method: "POST"'), false);
+  assert.equal(verifyScript.includes('/configs/config/secrets",'), false);
   assert.match(redact("sk-or-secret napi_secret"), /sk-or-redacted/);
   assert.match(redact("sk-or-secret napi_secret"), /napi_redacted/);
 });

@@ -1,0 +1,30 @@
+# Check the Cloudflare token stored on vibesdk/dev. Does not write secrets.
+# Runs from this branch only. Remove this file after the check.
+
+name: Check vibesdk Cloudflare token
+
+on:
+  push:
+    branches:
+      - cursor/vibesdk-doppler-project-fd29
+    paths:
+      - .github/workflows/doppler-vibesdk-cloudflare-check.yml
+      - scripts/doppler/verify-vibesdk-cloudflare.mjs
+      - scripts/doppler/vibesdk-references.mjs
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    if: github.ref == 'refs/heads/cursor/vibesdk-doppler-project-fd29'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Check the Cloudflare token
+        env:
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+        run: node scripts/doppler/verify-vibesdk-cloudflare.mjs
