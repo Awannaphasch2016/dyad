@@ -35,6 +35,28 @@ export function assertSafeText(text) {
   }
 }
 
+export function credentialHelperSource() {
+  return `#!/bin/sh
+case "$1" in
+  get)
+    printf '%s\\n' "username=x-access-token" "password=$GH_TOKEN"
+    ;;
+esac
+`;
+}
+
+export function gitCredentialEnv(baseEnv, helperPath) {
+  return {
+    ...baseEnv,
+    GIT_TERMINAL_PROMPT: "0",
+    GIT_CONFIG_COUNT: "2",
+    GIT_CONFIG_KEY_0: "credential.helper",
+    GIT_CONFIG_VALUE_0: "",
+    GIT_CONFIG_KEY_1: "credential.helper",
+    GIT_CONFIG_VALUE_1: `!${helperPath}`,
+  };
+}
+
 export function redact(text, secrets = []) {
   let out = String(text ?? "");
   for (const secret of secrets) {
@@ -240,7 +262,6 @@ export function openFormaContainerPullRequest({
     }
   };
 
-  runOrThrow("gh", ["auth", "setup-git"], { env }, secrets);
   const view = JSON.parse(
     runOrThrow(
       "gh",
@@ -256,26 +277,35 @@ export function openFormaContainerPullRequest({
 
   const workDir = mkdtempSync(path.join(tmpdir(), "forma-container-"));
   const repoDir = path.join(workDir, "forma");
+  const helperPath = path.join(workDir, "git-credential-forma.sh");
+  writeFileSync(helperPath, credentialHelperSource());
+  run("chmod", ["755", helperPath]);
+  const gitEnv = gitCredentialEnv(env, helperPath);
   try {
     if (view.isEmpty) {
       mkdirSync(repoDir, { recursive: true });
-      runOrThrow("git", ["init", "-b", baseBranch, repoDir], { env }, secrets);
-      configureBot(repoDir, env, secrets);
+      runOrThrow(
+        "git",
+        ["init", "-b", baseBranch, repoDir],
+        { env: gitEnv },
+        secrets,
+      );
+      configureBot(repoDir, gitEnv, secrets);
       const plan = writeContainerFiles(repoDir, {
         gascityDockerfile,
         entrypoint,
       });
-      commitAll(repoDir, plan, env, secrets);
+      commitAll(repoDir, plan, gitEnv, secrets);
       runOrThrow(
         "git",
         ["remote", "add", "origin", `https://github.com/${repository}.git`],
-        { cwd: repoDir, env },
+        { cwd: repoDir, env: gitEnv },
         secrets,
       );
       runOrThrow(
         "git",
         ["push", "origin", `HEAD:${baseBranch}`],
-        { cwd: repoDir, env },
+        { cwd: repoDir, env: gitEnv },
         secrets,
       );
       note(
@@ -287,7 +317,7 @@ export function openFormaContainerPullRequest({
     const remoteBranch = runOrThrow(
       "git",
       ["ls-remote", "--heads", `https://github.com/${repository}.git`, branch],
-      { env },
+      { env: gitEnv },
       secrets,
     ).trim();
     const cloneArgs = [
@@ -302,13 +332,13 @@ export function openFormaContainerPullRequest({
     } else {
       cloneArgs.splice(1, 0, "--branch", resolvedBase);
     }
-    runOrThrow("git", cloneArgs, { env }, secrets);
-    configureBot(repoDir, env, secrets);
+    runOrThrow("git", cloneArgs, { env: gitEnv }, secrets);
+    configureBot(repoDir, gitEnv, secrets);
     if (!remoteBranch) {
       runOrThrow(
         "git",
         ["checkout", "-b", branch],
-        { cwd: repoDir, env },
+        { cwd: repoDir, env: gitEnv },
         secrets,
       );
     }
@@ -320,15 +350,15 @@ export function openFormaContainerPullRequest({
     const status = runOrThrow(
       "git",
       ["status", "--porcelain"],
-      { cwd: repoDir, env },
+      { cwd: repoDir, env: gitEnv },
       secrets,
     ).trim();
     if (status) {
-      commitAll(repoDir, plan, env, secrets);
+      commitAll(repoDir, plan, gitEnv, secrets);
       runOrThrow(
         "git",
         ["push", "origin", `HEAD:${branch}`],
-        { cwd: repoDir, env },
+        { cwd: repoDir, env: gitEnv },
         secrets,
       );
     }
@@ -351,7 +381,7 @@ export function openFormaContainerPullRequest({
         "--jq",
         ".[0].url",
       ],
-      { env },
+      { env: gitEnv },
       secrets,
     ).trim();
     if (existing) {
@@ -381,7 +411,7 @@ export function openFormaContainerPullRequest({
         "--body-file",
         bodyFile,
       ],
-      { env },
+      { env: gitEnv },
       secrets,
     ).trim();
     note(`forma_pr=${url}`);

@@ -6,6 +6,8 @@ import {
   FORMA_BRANCH,
   FORMA_REPOSITORY,
   assertSafeText,
+  credentialHelperSource,
+  gitCredentialEnv,
   planFormaContainer,
   pullRequestCopy,
   redact,
@@ -98,6 +100,16 @@ test("a dyad checkout only gains the dev compose file", () => {
     ["compose.dev.yml"],
   );
   assert.match(pullRequestCopy(plan.kind).body, /does not deploy/);
+});
+
+test("git asks the app token helper and does not store the token", () => {
+  const source = credentialHelperSource();
+  assert.match(source, /password=\$GH_TOKEN/);
+  assert.equal(source.includes("ghs_"), false);
+  const gitEnv = gitCredentialEnv({ GH_TOKEN: "present" }, "/tmp/helper.sh");
+  assert.equal(gitEnv.GIT_CONFIG_VALUE_0, "");
+  assert.equal(gitEnv.GIT_CONFIG_VALUE_1, "!/tmp/helper.sh");
+  assert.equal(gitEnv.GH_TOKEN, "present");
 });
 
 test("redact removes the app token from errors", () => {
