@@ -1,6 +1,8 @@
 # Prove the canary Doppler identity and database host.
 # The identity subject is this workflow on cursor/ecs-hitl-cutover-bbea.
-# It does not roll gascity-server, move the apex, or promote canary to prd.
+# Set the Actions variable DOPPLER_CANARY_IDENTITY_ID to the UUID from the
+# wewebplus-canary GitHub identity. This workflow does not roll gascity-server,
+# move the apex, or promote canary to prd.
 
 name: Canary verify
 
@@ -42,11 +44,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Ensure the canary identity and compare host labels
+      - name: Use the configured canary identity
         id: ensure
         env:
+          CONFIGURED_IDENTITY: ${{ vars.DOPPLER_CANARY_IDENTITY_ID }}
           DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
-        run: node scripts/gascity/ensure-canary-identity.mjs
+        run: |
+          set -euo pipefail
+          if [[ "$CONFIGURED_IDENTITY" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
+            echo "identity_id=$CONFIGURED_IDENTITY" >> "$GITHUB_OUTPUT"
+            echo "identity=configured"
+            exit 0
+          fi
+          if [[ -z "$DOPPLER_ADMIN_TOKEN" ]]; then
+            echo "Create the GitHub identity on service account wewebplus-canary, then set the Actions variable DOPPLER_CANARY_IDENTITY_ID to its UUID." >&2
+            exit 1
+          fi
+          node scripts/gascity/ensure-canary-identity.mjs
 
   read:
     needs: identity

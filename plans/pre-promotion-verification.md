@@ -122,9 +122,9 @@ Logs print status codes, gate names, and host labels. They do not print `WEWEBPL
 
 ### Phase 1: Identity
 
-`.github/workflows/canary-verify.yml` creates the `wewebplus-canary` GitHub identity for this workflow only, compares the host labels, and checks that the identity cannot read `dyad/prd`. `services/gascity-supervisor/` is the process that calls `http://dyad:32100`. `deploy/canary/task_definition.mjs` is the ECS shape. Registering the service stays on a manual run of this workflow with deploy enabled, so a push does not move the apex or roll `gascity-server`.
+`.github/workflows/canary-verify.yml` reads `dyad/canary` with the GitHub identity on service account `wewebplus-canary`. The Actions variable `DOPPLER_CANARY_IDENTITY_ID` is that identity's UUID. The workflow checks that this identity cannot read `dyad/prd`. `services/gascity-supervisor/` is the process that calls `http://dyad:32100`. `deploy/canary/task_definition.mjs` is the ECS shape. Registering the service stays on a manual run of this workflow with deploy enabled, so a push does not move the apex or roll `gascity-server`.
 
-Run [37584719068](https://github.com/Awannaphasch2016/dyad/actions/runs/37584719068) stopped because `DOPPLER_ADMIN_TOKEN` is not available to GitHub Actions. The identity was not created. The local AWS credentials in this agent are a different account and were not used.
+Run [37584719068](https://github.com/Awannaphasch2016/dyad/actions/runs/37584719068) stopped because `DOPPLER_ADMIN_TOKEN` is not available to GitHub Actions. Create the identity in Doppler and set `DOPPLER_CANARY_IDENTITY_ID`. The admin token does not need to return.
 
 - [ ] Read `dyad/canary` and print only the database host label. Pass when it is `ep-muddy-sky-b31adt7z-pooler`.
 - [ ] Read `dyad/prd` and print only the host label. Pass when it is `ep-young-wave-b3cwe0rz-pooler`.
