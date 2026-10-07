@@ -124,6 +124,20 @@ if [[ -f /tmp/tunnel-token ]]; then
   put_secret TUNNEL_TOKEN "$(cat /tmp/tunnel-token)"
   rm -f /tmp/tunnel-token
 fi
+put_optional_secret() {
+  local key="$1"
+  local value="$2"
+  if [[ -n "$value" ]]; then
+    put_secret "$key" "$value"
+  else
+    echo "secret_ref=${key}=absent"
+  fi
+}
+put_optional_secret OPENAI_API_KEY "${OPENAI_API_KEY:-}"
+put_optional_secret ANTHROPIC_API_KEY "${ANTHROPIC_API_KEY:-}"
+put_optional_secret GEMINI_API_KEY "${GEMINI_API_KEY:-}"
+put_optional_secret OPENROUTER_API_KEY "${OPENROUTER_API_KEY:-}"
+put_optional_secret AWS_BEARER_TOKEN_BEDROCK "${AWS_BEARER_TOKEN_BEDROCK:-}"
 echo "]" >> "$secret_file"
 
 namespace="$(aws servicediscovery list-namespaces \

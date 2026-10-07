@@ -69,6 +69,36 @@ test("an image from another region is refused", () => {
   );
 });
 
+test("a model key reference is attached to the dyad container", () => {
+  const task = canaryTaskDefinition({
+    ...images,
+    secrets: [
+      {
+        name: "OPENAI_API_KEY",
+        valueFrom:
+          "arn:aws:secretsmanager:ap-southeast-1:123456789012:secret:wewebplus/canary/OPENAI_API_KEY",
+      },
+      {
+        name: "TUNNEL_TOKEN",
+        valueFrom:
+          "arn:aws:secretsmanager:ap-southeast-1:123456789012:secret:wewebplus/canary/TUNNEL_TOKEN",
+      },
+    ],
+  });
+  const dyad = task.containerDefinitions.find((item) => item.name === "dyad");
+  const tunnel = task.containerDefinitions.find(
+    (item) => item.name === "cloudflared",
+  );
+  assert.deepEqual(
+    dyad.secrets.map((item) => item.name),
+    ["OPENAI_API_KEY"],
+  );
+  assert.deepEqual(
+    tunnel.secrets.map((item) => item.name),
+    ["TUNNEL_TOKEN"],
+  );
+});
+
 test("plaintext database URLs are refused", () => {
   assert.throws(
     () =>

@@ -23,6 +23,8 @@ on:
       - scripts/gascity/canary-identity.mjs
       - scripts/gascity/ensure-canary-identity.mjs
       - scripts/gascity/canary-hosts.mjs
+      - scripts/gascity/model-keys.mjs
+      - scripts/gascity/copy-canary-model-keys.mjs
       - deploy/canary/**
       - services/gascity-supervisor/**
 
@@ -130,6 +132,11 @@ jobs:
         env:
           DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
         run: node scripts/gascity/copy-canary-edge.mjs
+
+      - name: Copy model keys from dyad dev
+        env:
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+        run: node scripts/gascity/copy-canary-model-keys.mjs
 
       - name: Fetch dyad canary secrets
         uses: dopplerhq/secrets-fetch-action@v2.0.0

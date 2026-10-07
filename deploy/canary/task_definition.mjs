@@ -1,6 +1,8 @@
 // ECS task and service shape for the canary. Secret values stay out of this
 // file. The service does not publish the bridge, noVNC, or browser bridge.
 
+import { modelKeyNames } from "../../scripts/gascity/model-keys.mjs";
+
 export const canarySecurityGroup = "sg-0d19518d244fede2d";
 export const blockedPublicPorts = [32100, 6080, 8373];
 
@@ -15,6 +17,7 @@ const secretNames = new Set([
   "TUNNEL_TOKEN",
   "WEWEBPLUS_DATABASE_URL",
   "WEWEBPLUS_SECRETS_KEY",
+  ...modelKeyNames,
 ]);
 
 const ecrHost = /^[0-9]{12}\.dkr\.ecr\.ap-southeast-1\.amazonaws\.com$/;
