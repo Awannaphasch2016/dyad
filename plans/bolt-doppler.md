@@ -4,15 +4,17 @@ Bolt gets its own Doppler project, the same way Forma and vibeSDK already do. Th
 
 The walkthrough address is still the preview in [plans/bolt-walkthrough-deploy.md](https://github.com/Awannaphasch2016/dyad/blob/cursor/bolt-walkthrough-deploy-55d6/plans/bolt-walkthrough-deploy.md). This plan replaces that plan’s step that adds the two Cloudflare names by hand on the bolt repository.
 
+The GitHub Action `Bolt Doppler setup` creates this layout. It uses the same repository secret as the Forma setup job, `DOPPLER_ADMIN_TOKEN`. The source project slug is `vibesdk`.
+
 ## Project and configs
 
 Project slug: `bolt`.
 
-| Config | Inheritance | What it holds |
-| --- | --- | --- |
-| `dev` | root config | The two Cloudflare names, as references to vibeSDK `dev`. |
-| `preview` | inherits `dev` | The same two names. This is the config the preview deploy reads. |
-| `prd` | no inheritance | Empty. Production stays closed until the preview walkthrough is accepted. |
+| Config    | Inheritance    | What it holds                                                             |
+| --------- | -------------- | ------------------------------------------------------------------------- |
+| `dev`     | root config    | The two Cloudflare names, as references to vibeSDK `dev`.                 |
+| `preview` | inherits `dev` | The same two names. This is the config the preview deploy reads.          |
+| `prd`     | no inheritance | Empty. Production stays closed until the preview walkthrough is accepted. |
 
 ```text
 vibeSDK / dev
@@ -34,10 +36,10 @@ bolt / preview  --->  Awannaphasch2016/bolt.diy repository secrets
 
 Write these two names in `bolt` / `dev`:
 
-- `CLOUDFLARE_API_TOKEN` = `${vibeSDK.dev.CLOUDFLARE_API_TOKEN}`
-- `CLOUDFLARE_ACCOUNT_ID` = `${vibeSDK.dev.CLOUDFLARE_ACCOUNT_ID}`
+- `CLOUDFLARE_API_TOKEN` = `${vibesdk.dev.CLOUDFLARE_API_TOKEN}`
+- `CLOUDFLARE_ACCOUNT_ID` = `${vibesdk.dev.CLOUDFLARE_ACCOUNT_ID}`
 
-The reference uses the dashboard slug. If the project slug is `vibesdk` rather than `vibeSDK`, use the slug Doppler shows. If vibeSDK `dev` stores the account id under a different name, point `CLOUDFLARE_ACCOUNT_ID` at that name.
+If `vibesdk` / `dev` stores either name with the trailing underscore used by the Dyad tunnel config, the setup job references that name instead.
 
 A names-only download of vibeSDK `dev` is the first check. It confirms both names are present. It does not print values.
 

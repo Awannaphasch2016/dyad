@@ -1,0 +1,39 @@
+# Create Doppler project bolt and reference the vibesdk/dev Cloudflare names.
+# preview inherits bolt/dev. prd stays empty.
+# This job does not read dyad, does not print secret values, and does not deploy bolt.
+
+name: Bolt Doppler setup
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cursor/bolt-doppler-55d6
+    paths:
+      - .github/workflows/bolt-doppler-setup.yml
+      - scripts/doppler/ensure-bolt-project.mjs
+      - scripts/doppler/bolt-project.mjs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bolt-doppler-setup
+  cancel-in-progress: false
+
+jobs:
+  setup:
+    if: github.ref == 'refs/heads/cursor/bolt-doppler-55d6'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the setup script
+        uses: actions/checkout@v4
+
+      - name: Organize bolt
+        env:
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+        run: |
+          set -euo pipefail
+          set +x
+          node scripts/doppler/ensure-bolt-project.mjs
