@@ -1,7 +1,8 @@
 # Prove the canary Doppler identity and database host.
 # The identity subject is this workflow on cursor/ecs-hitl-cutover-bbea.
 # Set the Actions variable DOPPLER_CANARY_IDENTITY_ID to the UUID from the
-# wewebplus-canary GitHub identity. This workflow does not roll gascity-server,
+# wewebplus-canary GitHub identity. A repository secret named
+# DOPPLER_ADMIN_TOKEN can create that identity once. This workflow does not roll gascity-server,
 # move the apex, or promote canary to prd.
 
 name: Canary verify
