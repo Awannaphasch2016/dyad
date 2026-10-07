@@ -18,8 +18,40 @@ if [[ ! -s "$patch_file" ]]; then
 fi
 
 existing="$(gh pr list --repo "$repository" --head "$branch" --base "$base_branch" --state open --json url --jq '.[0].url // empty')"
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+reload_patch="${RELOAD_PATCH:-$script_dir/bolt-reload.patch}"
+
 if [[ -n "$existing" ]]; then
-  echo "Pull request already open: $existing"
+  if [[ ! -s "$reload_patch" ]]; then
+    echo "Pull request already open: $existing"
+    exit 0
+  fi
+
+  work_dir="$(mktemp -d)"
+  cleanup() {
+    rm -rf "$work_dir"
+  }
+  trap cleanup EXIT
+
+  gh auth setup-git
+  git clone --depth 1 --branch "$branch" "https://github.com/${repository}.git" "$work_dir/bolt"
+  git -C "$work_dir/bolt" config user.name "dyad-harness[bot]"
+  git -C "$work_dir/bolt" config user.email "5221649+dyad-harness[bot]@users.noreply.github.com"
+
+  if git -C "$work_dir/bolt" apply --reverse --check "$reload_patch"; then
+    echo "Reload fix is already on ${branch}."
+  elif git -C "$work_dir/bolt" apply --check "$reload_patch"; then
+    git -C "$work_dir/bolt" apply "$reload_patch"
+    git -C "$work_dir/bolt" add -A
+    git -C "$work_dir/bolt" commit -m "Restore the walkthrough phase when the chat reloads."
+    git -C "$work_dir/bolt" push origin "HEAD:${branch}"
+    echo "Pushed the reload fix to ${branch}."
+  else
+    echo "Reload patch does not apply on ${branch}." >&2
+    exit 1
+  fi
+
+  echo "Pull request: $existing"
   if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
     echo "Pull request: $existing" >>"$GITHUB_STEP_SUMMARY"
   fi
