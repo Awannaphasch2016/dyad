@@ -239,12 +239,8 @@ jobs:
                               text = str(parsed.get("out") or parsed.get("message") or "")
                               if not text or "PRIVATE KEY" in text or "BEGIN " in text:
                                   continue
-                              if re.search(
-                                  r"error:|Error:|ERROR|denied|fatal:|killed|no space|exit status|npm error|decision=|health=",
-                                  text,
-                              ):
-                                  lines.append(scrub(text)[:300])
-                      for text in lines[-25:]:
+                              lines.append(scrub(text)[:300])
+                      for text in lines[-20:]:
                           print("log", ident, text)
                       continue
                   shown = 0
