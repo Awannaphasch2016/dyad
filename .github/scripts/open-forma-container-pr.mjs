@@ -45,6 +45,39 @@ esac
 `;
 }
 
+export function clearCheckoutGitAuth() {
+  for (const key of [
+    "http.https://github.com/.extraheader",
+    "http.extraheader",
+  ]) {
+    try {
+      execFileSync("git", ["config", "--global", "--unset-all", key], {
+        stdio: "ignore",
+      });
+    } catch {
+      // The checkout credential header is already absent.
+    }
+  }
+  let names = "";
+  try {
+    names = execFileSync(
+      "git",
+      ["config", "--show-origin", "--name-only", "--get-regexp", "extraheader"],
+      { encoding: "utf8" },
+    );
+  } catch {
+    names = "";
+  }
+  const remaining = names
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  console.log(
+    `git_extraheader=${remaining.length ? "still_present" : "cleared"}`,
+  );
+  return remaining.length;
+}
+
 export function gitCredentialEnv(baseEnv, helperPath) {
   return {
     ...baseEnv,
@@ -280,6 +313,7 @@ export function openFormaContainerPullRequest({
   const helperPath = path.join(workDir, "git-credential-forma.sh");
   writeFileSync(helperPath, credentialHelperSource());
   run("chmod", ["755", helperPath]);
+  clearCheckoutGitAuth();
   const gitEnv = gitCredentialEnv(env, helperPath);
   try {
     if (view.isEmpty) {

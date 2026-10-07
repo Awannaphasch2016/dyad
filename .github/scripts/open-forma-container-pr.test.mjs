@@ -6,6 +6,7 @@ import {
   FORMA_BRANCH,
   FORMA_REPOSITORY,
   assertSafeText,
+  clearCheckoutGitAuth,
   credentialHelperSource,
   gitCredentialEnv,
   planFormaContainer,
@@ -100,6 +101,10 @@ test("a dyad checkout only gains the dev compose file", () => {
     ["compose.dev.yml"],
   );
   assert.match(pullRequestCopy(plan.kind).body, /does not deploy/);
+});
+
+test("clearCheckoutGitAuth is a function", () => {
+  assert.equal(typeof clearCheckoutGitAuth, "function");
 });
 
 test("git asks the app token helper and does not store the token", () => {
