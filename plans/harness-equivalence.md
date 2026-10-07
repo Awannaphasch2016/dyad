@@ -77,7 +77,7 @@ No experiment in this file has been executed. The **Actual** column is `not run`
 - `fast-check` failure fails the pipeline. A skipped Electron matrix does not.
 - Exit codes match. A Harness step that reports success after a non-zero test command is a fail.
 
-**Actual.** not run.
+**Actual.** not scored. Pipeline `dyad_fast_check` is registered from `deploy/harness/fast-check.yaml`. Execution `nI911DyPQC2Gd1sIV6yQOw` started on branch `cursor/harness-equivalence-5527`. GitHub Actions remains the required check.
 
 ### 3. Preview from a pull request
 
@@ -344,7 +344,7 @@ Copy one row per experiment after the run. Leave `not run` rather than predictin
 | # | Experiment | GitHub Actions run | Harness execution | Actual | Pass | Wall clock, GHA vs Harness | Cost | Gaps |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 1 | Images | | | not run | | | | |
-| 2 | Tests | | | not run | | | | |
+| 2 | Tests | | `nI911DyPQC2Gd1sIV6yQOw` | running, not scored | | | | |
 | 3 | Preview | | | not run | | | | |
 | 4 | Image reuse | | | not run | | | | |
 | 5 | Doppler | | | not run | | | | |
