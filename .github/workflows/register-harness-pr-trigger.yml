@@ -37,19 +37,21 @@ jobs:
           def scrub(text):
               return long_token.sub("[redacted]", text or "")
 
-          def request(method, url, yaml_path):
+          def request(method, url, yaml_path, as_json=False):
               out = Path("/tmp/harness-trigger.bin")
               out.unlink(missing_ok=True)
-              result = subprocess.run(
-                  [
-                      "curl", "-sS", "--max-time", "60", "-o", str(out), "-w", "%{http_code}",
-                      "-X", method, url,
-                      "-H", f"x-api-key: {api_key}",
-                      "-H", "Content-Type: application/yaml",
-                      "--data-binary", f"@{yaml_path}",
-                  ],
-                  text=True, capture_output=True,
-              )
+              body = Path("/tmp/harness-trigger-body.json")
+              cmd = [
+                  "curl", "-sS", "--max-time", "60", "-o", str(out), "-w", "%{http_code}",
+                  "-X", method, url,
+                  "-H", f"x-api-key: {api_key}",
+              ]
+              if as_json:
+                  body.write_text(json.dumps({"yaml": Path(yaml_path).read_text()}))
+                  cmd += ["-H", "Content-Type: application/json", "--data-binary", f"@{body}"]
+              else:
+                  cmd += ["-H", "Content-Type: application/yaml", "--data-binary", f"@{yaml_path}"]
+              result = subprocess.run(cmd, text=True, capture_output=True)
               if result.returncode != 0:
                   print("CURL_FAILED", scrub(result.stderr)[:200])
                   raise SystemExit(1)
@@ -77,8 +79,9 @@ jobs:
           create_url = (
               "https://app.harness.io/pipeline/api/triggers"
               f"?accountIdentifier={account}&orgIdentifier={org}&projectIdentifier={project}"
+              f"&targetIdentifier={pipeline}"
           )
-          code, body = request("POST", create_url, trigger_yaml)
+          code, body = request("POST", create_url, trigger_yaml, as_json=True)
           message = str(body.get("message") or "")
           print("create_trigger", code, body.get("status"), scrub(message)[:300])
           if code not in {"200", "201"} and "already" not in message.lower() and "exist" not in message.lower():
@@ -87,8 +90,9 @@ jobs:
               update_url = (
                   "https://app.harness.io/pipeline/api/triggers/"
                   f"{trigger}?accountIdentifier={account}&orgIdentifier={org}&projectIdentifier={project}"
+                  f"&targetIdentifier={pipeline}"
               )
-              code, body = request("PUT", update_url, trigger_yaml)
+              code, body = request("PUT", update_url, trigger_yaml, as_json=True)
               print("update_trigger", code, body.get("status"), scrub(str(body.get("message") or ""))[:300])
               if code not in {"200", "201"}:
                   raise SystemExit(1)
