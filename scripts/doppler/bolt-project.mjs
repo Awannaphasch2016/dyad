@@ -5,6 +5,23 @@ export const BOLT_PROJECT_NAME = "bolt";
 export const VIBESDK_PROJECT_NAME = "vibesdk";
 export const VIBESDK_DEV_CONFIG = "dev";
 
+export const boltPreviewSecretNames = [
+  "CLOUDFLARE_API_TOKEN",
+  "CLOUDFLARE_ACCOUNT_ID",
+];
+
+export function githubEnvAssignment(name, value) {
+  if (!boltPreviewSecretNames.includes(name)) {
+    throw new Error(`refusing to export ${name}`);
+  }
+  const text = String(value ?? "");
+  if (text.length === 0 || text.includes("\n")) {
+    throw new Error(`${name} is absent or not a single line`);
+  }
+  const marker = `BOLT_${name}_EOF`;
+  return `${name}<<${marker}\n${text}\n${marker}\n`;
+}
+
 export const cloudflareSecrets = [
   {
     dest: "CLOUDFLARE_API_TOKEN",

@@ -61,15 +61,13 @@ The Dyad preview tunnel token stays on the preview host. It is the token for `pr
 
 ## How the preview job receives them
 
-Bolt’s Preview Deployment workflow already reads GitHub repository secrets named `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` on `Awannaphasch2016/bolt.diy`. Sync Doppler `bolt` / `preview` to those two repository secrets. The workflow file stays as it is.
+Doppler `bolt` / `preview` is the source of truth. The deploy job in this repo reads those two names with `DOPPLER_ADMIN_TOKEN` while the job is running and passes them to Wrangler. They are not copied into GitHub secrets on `Awannaphasch2016/bolt.diy`.
 
-The sync token can read `bolt` / `preview` only. It is not a `dyad` token, and these names do not go into the Dyad `ai-bots` environment.
+Bolt’s own Preview Deployment workflow only looks at GitHub secrets, so that workflow stays unused for this walkthrough.
 
 ## Done when
 
 - Project `bolt` has configs `dev`, `preview`, and `prd`.
 - A names-only download of `bolt` / `preview` shows `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` non-empty.
 - `prd` has neither name.
-- The bolt repository secrets with those two names are synced from `bolt` / `preview`.
-
-After that, the deploy plan’s remaining steps apply: re-run Preview Deployment on bolt.diy pull request 2 and open the URL in the pull request comment.
+- The preview URL comes from the job that read `bolt` / `preview`.

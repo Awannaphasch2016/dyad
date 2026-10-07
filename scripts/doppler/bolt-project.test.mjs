@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   cloudflareReferencePlan,
   configReport,
+  githubEnvAssignment,
   previewEnvironmentBody,
   previewInheritsBody,
   prdInheritsBody,
@@ -108,4 +109,28 @@ test("the setup workflow uses the Doppler admin token and stays off main", () =>
   assert.match(workflow, /cursor\/bolt-doppler-55d6/);
   assert.equal(workflow.includes("doppler-project: dyad"), false);
   assert.equal(workflow.includes("config: prd"), false);
+});
+
+test("the preview job reads Doppler and does not store Cloudflare secrets on bolt", () => {
+  const deploy = readFileSync(
+    new URL(
+      "../../.github/workflows/bolt-preview-from-doppler.yml",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  assert.match(deploy, /secrets\.DOPPLER_ADMIN_TOKEN/);
+  assert.match(deploy, /export-bolt-preview-env\.mjs/);
+  assert.equal(deploy.includes("secrets.CLOUDFLARE_API_TOKEN"), false);
+  assert.equal(deploy.includes("secrets.CLOUDFLARE_ACCOUNT_ID"), false);
+});
+
+test("github env export accepts only the two Cloudflare names", () => {
+  const assignment = githubEnvAssignment("CLOUDFLARE_API_TOKEN", "token-value");
+  assert.match(
+    assignment,
+    /^CLOUDFLARE_API_TOKEN<<BOLT_CLOUDFLARE_API_TOKEN_EOF/,
+  );
+  assert.throws(() => githubEnvAssignment("WEWEBPLUS_DATABASE_URL", "x"));
+  assert.throws(() => githubEnvAssignment("CLOUDFLARE_API_TOKEN", ""));
 });

@@ -1,0 +1,74 @@
+# Deploy the bolt walkthrough branch with Cloudflare credentials read from
+# Doppler bolt/preview in this job. Nothing is copied into bolt.diy secrets.
+
+name: Bolt preview from Doppler
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cursor/bolt-doppler-55d6
+    paths:
+      - .github/workflows/bolt-preview-from-doppler.yml
+      - scripts/doppler/export-bolt-preview-env.mjs
+      - scripts/doppler/bolt-project.mjs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bolt-preview-from-doppler
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/cursor/bolt-doppler-55d6'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out the export script
+        uses: actions/checkout@v4
+
+      - name: Read bolt preview from Doppler
+        env:
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+        run: |
+          set -euo pipefail
+          set +x
+          node scripts/doppler/export-bolt-preview-env.mjs
+
+      - name: Check out the bolt walkthrough
+        uses: actions/checkout@v4
+        with:
+          repository: Awannaphasch2016/bolt.diy
+          ref: cursor/website-walkthrough-55d6
+          path: bolt
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: bolt/pnpm-lock.yaml
+
+      - name: Build bolt
+        working-directory: bolt
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm run build
+        env:
+          NODE_ENV: production
+
+      - name: Deploy the walkthrough preview
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ env.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: bolt
+          command: deploy --env-name=preview-cursor-website-walkthrough-55d6 --branch=cursor/website-walkthrough-55d6
