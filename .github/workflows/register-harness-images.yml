@@ -23,9 +23,10 @@ jobs:
         env:
           HARNESS_API_KEY: ${{ secrets.HARNESS_API_KEY }}
           HARNESS_ACCOUNT: WKxXBnSFTRaOF64-h90PyQ
+          DYAD_HARNESS_APP_PEM: ${{ secrets.DYAD_HARNESS_APP_PEM }}
         run: |
           python3 << 'PY'
-          import json, os, re, subprocess
+          import base64, json, os, re, subprocess
           from pathlib import Path
 
           api_key = os.environ["HARNESS_API_KEY"]
@@ -54,6 +55,79 @@ jobs:
               except json.JSONDecodeError:
                   parsed = {"raw": scrub(raw)[:300]}
               return result.stdout.strip(), parsed
+
+          def request_json(method, url, payload):
+              out = Path("/tmp/harness-secret.bin")
+              body_path = Path("/tmp/harness-secret.json")
+              out.unlink(missing_ok=True)
+              body_path.write_text(json.dumps(payload))
+              result = subprocess.run(
+                  [
+                      "curl", "-sS", "--max-time", "60", "-o", str(out), "-w", "%{http_code}",
+                      "-X", method, url, "-H", f"x-api-key: {api_key}",
+                      "-H", "Content-Type: application/json", "--data-binary", f"@{body_path}",
+                  ],
+                  text=True,
+                  capture_output=True,
+              )
+              body_path.unlink(missing_ok=True)
+              if result.returncode != 0:
+                  print("CURL_FAILED", scrub(result.stderr)[:200])
+                  raise SystemExit(1)
+              raw = out.read_text("utf-8", "replace") if out.exists() else ""
+              out.unlink(missing_ok=True)
+              try:
+                  parsed = json.loads(raw) if raw else {}
+              except json.JSONDecodeError:
+                  parsed = {"raw": scrub(raw)[:300]}
+              return result.stdout.strip(), parsed
+
+          pem = os.environ.get("DYAD_HARNESS_APP_PEM", "")
+          if "\\n" in pem and pem.count("\n") < 2:
+              pem = pem.replace("\\n", "\n")
+          print(
+              "pem_has_header",
+              "PRIVATE KEY" in pem,
+              "pem_len",
+              len(pem),
+              "pem_lines",
+              pem.count("\n"),
+          )
+          if "PRIVATE KEY" not in pem or len(pem) < 200:
+              raise SystemExit(1)
+          encoded = base64.b64encode(pem.encode("utf-8")).decode("ascii")
+          print("b64_len", len(encoded))
+          secret_id = "dyad_harness_app_key_b64"
+          secret_payload = {
+              "secret": {
+                  "type": "SecretText",
+                  "name": "dyad-harness-app-key-b64",
+                  "identifier": secret_id,
+                  "description": "One-line base64 of the GitHub App key for GHCR login.",
+                  "spec": {
+                      "secretManagerIdentifier": "harnessSecretManager",
+                      "valueType": "Inline",
+                      "value": encoded,
+                  },
+              }
+          }
+          account_query = f"?accountIdentifier={account}"
+          code, body = request_json(
+              "POST",
+              f"https://app.harness.io/ng/api/v2/secrets{account_query}",
+              secret_payload,
+          )
+          message = str(body.get("message") or "")
+          print("create_text_secret", code, body.get("status"), scrub(message)[:300])
+          if code not in {"200", "201"}:
+              code, body = request_json(
+                  "PUT",
+                  f"https://app.harness.io/ng/api/v2/secrets/{secret_id}{account_query}",
+                  secret_payload,
+              )
+              print("update_text_secret", code, body.get("status"), scrub(str(body.get("message") or ""))[:300])
+              if code not in {"200", "201"}:
+                  raise SystemExit(1)
 
           query = f"?accountIdentifier={account}&orgIdentifier=default&projectIdentifier=dyad"
           code, body = request(
