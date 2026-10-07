@@ -1,1 +1,2 @@
 Harness equivalence probe. This file is not imported.
+Second commit, to see whether the older Harness execution is cancelled.
