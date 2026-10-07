@@ -1,13 +1,5 @@
 import { execFileSync } from "node:child_process";
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -285,7 +277,6 @@ export function openFormaContainerPullRequest({
   const token = env.GH_TOKEN || "";
   if (!token) throw new Error("GH_TOKEN is missing.");
   const secrets = [token];
-
   const summaryPath = env.GITHUB_STEP_SUMMARY;
   const note = (line) => {
     const safe = redact(line, secrets);
@@ -295,239 +286,272 @@ export function openFormaContainerPullRequest({
     }
   };
 
-  const view = JSON.parse(
-    runOrThrow(
-      "gh",
-      ["repo", "view", repository, "--json", "isEmpty,defaultBranchRef"],
-      { env },
-      secrets,
-    ),
+  const view = ghJson(
+    ["repo", "view", repository, "--json", "isEmpty,defaultBranchRef"],
+    env,
+    secrets,
   );
   const resolvedBase = view.defaultBranchRef?.name || baseBranch;
-  if (resolvedBase !== baseBranch) {
+  if (!view.isEmpty && resolvedBase !== baseBranch) {
     throw new Error(`Refusing base branch ${resolvedBase}`);
   }
 
-  const workDir = mkdtempSync(path.join(tmpdir(), "forma-container-"));
-  const repoDir = path.join(workDir, "forma");
-  const helperPath = path.join(workDir, "git-credential-forma.sh");
-  writeFileSync(helperPath, credentialHelperSource());
-  run("chmod", ["755", helperPath]);
-  clearCheckoutGitAuth();
-  const gitEnv = gitCredentialEnv(env, helperPath);
-  try {
-    if (view.isEmpty) {
-      mkdirSync(repoDir, { recursive: true });
-      runOrThrow(
-        "git",
-        ["init", "-b", baseBranch, repoDir],
-        { env: gitEnv },
+  const branchRef = view.isEmpty
+    ? null
+    : missingOrThrow(
+        () =>
+          ghJson(
+            ["api", `repos/${repository}/git/ref/heads/${branch}`],
+            env,
+            secrets,
+          ),
         secrets,
       );
-      configureBot(repoDir, gitEnv, secrets);
-      const plan = writeContainerFiles(repoDir, {
-        gascityDockerfile,
-        entrypoint,
-      });
-      commitAll(repoDir, plan, gitEnv, secrets);
-      runOrThrow(
-        "git",
-        ["remote", "add", "origin", `https://github.com/${repository}.git`],
-        { cwd: repoDir, env: gitEnv },
-        secrets,
-      );
-      runOrThrow(
-        "git",
-        ["push", "origin", `HEAD:${baseBranch}`],
-        { cwd: repoDir, env: gitEnv },
-        secrets,
-      );
-      note(
-        `forma_container=main forma_pr=none reason=repository_had_no_commits`,
-      );
-      return { url: null, kind: plan.kind, base: baseBranch };
-    }
-
-    const remoteBranch = runOrThrow(
-      "git",
-      ["ls-remote", "--heads", `https://github.com/${repository}.git`, branch],
-      { env: gitEnv },
-      secrets,
-    ).trim();
-    const cloneArgs = [
-      "clone",
-      "--depth",
-      "1",
-      `https://github.com/${repository}.git`,
-      repoDir,
-    ];
-    if (remoteBranch) {
-      cloneArgs.splice(1, 0, "--branch", branch);
-    } else {
-      cloneArgs.splice(1, 0, "--branch", resolvedBase);
-    }
-    runOrThrow("git", cloneArgs, { env: gitEnv }, secrets);
-    configureBot(repoDir, gitEnv, secrets);
-    if (!remoteBranch) {
-      runOrThrow(
-        "git",
-        ["checkout", "-b", branch],
-        { cwd: repoDir, env: gitEnv },
-        secrets,
-      );
-    }
-
-    const plan = writeContainerFiles(repoDir, {
-      gascityDockerfile,
-      entrypoint,
-    });
-    const status = runOrThrow(
-      "git",
-      ["status", "--porcelain"],
-      { cwd: repoDir, env: gitEnv },
-      secrets,
-    ).trim();
-    if (status) {
-      commitAll(repoDir, plan, gitEnv, secrets);
-      runOrThrow(
-        "git",
-        ["push", "origin", `HEAD:${branch}`],
-        { cwd: repoDir, env: gitEnv },
-        secrets,
-      );
-    }
-
-    const existing = runOrThrow(
-      "gh",
-      [
-        "pr",
-        "list",
-        "--repo",
-        repository,
-        "--head",
-        branch,
-        "--base",
-        resolvedBase,
-        "--state",
-        "open",
-        "--json",
-        "url",
-        "--jq",
-        ".[0].url",
-      ],
-      { env: gitEnv },
-      secrets,
-    ).trim();
-    if (existing) {
-      note(`forma_pr=${existing}`);
-      return { url: existing, kind: plan.kind, base: resolvedBase };
-    }
-    if (!status && !remoteBranch) {
-      note("forma_container=already_present");
-      return { url: null, kind: plan.kind, base: resolvedBase };
-    }
-    const copy = pullRequestCopy(plan.kind);
-    const bodyFile = path.join(workDir, "pr-body.md");
-    writeFileSync(bodyFile, `${copy.body}\n`);
-    const url = runOrThrow(
-      "gh",
-      [
-        "pr",
-        "create",
-        "--repo",
-        repository,
-        "--base",
-        resolvedBase,
-        "--head",
-        branch,
-        "--title",
-        copy.title,
-        "--body-file",
-        bodyFile,
-      ],
-      { env: gitEnv },
-      secrets,
-    ).trim();
-    note(`forma_pr=${url}`);
-    return { url, kind: plan.kind, base: resolvedBase };
-  } finally {
-    rmSync(workDir, { recursive: true, force: true });
-  }
-}
-
-function configureBot(repoDir, env, secrets) {
-  runOrThrow(
-    "git",
-    ["config", "user.name", BOT_NAME],
-    { cwd: repoDir, env },
-    secrets,
-  );
-  runOrThrow(
-    "git",
-    ["config", "user.email", BOT_EMAIL],
-    { cwd: repoDir, env },
-    secrets,
-  );
-}
-
-function writeContainerFiles(repoDir, sources) {
-  const entries = readTopLevel(repoDir);
+  let parentSha = null;
+  let treeSha = null;
+  let entries = [];
   let packageJson = null;
-  const packagePath = path.join(repoDir, "package.json");
-  if (existsSync(packagePath)) {
-    packageJson = JSON.parse(readFileSync(packagePath, "utf8"));
+  if (!view.isEmpty) {
+    const baseRef =
+      branchRef ??
+      ghJson(
+        ["api", `repos/${repository}/git/ref/heads/${resolvedBase}`],
+        env,
+        secrets,
+      );
+    parentSha = baseRef.object.sha;
+    const commit = ghJson(
+      ["api", `repos/${repository}/git/commits/${parentSha}`],
+      env,
+      secrets,
+    );
+    treeSha = commit.tree.sha;
+    const tree = ghJson(
+      ["api", `repos/${repository}/git/trees/${treeSha}`],
+      env,
+      secrets,
+    );
+    entries = tree.tree.map((item) => item.path);
+    const pkg = tree.tree.find(
+      (item) => item.path === "package.json" && item.type === "blob",
+    );
+    if (pkg) {
+      const blob = ghJson(
+        ["api", `repos/${repository}/git/blobs/${pkg.sha}`],
+        env,
+        secrets,
+      );
+      packageJson = JSON.parse(
+        Buffer.from(blob.content, "base64").toString("utf8"),
+      );
+    }
   }
+
   const plan = planFormaContainer({
     entries,
     packageJson,
-    gascityDockerfile: sources.gascityDockerfile,
-    entrypoint: sources.entrypoint,
+    gascityDockerfile,
+    entrypoint,
   });
-  const written = [];
-  for (const file of plan.files) {
-    const destination = path.join(repoDir, file.path);
-    if (existsSync(destination)) continue;
-    mkdirSync(path.dirname(destination), { recursive: true });
-    writeFileSync(destination, file.contents);
-    if (file.path.endsWith(".sh")) {
-      run("chmod", ["755", destination]);
+  const missing = plan.files.filter(
+    (file) => !contentExists(repository, file.path, parentSha, env, secrets),
+  );
+  console.log(
+    `forma_entries=${entries
+      .filter((name) => !name.startsWith("."))
+      .slice(0, 40)
+      .join(",")}`,
+  );
+  console.log(
+    `forma_container_files=${missing.map((file) => file.path).join(",")}`,
+  );
+
+  if (missing.length) {
+    const blobs = missing.map((file) => {
+      const blob = ghJson(
+        [
+          "api",
+          "--method",
+          "POST",
+          `repos/${repository}/git/blobs`,
+          "--input",
+          "-",
+        ],
+        env,
+        secrets,
+        JSON.stringify({ content: file.contents, encoding: "utf-8" }),
+      );
+      return {
+        path: file.path,
+        mode: file.path.endsWith(".sh") ? "100755" : "100644",
+        type: "blob",
+        sha: blob.sha,
+      };
+    });
+    const treeBody = treeSha
+      ? { base_tree: treeSha, tree: blobs }
+      : { tree: blobs };
+    const nextTree = ghJson(
+      [
+        "api",
+        "--method",
+        "POST",
+        `repos/${repository}/git/trees`,
+        "--input",
+        "-",
+      ],
+      env,
+      secrets,
+      JSON.stringify(treeBody),
+    );
+    const copy = pullRequestCopy(plan.kind);
+    const nextCommit = ghJson(
+      [
+        "api",
+        "--method",
+        "POST",
+        `repos/${repository}/git/commits`,
+        "--input",
+        "-",
+      ],
+      env,
+      secrets,
+      JSON.stringify({
+        message: `${copy.title}\n\nThe Dev container does not store runtime secrets.\n`,
+        tree: nextTree.sha,
+        parents: parentSha ? [parentSha] : [],
+        author: { name: BOT_NAME, email: BOT_EMAIL },
+      }),
+    );
+    if (view.isEmpty) {
+      ghJson(
+        [
+          "api",
+          "--method",
+          "POST",
+          `repos/${repository}/git/refs`,
+          "--input",
+          "-",
+        ],
+        env,
+        secrets,
+        JSON.stringify({
+          ref: `refs/heads/${baseBranch}`,
+          sha: nextCommit.sha,
+        }),
+      );
+      note(
+        "forma_container=main forma_pr=none reason=repository_had_no_commits",
+      );
+      return { url: null, kind: plan.kind, base: baseBranch };
     }
-    written.push(file.path);
+    if (branchRef) {
+      ghJson(
+        [
+          "api",
+          "--method",
+          "PATCH",
+          `repos/${repository}/git/refs/heads/${branch}`,
+          "--input",
+          "-",
+        ],
+        env,
+        secrets,
+        JSON.stringify({ sha: nextCommit.sha }),
+      );
+    } else {
+      ghJson(
+        [
+          "api",
+          "--method",
+          "POST",
+          `repos/${repository}/git/refs`,
+          "--input",
+          "-",
+        ],
+        env,
+        secrets,
+        JSON.stringify({
+          ref: `refs/heads/${branch}`,
+          sha: nextCommit.sha,
+        }),
+      );
+    }
+  } else if (view.isEmpty || !branchRef) {
+    note("forma_container=already_present");
+    return { url: null, kind: plan.kind, base: resolvedBase };
   }
-  const visible = entries.filter((name) => !name.startsWith(".")).slice(0, 40);
-  console.log(`forma_entries=${visible.join(",")}`);
-  console.log(`forma_container_files=${written.join(",")}`);
-  return { ...plan, written };
-}
 
-function readTopLevel(repoDir) {
-  if (!existsSync(repoDir)) return [];
-  return execFileSync("ls", ["-A", repoDir], { encoding: "utf8" })
-    .split("\n")
-    .map((name) => name.trim())
-    .filter(Boolean);
-}
-
-function commitAll(repoDir, plan, env, secrets) {
-  if (!plan.written.length) return;
+  const owner = repository.split("/")[0];
+  const pulls = ghJson(
+    [
+      "api",
+      `repos/${repository}/pulls?state=open&base=${resolvedBase}&head=${encodeURIComponent(`${owner}:${branch}`)}`,
+    ],
+    env,
+    secrets,
+  );
+  const existing = Array.isArray(pulls) ? pulls[0]?.html_url : "";
+  if (existing) {
+    note(`forma_pr=${existing}`);
+    return { url: existing, kind: plan.kind, base: resolvedBase };
+  }
   const copy = pullRequestCopy(plan.kind);
-  runOrThrow(
-    "git",
-    ["add", "--", ...plan.written],
-    { cwd: repoDir, env },
+  const created = ghJson(
+    ["api", "--method", "POST", `repos/${repository}/pulls`, "--input", "-"],
+    env,
+    secrets,
+    JSON.stringify({
+      title: copy.title,
+      head: branch,
+      base: resolvedBase,
+      body: copy.body,
+    }),
+  );
+  note(`forma_pr=${created.html_url}`);
+  return { url: created.html_url, kind: plan.kind, base: resolvedBase };
+}
+
+function contentExists(repository, filePath, ref, env, secrets) {
+  if (!ref) return false;
+  try {
+    gh(
+      ["api", `repos/${repository}/contents/${filePath}?ref=${ref}`],
+      env,
+      secrets,
+    );
+    return true;
+  } catch (error) {
+    if (isMissing(error)) return false;
+    throw error;
+  }
+}
+
+function missingOrThrow(fn) {
+  try {
+    return fn();
+  } catch (error) {
+    if (isMissing(error)) return null;
+    throw error;
+  }
+}
+
+function isMissing(error) {
+  return /404|Not Found/.test(String(error?.message));
+}
+
+function gh(args, env, secrets, input) {
+  return runOrThrow(
+    "gh",
+    args,
+    { env, ...(input === undefined ? {} : { input }) },
     secrets,
   );
-  const messageFile = path.join(repoDir, ".git", "COMMIT_MESSAGE");
-  writeFileSync(
-    messageFile,
-    `${copy.title}\n\nThe Dev container does not store runtime secrets.\n`,
-  );
-  runOrThrow(
-    "git",
-    ["commit", "-F", messageFile],
-    { cwd: repoDir, env },
-    secrets,
-  );
+}
+
+function ghJson(args, env, secrets, input) {
+  const text = gh(args, env, secrets, input);
+  return text ? JSON.parse(text) : null;
 }
 
 function readCheckoutFile(name) {
