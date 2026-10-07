@@ -135,6 +135,7 @@ test("the deploy script does not copy dyad database urls or production routes", 
   assert.equal(deployScript.includes("copy-vibesdk-references"), false);
   assert.match(deployScript, /::add-mask::/);
   assert.match(deployScript, /labConfigViolations/);
+  assert.match(deployScript, /durable_objects=pricing_required/);
   assert.equal(deployScript.includes("GEMINI_API_KEY"), false);
   assert.equal(
     deployScript.includes("OPENROUTER_API_KEY is not available"),

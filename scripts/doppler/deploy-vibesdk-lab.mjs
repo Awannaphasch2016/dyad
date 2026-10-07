@@ -446,11 +446,27 @@ async function main() {
     CLOUDFLARE_API_TOKEN: cloudflareToken,
     CLOUDFLARE_ACCOUNT_ID: accountId,
   };
-  const deployLog = await run(
-    wranglerBin(checkout),
-    ["deploy", "--config", LAB_CONFIG_NAME],
-    { cwd: checkout, env: cloudflareEnv },
-  );
+  let deployLog;
+  try {
+    deployLog = await run(
+      wranglerBin(checkout),
+      ["deploy", "--config", LAB_CONFIG_NAME],
+      { cwd: checkout, env: cloudflareEnv },
+    );
+  } catch (error) {
+    const message = String(error?.message || "");
+    if (
+      /10084|enable-durable-objects|agree to pricing|Durable Objects/i.test(
+        message,
+      )
+    ) {
+      console.log("durable_objects=pricing_required");
+      console.log(
+        "durable_objects_url_path=workers/overview?enable-durable-objects",
+      );
+    }
+    throw error;
+  }
   const url = parseWorkersDevUrl(deployLog);
   if (!url) {
     throw new Error("workers.dev url was not in the deploy output");
