@@ -1,0 +1,84 @@
+# One-shot check that the repository secret DOPPLER_ADMIN_TOKEN can create
+# Doppler project forms and copy dyad/dev into it. Prints names only.
+# Remove this workflow after the run. It does not touch dyad/prd.
+
+name: Forms Doppler copy
+
+on:
+  push:
+    branches:
+      - cursor/forms-doppler-copy-5014
+    paths:
+      - .github/workflows/forms-doppler-copy.yml
+
+permissions:
+  contents: read
+
+jobs:
+  copy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Install Doppler CLI
+        run: |
+          set -euo pipefail
+          curl -fsSL https://cli.doppler.com/install.sh | sh
+          doppler --version
+
+      - name: Create forms and copy dyad/dev
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+        run: |
+          set -euo pipefail
+          set +x
+          redact() {
+            python3 -c 'import re,sys
+          text=sys.stdin.read()
+          text=re.sub(r"postgres(?:ql)?://\S+","postgres://redacted",text,flags=re.I)
+          text=re.sub(r"dp\.(?:st|pt|sa|ct|said)\.[A-Za-z0-9._-]+","dp.redacted",text)
+          text=re.sub(r"\bsk-[A-Za-z0-9_-]{8,}","sk-redacted",text)
+          text=re.sub(r"\bAIza[A-Za-z0-9_-]{8,}","AIza-redacted",text)
+          sys.stdout.write(text[:500])'
+          }
+          if [ -z "${DOPPLER_TOKEN}" ]; then
+            echo "DOPPLER_ADMIN_TOKEN=absent"
+            exit 1
+          fi
+          echo "DOPPLER_ADMIN_TOKEN=present"
+          if doppler projects get forms --silent >/tmp/forms-project.json 2>/tmp/forms-project.err; then
+            echo "forms_project=exists"
+          else
+            if ! doppler projects create forms --description "Copy of dyad/dev" --silent >/tmp/forms-create.json 2>/tmp/forms-create.err; then
+              echo "forms_project=create_failed"
+              redact </tmp/forms-create.err
+              exit 1
+            fi
+            echo "forms_project=created"
+          fi
+          if ! doppler secrets download --silent -p dyad -c dev --no-file --format json >/tmp/dyad-dev.json 2>/tmp/dyad-dev.err; then
+            echo "source=dyad/dev download_failed"
+            redact </tmp/dyad-dev.err
+            rm -f /tmp/dyad-dev.json
+            exit 1
+          fi
+          python3 - << 'PY'
+          import json
+          from pathlib import Path
+          source = json.loads(Path("/tmp/dyad-dev.json").read_text())
+          reserved = {"DOPPLER_PROJECT", "DOPPLER_ENVIRONMENT", "DOPPLER_CONFIG"}
+          copied = {key: value for key, value in source.items() if key not in reserved}
+          Path("/tmp/forms-dev.json").write_text(json.dumps(copied))
+          Path("/tmp/forms-dev.names").write_text("\n".join(sorted(copied)) + "\n")
+          print(f"source_name_count={len(copied)}")
+          PY
+          rm -f /tmp/dyad-dev.json
+          if ! doppler secrets upload --silent -p forms -c dev /tmp/forms-dev.json >/tmp/forms-upload.json 2>/tmp/forms-upload.err; then
+            echo "copy=failed"
+            redact </tmp/forms-upload.err
+            rm -f /tmp/forms-dev.json
+            exit 1
+          fi
+          rm -f /tmp/forms-dev.json
+          echo "copy=ok"
+          echo "destination_names:"
+          doppler secrets -p forms -c dev --only-names
