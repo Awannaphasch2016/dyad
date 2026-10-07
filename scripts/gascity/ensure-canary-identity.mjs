@@ -57,6 +57,21 @@ async function download(token, config) {
   );
 }
 
+function identityUuid(identity) {
+  if (!identity) return "";
+  for (const value of [identity.id, identity.identity_id, identity.slug]) {
+    if (
+      typeof value === "string" &&
+      /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
+        value,
+      )
+    ) {
+      return value;
+    }
+  }
+  return "";
+}
+
 function writeOutput(name, value) {
   if (!process.env.GITHUB_OUTPUT) return;
   appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${value}\n`);
@@ -131,11 +146,17 @@ async function ensureIdentity(token) {
   );
   const identities =
     listed.identities ?? listed.service_account_identities ?? [];
+  console.log(`identity_count=${identities.length}`);
+  console.log(
+    `identity_names=${identities.map((item) => `${item.slug || "no-slug"}:${item.name || "no-name"}`).join(",") || "none"}`,
+  );
   const body = canaryIdentityBody();
-  const existing = matchingIdentity(identities, body);
-  if (existing?.id) {
+  const existing = matchingIdentity(identities, body) ??
+    identities.find((item) => item?.name === body.name);
+  const existingId = identityUuid(existing);
+  if (existingId) {
     console.log("identity=exists");
-    return existing.id;
+    return existingId;
   }
   const created = await doppler(
     token,
@@ -145,7 +166,7 @@ async function ensureIdentity(token) {
   );
   const identity =
     created.identity ?? created.service_account_identity ?? created;
-  const identityId = identity.id ?? identity.identity_id ?? "";
+  const identityId = identityUuid(identity);
   if (!identityId) {
     console.log(`identity_fields=${Object.keys(identity).join(",") || "none"}`);
     throw new Error("Doppler did not return an identity id");
