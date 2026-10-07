@@ -53,3 +53,5 @@ Connection options are passed to the underlying `pg` pool for both databases. Th
 ## Type Checking
 
 This project is intentionally strict: `npm run verify` runs `tsc --noEmit` and the default Vitest unit suite. Integration tests require a local PostgreSQL harness and can be run separately with `npm run test:integration`.
+
+Harness equivalence probe. This sentence does not change the library.
