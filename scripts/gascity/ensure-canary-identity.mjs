@@ -62,7 +62,7 @@ function writeOutput(name, value) {
   appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${value}\n`);
 }
 
-async function ensureIdentity(token) {
+async function ensureServiceAccount(token) {
   const accounts = await doppler(
     token,
     "GET",
@@ -70,19 +70,60 @@ async function ensureIdentity(token) {
   );
   const listedAccounts =
     accounts.service_accounts ?? accounts.workplace_service_accounts ?? [];
-  const names = listedAccounts.map(
-    (item) => `${item.slug || "no-slug"}:${item.name || "no-name"}`,
-  );
-  console.log(`service_account_count=${listedAccounts.length}`);
-  console.log(`service_accounts=${names.join(",") || "none"}`);
   const wanted = canaryServiceAccount.toLowerCase();
-  const account = listedAccounts.find((item) => {
+  let account = listedAccounts.find((item) => {
     const name = String(item.name || "").toLowerCase();
     const slug = String(item.slug || "").toLowerCase();
-    return name === wanted || slug === wanted || name.includes("canary") || slug.includes("canary");
+    return name === wanted || slug === wanted;
   });
-  if (!account?.slug)
-    throw new Error("service account wewebplus-canary is absent");
+  if (!account) {
+    const created = await doppler(token, "POST", "/v3/workplace/service_accounts", {
+      name: canaryServiceAccount,
+    });
+    account = created.service_account ?? created;
+    console.log("service_account=created");
+  } else {
+    console.log("service_account=exists");
+  }
+  if (!account?.slug) throw new Error("service account slug is absent");
+  const member = await fetch(
+    "https://api.doppler.com/v3/projects/project/members?project=dyad",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        type: "service_account",
+        slug: account.slug,
+        role: "viewer",
+        environments: ["canary"],
+      }),
+    },
+  );
+  if (member.ok) {
+    console.log("service_account_access=dyad/canary added");
+  } else if (member.status === 409 || member.status === 422) {
+    await doppler(
+      token,
+      "PATCH",
+      `/v3/projects/project/members/member/service_account/${encodeURIComponent(account.slug)}?project=dyad`,
+      { role: "viewer", environments: ["canary"] },
+    );
+    console.log("service_account_access=dyad/canary updated");
+  } else {
+    const text = await member.text();
+    throw new Error(
+      `POST /v3/projects/project/members ${member.status} ${redact(text)}`,
+    );
+  }
+  return account;
+}
+
+async function ensureIdentity(token) {
+  const account = await ensureServiceAccount(token);
   const listed = await doppler(
     token,
     "GET",
