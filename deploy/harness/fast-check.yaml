@@ -30,6 +30,42 @@ pipeline:
             steps:
               - step:
                   type: Run
+                  name: Check changed files
+                  identifier: check_changes
+                  spec:
+                    shell: Bash
+                    command: |
+                      set -euo pipefail
+                      should_run_tests=true
+                      should_run_schema_diff_tests=false
+                      should_run_schema_classifier_tests=false
+                      if git fetch --depth=1 origin main; then
+                        changed="$(git diff --name-only FETCH_HEAD HEAD || true)"
+                      else
+                        changed=""
+                        echo "could not determine changed files"
+                      fi
+                      if [ -n "${changed}" ]; then
+                        echo "changed_count=$(printf '%s\n' "${changed}" | grep -c . || true)"
+                        if printf '%s\n' "${changed}" | grep -q "^packages/ts-pg-schema-diff/"; then
+                          should_run_schema_diff_tests=true
+                        fi
+                        if printf '%s\n' "${changed}" | grep -q "^packages/pg-schema-classifier/"; then
+                          should_run_schema_classifier_tests=true
+                        fi
+                        non_config="$(printf '%s\n' "${changed}" | grep -v "^\.claude/" | grep -v "^rules/" || true)"
+                        if [ -z "${non_config}" ]; then
+                          should_run_tests=false
+                        fi
+                      fi
+                      export should_run_tests should_run_schema_diff_tests should_run_schema_classifier_tests
+                      echo "decision tests=${should_run_tests} schema_diff=${should_run_schema_diff_tests} schema_classifier=${should_run_schema_classifier_tests}"
+                    outputVariables:
+                      - name: should_run_tests
+                      - name: should_run_schema_diff_tests
+                      - name: should_run_schema_classifier_tests
+              - step:
+                  type: Run
                   name: Install Node 24.13.1
                   identifier: install_node
                   spec:
