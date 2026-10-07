@@ -1,0 +1,89 @@
+name: Delete temporary Harness key in Doppler
+
+on:
+  push:
+    branches:
+      - cursor/harness-equivalence-5527
+    paths:
+      - .github/workflows/doppler-harness-key-tmp.yml
+
+permissions:
+  contents: read
+
+jobs:
+  delete:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete the unused harness-tmp Doppler config
+        env:
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+        run: |
+          python3 << 'PY'
+          import json, os, re, subprocess
+          from pathlib import Path
+
+          token = os.environ.get("DOPPLER_ADMIN_TOKEN") or ""
+
+          def scrub(text):
+              text = re.sub(r"dp\.(ct|st|pt|sa)\.[A-Za-z0-9]+", "[token]", text)
+              text = re.sub(r"[A-Za-z0-9+/=]{40,}", "[blob]", text)
+              return text
+
+          def fail(message):
+              print(scrub(message))
+              raise SystemExit(1)
+
+          if not token.strip():
+              fail("DOPPLER_ADMIN_TOKEN_ABSENT")
+
+          out = Path("/tmp/doppler-response.json")
+
+          def request(method, url):
+              if out.exists():
+                  out.unlink()
+              result = subprocess.run(
+                  [
+                      "curl", "-sS", "-o", str(out), "-w", "%{http_code}",
+                      "-X", method, url,
+                      "-H", f"Authorization: Bearer {token}",
+                      "-H", "Accept: application/json",
+                  ],
+                  text=True, capture_output=True,
+              )
+              if result.returncode != 0:
+                  fail("CURL_FAILED " + scrub(result.stderr))
+              raw = out.read_text() if out.exists() else ""
+              out.unlink(missing_ok=True)
+              try:
+                  parsed = json.loads(raw) if raw else {}
+              except json.JSONDecodeError:
+                  parsed = {"raw": scrub(raw)[:300]}
+              return result.stdout.strip(), parsed
+
+          code, body = request(
+              "DELETE",
+              "https://api.doppler.com/v3/configs/config?project=dyad&config=harness-tmp",
+          )
+          print("delete_config_http", code)
+          print("delete_success", body.get("success"))
+          if body.get("messages"):
+              print("delete_messages", scrub(json.dumps(body.get("messages")))[:300])
+          if code not in {"200", "204"} and code != "404":
+              fail("CONFIG_DELETE_FAILED")
+
+          code, names = request(
+              "GET",
+              "https://api.doppler.com/v3/configs?project=dyad",
+          )
+          print("configs_http", code)
+          remaining = []
+          for item in names.get("configs") or []:
+              name = item.get("name") or item.get("slug")
+              if name:
+                  remaining.append(name)
+          print("configs", ",".join(remaining))
+          print("harness_tmp_gone", "harness-tmp" not in remaining)
+          if "harness-tmp" in remaining:
+              fail("CONFIG_STILL_PRESENT")
+          print("DOPPLER_TMP_DELETED")
+          PY
