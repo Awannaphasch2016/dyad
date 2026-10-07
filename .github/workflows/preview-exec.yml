@@ -1,7 +1,15 @@
-# Prove GitHub can run a preview on the shared Devbox.
+# Start the published preview 48 image on the shared Devbox.
 #
-# This job does not SSH, does not read the production deploy key, and does not
-# retarget DNS. The tunnel on Wewebplus-ci already serves the public name.
+# This job does not build an image, does not SSH, and does not read the
+# production deploy key. It starts preview 48 from the published image
+# 896272b5.
+# The labeled deploy stopped before DNS existed because
+# NEON_PARENT_BRANCH_ID is still the unsanitized Dev branch.
+# The project is already at its root branch limit. This job reuses the
+# existing schema-only preview branch so Dev rows are not copied. The
+# connection URI is masked and is not printed.
+# Running preview containers are stopped without deleting volumes so the
+# chat database stays and the box has memory for the new image.
 # The production host is not a target.
 name: Preview exec
 
@@ -9,7 +17,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - cursor/preview-bridge-proof-9e7a
+      - cursor/preview-48-resume-55d6
     paths:
       - .github/workflows/preview-exec.yml
 
@@ -18,7 +26,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: preview-exec-${{ github.ref }}
+  group: preview-devbox-wewebplus-ci
   cancel-in-progress: false
 
 jobs:
@@ -69,40 +77,194 @@ jobs:
           set -euo pipefail
           devbox exec Wewebplus-ci -- echo federated-ok
 
-      - name: Run preview-20 on Wewebplus-ci without moving DNS
+      - name: Fetch dyad preview secrets
+        uses: dopplerhq/secrets-fetch-action@v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          doppler-project: dyad
+          doppler-config: preview
+          inject-env-vars: true
+
+      - name: Fetch aws dev secrets
+        uses: dopplerhq/secrets-fetch-action@v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          doppler-project: aws
+          doppler-config: dev
+          inject-env-vars: true
+
+      - name: Require named tunnel credentials
         run: |
           set -euo pipefail
-          payload="$(base64 -w0 <<'REMOTE'
+          token="${CLOUDFLARE_API_TOKEN_:-${CLOUDFLARE_API_TOKEN:-}}"
+          zone="${CLOUDFLARE_ZONE_ID_:-${CLOUDFLARE_ZONE_ID:-}}"
+          account="${CLOUDFLARE_ACCOUNT_ID:-${CLOUDFLARE_ACCOUNT_ID_:-}}"
+          if [[ -n "$token" ]]; then echo "CLOUDFLARE_API_TOKEN_: present"; else echo "CLOUDFLARE_API_TOKEN_: absent"; fi
+          if [[ -n "$zone" ]]; then echo "CLOUDFLARE_ZONE_ID_: present"; else echo "CLOUDFLARE_ZONE_ID_: absent"; fi
+          if [[ -n "$account" ]]; then echo "CLOUDFLARE_ACCOUNT_ID: present"; else echo "CLOUDFLARE_ACCOUNT_ID: absent"; fi
+          [[ -n "$token" && -n "$zone" && -n "$account" ]]
+
+      - name: Start preview 48 on Wewebplus-ci
+        run: |
           set -euo pipefail
-          echo "--- machine ---"
-          uname -m
-          command -v docker
-          docker version
-          df -h /
-          awk '/MemTotal|MemAvailable/ { print }' /proc/meminfo
-          if ! command -v git >/dev/null 2>&1; then
-            echo "git is missing" >&2
-            exit 1
-          fi
-          repo=/workspaces/weaver-plus
-          if [[ ! -d "$repo/.git" ]]; then
-            git clone --depth 1 --branch cursor/preview-bridge-proof-9e7a https://github.com/Awannaphasch2016/dyad.git "$repo"
-          else
-            git -C "$repo" fetch --depth 1 origin cursor/preview-bridge-proof-9e7a
-            git -C "$repo" checkout --detach FETCH_HEAD
-          fi
-          cd "$repo"
-          echo "--- preview without moving DNS ---"
-          PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh 20 ghcr.io/awannaphasch2016/dyad@sha256:8e5be8469cd4a7caaa1611e41e9906b4f5a8ddb7b87bf6a9b0dcad101296789a
-          REMOTE
-          )"
+          python3 - <<'PY'
+          import json
+          import os
+          import shlex
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          api_key = os.environ.get("NEON_API_KEY", "")
+          if not api_key:
+              raise SystemExit("NEON_API_KEY is missing")
+          project = "mute-credit-71067312"
+
+          def neon(path, method="GET", body=None):
+              payload = None if body is None else json.dumps(body).encode()
+              request = urllib.request.Request(
+                  "https://console.neon.tech/api/v2" + path,
+                  data=payload,
+                  method=method,
+                  headers={
+                      "Authorization": f"Bearer {api_key}",
+                      "Accept": "application/json",
+                      "Content-Type": "application/json",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(request) as response:
+                      return json.load(response)
+              except urllib.error.HTTPError as error:
+                  detail = error.read().decode("utf-8", "replace")
+                  detail = detail.replace("postgres://", "postgresql://redacted")
+                  raise SystemExit(
+                      f"Neon {method} {path.split('?', 1)[0]} {error.code} {detail[:240]}"
+                  ) from None
+
+          listed = neon(f"/projects/{project}/branches")
+          branches = listed.get("branches") or []
+          print(f"neon branches: {len(branches)}")
+          for branch in branches:
+              print(f"branch {branch.get('name', '')} {branch.get('id', '')}")
+          # A new branch is refused: this project is already at its root
+          # branch limit. Reuse the schema-only preview branch that is
+          # already there. Do not copy Dev rows and do not delete a branch.
+          by_name = {branch.get("name"): branch for branch in branches}
+          chosen = None
+          for name in ("preview-pr-48", "preview-pr-46", "preview-pr-44"):
+              candidate = by_name.get(name)
+              if candidate and candidate.get("id"):
+                  chosen = candidate
+                  break
+          if not chosen:
+              raise SystemExit("no existing preview branch to attach")
+          print(f"using {chosen.get('name', '')} {chosen.get('id', '')}")
+          query = urllib.parse.urlencode(
+              {
+                  "branch_id": chosen["id"],
+                  "database_name": "neondb",
+                  "role_name": "neondb_owner",
+                  "pooled": "true",
+              }
+          )
+          connection = neon(f"/projects/{project}/connection_uri?{query}")
+          uri = connection.get("uri") or ""
+          if not uri.startswith("postgres"):
+              raise SystemExit("Neon did not return a connection URI")
+          print(f"::add-mask::{uri}")
+          parsed = urllib.parse.urlparse(uri)
+          if parsed.password:
+              print(f"::add-mask::{parsed.password}")
+              print(f"::add-mask::{urllib.parse.unquote(parsed.password)}")
+          os.environ["WEWEBPLUS_DATABASE_URL"] = uri
+          print("preview-pr-48 connection uri: present")
+
+          aliases = {
+              "CLOUDFLARE_API_TOKEN_": "CLOUDFLARE_API_TOKEN",
+              "CLOUDFLARE_ZONE_ID_": "CLOUDFLARE_ZONE_ID",
+              "CLOUDFLARE_ACCOUNT_ID": "CLOUDFLARE_ACCOUNT_ID_",
+          }
+          keys = [
+              "CLOUDFLARE_API_TOKEN_",
+              "CLOUDFLARE_ZONE_ID_",
+              "CLOUDFLARE_ACCOUNT_ID",
+              "AWS_ACCESS_KEY_ID",
+              "AWS_SECRET_ACCESS_KEY",
+              "AWS_REGION",
+              "CLERK_PUBLISHABLE_KEY",
+              "CLERK_SECRET_KEY",
+              "WEWEBPLUS_DATABASE_URL",
+              "WEWEBPLUS_SECRETS_KEY",
+          ]
+          lines = []
+          for key in keys:
+              value = os.environ.get(key) or os.environ.get(aliases.get(key, ""), "")
+              if value:
+                  lines.append(f"export {key}={shlex.quote(value)}")
+          with open("/tmp/preview-runtime.sh", "w", encoding="utf-8") as handle:
+              handle.write("\n".join(lines) + "\n")
+          os.chmod("/tmp/preview-runtime.sh", 0o600)
+          print(f"exported {len(lines)} names")
+          PY
+          {
+            if [[ -s /tmp/preview-runtime.sh ]]; then
+              cat /tmp/preview-runtime.sh
+            fi
+            printf '%s\n' \
+              'set -euo pipefail' \
+              'echo "--- machine ---"' \
+              'uname -m' \
+              'command -v docker' \
+              'docker version' \
+              'df -h /' \
+              'awk '"'"'/MemTotal|MemAvailable/ { print }'"'"' /proc/meminfo' \
+              'if ! command -v git >/dev/null 2>&1; then' \
+              '  echo "git is missing" >&2' \
+              '  exit 1' \
+              'fi' \
+              'repo=/workspaces/weaver-plus' \
+              'if [[ ! -d "$repo/.git" ]]; then' \
+              '  git clone --depth 1 --branch cursor/session-jwt-refresh-bbea https://github.com/Awannaphasch2016/dyad.git "$repo"' \
+              'else' \
+              '  git -C "$repo" fetch --depth 1 origin cursor/session-jwt-refresh-bbea' \
+              '  git -C "$repo" checkout --detach FETCH_HEAD' \
+              'fi' \
+              'cd "$repo"' \
+              'stop_preview() {' \
+              '  local number="$1"' \
+              '  echo "--- preview ${number} before stop ---"' \
+              '  docker ps -a --filter "label=com.docker.compose.project=preview-${number}" --format "{{.Names}} {{.Status}}"' \
+              '  if [[ -f "$HOME/.local/state/wewebplus-preview/preview-${number}.env" ]]; then' \
+              '    docker compose --env-file "$HOME/.local/state/wewebplus-preview/preview-${number}.env" -p "preview-${number}" -f compose.preview.yml down || true' \
+              '  else' \
+              '    docker compose -p "preview-${number}" -f compose.preview.yml down || true' \
+              '  fi' \
+              '}' \
+              'stop_preview 43' \
+              'stop_preview 44' \
+              'stop_preview 46' \
+              'echo "--- start preview 48 ---"' \
+              'PREVIEW_REQUIRE_BEDROCK=1 PREVIEW_REQUIRE_NAMED_TUNNEL=1 PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh 48 ghcr.io/awannaphasch2016/dyad@sha256:6210442ac8d0acbba9ea34fa324dabd809b93f251c037a47f8557a2bad20311b'
+          } > /tmp/preview-remote.sh
+          payload="$(base64 -w0 /tmp/preview-remote.sh)"
+          rm -f /tmp/preview-runtime.sh /tmp/preview-remote.sh
           devbox exec Wewebplus-ci -- bash -lc "printf '%s' '${payload}' | base64 -d | bash"
 
       - name: Check the public preview address
         run: |
           set -euo pipefail
-          code="$(curl -sS -o /tmp/preview-body -w '%{http_code}' https://pr-20.anakwannaphaschaiyong.com)"
-          echo "http $code"
-          test "$code" = "200"
-          grep -q 'data-dyad-browser-bridge' /tmp/preview-body
+          ok=0
+          for _ in $(seq 1 18); do
+            code="$(curl -sS -o /tmp/preview-body -w '%{http_code}' --max-time 20 https://pr-48.anakwannaphaschaiyong.com/sign-in || true)"
+            echo "http ${code}"
+            if [[ "$code" == "200" ]] && grep -q 'data-dyad-browser-bridge' /tmp/preview-body; then
+              ok=1
+              break
+            fi
+            sleep 10
+          done
+          test "$ok" = "1"
           echo "browser bridge page"
