@@ -1,0 +1,386 @@
+pipeline:
+  name: Dyad fast-check
+  identifier: dyad_fast_check
+  orgIdentifier: default
+  projectIdentifier: dyad
+  description: Experiment 2. Same commands as GitHub Actions fast-check. GitHub Actions stays the required check.
+  properties:
+    ci:
+      codebase:
+        connectorRef: account.Dyad
+        repoName: Awannaphasch2016/dyad
+        # The trigger supplies the pull request number. A fixed branch here
+        # makes every webhook clone this branch and ignore the pull request.
+        build: <+input>
+        prCloneStrategy: SourceBranch
+  stages:
+    - stage:
+        name: fast-check
+        identifier: fast_check
+        type: CI
+        spec:
+          cloneCodebase: true
+          platform:
+            os: Linux
+            arch: Amd64
+          runtime:
+            type: Cloud
+            spec: {}
+          execution:
+            steps:
+              - step:
+                  type: Run
+                  name: Check changed files
+                  identifier: check_changes
+                  spec:
+                    shell: Bash
+                    command: |
+                      set -euo pipefail
+                      should_run_tests=true
+                      should_run_schema_diff_tests=false
+                      should_run_schema_classifier_tests=false
+                      base="<+codebase.targetBranch>"
+                      case "${base}" in
+                        ""|null) base="main" ;;
+                      esac
+                      if [ "${base#<}" != "${base}" ]; then
+                        base="main"
+                      fi
+                      echo "base_branch=${base}"
+                      echo "head=$(git rev-parse --short HEAD)"
+                      if git fetch --depth=1 origin "${base}"; then
+                        changed="$(git diff --name-only FETCH_HEAD HEAD || true)"
+                      else
+                        changed=""
+                        echo "could not determine changed files"
+                      fi
+                      if [ -n "${changed}" ]; then
+                        echo "changed_count=$(printf '%s\n' "${changed}" | grep -c . || true)"
+                        if printf '%s\n' "${changed}" | grep -q "^packages/ts-pg-schema-diff/"; then
+                          should_run_schema_diff_tests=true
+                        fi
+                        if printf '%s\n' "${changed}" | grep -q "^packages/pg-schema-classifier/"; then
+                          should_run_schema_classifier_tests=true
+                        fi
+                        non_config="$(printf '%s\n' "${changed}" | grep -v "^\.claude/" | grep -v "^rules/" || true)"
+                        if [ -z "${non_config}" ]; then
+                          should_run_tests=false
+                        fi
+                      fi
+                      export should_run_tests should_run_schema_diff_tests should_run_schema_classifier_tests
+                      echo "decision tests=${should_run_tests} schema_diff=${should_run_schema_diff_tests} schema_classifier=${should_run_schema_classifier_tests}"
+                    outputVariables:
+                      - name: should_run_tests
+                      - name: should_run_schema_diff_tests
+                      - name: should_run_schema_classifier_tests
+              - step:
+                  type: Run
+                  name: Install Node 24.13.1
+                  identifier: install_node
+                  when:
+                    stageStatus: Success
+                    condition: '<+execution.steps.check_changes.output.outputVariables.should_run_tests> == "true"'
+                  spec:
+                    shell: Bash
+                    command: |
+                      set -euo pipefail
+                      prefix="${HOME}/.local/node"
+                      mkdir -p "${prefix}"
+                      NODE_VERSION=24.13.1
+                      curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" -o /tmp/node.tar.xz
+                      tar -xJf /tmp/node.tar.xz -C "${prefix}" --strip-components=1
+                      export PATH="${prefix}/bin:${PATH}"
+                      hash -r
+                      echo "node=$(node -v)"
+                      test "$(node -v)" = "v${NODE_VERSION}"
+              - step:
+                  type: Run
+                  name: Install npm 11.8.0
+                  identifier: install_npm
+                  when:
+                    stageStatus: Success
+                    condition: '<+execution.steps.check_changes.output.outputVariables.should_run_tests> == "true"'
+                  spec:
+                    shell: Bash
+                    command: |
+                      set -euo pipefail
+                      export PATH="${HOME}/.local/node/bin:${PATH}"
+                      hash -r
+                      npm install -g npm@11.8.0
+                      hash -r
+                      version="$(npm -v | tr -d '[:space:]')"
+                      echo "npm_version=${version}"
+                      test "${version}" = "11.8.0"
+              - step:
+                  type: Run
+                  name: Install node modules
+                  identifier: install_node_modules
+                  when:
+                    stageStatus: Success
+                    condition: '<+execution.steps.check_changes.output.outputVariables.should_run_tests> == "true"'
+                  spec:
+                    shell: Bash
+                    command: |
+                      set -euo pipefail
+                      export PATH="${HOME}/.local/node/bin:${PATH}"
+                      bash scripts/npm-ci-retry.sh
+              - step:
+                  type: Run
+                  name: Prep test server
+                  identifier: prep_test_server
+                  when:
+                    stageStatus: Success
+                    condition: '<+execution.steps.check_changes.output.outputVariables.should_run_tests> == "true"'
+                  spec:
+                    shell: Bash
+                    command: |
+                      set -euo pipefail
+                      export PATH="${HOME}/.local/node/bin:${PATH}"
+                      cd testing/fake-llm-server && npm install && npm run build && cd -
+              - step:
+                  type: Run
+                  name: Presubmit check
+                  identifier: presubmit
+                  when:
+                    stageStatus: Success
+                    condition: '<+execution.steps.check_changes.output.outputVariables.should_run_tests> == "true"'
+                  spec:
+                    shell: Bash
+                    command: |
+                      set -euo pipefail
+                      export PATH="${HOME}/.local/node/bin:${PATH}"
+                      npm run presubmit
+              - step:
+                  type: Run
+                  name: Type-checking
+                  identifier: typecheck
+                  when:
+                    stageStatus: Success
+                    condition: '<+execution.steps.check_changes.output.outputVariables.should_run_tests> == "true"'
+                  spec:
+                    shell: Bash
+                    command: |
+                      set -euo pipefail
+                      export PATH="${HOME}/.local/node/bin:${PATH}"
+                      npm run ts
+              - step:
+                  type: Run
+                  name: Browser bridge and file sync tests
+                  identifier: browser_bridge_and_file_sync
+                  when:
+                    stageStatus: Success
+                    condition: '<+execution.steps.check_changes.output.outputVariables.should_run_tests> == "true"'
+                  spec:
+                    shell: Bash
+                    command: |
+                      set -euo pipefail
+                      export PATH="${HOME}/.local/node/bin:${PATH}"
+                      npm test -- src/main/browser_bridge.test.ts src/control_plane/file_sync.test.ts
+              - step:
+                  type: Run
+                  name: Rollout helper tests
+                  identifier: rollout_helper_tests
+                  when:
+                    stageStatus: Success
+                    condition: '<+execution.steps.check_changes.output.outputVariables.should_run_tests> == "true"'
+                  spec:
+                    shell: Bash
+                    command: |
+                      set -euo pipefail
+                      export PATH="${HOME}/.local/node/bin:${PATH}"
+                      bash scripts/gascity/rollout.test.sh
+    - stage:
+        name: Schema diff tests
+        identifier: schema_diff_tests
+        type: CI
+        when:
+          pipelineStatus: Success
+          condition: '<+pipeline.stages.fast_check.spec.execution.steps.check_changes.output.outputVariables.should_run_schema_diff_tests> == "true"'
+        spec:
+          cloneCodebase: true
+          platform:
+            os: Linux
+            arch: Amd64
+          runtime:
+            type: Cloud
+            spec: {}
+          execution:
+            steps:
+              - step:
+                  type: Run
+                  name: Install Node 24.13.1
+                  identifier: schema_install_node
+                  spec:
+                    shell: Bash
+                    command: |
+                      set -euo pipefail
+                      prefix="${HOME}/.local/node"
+                      mkdir -p "${prefix}"
+                      NODE_VERSION=24.13.1
+                      curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" -o /tmp/node.tar.xz
+                      tar -xJf /tmp/node.tar.xz -C "${prefix}" --strip-components=1
+                      export PATH="${prefix}/bin:${PATH}"
+                      hash -r
+                      test "$(node -v)" = "v${NODE_VERSION}"
+              - step:
+                  type: Run
+                  name: Install npm 11.8.0
+                  identifier: schema_install_npm
+                  spec:
+                    shell: Bash
+                    command: |
+                      set -euo pipefail
+                      export PATH="${HOME}/.local/node/bin:${PATH}"
+                      hash -r
+                      npm install -g npm@11.8.0
+                      hash -r
+                      version="$(npm -v | tr -d '[:space:]')"
+                      test "${version}" = "11.8.0"
+              - step:
+                  type: Run
+                  name: Start Postgres 16
+                  identifier: schema_postgres
+                  spec:
+                    shell: Bash
+                    command: |
+                      set -euo pipefail
+                      if ! command -v docker >/dev/null 2>&1; then
+                        echo "docker_missing"
+                        exit 1
+                      fi
+                      docker run -d --name dyad-pg -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:16
+                      ready=0
+                      for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
+                        if docker exec dyad-pg pg_isready -U postgres; then
+                          ready=1
+                          break
+                        fi
+                        sleep 2
+                      done
+                      test "${ready}" = "1"
+                      sudo tee /usr/local/bin/pg_dump >/dev/null << 'EOF'
+                      #!/bin/sh
+                      exec docker exec -i dyad-pg pg_dump "$@"
+                      EOF
+                      sudo chmod 755 /usr/local/bin/pg_dump
+                      hash -r
+                      command -v pg_dump
+                      pg_dump --version
+              - step:
+                  type: Run
+                  name: Install node modules
+                  identifier: schema_install_node_modules
+                  spec:
+                    shell: Bash
+                    command: |
+                      set -euo pipefail
+                      export PATH="${HOME}/.local/node/bin:${PATH}"
+                      bash scripts/npm-ci-retry.sh
+              - step:
+                  type: Run
+                  name: Type-check ts-pg-schema-diff
+                  identifier: schema_typecheck
+                  spec:
+                    shell: Bash
+                    command: |
+                      set -euo pipefail
+                      export PATH="${HOME}/.local/node/bin:${PATH}"
+                      npm --prefix packages/ts-pg-schema-diff run typecheck
+              - step:
+                  type: Run
+                  name: Schema diff unit tests
+                  identifier: schema_unit_tests
+                  spec:
+                    shell: Bash
+                    command: |
+                      set -euo pipefail
+                      export PATH="${HOME}/.local/node/bin:${PATH}"
+                      npm --prefix packages/ts-pg-schema-diff test
+              - step:
+                  type: Run
+                  name: Schema diff integration tests
+                  identifier: schema_integration_tests
+                  spec:
+                    shell: Bash
+                    command: |
+                      set -euo pipefail
+                      export PATH="${HOME}/.local/node/bin:/usr/local/bin:${PATH}"
+                      export PG_SCHEMA_DIFF_TEST_DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres"
+                      npm --prefix packages/ts-pg-schema-diff run test:integration
+    - stage:
+        name: Schema classifier tests
+        identifier: schema_classifier_tests
+        type: CI
+        when:
+          pipelineStatus: Success
+          condition: '<+pipeline.stages.fast_check.spec.execution.steps.check_changes.output.outputVariables.should_run_schema_classifier_tests> == "true"'
+        spec:
+          cloneCodebase: true
+          platform:
+            os: Linux
+            arch: Amd64
+          runtime:
+            type: Cloud
+            spec: {}
+          execution:
+            steps:
+              - step:
+                  type: Run
+                  name: Install Node 24.13.1
+                  identifier: classifier_install_node
+                  spec:
+                    shell: Bash
+                    command: |
+                      set -euo pipefail
+                      prefix="${HOME}/.local/node"
+                      mkdir -p "${prefix}"
+                      NODE_VERSION=24.13.1
+                      curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" -o /tmp/node.tar.xz
+                      tar -xJf /tmp/node.tar.xz -C "${prefix}" --strip-components=1
+                      export PATH="${prefix}/bin:${PATH}"
+                      hash -r
+                      test "$(node -v)" = "v${NODE_VERSION}"
+              - step:
+                  type: Run
+                  name: Install npm 11.8.0
+                  identifier: classifier_install_npm
+                  spec:
+                    shell: Bash
+                    command: |
+                      set -euo pipefail
+                      export PATH="${HOME}/.local/node/bin:${PATH}"
+                      hash -r
+                      npm install -g npm@11.8.0
+                      hash -r
+                      version="$(npm -v | tr -d '[:space:]')"
+                      test "${version}" = "11.8.0"
+              - step:
+                  type: Run
+                  name: Install node modules
+                  identifier: classifier_install_node_modules
+                  spec:
+                    shell: Bash
+                    command: |
+                      set -euo pipefail
+                      export PATH="${HOME}/.local/node/bin:${PATH}"
+                      bash scripts/npm-ci-retry.sh
+              - step:
+                  type: Run
+                  name: Type-check pg-schema-classifier
+                  identifier: classifier_typecheck
+                  spec:
+                    shell: Bash
+                    command: |
+                      set -euo pipefail
+                      export PATH="${HOME}/.local/node/bin:${PATH}"
+                      npm --prefix packages/pg-schema-classifier run typecheck
+              - step:
+                  type: Run
+                  name: Schema classifier unit tests
+                  identifier: classifier_unit_tests
+                  spec:
+                    shell: Bash
+                    command: |
+                      set -euo pipefail
+                      export PATH="${HOME}/.local/node/bin:${PATH}"
+                      npm --prefix packages/pg-schema-classifier test

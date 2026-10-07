@@ -1,0 +1,37 @@
+trigger:
+  name: Dyad fast-check pull request
+  identifier: dyad_fast_check_pr
+  enabled: true
+  description: Experiment 2. Run fast-check for pull requests into the equivalence branch and cancel the older execution.
+  orgIdentifier: default
+  projectIdentifier: dyad
+  pipelineIdentifier: dyad_fast_check
+  source:
+    type: Webhook
+    spec:
+      type: Github
+      spec:
+        type: PullRequest
+        spec:
+          connectorRef: account.Dyad
+          repoName: Awannaphasch2016/dyad
+          autoAbortPreviousExecutions: true
+          payloadConditions:
+            - key: targetBranch
+              operator: Equals
+              value: cursor/harness-equivalence-5527
+          headerConditions: []
+          actions:
+            - Open
+            - Reopen
+            - Synchronize
+  inputYaml: |
+    pipeline:
+      identifier: dyad_fast_check
+      properties:
+        ci:
+          codebase:
+            build:
+              type: PR
+              spec:
+                number: <+trigger.prNumber>
