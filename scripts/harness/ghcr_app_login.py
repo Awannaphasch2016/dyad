@@ -8,6 +8,7 @@ The private key is read from GH_APP_KEY. This script never prints the key.
 import base64
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -40,7 +41,25 @@ def sign_rs256(pem_text, message):
         if key_path and os.path.exists(key_path):
             os.remove(key_path)
     if result.returncode != 0:
-        sys.stderr.write("openssl_sign_failed\n")
+        error = result.stderr.decode("utf-8", "replace")
+        error = re.sub(
+            r"-----BEGIN [^-]+-----[\s\S]*?-----END [^-]+-----",
+            "[redacted-pem]",
+            error,
+        )
+        error = re.sub(r"[A-Za-z0-9+/=]{40,}", "[redacted]", error)
+        header = ""
+        for line in pem_text.splitlines():
+            if "BEGIN " in line:
+                header = line.strip()[:80]
+                break
+        sys.stderr.write(
+            "openssl_sign_failed"
+            f" header={header}"
+            f" pem_len={len(pem_text)}"
+            f" pem_lines={pem_text.count(chr(10))}"
+            f" {error[:180].strip()}\n"
+        )
         raise SystemExit(1)
     return result.stdout
 
