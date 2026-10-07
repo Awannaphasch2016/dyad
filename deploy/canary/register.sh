@@ -203,7 +203,9 @@ if [[ "$existing" == "ACTIVE" ]]; then
 fi
 if [[ "$existing" == "ACTIVE" ]]; then
   aws ecs update-service --cluster "$cluster" --service wewebplus-canary \
-    --task-definition "$revision" --desired-count 1 >/dev/null
+    --task-definition "$revision" --desired-count 1 \
+    --availability-zone-rebalancing DISABLED \
+    --deployment-configuration "minimumHealthyPercent=0,maximumPercent=100" >/dev/null
   echo "service=updated"
 else
   aws ecs create-service --cluster "$cluster" --cli-input-json file:///tmp/canary-service.json >/dev/null

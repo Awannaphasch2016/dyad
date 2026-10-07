@@ -78,8 +78,21 @@ x11vnc \
   -noxdamage &
 children+=("$!")
 
+# The noVNC package has no index page, so the hostname root would list
+# files. Serve a copy that opens the desktop.
+novnc_root="/tmp/novnc-web"
+rm -rf "$novnc_root"
+mkdir -p "$novnc_root"
+cp -a /usr/share/novnc/. "$novnc_root/"
+cat > "$novnc_root/index.html" << 'EOF'
+<!DOCTYPE html>
+<meta http-equiv="refresh" content="0;url=vnc.html">
+<title>Dyad</title>
+<p><a href="vnc.html">Open the Dyad window</a></p>
+EOF
+
 websockify \
-  --web=/usr/share/novnc/ \
+  --web="$novnc_root" \
   "$NOVNC_PORT" \
   127.0.0.1:5900 &
 children+=("$!")

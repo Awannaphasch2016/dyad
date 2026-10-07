@@ -47,6 +47,7 @@ test("the canary service runs one task and does not open the bridge", () => {
     taskDefinition: "wewebplus-canary:1",
   });
   assert.equal(service.desiredCount, 1);
+  assert.equal(service.deploymentConfiguration.maximumPercent, 100);
   assert.equal(service.networkConfiguration, undefined);
   assert.equal(service.serviceConnectConfiguration, undefined);
   assert.doesNotThrow(() => assertPrivateBridge([]));

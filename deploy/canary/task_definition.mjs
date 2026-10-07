@@ -141,6 +141,13 @@ export function canaryService({ taskDefinition }) {
     taskDefinition,
     desiredCount: 1,
     launchType: "EC2",
+    // Host networking binds the desktop port on the instance, so a second
+    // task cannot start beside the one it replaces.
+    availabilityZoneRebalancing: "DISABLED",
+    deploymentConfiguration: {
+      minimumHealthyPercent: 0,
+      maximumPercent: 100,
+    },
   };
 }
 
