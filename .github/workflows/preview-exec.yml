@@ -2,7 +2,7 @@
 #
 # This job does not build an image, does not SSH, and does not read the
 # production deploy key. It starts preview 48 from the published image
-# 896272b5.
+# 758c9816, which keeps the browser bridge socket alive with a heartbeat.
 # The labeled deploy stopped before DNS existed because
 # NEON_PARENT_BRANCH_ID is still the unsanitized Dev branch.
 # The project is already at its root branch limit. This job reuses the
@@ -10,7 +10,7 @@
 # connection URI is masked and is not printed.
 # Running preview containers are stopped without deleting volumes so the
 # chat database stays and the box has memory for the new image.
-# Wake preview 48 after the tunnel returned HTTP 530 again.
+# Start the heartbeat image so a quiet turn does not close the socket.
 # The production host is not a target.
 name: Preview exec
 
@@ -248,7 +248,7 @@ jobs:
               'stop_preview 44' \
               'stop_preview 46' \
               'echo "--- start preview 48 ---"' \
-              'PREVIEW_REQUIRE_BEDROCK=1 PREVIEW_REQUIRE_NAMED_TUNNEL=1 PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh 48 ghcr.io/awannaphasch2016/dyad@sha256:6210442ac8d0acbba9ea34fa324dabd809b93f251c037a47f8557a2bad20311b'
+              'PREVIEW_REQUIRE_BEDROCK=1 PREVIEW_REQUIRE_NAMED_TUNNEL=1 PREVIEW_SKIP_TUNNEL=1 bash scripts/gascity/preview-up.sh 48 ghcr.io/awannaphasch2016/dyad@sha256:8436e5ae78f2e25cbe34d2c8716a0e556e084849695c4112f998b8aa828749f8'
           } > /tmp/preview-remote.sh
           payload="$(base64 -w0 /tmp/preview-remote.sh)"
           rm -f /tmp/preview-runtime.sh /tmp/preview-remote.sh
