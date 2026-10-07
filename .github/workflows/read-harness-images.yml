@@ -53,6 +53,49 @@ jobs:
                   parsed = {"raw": scrub(raw)[:200]}
               return result.stdout.strip(), parsed
 
+          account_query = f"?accountIdentifier={account}"
+          for ident in ("dyad_harness_app_key_pkcs8", "dyad-harness-app-key-pkcs8"):
+              code, body = request(
+                  "GET",
+                  "https://app.harness.io/ng/api/v2/secrets/"
+                  + ident
+                  + account_query,
+              )
+              print(
+                  "file_secret",
+                  ident,
+                  code,
+                  body.get("status"),
+                  scrub(str(body.get("message") or body.get("code") or ""))[:180],
+              )
+          code, body = request(
+              "POST",
+              "https://app.harness.io/ng/api/v2/secrets/list"
+              + account_query
+              + "&searchTerm=dyad&pageIndex=0&pageSize=20",
+              {"filterType": "Secret"},
+          )
+          print("secret_list", code, body.get("status"), scrub(str(body.get("message") or ""))[:180])
+          data = body.get("data")
+          content = []
+          if isinstance(data, dict):
+              content = data.get("content") or data.get("secrets") or []
+          elif isinstance(data, list):
+              content = data
+          print("secret_list_count", len(content) if isinstance(content, list) else type(data).__name__)
+          if isinstance(content, list):
+              for item in content:
+                  secret = item.get("secret") if isinstance(item, dict) and isinstance(item.get("secret"), dict) else item
+                  if not isinstance(secret, dict):
+                      continue
+                  print(
+                      "secret_item",
+                      secret.get("type"),
+                      secret.get("identifier"),
+                      "name_len",
+                      len(str(secret.get("name") or "")),
+                  )
+
           summary = (
               "https://app.harness.io/pipeline/api/pipelines/execution/summary"
               f"?accountIdentifier={account}&orgIdentifier=default&projectIdentifier=dyad"
