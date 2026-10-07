@@ -255,10 +255,12 @@ export function patchThinkRouting(source) {
     "if (gatewayToken && !headers['cf-aig-authorization']) {";
   const gatewayUrl =
     "if (env.CLOUDFLARE_ACCOUNT_ID && env.CLOUDFLARE_AI_GATEWAY) {";
+  const buildStart = "async build(): Promise<void> {\n";
   if (
     !source.includes(usesStoredKeys) ||
     !source.includes(gatewayHeader) ||
-    !source.includes(gatewayUrl)
+    !source.includes(gatewayUrl) ||
+    !source.includes(buildStart)
   ) {
     throw new Error("think routing patch did not match");
   }
@@ -274,12 +276,17 @@ export function patchThinkRouting(source) {
     .replace(
       gatewayUrl,
       "if (!directOpenRouter && env.CLOUDFLARE_ACCOUNT_ID && env.CLOUDFLARE_AI_GATEWAY) {",
+    )
+    .replace(
+      buildStart,
+      "async build(): Promise<void> {\n\t\tawait this.configureThinkAgent();\n",
     );
   if (
     !next.includes("directOpenRouter") ||
     next.includes(usesStoredKeys) ||
     next.includes(gatewayHeader) ||
-    next.includes(gatewayUrl)
+    next.includes(gatewayUrl) ||
+    !next.includes("await this.configureThinkAgent();")
   ) {
     throw new Error("think routing patch did not apply");
   }

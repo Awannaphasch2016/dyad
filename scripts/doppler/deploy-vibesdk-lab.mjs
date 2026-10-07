@@ -280,7 +280,7 @@ async function readPromptStream(response, pageUrl, accessToken) {
   const decoder = new TextDecoder();
   let buffer = "";
   let text = "";
-  let turn = null;
+  let websocketUrl = "";
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -292,26 +292,28 @@ async function readPromptStream(response, pageUrl, accessToken) {
       const line = buffer.slice(0, newline);
       buffer = buffer.slice(newline + 1);
       newline = buffer.indexOf("\n");
-      if (turn) continue;
+      if (websocketUrl) continue;
       let row;
       try {
         row = JSON.parse(line);
       } catch {
         continue;
       }
-      const websocketUrl = labWebsocketUrl(row, pageUrl);
-      if (row?.agentId && websocketUrl) {
-        turn = watchModelTurn(websocketUrl, accessToken);
-      }
+      const candidate = labWebsocketUrl(row, pageUrl);
+      if (row?.agentId && candidate) websocketUrl = candidate;
     }
   }
-  return { text, turn: turn ? await turn : null };
+  return {
+    text,
+    turn: websocketUrl ? await watchModelTurn(websocketUrl, accessToken) : null,
+  };
 }
 
 function watchModelTurn(websocketUrl, accessToken) {
   return new Promise((resolve) => {
     const messages = [];
     let settled = false;
+    let opened = false;
     let socket;
     let timer;
     const finish = () => {
@@ -323,7 +325,12 @@ function watchModelTurn(websocketUrl, accessToken) {
       } catch {
         // The socket may already be closed.
       }
-      resolve(modelTurnOutcome(messages));
+      const outcome = modelTurnOutcome(messages);
+      if (!opened && !outcome.error) {
+        resolve({ error: "websocket unavailable", reply: "absent" });
+        return;
+      }
+      resolve(outcome);
     };
     try {
       socket = new WebSocket(websocketUrl, {
@@ -337,9 +344,11 @@ function watchModelTurn(websocketUrl, accessToken) {
       resolve({ error: "websocket client unavailable", reply: "absent" });
       return;
     }
-    timer = setTimeout(finish, 150000);
+    timer = setTimeout(finish, 90000);
     socket.addEventListener("open", () => {
+      opened = true;
       console.log("model_ws=open");
+      socket.send(JSON.stringify({ type: "generate_all" }));
     });
     socket.addEventListener("message", (event) => {
       try {
@@ -352,6 +361,7 @@ function watchModelTurn(websocketUrl, accessToken) {
     });
     socket.addEventListener("error", () => {
       console.log("model_ws=error");
+      if (!opened) finish();
     });
     socket.addEventListener("close", finish);
   });

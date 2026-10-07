@@ -119,8 +119,13 @@ test("the checkout patches leave Gemini and the sandbox export behind", () => {
 		if (env.CLOUDFLARE_ACCOUNT_ID && env.CLOUDFLARE_AI_GATEWAY) {
 			baseURL = \`https://gateway.ai.cloudflare.com/v1/\${env.CLOUDFLARE_ACCOUNT_ID}/\${env.CLOUDFLARE_AI_GATEWAY}/compat\`;
 		}
+	async build(): Promise<void> {
+		if (!this.isMVPGenerated()) {
+			return;
+		}
 `);
   assert.match(routing, /directOpenRouter/);
+  assert.match(routing, /await this\.configureThinkAgent\(\)/);
   assert.match(
     routing,
     /if \(!directOpenRouter && env\.CLOUDFLARE_ACCOUNT_ID && env\.CLOUDFLARE_AI_GATEWAY\)/,
@@ -212,6 +217,7 @@ test("the deploy script does not copy dyad database urls or production routes", 
   assert.match(deployScript, /OPENROUTER_API_KEY is not available/);
   assert.match(deployScript, /patchThinkRouting/);
   assert.match(deployScript, /model reply absent/);
+  assert.match(deployScript, /generate_all/);
   assert.deepEqual(optionalLabSecrets, ["OPENROUTER_API_KEY"]);
 });
 
