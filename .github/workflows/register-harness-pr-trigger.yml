@@ -1,0 +1,96 @@
+name: Register Harness fast-check pull request trigger
+
+on:
+  push:
+    branches:
+      - cursor/harness-equivalence-5527
+    paths:
+      - .github/workflows/register-harness-pr-trigger.yml
+
+permissions:
+  contents: read
+
+jobs:
+  register:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Update the pipeline and create the trigger
+        env:
+          HARNESS_API_KEY: ${{ secrets.HARNESS_API_KEY }}
+          HARNESS_ACCOUNT: WKxXBnSFTRaOF64-h90PyQ
+        run: |
+          python3 << 'PY'
+          import json, os, re, subprocess
+          from pathlib import Path
+
+          api_key = os.environ["HARNESS_API_KEY"]
+          account = os.environ["HARNESS_ACCOUNT"]
+          org = "default"
+          project = "dyad"
+          pipeline = "dyad_fast_check"
+          trigger = "dyad_fast_check_pr"
+          long_token = re.compile(r"[A-Za-z0-9+/=]{40,}")
+
+          def scrub(text):
+              return long_token.sub("[redacted]", text or "")
+
+          def request(method, url, yaml_path):
+              out = Path("/tmp/harness-trigger.bin")
+              out.unlink(missing_ok=True)
+              result = subprocess.run(
+                  [
+                      "curl", "-sS", "--max-time", "60", "-o", str(out), "-w", "%{http_code}",
+                      "-X", method, url,
+                      "-H", f"x-api-key: {api_key}",
+                      "-H", "Content-Type: application/yaml",
+                      "--data-binary", f"@{yaml_path}",
+                  ],
+                  text=True, capture_output=True,
+              )
+              if result.returncode != 0:
+                  print("CURL_FAILED", scrub(result.stderr)[:200])
+                  raise SystemExit(1)
+              raw = out.read_text("utf-8", "replace") if out.exists() else ""
+              try:
+                  parsed = json.loads(raw) if raw else {}
+              except json.JSONDecodeError:
+                  parsed = {"raw": scrub(raw)[:300]}
+              return result.stdout.strip(), parsed
+
+          pipeline_yaml = Path("/tmp/fast-check.yaml")
+          pipeline_yaml.write_text(Path("deploy/harness/fast-check.yaml").read_text())
+          code, body = request(
+              "PUT",
+              "https://app.harness.io/pipeline/api/pipelines/v2/"
+              f"{pipeline}?accountIdentifier={account}&orgIdentifier={org}&projectIdentifier={project}",
+              pipeline_yaml,
+          )
+          print("update_pipeline", code, body.get("status"), scrub(str(body.get("message") or ""))[:300])
+          if code not in {"200", "201"}:
+              raise SystemExit(1)
+
+          trigger_yaml = Path("/tmp/fast-check-trigger.yaml")
+          trigger_yaml.write_text(Path("deploy/harness/fast-check-pr-trigger.yaml").read_text())
+          create_url = (
+              "https://app.harness.io/pipeline/api/triggers"
+              f"?accountIdentifier={account}&orgIdentifier={org}&projectIdentifier={project}"
+          )
+          code, body = request("POST", create_url, trigger_yaml)
+          message = str(body.get("message") or "")
+          print("create_trigger", code, body.get("status"), scrub(message)[:300])
+          if code not in {"200", "201"} and "already" not in message.lower() and "exist" not in message.lower():
+              raise SystemExit(1)
+          if code not in {"200", "201"}:
+              update_url = (
+                  "https://app.harness.io/pipeline/api/triggers/"
+                  f"{trigger}?accountIdentifier={account}&orgIdentifier={org}&projectIdentifier={project}"
+              )
+              code, body = request("PUT", update_url, trigger_yaml)
+              print("update_trigger", code, body.get("status"), scrub(str(body.get("message") or ""))[:300])
+              if code not in {"200", "201"}:
+                  raise SystemExit(1)
+          print("TRIGGER_READY", trigger)
+          PY
