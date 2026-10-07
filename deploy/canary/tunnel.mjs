@@ -18,7 +18,7 @@ export function canaryIngress() {
   return {
     config: {
       ingress: [
-        { hostname: canaryHostname, service: "http://127.0.0.1:6080" },
+        { hostname: canaryHostname, service: "http://127.0.0.1:8373" },
         { service: "http_status:404" },
       ],
     },

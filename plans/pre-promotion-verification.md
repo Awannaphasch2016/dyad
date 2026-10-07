@@ -137,7 +137,7 @@ Service account `wewebplus-canary` has viewer access to `dyad/canary` only. Its 
 - [x] Publish a Dyad image and a GasCity supervisor image to `wewebplus-dyad` and `wewebplus-gascity`. The supervisor stays running and calls `http://dyad:32100`.
 - [x] Register one Dyad task, `desiredCount` 1, shared memory 1024, new volumes, browser bridge on 8373, host bridge bound to `0.0.0.0` only in this task, Doppler `dyad/canary`.
 - [x] Run that task with host networking on `wewebplus-ecs`. `dyad` resolves to `127.0.0.1` so the supervisor still calls `http://dyad:32100`.
-- [x] Add cloudflared as a sidecar. Route `https://pre.anakwannaphaschaiyong.com` to `http://127.0.0.1:6080`. Leave the apex where it is.
+- [x] Add cloudflared as a sidecar. Route `https://pre.anakwannaphaschaiyong.com` to `http://127.0.0.1:8373`, the same Dyad page preview serves. Leave the apex where it is.
 - [x] Keep security group `sg-0d19518d244fede2d` from accepting public 32100, 6080, and 8373.
 - [x] Add the canary hostname to the Clerk allowed origins, using the Clerk secret already in `dyad/canary`.
 

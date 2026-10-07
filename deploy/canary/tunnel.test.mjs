@@ -7,13 +7,14 @@ import {
   ensureCanaryTunnel,
 } from "./tunnel.mjs";
 
-test("the canary tunnel serves noVNC on the pre hostname", () => {
+test("the canary tunnel serves the Dyad page on the pre hostname", () => {
   const ingress = canaryIngress();
   assert.equal(
     ingress.config.ingress[0].hostname,
     "pre.anakwannaphaschaiyong.com",
   );
-  assert.equal(ingress.config.ingress[0].service, "http://127.0.0.1:6080");
+  assert.equal(ingress.config.ingress[0].service, "http://127.0.0.1:8373");
+  assert.equal(JSON.stringify(ingress).includes("6080"), false);
   assert.equal(JSON.stringify(ingress).includes("8787"), false);
 });
 
