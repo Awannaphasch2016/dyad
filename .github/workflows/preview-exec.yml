@@ -9,7 +9,7 @@
 # its root branch limit. This job reuses the existing schema-only preview
 # branch so Dev rows are not copied. The connection URI is masked and is
 # not printed.
-# Wake preview 46 after the labeled deploy refused the Neon parent.
+# Resume preview 46 after the tunnel returned HTTP 530.
 # Running preview containers are stopped without deleting volumes so the
 # chat database stays and the box has memory for the new image.
 # The production host is not a target.
