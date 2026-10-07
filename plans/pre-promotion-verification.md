@@ -124,7 +124,7 @@ Logs print status codes, gate names, and host labels. They do not print `WEWEBPL
 
 `.github/workflows/canary-verify.yml` reads `dyad/canary` with the GitHub identity on service account `wewebplus-canary`. The Actions variable `DOPPLER_CANARY_IDENTITY_ID` is that identity's UUID. The workflow checks that this identity cannot read `dyad/prd`. `services/gascity-supervisor/` is the process that calls `http://dyad:32100`. `deploy/canary/task_definition.mjs` is the ECS shape. Registering the service stays on a manual run of this workflow with deploy enabled, so a push does not move the apex or roll `gascity-server`.
 
-Run [37584719068](https://github.com/Awannaphasch2016/dyad/actions/runs/37584719068) stopped because `DOPPLER_ADMIN_TOKEN` is not available to GitHub Actions. Create the identity in Doppler and set `DOPPLER_CANARY_IDENTITY_ID`. The admin token does not need to return.
+Service account `wewebplus-canary` has viewer access to `dyad/canary` only. Its GitHub identity is `e2e3ffc6-5280-4cc4-b831-751f3ffb6d0d`, named `github-canary-verify`. The claims are exact: audience `https://github.com/Awannaphasch2016`, subject `repo:Awannaphasch2016@28061800/dyad@1384672033:ref:refs/heads/cursor/ecs-hitl-cutover-bbea`, and `job_workflow_ref` for `.github/workflows/canary-verify.yml` on that same branch. A later read of `dyad/canary` showed database host `ep-bold-sky-b3ucveke-pooler`. Production remained `ep-young-wave-b3cwe0rz-pooler`. The recorded pre endpoint `ep-muddy-sky-b31adt7z-pooler` is no longer the value in `dyad/canary`.
 
 - [ ] Read `dyad/canary` and print only the database host label. Pass when it is `ep-muddy-sky-b31adt7z-pooler`.
 - [ ] Read `dyad/prd` and print only the host label. Pass when it is `ep-young-wave-b3cwe0rz-pooler`.

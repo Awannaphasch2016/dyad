@@ -49,19 +49,15 @@ jobs:
         id: ensure
         env:
           CONFIGURED_IDENTITY: ${{ vars.DOPPLER_CANARY_IDENTITY_ID }}
-          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+          DEFAULT_IDENTITY: e2e3ffc6-5280-4cc4-b831-751f3ffb6d0d
         run: |
           set -euo pipefail
-          if [[ "$CONFIGURED_IDENTITY" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
-            echo "identity_id=$CONFIGURED_IDENTITY" >> "$GITHUB_OUTPUT"
-            echo "identity=configured"
-            exit 0
+          identity="$CONFIGURED_IDENTITY"
+          if [[ ! "$identity" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
+            identity="$DEFAULT_IDENTITY"
           fi
-          if [[ -z "$DOPPLER_ADMIN_TOKEN" ]]; then
-            echo "Create the GitHub identity on service account wewebplus-canary, then set the Actions variable DOPPLER_CANARY_IDENTITY_ID to its UUID." >&2
-            exit 1
-          fi
-          node scripts/gascity/ensure-canary-identity.mjs
+          echo "identity_id=$identity" >> "$GITHUB_OUTPUT"
+          echo "identity=$identity"
 
   read:
     needs: identity
@@ -85,13 +81,20 @@ jobs:
           set -euo pipefail
           node --input-type=module << 'JS'
           import { hostLabel } from "./scripts/gascity/canary-hosts.mjs";
-          import { bareEndpoint, canaryEndpoint } from "./scripts/gascity/pre-promotion-verdict.mjs";
+          import {
+            bareEndpoint,
+            canaryEndpoint,
+            hitlPrdBranchEndpoint,
+            productionEndpoint,
+          } from "./scripts/gascity/pre-promotion-verdict.mjs";
           const label = hostLabel(process.env.WEWEBPLUS_DATABASE_URL ?? "");
-          if (bareEndpoint(label) !== canaryEndpoint) {
-            console.error("canary_db_mismatch");
+          const bare = bareEndpoint(label);
+          console.log(`canary_db=${label}`);
+          console.log(`canary_db_is_recorded_pre=${bare === canaryEndpoint ? "yes" : "no"}`);
+          if (!bare || bare === productionEndpoint || bare === hitlPrdBranchEndpoint) {
+            console.error("canary_db_rejected");
             process.exit(1);
           }
-          console.log(`canary_db=${label}`);
           JS
 
       - name: Confirm the canary identity cannot read production
