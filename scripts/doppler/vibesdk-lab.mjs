@@ -356,5 +356,17 @@ export function failureTail(output) {
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
-  return lines.slice(-25).join("\n").slice(-1200);
+  const interesting = lines.filter((line) =>
+    /error|invalid|denied|required|not found|✘|failed|container|sandbox|paid/i.test(
+      line,
+    ),
+  );
+  const picked = [];
+  const seen = new Set();
+  for (const line of [...interesting.slice(-15), ...lines.slice(-8)]) {
+    if (seen.has(line)) continue;
+    seen.add(line);
+    picked.push(line);
+  }
+  return picked.join("\n").slice(-1500);
 }

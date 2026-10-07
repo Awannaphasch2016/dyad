@@ -174,4 +174,11 @@ test("masking skips short values and private keys, and OpenRouter reads one name
   );
   assert.equal(tail.includes("secret"), false);
   assert.match(tail, /binding DB/);
+  const buried = failureTail(
+    [
+      "✘ [ERROR] Durable Objects require a paid plan",
+      ...Array.from({ length: 30 }, () => "env.VAR Environment Variable"),
+    ].join("\n"),
+  );
+  assert.match(buried, /paid plan/);
 });
