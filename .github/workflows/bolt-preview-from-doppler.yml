@@ -56,12 +56,13 @@ jobs:
           cache: pnpm
           cache-dependency-path: bolt/pnpm-lock.yaml
 
+      - name: Install bolt
+        working-directory: bolt
+        run: pnpm install --frozen-lockfile
+
       - name: Build bolt
         working-directory: bolt
-        run: |
-          set -euo pipefail
-          pnpm install --frozen-lockfile
-          pnpm run build
+        run: pnpm run build
         env:
           NODE_ENV: production
 
