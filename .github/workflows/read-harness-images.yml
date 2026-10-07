@@ -1,5 +1,5 @@
 # Reads the latest dyad_harness_images executions. A push of this file does not rebuild images.
-# Latest login check follows the OpenSSL header recorded for the connector key.
+# Latest login check follows the connector key after restoring its line breaks.
 name: Read Harness image executions
 
 on:
