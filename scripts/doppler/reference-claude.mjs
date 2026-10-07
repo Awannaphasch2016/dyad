@@ -103,6 +103,10 @@ for (const name of projects) {
     const names = await secretNames(token, name, config);
     if (names == null) continue;
     const source = claudeSourceName(names);
+    const loose = names.filter((name) => /claude|anthropic/i.test(name));
+    if (loose.length > 0) {
+      console.log(`claude_name_hit=${name}/${config} names=${loose.join(",")}`);
+    }
     if (!source) continue;
     hits.push({ project: name, config, source });
     console.log(`claude_hit=${name}/${config} name=${source}`);
