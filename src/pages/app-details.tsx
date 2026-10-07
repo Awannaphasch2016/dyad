@@ -68,6 +68,7 @@ import { AssignAppsToCollectionDialog } from "@/components/AssignAppsToCollectio
 import { useTranslation } from "react-i18next";
 import { queryKeys } from "@/lib/queryKeys";
 import { hasFactoryPhases } from "@/lib/factoryPhase";
+import { appDetailsAvailability } from "./appDetailsAvailability";
 import { KnowledgeBaseContents } from "@/components/KnowledgeBaseContents";
 
 function UnavailableIntegrationCard({
@@ -101,7 +102,8 @@ export default function AppDetailsPage() {
   const search = useSearch({ from: "/app-details" as const });
   const appId = search.appId ? Number(search.appId) : null;
   const { t } = useTranslation("home");
-  const { apps: appsList, refreshApps } = useLoadApps();
+  const { t: tChat } = useTranslation("chat");
+  const { apps: appsList, loading: appsLoading, refreshApps } = useLoadApps();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
@@ -168,7 +170,15 @@ export default function AppDetailsPage() {
   useEffect(() => {
     setScreenshotLoadFailed(false);
   }, [latestScreenshotUrl]);
-  const selectedApp = appId ? appsList.find((app) => app.id === appId) : null;
+  const appAvailability = appDetailsAvailability({
+    appId,
+    appsLoading,
+    loadedAppIds: appsList.map((app) => app.id),
+  });
+  const selectedApp =
+    appAvailability === "ready"
+      ? appsList.find((app) => app.id === appId)
+      : null;
 
   const { collections, assignApps } = useAppCollections();
   const [isAssignCollectionDialogOpen, setIsAssignCollectionDialogOpen] =
@@ -368,7 +378,16 @@ export default function AppDetailsPage() {
       <div className="relative min-h-screen p-8">
         <BackButton label="Back" className="absolute top-4 left-4 mb-0" />
         <div className="flex flex-col items-center justify-center h-full">
-          <h2 className="text-xl font-bold">App not found</h2>
+          {appAvailability === "wait" ? (
+            <p
+              className="text-sm text-muted-foreground"
+              data-testid="app-details-loading"
+            >
+              {tChat("loadingChats")}
+            </p>
+          ) : (
+            <h2 className="text-xl font-bold">App not found</h2>
+          )}
         </div>
       </div>
     );
