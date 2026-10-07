@@ -145,9 +145,13 @@ async function ensureIdentity(token) {
   );
   const identity =
     created.identity ?? created.service_account_identity ?? created;
-  if (!identity?.id) throw new Error("Doppler did not return an identity id");
+  const identityId = identity.id ?? identity.identity_id ?? "";
+  if (!identityId) {
+    console.log(`identity_fields=${Object.keys(identity).join(",") || "none"}`);
+    throw new Error("Doppler did not return an identity id");
+  }
   console.log("identity=created");
-  return identity.id;
+  return identityId;
 }
 
 export async function main() {

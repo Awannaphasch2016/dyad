@@ -20,28 +20,28 @@ export const previewNamesForCanary = [
 ];
 
 export function canaryIdentityBody() {
-  const body = {
+  const claims = {
+    aud: [githubAudience],
+    sub: [githubSubject],
+    job_workflow_ref: [workflowRef],
+  };
+  for (const values of Object.values(claims)) {
+    for (const value of values) {
+      if (value.includes("*")) {
+        throw new Error("Canary identity refuses wildcards");
+      }
+    }
+  }
+  return {
     name: "github-canary-verify",
     method: "oidc",
     ttl_seconds: 600,
     config: {
       discovery_url: "https://token.actions.githubusercontent.com",
       claims_type: "exact",
-      claims: [
-        { key: "aud", values: [githubAudience] },
-        { key: "sub", values: [githubSubject] },
-        { key: "job_workflow_ref", values: [workflowRef] },
-      ],
+      claims,
     },
   };
-  for (const claim of body.config.claims) {
-    for (const value of claim.values) {
-      if (value.includes("*")) {
-        throw new Error("Canary identity refuses wildcards");
-      }
-    }
-  }
-  return body;
 }
 
 export function secretsToCopy(preview, canary) {
@@ -55,19 +55,25 @@ export function secretsToCopy(preview, canary) {
   return copy;
 }
 
+function claimValues(claims, key) {
+  if (Array.isArray(claims)) {
+    const claim = claims.find((item) => item.key === key);
+    return claim?.values ?? [];
+  }
+  const values = claims?.[key];
+  return Array.isArray(values) ? values : [];
+}
+
 export function matchingIdentity(identities, body = canaryIdentityBody()) {
   return (identities ?? []).find((identity) => {
     if (identity?.name !== body.name) return false;
-    const claims = identity.config?.claims ?? identity.claims ?? [];
-    return body.config.claims.every((wanted) =>
-      claims.some(
-        (claim) =>
-          claim.key === wanted.key &&
-          wanted.values.every((value) =>
-            (claim.values ?? []).includes(value),
-          ) &&
-          (claim.values ?? []).every((value) => !String(value).includes("*")),
-      ),
-    );
+    const claims = identity.config?.claims ?? identity.claims ?? {};
+    return Object.entries(body.config.claims).every(([key, wanted]) => {
+      const values = claimValues(claims, key);
+      return (
+        wanted.every((value) => values.includes(value)) &&
+        values.every((value) => !String(value).includes("*"))
+      );
+    });
   });
 }

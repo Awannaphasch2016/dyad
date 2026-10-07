@@ -9,7 +9,8 @@ import {
 test("the canary identity is an exact workflow subject", () => {
   const body = canaryIdentityBody();
   assert.equal(body.config.claims_type, "exact");
-  const values = body.config.claims.flatMap((claim) => claim.values);
+  assert.equal(Array.isArray(body.config.claims), false);
+  const values = Object.values(body.config.claims).flat();
   assert.equal(
     values.some((value) => value.includes("*")),
     false,
@@ -39,7 +40,7 @@ test("a wildcard identity is not a match", () => {
     {
       name: body.name,
       config: {
-        claims: [{ key: "sub", values: ["repo:Awannaphasch2016/dyad:*"] }],
+        claims: { sub: ["repo:Awannaphasch2016/dyad:*"] },
       },
     },
   ]);
