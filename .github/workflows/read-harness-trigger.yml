@@ -1,0 +1,115 @@
+name: Read Harness trigger activity
+
+on:
+  push:
+    branches:
+      - cursor/harness-equivalence-5527
+    paths:
+      - .github/workflows/read-harness-trigger.yml
+
+permissions:
+  contents: read
+
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read the trigger and recent executions
+        env:
+          HARNESS_API_KEY: ${{ secrets.HARNESS_API_KEY }}
+          HARNESS_ACCOUNT: WKxXBnSFTRaOF64-h90PyQ
+        run: |
+          python3 << 'PY'
+          import json, os, re, subprocess
+          from pathlib import Path
+
+          api_key = os.environ["HARNESS_API_KEY"]
+          account = os.environ["HARNESS_ACCOUNT"]
+          long_token = re.compile(r"[A-Za-z0-9+/=]{40,}")
+
+          def scrub(text):
+              return long_token.sub("[redacted]", text or "")
+
+          def request(method, url, payload=None):
+              out = Path("/tmp/harness-read.bin")
+              out.unlink(missing_ok=True)
+              cmd = [
+                  "curl", "-sS", "--max-time", "60", "-o", str(out), "-w", "%{http_code}",
+                  "-X", method, url, "-H", f"x-api-key: {api_key}",
+              ]
+              if payload is not None:
+                  body = Path("/tmp/harness-read.json")
+                  body.write_text(json.dumps(payload))
+                  cmd += ["-H", "Content-Type: application/json", "--data-binary", f"@{body}"]
+              result = subprocess.run(cmd, text=True, capture_output=True)
+              raw = out.read_text("utf-8", "replace") if out.exists() else ""
+              try:
+                  parsed = json.loads(raw) if raw else {}
+              except json.JSONDecodeError:
+                  parsed = {"raw": scrub(raw)[:200]}
+              return result.stdout.strip(), parsed
+
+          url = (
+              "https://app.harness.io/pipeline/api/triggers/dyad_fast_check_pr"
+              f"?accountIdentifier={account}&orgIdentifier=default&projectIdentifier=dyad"
+              "&targetIdentifier=dyad_fast_check"
+          )
+          code, body = request("GET", url)
+          data = body.get("data") if isinstance(body.get("data"), dict) else {}
+          print("trigger_http", code, "status", body.get("status"), "enabled", data.get("enabled"), "identifier", data.get("identifier"))
+          print("trigger_message", scrub(str(body.get("message") or ""))[:300])
+
+          summary = (
+              "https://app.harness.io/pipeline/api/pipelines/execution/summary"
+              f"?accountIdentifier={account}&orgIdentifier=default&projectIdentifier=dyad"
+              "&pipelineIdentifier=dyad_fast_check&page=0&size=8"
+          )
+          code, body = request("POST", summary, {"filterType": "PipelineExecution"})
+          rows = ((body.get("data") or {}).get("content") or []) if isinstance(body.get("data"), dict) else []
+          print("summary_http", code, "count", len(rows))
+          interesting_key = re.compile(
+              r"branch|pull|prNumber|commit|sha|status|identifier|name|should_run|repo",
+              re.I,
+          )
+
+          def scalars(node, path="", out=None, depth=0):
+              if out is None:
+                  out = []
+              if depth > 14 or len(out) > 300:
+                  return out
+              if isinstance(node, dict):
+                  for key, value in node.items():
+                      child = f"{path}.{key}" if path else str(key)
+                      if isinstance(value, (str, int, float, bool)) or value is None:
+                          if interesting_key.search(str(key)):
+                              out.append(f"{child}={scrub(str(value))[:160]}")
+                      else:
+                          scalars(value, child, out, depth + 1)
+              elif isinstance(node, list) and depth < 10:
+                  for index, value in enumerate(node[:30]):
+                      scalars(value, f"{path}[{index}]", out, depth + 1)
+              return out
+
+          for row in rows:
+              trigger = row.get("executionTriggerInfo") or {}
+              execution = row.get("planExecutionId")
+              print(json.dumps({
+                  "execution": execution,
+                  "status": row.get("status"),
+                  "run_sequence": row.get("runSequence"),
+                  "trigger_type": trigger.get("triggerType"),
+                  "start_ts": row.get("startTs"),
+                  "end_ts": row.get("endTs"),
+              }))
+              if trigger.get("triggerType") != "WEBHOOK" or not execution:
+                  continue
+              detail = (
+                  "https://app.harness.io/pipeline/api/pipelines/execution/v2/"
+                  f"{execution}?accountIdentifier={account}&orgIdentifier=default"
+                  "&projectIdentifier=dyad&renderFullBottomGraph=true"
+              )
+              detail_code, detail_body = request("GET", detail)
+              print("detail_http", execution, detail_code, "status", detail_body.get("status"))
+              for line in scalars(detail_body.get("data") if isinstance(detail_body, dict) else {}):
+                  print("field", execution, line)
+          PY

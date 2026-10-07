@@ -9,10 +9,10 @@ pipeline:
       codebase:
         connectorRef: account.Dyad
         repoName: Awannaphasch2016/dyad
-        build:
-          type: branch
-          spec:
-            branch: cursor/harness-equivalence-5527
+        # The trigger supplies the pull request number. A fixed branch here
+        # makes every webhook clone this branch and ignore the pull request.
+        build: <+input>
+        prCloneStrategy: SourceBranch
   stages:
     - stage:
         name: fast-check
@@ -47,6 +47,7 @@ pipeline:
                         base="main"
                       fi
                       echo "base_branch=${base}"
+                      echo "head=$(git rev-parse --short HEAD)"
                       if git fetch --depth=1 origin "${base}"; then
                         changed="$(git diff --name-only FETCH_HEAD HEAD || true)"
                       else
