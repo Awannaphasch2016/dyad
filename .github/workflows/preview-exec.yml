@@ -10,7 +10,7 @@
 # connection URI is masked and is not printed.
 # Running preview containers are stopped without deleting volumes so the
 # chat database stays and the box has memory for the new image.
-# Start the heartbeat image so a quiet turn does not close the socket.
+# Wake preview 48 after the public address returned HTTP 530.
 # The production host is not a target.
 name: Preview exec
 
