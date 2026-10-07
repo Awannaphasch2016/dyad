@@ -7,7 +7,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { redact, VIBESDK_PROJECT_NAME } from "./vibesdk-project.mjs";
-import { errorSummary, referenceResolved } from "./vibesdk-references.mjs";
+import {
+  errorSummary,
+  referenceResolved,
+  sourceConfigOrder,
+  storedSecretKind,
+} from "./vibesdk-references.mjs";
 import {
   LAB_CONFIG_NAME,
   LAB_D1_NAME,
@@ -15,6 +20,8 @@ import {
   LAB_KV_TITLE,
   LAB_PROMPT,
   LAB_R2_NAME,
+  optionalLabSecrets,
+  requiredLabSecrets,
   PRODUCTION_DATABASE_ID,
   PRODUCTION_KV_ID,
   VIBESDK_SHA,
@@ -248,6 +255,30 @@ async function smoke(url, password) {
   }
 }
 
+async function openRouterFromDyad(adminToken) {
+  for (const config of sourceConfigOrder) {
+    let payload;
+    try {
+      payload = await doppler(
+        adminToken,
+        `/v3/configs/config/secrets/download?project=dyad&config=${encodeURIComponent(config)}&format=json`,
+      );
+    } catch (error) {
+      console.log(`openrouter_dyad_${config}=skipped ${redact(error.message)}`);
+      continue;
+    }
+    for (const value of Object.values(payload)) {
+      if (typeof value === "string") mask(value);
+    }
+    const key = String(payload.OPENROUTER_API_KEY ?? "").trim();
+    if (referenceResolved(key) === "yes") {
+      console.log(`OPENROUTER_API_KEY_source=dyad/${config}`);
+      return key;
+    }
+  }
+  return "";
+}
+
 async function main() {
   const adminToken = process.env.DOPPLER_ADMIN_TOKEN ?? "";
   if (!adminToken) {
@@ -262,21 +293,38 @@ async function main() {
   for (const value of Object.values(downloaded)) {
     if (typeof value === "string") mask(value);
   }
+  const listed = await doppler(
+    adminToken,
+    `/v3/configs/config/secrets?project=${VIBESDK_PROJECT_NAME}&config=dev`,
+  );
+  for (const name of [...requiredLabSecrets, ...optionalLabSecrets]) {
+    const entry = listed.secrets?.[name];
+    console.log(`${name}_stored=${storedSecretKind(entry?.raw)}`);
+    if (entry && typeof entry === "object") {
+      entry.raw = undefined;
+      entry.computed = undefined;
+    }
+  }
   const cloudflareToken = String(downloaded.CLOUDFLARE_API_TOKEN ?? "").trim();
   const accountId = String(downloaded.CLOUDFLARE_ACCOUNT_ID ?? "").trim();
   const anthropicKey = String(downloaded.ANTHROPIC_API_KEY ?? "").trim();
-  const openRouterKey = String(downloaded.OPENROUTER_API_KEY ?? "").trim();
+  let openRouterKey = String(downloaded.OPENROUTER_API_KEY ?? "").trim();
   for (const [name, value] of [
     ["CLOUDFLARE_API_TOKEN", cloudflareToken],
     ["CLOUDFLARE_ACCOUNT_ID", accountId],
     ["ANTHROPIC_API_KEY", anthropicKey],
-    ["OPENROUTER_API_KEY", openRouterKey],
   ]) {
     console.log(`${name}=${referenceResolved(value)}`);
     if (referenceResolved(value) !== "yes") {
       throw new Error(`${name} is not available`);
     }
   }
+  if (referenceResolved(openRouterKey) !== "yes") {
+    openRouterKey = await openRouterFromDyad(adminToken);
+  }
+  console.log(
+    `OPENROUTER_API_KEY=${referenceResolved(openRouterKey) === "yes" ? "yes" : "absent"}`,
+  );
 
   const cf = (method, path, body) =>
     cloudflare(cloudflareToken, method, path, body);
@@ -409,7 +457,16 @@ async function main() {
   const jwtSecret = randomBytes(36).toString("base64url");
   await putSecret(checkout, "JWT_SECRET", jwtSecret, cloudflareEnv);
   await putSecret(checkout, "ANTHROPIC_API_KEY", anthropicKey, cloudflareEnv);
-  await putSecret(checkout, "OPENROUTER_API_KEY", openRouterKey, cloudflareEnv);
+  if (referenceResolved(openRouterKey) === "yes") {
+    await putSecret(
+      checkout,
+      "OPENROUTER_API_KEY",
+      openRouterKey,
+      cloudflareEnv,
+    );
+  } else {
+    console.log("secret=OPENROUTER_API_KEY skipped");
+  }
   await putSecret(
     checkout,
     "CLOUDFLARE_API_TOKEN",

@@ -14,6 +14,7 @@ import {
   labConfigViolations,
   labPassword,
   labWranglerConfig,
+  optionalLabSecrets,
   parseWorkersDevUrl,
   patchThinkModel,
   patchWorkerExports,
@@ -132,4 +133,9 @@ test("the deploy script does not copy dyad database urls or production routes", 
   assert.match(deployScript, /::add-mask::/);
   assert.match(deployScript, /labConfigViolations/);
   assert.equal(deployScript.includes("GEMINI_API_KEY"), false);
+  assert.equal(
+    deployScript.includes("OPENROUTER_API_KEY is not available"),
+    false,
+  );
+  assert.deepEqual(optionalLabSecrets, ["OPENROUTER_API_KEY"]);
 });

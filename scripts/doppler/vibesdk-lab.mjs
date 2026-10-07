@@ -11,6 +11,14 @@ export const VIBESDK_SHA = "9da158d82c597a0e8f4bf033cdccd1053fb6fb15";
 export const LAB_PROMPT =
   "Reply with the single word pong. Do not write files.";
 
+export const requiredLabSecrets = [
+  "CLOUDFLARE_API_TOKEN",
+  "CLOUDFLARE_ACCOUNT_ID",
+  "ANTHROPIC_API_KEY",
+];
+
+export const optionalLabSecrets = ["OPENROUTER_API_KEY"];
+
 export const PRODUCTION_DATABASE_ID = "c4721a2b-b96a-428a-8b2a-b3d255b307e9";
 export const PRODUCTION_KV_ID = "f066f3c2e4824981b48e8586c04db9c1";
 export const PRODUCTION_WORKER_NAME = "vibesdk-production";
