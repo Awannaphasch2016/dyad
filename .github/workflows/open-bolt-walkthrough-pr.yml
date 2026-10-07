@@ -1,0 +1,49 @@
+name: Open bolt walkthrough pull request
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cursor/open-bolt-walkthrough-pr-55d6
+    paths:
+      - .github/workflows/open-bolt-walkthrough-pr.yml
+      - .github/scripts/open-bolt-walkthrough-pr.sh
+
+permissions:
+  contents: read
+
+concurrency:
+  group: open-bolt-walkthrough-pr
+  cancel-in-progress: false
+
+jobs:
+  open-pr:
+    runs-on: ubuntu-latest
+    environment: ai-bots
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Fetch the walkthrough patch
+        run: |
+          git fetch --depth 1 origin cursor/bolt-web-dev-to-prd-55d6
+          git show FETCH_HEAD:plans/bolt-website-walkthrough.patch > "$RUNNER_TEMP/walkthrough.patch"
+
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.DYAD_GITHUB_APP_ID || '5221649' }}
+          private-key: ${{ secrets.DYAD_GITHUB_APP_PRIVATE_KEY || secrets.DYAD_GITHUB_APP_PEM_KEY }}
+          owner: Awannaphasch2016
+          repositories: bolt.diy
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Open the bolt.diy pull request
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          BOLT_REPOSITORY: Awannaphasch2016/bolt.diy
+          BOLT_BRANCH: cursor/website-walkthrough-55d6
+          BOLT_BASE_BRANCH: main
+          PATCH_FILE: ${{ runner.temp }}/walkthrough.patch
+        run: bash .github/scripts/open-bolt-walkthrough-pr.sh
