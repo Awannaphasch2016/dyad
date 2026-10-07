@@ -388,6 +388,119 @@ describe("ChatStreamRemoteManager", () => {
     manager.dispose();
   });
 
+  it("settles an in-flight duplicate without restoring the send", async () => {
+    let resolveBootstrap!: (snapshot: MachineSnapshotEnvelope) => void;
+    const dispatch = vi.fn(async (envelope: MachineDispatchEnvelope) => ({
+      kind: "ignored" as const,
+      actorInstanceId: "actor",
+      revision: 5,
+      transactionSequence: 1,
+      messageId: envelope.messageId,
+      reason: "duplicate-in-flight",
+    }));
+    const connection: ChatStreamRemoteConnection = {
+      getStatus: () => "connected",
+      onStatusChange: () => () => undefined,
+      onSnapshot: () => () => undefined,
+      onDisposed: () => () => undefined,
+      subscribe: () =>
+        new Promise((resolve) => {
+          resolveBootstrap = resolve;
+        }),
+      unsubscribe: () => Promise.resolve(),
+      dispatch,
+    };
+    const manager = new ChatStreamRemoteManager(
+      createStore(),
+      createSequentialIdSource(),
+      connection,
+    );
+    const onSettled = vi.fn();
+    const onAcceptanceError = vi.fn();
+
+    manager.ensure(7).send({
+      type: "submit",
+      request: {
+        chatId: 7,
+        prompt: "Coffee",
+        showOptimisticMessage: true,
+        onSettled,
+        onAcceptanceError,
+      },
+    });
+    resolveBootstrap({
+      protocolVersion: 1,
+      machineId: "chat_stream",
+      encodedKey: { chatId: 7 },
+      actorInstanceId: "actor",
+      revision: 1,
+      encodedState: unavailableChatStreamSnapshot(7),
+    });
+
+    await vi.waitFor(() =>
+      expect(onSettled).toHaveBeenCalledWith({ success: true }),
+    );
+    expect(onAcceptanceError).not.toHaveBeenCalled();
+
+    manager.dispose();
+  });
+
+  it("settles a kickoff that returns to idle without a saved message", async () => {
+    let resolveBootstrap!: (snapshot: MachineSnapshotEnvelope) => void;
+    const dispatch = vi.fn(async (envelope: MachineDispatchEnvelope) => ({
+      kind: "applied" as const,
+      actorInstanceId: "actor",
+      revision: 2,
+      transactionSequence: 1,
+      messageId: envelope.messageId,
+    }));
+    const connection: ChatStreamRemoteConnection = {
+      getStatus: () => "connected",
+      onStatusChange: () => () => undefined,
+      onSnapshot: () => () => undefined,
+      onDisposed: () => () => undefined,
+      subscribe: () =>
+        new Promise((resolve) => {
+          resolveBootstrap = resolve;
+        }),
+      unsubscribe: () => Promise.resolve(),
+      dispatch,
+    };
+    const manager = new ChatStreamRemoteManager(
+      createStore(),
+      createSequentialIdSource(),
+      connection,
+    );
+    const onSettled = vi.fn();
+
+    manager.ensure(7).send({
+      type: "submit",
+      request: { chatId: 7, prompt: "Start Discovery.", onSettled },
+    });
+    resolveBootstrap({
+      protocolVersion: 1,
+      machineId: "chat_stream",
+      encodedKey: { chatId: 7 },
+      actorInstanceId: "actor",
+      revision: 2,
+      encodedState: {
+        ...unavailableChatStreamSnapshot(7),
+        phase: "idle",
+        lastAcceptance: {
+          intentId: "chat-turn:1",
+          acceptance: "message-accepted",
+        },
+      },
+    });
+
+    await vi.waitFor(() =>
+      expect(onSettled).toHaveBeenCalledWith({ success: true }),
+    );
+    expect(dispatch).not.toHaveBeenCalled();
+
+    manager.dispose();
+  });
+
   it("handles a pending completion in the first bootstrap snapshot", async () => {
     let resolveBootstrap!: (snapshot: MachineSnapshotEnvelope) => void;
     const dispatch = vi.fn(

@@ -189,7 +189,7 @@ import {
   unmarkMessageAsUsingFreeAgentQuota,
 } from "./free_agent_quota_handlers";
 import { AI_STREAMING_ERROR_MESSAGE_PREFIX } from "@/shared/texts";
-import { getCurrentCommitHash } from "../utils/git_utils";
+import { readProjectCommitHash } from "../utils/project_git_readiness";
 import {
   processChatMessagesWithVersionedFiles as getVersionedFiles,
   VersionedFiles,
@@ -1890,9 +1890,9 @@ ${componentSnippet}
               : selectedModel.connection === "subscription"
                 ? `ChatGPT subscription (${selectedModel.name})`
                 : selectedModel.name,
-          sourceCommitHash: await getCurrentCommitHash({
-            path: getDyadAppPath(chat.app.path),
-          }),
+          sourceCommitHash: await readProjectCommitHash(
+            getDyadAppPath(chat.app.path),
+          ),
         })
         .returning();
 

@@ -1011,6 +1011,19 @@ export function registerAppHandlers() {
         chatId,
       };
       return result;
+    } catch (error) {
+      // The app row and phase chats are inserted before Git init so a refresh
+      // cannot treat the app as missing its phases. A failed init must not
+      // leave that row selectable.
+      try {
+        await cleanupFirstPromptCreation();
+      } catch (cleanupError) {
+        logger.error(
+          `Failed to delete app ${app.id} after create failed`,
+          cleanupError,
+        );
+      }
+      throw error;
     } finally {
       if (params.firstPromptCreationOperationId) {
         await firstPromptCreationRegistry.complete(

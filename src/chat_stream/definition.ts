@@ -1,8 +1,9 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { z } from "zod";
 import { db } from "@/db";
-import { chats } from "@/db/schema";
+import { chats, messages } from "@/db/schema";
+import { isFactoryKickoffPrompt } from "@/lib/factoryPhase";
 import type { DistributedMachineDefinition } from "@/distributed_machines/definition";
 import { REMOTE_MACHINE_PROTOCOL_VERSION } from "@/distributed_machines/remote_protocol";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
@@ -57,6 +58,16 @@ import {
   unavailableChatStreamSnapshot,
 } from "./transport";
 import { canCancelActiveChatStreamPhase } from "./transition";
+
+function chatHasUserMessage(chatId: number): boolean {
+  const row = db
+    .select({ id: messages.id })
+    .from(messages)
+    .where(and(eq(messages.chatId, chatId), eq(messages.role, "user")))
+    .limit(1)
+    .get();
+  return row != null;
+}
 
 async function requireExistingChat(chatId: number): Promise<number> {
   const chat = db
@@ -261,6 +272,17 @@ function createCommandRunner(
                 wasCancelled: true,
               },
               targetAppId,
+            });
+            return;
+          }
+          if (
+            isFactoryKickoffPrompt(command.intent.prompt) &&
+            chatHasUserMessage(context.key.chatId)
+          ) {
+            emit({
+              type: "ADMISSION_REPLAYED",
+              intentId: command.intent.intentId,
+              acceptance: "message-accepted",
             });
             return;
           }
