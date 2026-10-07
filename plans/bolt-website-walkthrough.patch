@@ -1,0 +1,1964 @@
+From 8584d658320c4a42c36f63a9d2dc4b9d118a7327 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Wed, 7 Oct 2026 14:09:41 +0000
+Subject: [PATCH] Add the Discovery, Implementation, and Delivery walkthrough.
+
+The website chat keeps one send in flight, unlocks the next phase only after that phase's summary, and shows the preview once Implementation starts.
+---
+ app/components/chat/BaseChat.tsx              |  38 +-
+ app/components/chat/Chat.client.tsx           | 194 +++++----
+ app/components/chat/ChatBox.tsx               | 101 +++--
+ app/components/factory/FactoryPhaseBar.tsx    | 151 +++++++
+ .../header/HeaderActionButtons.client.tsx     |   4 -
+ app/lib/.server/llm/stream-text.ts            |  14 +-
+ app/lib/factoryPhase.spec.ts                  | 390 ++++++++++++++++++
+ app/lib/factoryPhase.ts                       | 361 ++++++++++++++++
+ app/lib/factoryPhasePrompt.spec.ts            |  11 +
+ app/lib/factoryPhasePrompt.ts                 |  80 ++++
+ app/lib/factoryRun.spec.ts                    |  38 ++
+ app/lib/factoryRun.ts                         |  76 ++++
+ app/lib/hooks/useMessageParser.ts             |   7 +-
+ app/lib/persistence/db.ts                     |   4 +-
+ app/lib/persistence/useChatHistory.ts         |  18 +
+ app/routes/api.chat.ts                        |  46 ++-
+ 16 files changed, 1391 insertions(+), 142 deletions(-)
+ create mode 100644 app/components/factory/FactoryPhaseBar.tsx
+ create mode 100644 app/lib/factoryPhase.spec.ts
+ create mode 100644 app/lib/factoryPhase.ts
+ create mode 100644 app/lib/factoryPhasePrompt.spec.ts
+ create mode 100644 app/lib/factoryPhasePrompt.ts
+ create mode 100644 app/lib/factoryRun.spec.ts
+ create mode 100644 app/lib/factoryRun.ts
+
+diff --git a/app/components/chat/BaseChat.tsx b/app/components/chat/BaseChat.tsx
+index 96abb01..720388b 100644
+--- a/app/components/chat/BaseChat.tsx
++++ b/app/components/chat/BaseChat.tsx
+@@ -17,8 +17,11 @@ import { ExamplePrompts } from '~/components/chat/ExamplePrompts';
+ import { SupabaseChatAlert } from '~/components/chat/SupabaseAlert';
+ import { ImportButtons } from '~/components/chat/chatExportAndImport/ImportButtons';
+ import DeployChatAlert from '~/components/deploy/DeployAlert';
++import { FactoryPhaseBar } from '~/components/factory/FactoryPhaseBar';
+ import { Menu } from '~/components/sidebar/Menu.client';
+ import type { ElementInfo } from '~/components/workbench/Inspector';
++import type { FactoryPhase } from '~/lib/factoryPhase';
++import type { FactoryPhaseComment } from '~/lib/factoryRun';
+ 
+ const LazyWorkbench = lazy(() =>
+   import('~/components/workbench/Workbench.client').then((m) => ({ default: m.Workbench })),
+@@ -81,6 +84,19 @@ interface BaseChatProps {
+   setSelectedElement?: (element: ElementInfo | null) => void;
+   addToolOutput?: (options: { tool: string; toolCallId: string; output: unknown }) => void;
+   onWebSearchResult?: (result: string) => void;
++  walkthrough?: {
++    phase: FactoryPhase;
++    progress: {
++      approved: ReadonlySet<FactoryPhase>;
++      started: ReadonlySet<FactoryPhase>;
++    };
++    phaseSummary: string | null;
++    comments: FactoryPhaseComment[];
++    approvalPending: boolean;
++    onSelectPhase: (phase: FactoryPhase) => void;
++    onApprove: () => void;
++    onComment: (body: string) => void;
++  };
+ }
+ 
+ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
+@@ -131,6 +147,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
+         throw new Error('addToolOutput not implemented');
+       },
+       onWebSearchResult,
++      walkthrough,
+     },
+     ref,
+   ) => {
+@@ -341,7 +358,20 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
+         <ClientOnly>{() => <Menu />}</ClientOnly>
+         <div className="flex flex-col lg:flex-row overflow-y-auto w-full h-full">
+           <div className={classNames(styles.Chat, 'flex flex-col flex-grow lg:min-w-[var(--chat-min-width)] h-full')}>
+-            {!chatStarted && (
++            {walkthrough && (
++              <FactoryPhaseBar
++                phase={walkthrough.phase}
++                progress={walkthrough.progress}
++                phaseSummary={walkthrough.phaseSummary}
++                isStreaming={isStreaming}
++                comments={walkthrough.comments}
++                approvalPending={walkthrough.approvalPending}
++                onSelectPhase={walkthrough.onSelectPhase}
++                onApprove={walkthrough.onApprove}
++                onComment={walkthrough.onComment}
++              />
++            )}
++            {!chatStarted && !walkthrough && (
+               <div id="intro" className="mt-[16vh] max-w-2xl mx-auto text-center px-4 lg:px-0">
+                 <h1 className="text-3xl lg:text-6xl font-bold text-bolt-elements-textPrimary mb-4 animate-fade-in">
+                   Where ideas begin
+@@ -454,6 +484,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
+                   handleFileUpload={handleFileUpload}
+                   chatMode={chatMode}
+                   setChatMode={setChatMode}
++                  walkthrough={Boolean(walkthrough)}
+                   designScheme={designScheme}
+                   setDesignScheme={setDesignScheme}
+                   selectedElement={selectedElement}
+@@ -463,7 +494,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
+               </div>
+             </StickToBottom>
+             <div className="flex flex-col justify-center">
+-              {!chatStarted && (
++              {!chatStarted && !walkthrough && (
+                 <div className="flex justify-center gap-2">
+                   {ImportButtons(importChat)}
+                   <GitCloneButton importChat={importChat} />
+@@ -471,6 +502,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
+               )}
+               <div className="flex flex-col gap-5">
+                 {!chatStarted &&
++                  !walkthrough &&
+                   ExamplePrompts((event, messageInput) => {
+                     if (isStreaming) {
+                       handleStop?.();
+@@ -479,7 +511,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
+ 
+                     handleSendMessage?.(event, messageInput);
+                   })}
+-                {!chatStarted && <StarterTemplates />}
++                {!chatStarted && !walkthrough && <StarterTemplates />}
+               </div>
+             </div>
+           </div>
+diff --git a/app/components/chat/Chat.client.tsx b/app/components/chat/Chat.client.tsx
+index bb4df40..285c366 100644
+--- a/app/components/chat/Chat.client.tsx
++++ b/app/components/chat/Chat.client.tsx
+@@ -8,10 +8,20 @@ import { useSearchParams } from 'react-router';
+ import { toast } from 'react-toastify';
+ import { BaseChat } from './BaseChat';
+ import type { ElementInfo } from '~/components/workbench/Inspector';
++import {
++  continuePrefill,
++  factoryPhaseChatMode,
++  factoryPhaseKickoff,
++  isFactoryPhaseUnlocked,
++  latestFactoryPhaseSummary,
++  nextFactoryPhase,
++  walkthroughPreviewVisible,
++} from '~/lib/factoryPhase';
++import { factoryRunFromMetadata, progressForRun, walkthroughPhase, type FactoryRunRecord } from '~/lib/factoryRun';
+ import { useMessageParser, usePromptEnhancer, useShortcuts } from '~/lib/hooks';
+ import { useSettings } from '~/lib/hooks/useSettings';
+-import { description, useChatHistory } from '~/lib/persistence';
+-import { createMessage, getMessageText, type AnyPart } from '~/lib/persistence/messageMigration';
++import { description, useChatHistory, chatMetadata } from '~/lib/persistence';
++import { getMessageText, createMessage, type AnyPart } from '~/lib/persistence/messageMigration';
+ import { chatStore } from '~/lib/stores/chat';
+ import { logStore } from '~/lib/stores/logs';
+ import { useMCPStore } from '~/lib/stores/mcp';
+@@ -28,14 +38,13 @@ import { cubicEasingFn } from '~/utils/easings';
+ import { filesToArtifacts } from '~/utils/fileUtils';
+ import { createScopedLogger, renderLogger } from '~/utils/logger';
+ import { createSampler } from '~/utils/sampler';
+-import { getTemplates, selectStarterTemplate } from '~/utils/selectStarterTemplate';
+ 
+ const logger = createScopedLogger('Chat');
+ 
+ export function Chat() {
+   renderLogger.trace('Chat');
+ 
+-  const { ready, initialMessages, storeMessageHistory, importChat, exportChat } = useChatHistory();
++  const { ready, initialMessages, storeMessageHistory, importChat, exportChat, saveFactoryRun } = useChatHistory();
+   const title = useStore(description);
+   useEffect(() => {
+     workbenchStore.setReloadedMessages(initialMessages.map((m) => m.id));
+@@ -49,6 +58,7 @@ export function Chat() {
+           initialMessages={initialMessages}
+           exportChat={exportChat}
+           storeMessageHistory={storeMessageHistory}
++          saveFactoryRun={saveFactoryRun}
+           importChat={importChat}
+         />
+       )}
+@@ -77,13 +87,14 @@ const processSampledMessages = createSampler(
+ interface ChatProps {
+   initialMessages: UIMessage[];
+   storeMessageHistory: (messages: UIMessage[]) => Promise<void>;
++  saveFactoryRun: (factory: FactoryRunRecord) => Promise<void>;
+   importChat: (description: string, messages: UIMessage[]) => Promise<void>;
+   exportChat: () => void;
+   description?: string;
+ }
+ 
+ export const ChatImpl = memo(
+-  ({ description, initialMessages, storeMessageHistory, importChat, exportChat }: ChatProps) => {
++  ({ description, initialMessages, storeMessageHistory, saveFactoryRun, importChat, exportChat }: ChatProps) => {
+     useShortcuts();
+ 
+     const textareaRef = useRef<HTMLTextAreaElement>(null);
+@@ -103,7 +114,7 @@ export const ChatImpl = memo(
+     );
+ 
+     const supabaseAlert = useStore(workbenchStore.supabaseAlert);
+-    const { activeProviders, promptId, autoSelectTemplate, contextOptimizationEnabled } = useSettings();
++    const { activeProviders, promptId, contextOptimizationEnabled } = useSettings();
+     const [llmErrorAlert, setLlmErrorAlert] = useState<LlmErrorAlertType | undefined>(undefined);
+ 
+     const [model, setModel] = useState(() => {
+@@ -118,7 +129,15 @@ export const ChatImpl = memo(
+     const { showChat } = useStore(chatStore);
+     const [animationScope, animate] = useAnimate();
+     const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
+-    const [chatMode, setChatMode] = useState<'discuss' | 'build'>('build');
++    const [factoryRun, setFactoryRun] = useState(() => factoryRunFromMetadata(chatMetadata.get()));
++    const [approvalPending, setApprovalPending] = useState(false);
++    const phaseRef = useRef(factoryRun.phase);
++    phaseRef.current = factoryRun.phase;
++
++    const [chatMode, setChatMode] = useState<'discuss' | 'build'>(() =>
++      factoryPhaseChatMode(factoryRun.phase) === 'build' ? 'build' : 'discuss',
++    );
++
+     const [selectedElement, setSelectedElement] = useState<ElementInfo | null>(null);
+     const mcpSettings = useMCPStore((state) => state.settings);
+ 
+@@ -141,6 +160,7 @@ export const ChatImpl = memo(
+       promptId,
+       contextOptimization: contextOptimizationEnabled,
+       chatMode,
++      factoryPhase: phaseRef.current,
+       designScheme,
+       supabase: {
+         isConnected: supabaseConn.isConnected,
+@@ -159,6 +179,7 @@ export const ChatImpl = memo(
+       promptId,
+       contextOptimization: contextOptimizationEnabled,
+       chatMode,
++      factoryPhase: phaseRef.current,
+       designScheme,
+       supabase: {
+         isConnected: supabaseConn.isConnected,
+@@ -483,8 +504,7 @@ export const ChatImpl = memo(
+         return;
+       }
+ 
+-      if (isLoading) {
+-        abort();
++      if (isLoading || fakeLoading) {
+         return;
+       }
+ 
+@@ -502,71 +522,6 @@ export const ChatImpl = memo(
+       if (!chatStarted) {
+         setFakeLoading(true);
+ 
+-        if (autoSelectTemplate) {
+-          const { template, title } = await selectStarterTemplate({
+-            message: finalMessageContent,
+-            model,
+-            provider,
+-          });
+-
+-          if (template !== 'blank') {
+-            const temResp = await getTemplates(template, title).catch((e) => {
+-              if (e.message.includes('rate limit')) {
+-                toast.warning('Rate limit exceeded. Skipping starter template\n Continuing with blank template');
+-              } else {
+-                toast.warning('Failed to import starter template\n Continuing with blank template');
+-              }
+-
+-              return null;
+-            });
+-
+-            if (temResp) {
+-              const { assistantMessage, userMessage } = temResp;
+-              const userMessageText = `[Model: ${model}]\n\n[Provider: ${provider.name}]\n\n${finalMessageContent}`;
+-
+-              setMessages([
+-                {
+-                  id: `1-${new Date().getTime()}`,
+-                  role: 'user',
+-                  content: userMessageText,
+-                  parts: createMessageParts(userMessageText, imageDataList),
+-                },
+-                {
+-                  id: `2-${new Date().getTime()}`,
+-                  role: 'assistant',
+-                  content: assistantMessage,
+-                  parts: [{ type: 'text', text: assistantMessage }],
+-                },
+-                {
+-                  id: `3-${new Date().getTime()}`,
+-                  role: 'user',
+-                  content: `[Model: ${model}]\n\n[Provider: ${provider.name}]\n\n${userMessage}`,
+-                  parts: [
+-                    { type: 'text', text: `[Model: ${model}]\n\n[Provider: ${provider.name}]\n\n${userMessage}` },
+-                  ],
+-                  annotations: ['hidden'],
+-                  metadata: { flags: ['hidden'] },
+-                },
+-              ] as any);
+-
+-              void regenerate();
+-              setInput('');
+-              Cookies.remove(PROMPT_COOKIE_KEY);
+-
+-              setUploadedFiles([]);
+-              setImageDataList([]);
+-
+-              resetEnhancer();
+-
+-              textareaRef.current?.blur();
+-              setFakeLoading(false);
+-
+-              return;
+-            }
+-          }
+-        }
+-
+-        // If autoSelectTemplate is disabled or template selection failed, proceed with normal message
+         const userMessageText = `[Model: ${model}]\n\n[Provider: ${provider.name}]\n\n${finalMessageContent}`;
+         const fileParts = await filesToFileParts(uploadedFiles);
+ 
+@@ -688,6 +643,85 @@ export const ChatImpl = memo(
+       [input],
+     );
+ 
++    useEffect(() => {
++      walkthroughPhase.set(factoryRun.phase);
++      setChatMode(factoryPhaseChatMode(factoryRun.phase) === 'build' ? 'build' : 'discuss');
++
++      if (!walkthroughPreviewVisible(factoryRun.phase)) {
++        workbenchStore.showWorkbench.set(false);
++      }
++    }, [factoryRun.phase]);
++
++    const transcript = messages.map((message) => ({
++      role: message.role,
++      content: getMessageText(message),
++    }));
++
++    const phaseSummary = latestFactoryPhaseSummary(transcript, factoryRun.phase);
++    const progress = progressForRun(factoryRun, transcript.length > 0);
++
++    const selectPhase = (phase: FactoryRunRecord['phase']) => {
++      if (!isFactoryPhaseUnlocked(phase, progress)) {
++        return;
++      }
++
++      const nextRun = { ...factoryRun, phase };
++      setFactoryRun(nextRun);
++      void saveFactoryRun(nextRun);
++    };
++
++    const addComment = (body: string) => {
++      const nextRun = {
++        ...factoryRun,
++        comments: [...factoryRun.comments, { phase: factoryRun.phase, body }],
++      };
++      setFactoryRun(nextRun);
++      void saveFactoryRun(nextRun);
++    };
++
++    const approvePhase = async () => {
++      if (approvalPending || isLoading || fakeLoading) {
++        return;
++      }
++
++      const summary = latestFactoryPhaseSummary(transcript, factoryRun.phase);
++      const next = nextFactoryPhase(factoryRun.phase);
++
++      const approved = factoryRun.approved.includes(factoryRun.phase)
++        ? factoryRun.approved
++        : [...factoryRun.approved, factoryRun.phase];
++      const nextRun: FactoryRunRecord = {
++        ...factoryRun,
++        approved,
++        phase: next ?? factoryRun.phase,
++      };
++      setFactoryRun(nextRun);
++      void saveFactoryRun(nextRun);
++
++      if (!next) {
++        return;
++      }
++
++      const prompt = next === 'implementation' ? continuePrefill(next, summary) : factoryPhaseKickoff(next, summary);
++
++      if (!prompt) {
++        return;
++      }
++
++      const mode = factoryPhaseChatMode(next) === 'build' ? 'build' : 'discuss';
++      phaseRef.current = next;
++      bodyRef.current = { ...bodyRef.current, factoryPhase: next, chatMode: mode };
++      setChatMode(mode);
++      walkthroughPhase.set(next);
++      setApprovalPending(true);
++
++      try {
++        await sendMessage({} as React.UIEvent, prompt);
++      } finally {
++        setApprovalPending(false);
++      }
++    };
++
+     return (
+       <BaseChat
+         ref={animationScope}
+@@ -764,6 +798,18 @@ export const ChatImpl = memo(
+         setSelectedElement={setSelectedElement}
+         addToolOutput={addToolOutput}
+         onWebSearchResult={handleWebSearchResult}
++        walkthrough={{
++          phase: factoryRun.phase,
++          progress,
++          phaseSummary,
++          comments: factoryRun.comments,
++          approvalPending,
++          onSelectPhase: selectPhase,
++          onApprove: () => {
++            void approvePhase();
++          },
++          onComment: addComment,
++        }}
+       />
+     );
+   },
+diff --git a/app/components/chat/ChatBox.tsx b/app/components/chat/ChatBox.tsx
+index f5994bf..f505f3a 100644
+--- a/app/components/chat/ChatBox.tsx
++++ b/app/components/chat/ChatBox.tsx
+@@ -59,6 +59,7 @@ interface ChatBoxProps {
+   onWebSearchResult?: (result: string) => void;
+   chatMode?: 'discuss' | 'build';
+   setChatMode?: (mode: 'discuss' | 'build') => void;
++  walkthrough?: boolean;
+   designScheme?: DesignScheme;
+   setDesignScheme?: (scheme: DesignScheme) => void;
+   selectedElement?: ElementInfo | null;
+@@ -121,6 +122,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
+               />
+               {(props.providerList || []).length > 0 &&
+                 props.provider &&
++                !props.walkthrough &&
+                 !LOCAL_PROVIDERS.includes(props.provider.name) && (
+                   <APIKeyManager
+                     provider={props.provider}
+@@ -142,16 +144,18 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
+           props.setImageDataList?.(props.imageDataList.filter((_, i) => i !== index));
+         }}
+       />
+-      <ClientOnly>
+-        {() => (
+-          <ScreenshotStateManager
+-            setUploadedFiles={props.setUploadedFiles}
+-            setImageDataList={props.setImageDataList}
+-            uploadedFiles={props.uploadedFiles}
+-            imageDataList={props.imageDataList}
+-          />
+-        )}
+-      </ClientOnly>
++      {!props.walkthrough && (
++        <ClientOnly>
++          {() => (
++            <ScreenshotStateManager
++              setUploadedFiles={props.setUploadedFiles}
++              setImageDataList={props.setImageDataList}
++              uploadedFiles={props.uploadedFiles}
++              imageDataList={props.imageDataList}
++            />
++          )}
++        </ClientOnly>
++      )}
+       {props.selectedElement && (
+         <div className="flex mx-1.5 gap-2 items-center justify-between rounded-lg rounded-b-none border border-b-none border-bolt-elements-borderColor text-bolt-elements-textPrimary flex py-1 px-2.5 font-medium text-xs">
+           <div className="flex gap-2 items-center lowercase">
+@@ -217,7 +221,6 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
+               event.preventDefault();
+ 
+               if (props.isStreaming) {
+-                props.handleStop?.();
+                 return;
+               }
+ 
+@@ -238,7 +241,13 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
+             minHeight: props.TEXTAREA_MIN_HEIGHT,
+             maxHeight: props.TEXTAREA_MAX_HEIGHT,
+           }}
+-          placeholder={props.chatMode === 'build' ? 'How can Bolt help you today?' : 'What would you like to discuss?'}
++          placeholder={
++            props.walkthrough
++              ? 'Describe the page'
++              : props.chatMode === 'build'
++                ? 'How can Bolt help you today?'
++                : 'What would you like to discuss?'
++          }
+           translate="no"
+         />
+         <ClientOnly>
+@@ -262,35 +271,45 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
+         </ClientOnly>
+         <div className="flex justify-between items-center text-sm p-4 pt-2">
+           <div className="flex gap-1 items-center">
+-            <ColorSchemeDialog designScheme={props.designScheme} setDesignScheme={props.setDesignScheme} />
+-            <McpTools />
+-            <IconButton title="Upload file" className="transition-all" onClick={() => props.handleFileUpload()}>
+-              <div className="i-ph:paperclip text-xl"></div>
+-            </IconButton>
+-            <WebSearch onSearchResult={(result) => props.onWebSearchResult?.(result)} disabled={props.isStreaming} />
+-            <IconButton
+-              title="Enhance prompt"
+-              disabled={props.input.length === 0 || props.enhancingPrompt}
+-              className={classNames('transition-all', props.enhancingPrompt ? 'opacity-100' : '')}
+-              onClick={() => {
+-                props.enhancePrompt?.();
+-                toast.success('Prompt enhanced!');
+-              }}
+-            >
+-              {props.enhancingPrompt ? (
+-                <div className="i-svg-spinners:90-ring-with-bg text-bolt-elements-loader-progress text-xl animate-spin"></div>
+-              ) : (
+-                <div className="i-bolt:stars text-xl"></div>
+-              )}
+-            </IconButton>
++            {!props.walkthrough && (
++              <ColorSchemeDialog designScheme={props.designScheme} setDesignScheme={props.setDesignScheme} />
++            )}
++            {!props.walkthrough && <McpTools />}
++            {!props.walkthrough && (
++              <IconButton title="Upload file" className="transition-all" onClick={() => props.handleFileUpload()}>
++                <div className="i-ph:paperclip text-xl"></div>
++              </IconButton>
++            )}
++            {!props.walkthrough && (
++              <WebSearch onSearchResult={(result) => props.onWebSearchResult?.(result)} disabled={props.isStreaming} />
++            )}
++            {!props.walkthrough && (
++              <IconButton
++                title="Enhance prompt"
++                disabled={props.input.length === 0 || props.enhancingPrompt}
++                className={classNames('transition-all', props.enhancingPrompt ? 'opacity-100' : '')}
++                onClick={() => {
++                  props.enhancePrompt?.();
++                  toast.success('Prompt enhanced!');
++                }}
++              >
++                {props.enhancingPrompt ? (
++                  <div className="i-svg-spinners:90-ring-with-bg text-bolt-elements-loader-progress text-xl animate-spin"></div>
++                ) : (
++                  <div className="i-bolt:stars text-xl"></div>
++                )}
++              </IconButton>
++            )}
+ 
+-            <SpeechRecognitionButton
+-              isListening={props.isListening}
+-              onStart={props.startListening}
+-              onStop={props.stopListening}
+-              disabled={props.isStreaming}
+-            />
+-            {props.chatStarted && (
++            {!props.walkthrough && (
++              <SpeechRecognitionButton
++                isListening={props.isListening}
++                onStart={props.startListening}
++                onStop={props.stopListening}
++                disabled={props.isStreaming}
++              />
++            )}
++            {!props.walkthrough && props.chatStarted && (
+               <IconButton
+                 title="Discuss"
+                 className={classNames(
+@@ -328,7 +347,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
+               <kbd className="kdb px-1.5 py-0.5 rounded bg-bolt-elements-background-depth-2">Return</kbd> a new line
+             </div>
+           ) : null}
+-          <SupabaseConnection />
++          {!props.walkthrough && <SupabaseConnection />}
+           <ExpoQrModal open={props.qrModalOpen} onClose={() => props.setQrModalOpen(false)} />
+         </div>
+       </div>
+diff --git a/app/components/factory/FactoryPhaseBar.tsx b/app/components/factory/FactoryPhaseBar.tsx
+new file mode 100644
+index 0000000..f834945
+--- /dev/null
++++ b/app/components/factory/FactoryPhaseBar.tsx
+@@ -0,0 +1,151 @@
++import { useState } from 'react';
++import {
++  FACTORY_PHASES,
++  type FactoryPhase,
++  canContinueFactoryPhase,
++  factoryPhaseHint,
++  factoryPhaseLabel,
++  factoryPhaseShade,
++  isFactoryPhaseApproved,
++  isFactoryPhaseUnlocked,
++  lockedFactoryPhaseReason,
++  nextFactoryPhase,
++  showFactoryPhaseApproval,
++} from '~/lib/factoryPhase';
++import type { FactoryPhaseComment } from '~/lib/factoryRun';
++
++interface FactoryPhaseBarProps {
++  phase: FactoryPhase;
++  progress: {
++    approved: ReadonlySet<FactoryPhase>;
++    started: ReadonlySet<FactoryPhase>;
++  };
++  phaseSummary: string | null;
++  isStreaming: boolean;
++  comments: FactoryPhaseComment[];
++  approvalPending: boolean;
++  onSelectPhase: (phase: FactoryPhase) => void;
++  onApprove: () => void;
++  onComment: (body: string) => void;
++}
++
++export function FactoryPhaseBar({
++  phase,
++  progress,
++  phaseSummary,
++  isStreaming,
++  comments,
++  approvalPending,
++  onSelectPhase,
++  onApprove,
++  onComment,
++}: FactoryPhaseBarProps) {
++  const [comment, setComment] = useState('');
++  const next = nextFactoryPhase(phase);
++  const hasPhaseSummary = phaseSummary != null;
++  const canApprove = canContinueFactoryPhase({ hasPhaseSummary, isStreaming }) && !approvalPending;
++  const deliveryStillOpen = phase === 'delivery' && !isFactoryPhaseApproved(phase, progress);
++
++  const showApproval = showFactoryPhaseApproval({ phase, progress, hasPhaseSummary }) || deliveryStillOpen;
++
++  const approveLabel = next ? `Approve and continue to ${factoryPhaseLabel(next)}` : 'Approve delivery';
++
++  return (
++    <div
++      className="border-b border-bolt-elements-borderColor bg-bolt-elements-background-depth-2 px-3 py-2"
++      data-testid="factory-phase-bar"
++    >
++      <div className="flex flex-wrap items-center gap-2">
++        {FACTORY_PHASES.map((item) => {
++          const selected = item === phase;
++          const unlocked = isFactoryPhaseUnlocked(item, progress);
++
++          const shade = factoryPhaseShade({
++            phase: item,
++            progress,
++            hasPhaseSummary: item === phase ? hasPhaseSummary : progress.approved.has(item),
++          });
++
++          return (
++            <button
++              key={item}
++              type="button"
++              aria-pressed={selected}
++              disabled={!unlocked}
++              title={unlocked ? undefined : lockedFactoryPhaseReason(item)}
++              data-testid={`factory-phase-${item}`}
++              data-phase-shade={shade}
++              className={`rounded-md px-2.5 py-1 text-sm disabled:cursor-not-allowed ${
++                shade === 'finished'
++                  ? 'bg-accent-500 text-white'
++                  : shade === 'in-progress'
++                    ? 'bg-accent-500/25 text-bolt-elements-textPrimary'
++                    : 'bg-bolt-elements-background-depth-3 text-bolt-elements-textSecondary'
++              } ${selected ? 'ring-2 ring-accent-500 ring-offset-1' : ''}`}
++              onClick={() => onSelectPhase(item)}
++            >
++              {!unlocked && <span className="i-ph:lock mr-1 inline-block align-middle" aria-hidden />}
++              {factoryPhaseLabel(item)}
++            </button>
++          );
++        })}
++        {showApproval && (
++          <button
++            type="button"
++            className="ml-auto rounded-md bg-accent-500 px-2.5 py-1 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
++            disabled={!canApprove}
++            data-testid="factory-phase-continue"
++            onClick={onApprove}
++          >
++            {approveLabel}
++          </button>
++        )}
++      </div>
++      <form
++        className="mt-2 flex flex-wrap items-center gap-2"
++        data-testid="factory-phase-comments"
++        onSubmit={(event) => {
++          event.preventDefault();
++
++          const body = comment.trim();
++
++          if (!body) {
++            return;
++          }
++
++          onComment(body);
++          setComment('');
++        }}
++      >
++        {comments
++          .filter((item) => item.phase === phase)
++          .map((item) => (
++            <p key={`${item.phase}:${item.body}`} className="w-full text-xs text-bolt-elements-textSecondary">
++              {item.body}
++            </p>
++          ))}
++        <input
++          aria-label="Phase comment"
++          className="h-8 min-w-0 flex-1 rounded-md border border-bolt-elements-borderColor bg-transparent px-2 text-sm"
++          value={comment}
++          placeholder="Comment on this phase"
++          onChange={(event) => setComment(event.target.value)}
++        />
++        <button type="submit" className="rounded-md border border-bolt-elements-borderColor px-2.5 py-1 text-sm">
++          Comment
++        </button>
++      </form>
++      <p className="mt-2 text-xs text-bolt-elements-textSecondary">
++        {factoryPhaseHint(phase)}
++        {showApproval && !canApprove && (
++          <>
++            {' '}
++            {isStreaming
++              ? 'The reply is still coming in.'
++              : `Approval unlocks when the last reply posts its ${factoryPhaseLabel(phase)} summary.`}
++          </>
++        )}
++      </p>
++    </div>
++  );
++}
+diff --git a/app/components/header/HeaderActionButtons.client.tsx b/app/components/header/HeaderActionButtons.client.tsx
+index d51672e..f36fca2 100644
+--- a/app/components/header/HeaderActionButtons.client.tsx
++++ b/app/components/header/HeaderActionButtons.client.tsx
+@@ -1,6 +1,5 @@
+ import { useStore } from '@nanostores/react';
+ import { useState } from 'react';
+-import { DeployButton } from '~/components/deploy/DeployButton';
+ import { workbenchStore } from '~/lib/stores/workbench';
+ 
+ interface HeaderActionButtonsProps {
+@@ -17,9 +16,6 @@ export function HeaderActionButtons({ chatStarted: _chatStarted }: HeaderActionB
+   return (
+     <div className="flex items-center gap-1">
+       {/* Deploy Button */}
+-      {shouldShowButtons && <DeployButton />}
+-
+-      {/* Debug Tools */}
+       {shouldShowButtons && (
+         <div className="flex border border-bolt-elements-borderColor rounded-md overflow-hidden text-sm">
+           <button
+diff --git a/app/lib/.server/llm/stream-text.ts b/app/lib/.server/llm/stream-text.ts
+index e28400d..efbe815 100644
+--- a/app/lib/.server/llm/stream-text.ts
++++ b/app/lib/.server/llm/stream-text.ts
+@@ -5,6 +5,8 @@ import { createFilesContext, extractPropertiesFromMessage } from './utils';
+ import { PromptLibrary } from '~/lib/common/prompt-library';
+ import { discussPrompt } from '~/lib/common/prompts/discuss-prompt';
+ import { getSystemPrompt } from '~/lib/common/prompts/prompts';
++import type { FactoryPhase } from '~/lib/factoryPhase';
++import { appendFactoryPhaseSystemPrompt, factoryPhaseSystemPrompt } from '~/lib/factoryPhasePrompt';
+ import { LLMManager } from '~/lib/modules/llm/manager';
+ import { createMessage, getMessageText } from '~/lib/persistence/messageMigration';
+ import type { DesignScheme } from '~/types/design-scheme';
+@@ -86,6 +88,7 @@ export async function streamText(props: {
+   summary?: string;
+   messageSliceId?: number;
+   chatMode?: 'discuss' | 'build';
++  factoryPhase?: FactoryPhase | null;
+   designScheme?: DesignScheme;
+ 
+   /*
+@@ -107,6 +110,7 @@ export async function streamText(props: {
+     contextFiles,
+     summary,
+     chatMode,
++    factoryPhase,
+     designScheme,
+     onChunk,
+   } = props;
+@@ -342,6 +346,14 @@ export async function streamText(props: {
+     ...forwardedOptions
+   } = filteredOptions as StreamingOptions & Record<string, unknown>;
+ 
++  const phasePrompt = factoryPhaseSystemPrompt(factoryPhase ?? null);
++  const baseSystem = chatMode === 'build' ? systemPrompt : discussPrompt();
++
++  const system =
++    factoryPhase === 'discovery' || factoryPhase === 'delivery'
++      ? phasePrompt
++      : appendFactoryPhaseSystemPrompt(baseSystem, factoryPhase ?? null);
++
+   const streamParams = {
+     model: provider.getModelInstance({
+       model: modelDetails.name,
+@@ -349,7 +361,7 @@ export async function streamText(props: {
+       apiKeys,
+       providerSettings,
+     }),
+-    system: chatMode === 'build' ? systemPrompt : discussPrompt(),
++    system,
+     ...tokenParams,
+     messages: await convertToModelMessages(processedMessages as any),
+     ...forwardedOptions,
+diff --git a/app/lib/factoryPhase.spec.ts b/app/lib/factoryPhase.spec.ts
+new file mode 100644
+index 0000000..0a995fe
+--- /dev/null
++++ b/app/lib/factoryPhase.spec.ts
+@@ -0,0 +1,390 @@
++import { describe, expect, it } from 'vitest';
++import {
++  canContinueFactoryPhase,
++  visibleComposerActions,
++  showMessageRevisionActions,
++  showAssistantModelAttribution,
++  continuePrefill,
++  extractFactoryPhaseSummary,
++  factoryPhaseChatMode,
++  factoryPhaseChats,
++  factoryPhaseKickoff,
++  latestFactoryPhaseSummary,
++  appIdsMissingFactoryPhases,
++  hasFactoryPhases,
++  isFactoryPhaseApproved,
++  isFactoryPhaseUnlocked,
++  factoryPhaseShade,
++  showFactoryPhaseApproval,
++  latestUnlockedFactoryPhase,
++  lockedFactoryPhaseReason,
++  nextFactoryPhase,
++  orderedFactoryPhaseChats,
++  phaseFromTitle,
++  factoryChatIdsToDrop,
++  previewOpenForPhase,
++  walkthroughPreviewVisible,
++} from './factoryPhase';
++
++describe('factoryPhase', () => {
++  it('recognizes the three phase chats by title', () => {
++    expect(phaseFromTitle('Discovery')).toBe('discovery');
++    expect(phaseFromTitle('Implementation')).toBe('implementation');
++    expect(phaseFromTitle('Delivery')).toBe('delivery');
++    expect(phaseFromTitle('Tiny Garden')).toBeNull();
++    expect(phaseFromTitle(null)).toBeNull();
++  });
++
++  it('keeps Discovery and Delivery read-only', () => {
++    expect(factoryPhaseChatMode('discovery')).toBe('ask');
++    expect(factoryPhaseChatMode('implementation')).toBe('build');
++    expect(factoryPhaseChatMode('delivery')).toBe('ask');
++  });
++
++  it('opens the preview only for implementation', () => {
++    expect(previewOpenForPhase('discovery')).toBe(false);
++    expect(previewOpenForPhase('implementation')).toBe(true);
++    expect(previewOpenForPhase('delivery')).toBe(false);
++  });
++
++  it('keeps the page visible through Delivery', () => {
++    expect(walkthroughPreviewVisible('discovery')).toBe(false);
++    expect(walkthroughPreviewVisible('implementation')).toBe(true);
++    expect(walkthroughPreviewVisible('delivery')).toBe(true);
++  });
++
++  it('moves forward only when the person continues', () => {
++    expect(nextFactoryPhase('discovery')).toBe('implementation');
++    expect(nextFactoryPhase('implementation')).toBe('delivery');
++    expect(nextFactoryPhase('delivery')).toBeNull();
++  });
++
++  it('finds one chat per phase and ignores other chats', () => {
++    const chats = [
++      { id: 1, title: 'Discovery' },
++      { id: 2, title: 'Notes' },
++      { id: 3, title: 'Implementation' },
++      { id: 4, title: 'Delivery' },
++      { id: 5, title: 'Discovery' },
++    ];
++    expect(hasFactoryPhases(chats)).toBe(true);
++    expect(factoryPhaseChats(chats).discovery?.id).toBe(1);
++    expect(factoryPhaseChats(chats).implementation?.id).toBe(3);
++  });
++
++  it('selects an app that does not have all three phases', () => {
++    expect(
++      appIdsMissingFactoryPhases(
++        [3, 10],
++        [
++          { appId: 3, title: 'Discovery' },
++          { appId: 3, title: 'Implementation' },
++          { appId: 3, title: 'Delivery' },
++          { appId: 10, title: 'Implementation' },
++        ],
++      ),
++    ).toEqual([10]);
++  });
++
++  it('selects an app with no chats', () => {
++    expect(appIdsMissingFactoryPhases([4], [])).toEqual([4]);
++  });
++
++  it('leaves an app alone until it has a phase chat', () => {
++    expect(
++      factoryChatIdsToDrop([
++        { id: 4, title: null, started: false },
++        { id: 5, title: 'Notes', started: true },
++      ]),
++    ).toEqual([]);
++  });
++
++  it('keeps a started phase and deletes every other chat', () => {
++    expect(
++      factoryChatIdsToDrop([
++        { id: 1, title: 'Anime University Club Website', started: true },
++        { id: 2, title: 'Implementation', started: true },
++        { id: 3, title: null, started: false },
++        { id: 4, title: 'Discovery', started: false },
++      ]).sort((left, right) => left - right),
++    ).toEqual([1, 3, 4]);
++  });
++
++  it('keeps an unstarted phase and still deletes the older chat', () => {
++    expect(
++      factoryChatIdsToDrop([
++        { id: 1, title: 'Anime University Club Website', started: true },
++        { id: 2, title: 'Implementation', started: false },
++      ]),
++    ).toEqual([1]);
++  });
++
++  it('keeps the three phase chats and deletes anything else', () => {
++    expect(
++      factoryChatIdsToDrop([
++        { id: 1, title: 'Discovery', started: true },
++        { id: 2, title: 'Implementation', started: false },
++        { id: 3, title: 'Delivery', started: false },
++        { id: 4, title: 'Notes', started: true },
++        { id: 5, title: 'Discovery', started: false },
++      ]).sort((left, right) => left - right),
++    ).toEqual([4, 5]);
++  });
++
++  it('lists only the phase chats, in phase order', () => {
++    const chats = [
++      { id: 12, title: null },
++      { id: 8, title: 'Delivery' },
++      { id: 7, title: 'Implementation' },
++      { id: 6, title: 'Discovery' },
++    ];
++    expect(orderedFactoryPhaseChats(chats).map((chat) => chat.id)).toEqual([6, 7, 8]);
++  });
++
++  it('keeps later phases locked until the previous phase is approved', () => {
++    const empty = { approved: new Set<never>(), started: new Set<never>() };
++    expect(isFactoryPhaseUnlocked('discovery', empty)).toBe(true);
++    expect(isFactoryPhaseUnlocked('implementation', empty)).toBe(false);
++    expect(isFactoryPhaseUnlocked('delivery', empty)).toBe(false);
++    expect(latestUnlockedFactoryPhase(empty)).toBe('discovery');
++
++    const discoveryApproved = {
++      approved: new Set(['discovery'] as const),
++      started: new Set(['discovery'] as const),
++    };
++    expect(isFactoryPhaseUnlocked('implementation', discoveryApproved)).toBe(true);
++    expect(isFactoryPhaseUnlocked('delivery', discoveryApproved)).toBe(false);
++    expect(latestUnlockedFactoryPhase(discoveryApproved)).toBe('implementation');
++  });
++
++  it('treats a started next phase as approval of the previous one', () => {
++    const progress = {
++      approved: new Set<never>(),
++      started: new Set(['discovery', 'implementation'] as const),
++    };
++    expect(isFactoryPhaseApproved('discovery', progress)).toBe(true);
++    expect(isFactoryPhaseUnlocked('implementation', progress)).toBe(true);
++    expect(isFactoryPhaseUnlocked('delivery', progress)).toBe(false);
++  });
++
++  it('does not unlock delivery when implementation is approved but discovery is not', () => {
++    const progress = {
++      approved: new Set(['implementation'] as const),
++      started: new Set<never>(),
++    };
++    expect(isFactoryPhaseUnlocked('delivery', progress)).toBe(false);
++  });
++
++  it('hides approval once the factory has moved past that phase', () => {
++    const runningDiscovery = {
++      approved: new Set<never>(),
++      started: new Set(['discovery'] as const),
++    };
++    expect(
++      showFactoryPhaseApproval({
++        phase: 'discovery',
++        progress: runningDiscovery,
++        hasPhaseSummary: true,
++      }),
++    ).toBe(true);
++
++    const implementationStarted = {
++      approved: new Set<never>(),
++      started: new Set(['discovery', 'implementation'] as const),
++    };
++    expect(
++      showFactoryPhaseApproval({
++        phase: 'discovery',
++        progress: implementationStarted,
++        hasPhaseSummary: true,
++      }),
++    ).toBe(false);
++    expect(
++      showFactoryPhaseApproval({
++        phase: 'implementation',
++        progress: implementationStarted,
++        hasPhaseSummary: false,
++      }),
++    ).toBe(true);
++
++    const finished = {
++      approved: new Set<never>(),
++      started: new Set(['discovery', 'implementation', 'delivery'] as const),
++    };
++    expect(
++      showFactoryPhaseApproval({
++        phase: 'implementation',
++        progress: finished,
++        hasPhaseSummary: true,
++      }),
++    ).toBe(false);
++    expect(
++      showFactoryPhaseApproval({
++        phase: 'delivery',
++        progress: finished,
++        hasPhaseSummary: false,
++      }),
++    ).toBe(true);
++    expect(
++      showFactoryPhaseApproval({
++        phase: 'delivery',
++        progress: finished,
++        hasPhaseSummary: true,
++      }),
++    ).toBe(false);
++  });
++
++  it('uses a lighter shade while a phase has started and is not finished', () => {
++    const discoveryRunning = {
++      approved: new Set<never>(),
++      started: new Set(['discovery'] as const),
++    };
++    expect(
++      factoryPhaseShade({
++        phase: 'discovery',
++        progress: discoveryRunning,
++        hasPhaseSummary: true,
++      }),
++    ).toBe('in-progress');
++    expect(
++      factoryPhaseShade({
++        phase: 'implementation',
++        progress: discoveryRunning,
++        hasPhaseSummary: false,
++      }),
++    ).toBe('not-started');
++
++    const implementationRunning = {
++      approved: new Set<never>(),
++      started: new Set(['discovery', 'implementation'] as const),
++    };
++    expect(
++      factoryPhaseShade({
++        phase: 'discovery',
++        progress: implementationRunning,
++        hasPhaseSummary: true,
++      }),
++    ).toBe('finished');
++    expect(
++      factoryPhaseShade({
++        phase: 'implementation',
++        progress: implementationRunning,
++        hasPhaseSummary: false,
++      }),
++    ).toBe('in-progress');
++    expect(
++      factoryPhaseShade({
++        phase: 'delivery',
++        progress: implementationRunning,
++        hasPhaseSummary: false,
++      }),
++    ).toBe('not-started');
++
++    const finished = {
++      approved: new Set<never>(),
++      started: new Set(['discovery', 'implementation', 'delivery'] as const),
++    };
++    expect(
++      factoryPhaseShade({
++        phase: 'delivery',
++        progress: finished,
++        hasPhaseSummary: true,
++      }),
++    ).toBe('finished');
++  });
++
++  it('allows approval only after a finished phase summary', () => {
++    expect(canContinueFactoryPhase({ hasPhaseSummary: false, isStreaming: false })).toBe(false);
++    expect(canContinueFactoryPhase({ hasPhaseSummary: true, isStreaming: true })).toBe(false);
++    expect(canContinueFactoryPhase({ hasPhaseSummary: true, isStreaming: false })).toBe(true);
++    expect(lockedFactoryPhaseReason('delivery')).toBe('Approve Implementation first');
++  });
++
++  it('extracts the bullet list under the phase summary heading', () => {
++    const content = `<think>I have all three answers.</think>
++Here is what I understood. Approve to continue, or tell me what to change.
++
++## Discovery summary
++- **Page name:** Tiny Bakery
++- **One sentence:** A neighborhood bakery's opening hours and menu.
++- **Page contents:** Hero, menu of 3 breads, hours, contact.`;
++    expect(extractFactoryPhaseSummary(content, 'discovery')).toBe(
++      [
++        '- **Page name:** Tiny Bakery',
++        "- **One sentence:** A neighborhood bakery's opening hours and menu.",
++        '- **Page contents:** Hero, menu of 3 breads, hours, contact.',
++      ].join('\n'),
++    );
++    expect(extractFactoryPhaseSummary(content, 'implementation')).toBeNull();
++  });
++
++  it('ignores summaries that only appear inside thinking or have no bullets', () => {
++    expect(
++      extractFactoryPhaseSummary(
++        '<think>## Discovery summary\n- **Page name:** X</think>What is the page name?',
++        'discovery',
++      ),
++    ).toBeNull();
++    expect(extractFactoryPhaseSummary('## Discovery summary\n\nComing soon.', 'discovery')).toBeNull();
++    expect(
++      extractFactoryPhaseSummary(
++        '### **Discovery Summary:**\n* **Page name:** X\r\n* **One sentence:** Y',
++        'discovery',
++      ),
++    ).toBe('* **Page name:** X\n* **One sentence:** Y');
++  });
++
++  it('uses only the latest assistant reply for approval', () => {
++    const summary = '## Discovery summary\n- **Page name:** X';
++    expect(
++      latestFactoryPhaseSummary(
++        [
++          { role: 'assistant', content: summary },
++          { role: 'user', content: 'Change the name' },
++          { role: 'assistant', content: 'What should the new name be?' },
++        ],
++        'discovery',
++      ),
++    ).toBeNull();
++    expect(
++      latestFactoryPhaseSummary(
++        [
++          { role: 'user', content: 'Start Discovery.' },
++          { role: 'assistant', content: summary },
++        ],
++        'discovery',
++      ),
++    ).toBe('- **Page name:** X');
++  });
++
++  it('starts Discovery and Delivery automatically but not Implementation', () => {
++    expect(factoryPhaseKickoff('discovery', null)).toBe('Start Discovery.');
++    expect(factoryPhaseKickoff('implementation', '- a')).toBeNull();
++    expect(factoryPhaseKickoff('delivery', '- **Page:** Index')).toContain('- **Page:** Index');
++  });
++
++  it('prefills Implementation with the approved Discovery summary', () => {
++    expect(continuePrefill('implementation', '- **Page name:** X')).toBe(
++      'Build the one-page site from this approved Discovery summary:\n\n- **Page name:** X',
++    );
++    expect(continuePrefill('implementation')).toMatch(/Discovery/);
++    expect(continuePrefill('delivery')).toBeUndefined();
++    expect(continuePrefill('discovery')).toBeUndefined();
++  });
++
++  it('hides Keep going on a factory chat', () => {
++    const actions = [{ id: 'keep-going' }, { id: 'refresh' }];
++    expect(visibleComposerActions(actions, true)).toEqual([{ id: 'refresh' }]);
++    expect(visibleComposerActions(actions, false)).toEqual(actions);
++  });
++
++  it('hides Undo and Retry on every factory phase chat', () => {
++    expect(showMessageRevisionActions(true)).toBe(false);
++    expect(showMessageRevisionActions(false)).toBe(true);
++  });
++
++  it('hides the assistant model badge on factory phase chats', () => {
++    expect(showAssistantModelAttribution(true)).toBe(false);
++    expect(showAssistantModelAttribution(false)).toBe(true);
++  });
++});
+diff --git a/app/lib/factoryPhase.ts b/app/lib/factoryPhase.ts
+new file mode 100644
+index 0000000..2b3e1a6
+--- /dev/null
++++ b/app/lib/factoryPhase.ts
+@@ -0,0 +1,361 @@
++export const FACTORY_PHASES = ['discovery', 'implementation', 'delivery'] as const;
++
++export type FactoryPhase = (typeof FACTORY_PHASES)[number];
++
++const TITLE_TO_PHASE: Record<string, FactoryPhase> = {
++  Discovery: 'discovery',
++  Implementation: 'implementation',
++  Delivery: 'delivery',
++};
++
++export function phaseFromTitle(title: string | null | undefined): FactoryPhase | null {
++  if (!title) {
++    return null;
++  }
++
++  return TITLE_TO_PHASE[title] ?? null;
++}
++
++/** Discovery and Delivery stay read-only. Implementation is the build chat. */
++export function factoryPhaseChatMode(phase: FactoryPhase): 'ask' | 'build' {
++  return phase === 'implementation' ? 'build' : 'ask';
++}
++
++export function factoryPhaseLabel(phase: FactoryPhase): string {
++  if (phase === 'discovery') {
++    return 'Discovery';
++  }
++
++  if (phase === 'implementation') {
++    return 'Implementation';
++  }
++
++  return 'Delivery';
++}
++
++/** The website preview belongs to the implementation chat only. */
++export function previewOpenForPhase(phase: FactoryPhase): boolean {
++  return phase === 'implementation';
++}
++
++/** Discovery is chat only. Implementation and Delivery keep the page on screen. */
++export function walkthroughPreviewVisible(phase: FactoryPhase): boolean {
++  return phase === 'implementation' || phase === 'delivery';
++}
++
++export function nextFactoryPhase(phase: FactoryPhase): FactoryPhase | null {
++  const next = FACTORY_PHASES[FACTORY_PHASES.indexOf(phase) + 1];
++  return next ?? null;
++}
++
++export function factoryPhaseChats<T extends { title: string | null }>(
++  chats: readonly T[],
++): Partial<Record<FactoryPhase, T>> {
++  const found: Partial<Record<FactoryPhase, T>> = {};
++
++  for (const chat of chats) {
++    const phase = phaseFromTitle(chat.title);
++
++    if (phase && !found[phase]) {
++      found[phase] = chat;
++    }
++  }
++
++  return found;
++}
++
++/** The phase chats in Discovery → Implementation → Delivery order. */
++export function orderedFactoryPhaseChats<T extends { title: string | null }>(chats: T[]): T[] {
++  const found = factoryPhaseChats(chats);
++  return FACTORY_PHASES.flatMap((phase) => {
++    const chat = found[phase];
++    return chat ? [chat] : [];
++  });
++}
++
++export function hasFactoryPhases<T extends { title: string | null }>(chats: readonly T[]): boolean {
++  const found = factoryPhaseChats(chats);
++  return FACTORY_PHASES.every((phase) => found[phase] != null);
++}
++
++/** Every web builder has Discovery, Implementation, and Delivery. */
++export function appIdsMissingFactoryPhases(
++  appIds: readonly number[],
++  chats: readonly { appId: number; title: string | null }[],
++): number[] {
++  const byApp = new Map<number, { title: string | null }[]>();
++
++  for (const appId of appIds) {
++    byApp.set(appId, []);
++  }
++
++  for (const chat of chats) {
++    const rows = byApp.get(chat.appId);
++
++    if (rows) {
++      rows.push(chat);
++    }
++  }
++
++  return appIds.filter((appId) => !hasFactoryPhases(byApp.get(appId) ?? []));
++}
++
++export function factoryPhaseHint(phase: FactoryPhase): string {
++  if (phase === 'discovery') {
++    return 'wewebplus asks about the page name, one sentence, and what goes on the page. Approve once its Discovery summary looks right.';
++  }
++
++  if (phase === 'implementation') {
++    return 'Send the prefilled summary to start the build, then review the preview. Approve once the page looks right.';
++  }
++
++  return 'wewebplus summarizes what was built. Approve delivery when the trial is finished.';
++}
++
++export interface FactoryPhaseProgress {
++  /** Phases the person approved by pressing Continue. */
++  approved: ReadonlySet<FactoryPhase>;
++
++  /** Phases whose chat already has at least one message. */
++  started: ReadonlySet<FactoryPhase>;
++}
++
++/**
++ * A phase counts as approved once the person pressed Continue on it, or once
++ * the following phase's chat has messages (which only happens after Continue).
++ */
++export function isFactoryPhaseApproved(phase: FactoryPhase, progress: FactoryPhaseProgress): boolean {
++  if (progress.approved.has(phase)) {
++    return true;
++  }
++
++  const next = nextFactoryPhase(phase);
++
++  return next != null && progress.started.has(next);
++}
++
++/** Discovery is always open; each later phase opens when the one before it is approved. */
++export function isFactoryPhaseUnlocked(phase: FactoryPhase, progress: FactoryPhaseProgress): boolean {
++  const index = FACTORY_PHASES.indexOf(phase);
++
++  if (index <= 0) {
++    return true;
++  }
++
++  const previous = FACTORY_PHASES[index - 1];
++
++  return isFactoryPhaseUnlocked(previous, progress) && isFactoryPhaseApproved(previous, progress);
++}
++
++export function latestUnlockedFactoryPhase(progress: FactoryPhaseProgress): FactoryPhase {
++  let latest: FactoryPhase = FACTORY_PHASES[0];
++
++  for (const phase of FACTORY_PHASES) {
++    if (!isFactoryPhaseUnlocked(phase, progress)) {
++      break;
++    }
++
++    latest = phase;
++  }
++
++  return latest;
++}
++
++/**
++ * The approve control belongs to the phase that is still in progress.
++ * It is gone once that phase was approved, a later phase has started, or
++ * Delivery has posted its summary and the run is finished.
++ */
++export function showFactoryPhaseApproval({
++  phase,
++  progress,
++  hasPhaseSummary,
++}: {
++  phase: FactoryPhase;
++  progress: FactoryPhaseProgress;
++  hasPhaseSummary: boolean;
++}): boolean {
++  if (isFactoryPhaseApproved(phase, progress)) {
++    return false;
++  }
++
++  if (phase === 'delivery' && hasPhaseSummary) {
++    return false;
++  }
++
++  return true;
++}
++
++export type FactoryPhaseShade = 'not-started' | 'in-progress' | 'finished';
++
++/**
++ * All three phase buttons use one color. A phase that has started and is not
++ * finished yet is the lighter shade. A finished phase is the solid shade.
++ */
++export function factoryPhaseShade({
++  phase,
++  progress,
++  hasPhaseSummary,
++}: {
++  phase: FactoryPhase;
++  progress: FactoryPhaseProgress;
++  hasPhaseSummary: boolean;
++}): FactoryPhaseShade {
++  if (isFactoryPhaseApproved(phase, progress) || (phase === 'delivery' && hasPhaseSummary)) {
++    return 'finished';
++  }
++
++  if (progress.started.has(phase)) {
++    return 'in-progress';
++  }
++
++  return 'not-started';
++}
++
++/** Approval needs Dyad's finished phase summary; an ordinary reply is not enough. */
++export function canContinueFactoryPhase({
++  hasPhaseSummary,
++  isStreaming,
++}: {
++  hasPhaseSummary: boolean;
++  isStreaming: boolean;
++}): boolean {
++  return hasPhaseSummary && !isStreaming;
++}
++
++export function factoryPhaseSummaryHeading(phase: FactoryPhase): string {
++  return `${factoryPhaseLabel(phase)} summary`;
++}
++
++/**
++ * Returns the bullet list under Dyad's "## <Phase> summary" heading, or null
++ * when the message has no complete summary for that phase.
++ */
++export function extractFactoryPhaseSummary(content: string, phase: FactoryPhase): string | null {
++  const withoutThinking = content.replace(/<think>[\s\S]*?<\/think>/gi, '');
++  const lines = withoutThinking.split(/\r?\n/);
++  const heading = factoryPhaseSummaryHeading(phase).toLowerCase();
++
++  const start = lines.findIndex((line) => {
++    const match = /^\s*#{1,4}\s*(.+?)\s*$/.exec(line);
++    return match != null && match[1].replace(/\*/g, '').replace(/:\s*$/, '').trim().toLowerCase() === heading;
++  });
++
++  if (start === -1) {
++    return null;
++  }
++
++  const bullets: string[] = [];
++
++  for (const line of lines.slice(start + 1)) {
++    if (/^\s*([-*]|\d+\.)\s+/.test(line)) {
++      bullets.push(line.trimEnd());
++      continue;
++    }
++
++    if (line.trim() === '') {
++      if (bullets.length > 0) {
++        break;
++      }
++
++      continue;
++    }
++
++    if (bullets.length > 0 && /^\s{2,}\S/.test(line)) {
++      bullets.push(line.trimEnd());
++      continue;
++    }
++
++    break;
++  }
++
++  return bullets.length > 0 ? bullets.join('\n') : null;
++}
++
++/** The latest phase summary Dyad wrote in this chat, if the last reply has one. */
++export function latestFactoryPhaseSummary(
++  messages: readonly { role: string; content: string }[],
++  phase: FactoryPhase,
++): string | null {
++  const lastAssistant = [...messages].reverse().find((message) => message.role === 'assistant');
++  return lastAssistant ? extractFactoryPhaseSummary(lastAssistant.content, phase) : null;
++}
++
++/** Discovery and Delivery start with Dyad's turn; Implementation waits for the person to send. */
++export function factoryPhaseKickoff(phase: FactoryPhase, previousSummary: string | null): string | null {
++  if (phase === 'discovery') {
++    return 'Start Discovery.';
++  }
++
++  if (phase === 'delivery') {
++    return previousSummary
++      ? `Start Delivery. Approved implementation summary:\n\n${previousSummary}`
++      : 'Start Delivery.';
++  }
++
++  return null;
++}
++
++export function lockedFactoryPhaseReason(phase: FactoryPhase): string {
++  const index = FACTORY_PHASES.indexOf(phase);
++  const previous = FACTORY_PHASES[index - 1];
++
++  return previous ? `Approve ${factoryPhaseLabel(previous)} first` : 'Not available yet';
++}
++
++/** Prefill for the next chat. Implementation carries the approved Discovery summary. */
++export function continuePrefill(phase: FactoryPhase, previousSummary?: string | null): string | undefined {
++  if (phase === 'implementation') {
++    return previousSummary
++      ? `Build the one-page site from this approved Discovery summary:\n\n${previousSummary}`
++      : 'Build the one-page site from what I approved in Discovery.';
++  }
++
++  return undefined;
++}
++
++/** Factory chats hide the generic "Keep going" suggestion. */
++export function visibleComposerActions<T extends { id: string }>(actions: readonly T[], factory: boolean): T[] {
++  if (!factory) {
++    return [...actions];
++  }
++
++  return actions.filter((action) => action.id !== 'keep-going');
++}
++
++/** Factory phase chats hide Undo and Retry under the transcript. */
++export function showMessageRevisionActions(factory: boolean): boolean {
++  return !factory;
++}
++
++/** Factory phase chats hide the assistant model name under each reply. */
++export function showAssistantModelAttribution(factory: boolean): boolean {
++  return !factory;
++}
++
++/**
++ * Chats to delete once an app has a phase chat.
++ * The full Discovery, Implementation, and Delivery set stays. When only some
++ * phases exist, an empty phase is removed after another phase has messages.
++ * Any other chat is removed. An app with no phase chat is left alone.
++ */
++export function factoryChatIdsToDrop<T extends { id: number; title: string | null; started: boolean }>(
++  chats: readonly T[],
++): number[] {
++  const present = FACTORY_PHASES.flatMap((phase) => {
++    const chat = factoryPhaseChats(chats)[phase];
++    return chat ? [chat] : [];
++  });
++
++  if (present.length === 0) {
++    return [];
++  }
++
++  const started = present.filter((chat) => chat.started);
++
++  const keepSource = hasFactoryPhases(chats) ? present : started.length > 0 ? started : present;
++
++  const keep = new Set(keepSource.map((chat) => chat.id));
++
++  return chats.filter((chat) => !keep.has(chat.id)).map((chat) => chat.id);
++}
+diff --git a/app/lib/factoryPhasePrompt.spec.ts b/app/lib/factoryPhasePrompt.spec.ts
+new file mode 100644
+index 0000000..2a0509d
+--- /dev/null
++++ b/app/lib/factoryPhasePrompt.spec.ts
+@@ -0,0 +1,11 @@
++import { describe, expect, it } from 'vitest';
++import { factoryPhaseSystemPrompt } from './factoryPhasePrompt';
++
++describe('factoryPhasePrompt', () => {
++  it('requires the summary heading for each phase', () => {
++    expect(factoryPhaseSystemPrompt('discovery')).toContain('## Discovery summary');
++    expect(factoryPhaseSystemPrompt('implementation')).toContain('## Implementation summary');
++    expect(factoryPhaseSystemPrompt('delivery')).toContain('## Delivery summary');
++    expect(factoryPhaseSystemPrompt(null)).toBe('');
++  });
++});
+diff --git a/app/lib/factoryPhasePrompt.ts b/app/lib/factoryPhasePrompt.ts
+new file mode 100644
+index 0000000..3f4b05c
+--- /dev/null
++++ b/app/lib/factoryPhasePrompt.ts
+@@ -0,0 +1,80 @@
++import { type FactoryPhase, factoryPhaseSummaryHeading } from './factoryPhase';
++
++const FACTORY_OVERVIEW = `# Website factory phase
++This chat is one phase of a three-phase website factory: Discovery, then Implementation, then Delivery. The person approves each phase before the next phase opens, so never tell them to go to another phase until they approve.`;
++
++function discoveryPrompt(): string {
++  return `${FACTORY_OVERVIEW}
++
++You are in **Discovery** for a single one-page website. Your only job is to learn three things:
++1. The page name.
++2. One sentence describing the page.
++3. What should be on the page (sections and content).
++
++Rules:
++- Do not write, edit, or plan code in this phase.
++- Do not ask about frameworks, templates, or stacks.
++- When the person says "Start Discovery." (or anything else before you have all three answers), ask for whatever is still missing. If the \`planning_questionnaire\` tool is available, use it with short "text" questions, at most three at a time. Otherwise ask in plain text, one question at a time.
++- Do not invent answers. If an answer is vague, ask one short follow-up.
++- Once you know all three, reply with a short summary in exactly this shape and nothing after it:
++
++## ${factoryPhaseSummaryHeading('discovery')}
++- **Page name:** <name>
++- **One sentence:** <sentence>
++- **Page contents:** <sections and content>
++
++Put any sentence inviting the person to approve before the heading, not after the list. Only write that heading when all three answers are known. If the person asks for changes, reply with the full updated summary under the same heading.`;
++}
++
++function implementationPrompt(): string {
++  return `${FACTORY_OVERVIEW}
++
++You are in **Implementation**. The person's message contains the approved Discovery summary. Build exactly that one-page website, and nothing beyond it. Keep it to a single page. When the person asks for changes, apply them.
++
++After each build or change, end your reply with a short summary in exactly this shape and nothing after it:
++
++## ${factoryPhaseSummaryHeading('implementation')}
++- **Page:** <page name and file>
++- **Sections:** <what the page shows>
++- **Changes this turn:** <what you just built or changed>
++
++Put any sentence asking the person to review the preview before the heading, not after the list.`;
++}
++
++function deliveryPrompt(): string {
++  return `${FACTORY_OVERVIEW}
++
++You are in **Delivery**. The page was already built and approved in Implementation. Do not edit code in this phase. Read the app files if you need to confirm what was built.
++
++When the person says "Start Delivery." or asks for a recap, reply with a short delivery summary in exactly this shape and nothing after it:
++
++## ${factoryPhaseSummaryHeading('delivery')}
++- **Page name:** <name>
++- **What it shows:** <sections>
++- **How to view it:** <where the page lives in the app>
++
++Put any sentence asking the person to approve delivery before the heading, not after the list.`;
++}
++
++/** Phase instructions appended to the system prompt; empty for ordinary chats. */
++export function factoryPhaseSystemPrompt(phase: FactoryPhase | null): string {
++  if (phase === 'discovery') {
++    return discoveryPrompt();
++  }
++
++  if (phase === 'implementation') {
++    return implementationPrompt();
++  }
++
++  if (phase === 'delivery') {
++    return deliveryPrompt();
++  }
++
++  return '';
++}
++
++export function appendFactoryPhaseSystemPrompt(systemPrompt: string, phase: FactoryPhase | null): string {
++  const addition = factoryPhaseSystemPrompt(phase);
++
++  return addition ? `${systemPrompt}\n\n${addition}` : systemPrompt;
++}
+diff --git a/app/lib/factoryRun.spec.ts b/app/lib/factoryRun.spec.ts
+new file mode 100644
+index 0000000..0bd563b
+--- /dev/null
++++ b/app/lib/factoryRun.spec.ts
+@@ -0,0 +1,38 @@
++import { describe, expect, it } from 'vitest';
++import { factoryRunFromMetadata, progressForRun } from './factoryRun';
++
++describe('factoryRun', () => {
++  it('starts a missing record at Discovery', () => {
++    expect(factoryRunFromMetadata(undefined)).toEqual({
++      phase: 'discovery',
++      approved: [],
++      comments: [],
++    });
++    expect(factoryRunFromMetadata({ factory: { phase: 'nope' } }).phase).toBe('discovery');
++  });
++
++  it('keeps a saved phase, approvals, and comments', () => {
++    expect(
++      factoryRunFromMetadata({
++        factory: {
++          phase: 'implementation',
++          approved: ['discovery', 'notes'],
++          comments: [
++            { phase: 'discovery', body: 'Hero only' },
++            { phase: 'delivery', body: '   ' },
++          ],
++        },
++      }),
++    ).toEqual({
++      phase: 'implementation',
++      approved: ['discovery'],
++      comments: [{ phase: 'discovery', body: 'Hero only' }],
++    });
++  });
++
++  it('does not treat Discovery messages as Implementation having started', () => {
++    const progress = progressForRun({ phase: 'discovery', approved: [], comments: [] }, true);
++    expect(progress.started.has('discovery')).toBe(true);
++    expect(progress.started.has('implementation')).toBe(false);
++  });
++});
+diff --git a/app/lib/factoryRun.ts b/app/lib/factoryRun.ts
+new file mode 100644
+index 0000000..7e4a354
+--- /dev/null
++++ b/app/lib/factoryRun.ts
+@@ -0,0 +1,76 @@
++import { atom } from 'nanostores';
++import { FACTORY_PHASES, type FactoryPhase } from './factoryPhase';
++
++export interface FactoryPhaseComment {
++  phase: FactoryPhase;
++  body: string;
++}
++
++/** One walkthrough stored on the chat record. The summary is read from the last reply. */
++export interface FactoryRunRecord {
++  phase: FactoryPhase;
++  approved: FactoryPhase[];
++  comments: FactoryPhaseComment[];
++}
++
++export const walkthroughPhase = atom<FactoryPhase>('discovery');
++
++export function emptyFactoryRun(): FactoryRunRecord {
++  return { phase: 'discovery', approved: [], comments: [] };
++}
++
++function isFactoryPhase(value: unknown): value is FactoryPhase {
++  return FACTORY_PHASES.includes(value as FactoryPhase);
++}
++
++/** Restores a saved run. A missing or broken record starts at Discovery. */
++export function factoryRunFromMetadata(metadata: { factory?: unknown } | undefined): FactoryRunRecord {
++  const factory = metadata?.factory;
++
++  if (!factory || typeof factory !== 'object') {
++    return emptyFactoryRun();
++  }
++
++  const record = factory as Partial<FactoryRunRecord>;
++  const phase = isFactoryPhase(record.phase) ? record.phase : 'discovery';
++  const approved = Array.isArray(record.approved) ? record.approved.filter(isFactoryPhase) : [];
++
++  const comments = Array.isArray(record.comments)
++    ? record.comments.flatMap((item) => {
++        if (!item || typeof item !== 'object') {
++          return [];
++        }
++
++        const comment = item as Partial<FactoryPhaseComment>;
++
++        if (!isFactoryPhase(comment.phase) || typeof comment.body !== 'string' || comment.body.trim() === '') {
++          return [];
++        }
++
++        return [{ phase: comment.phase, body: comment.body }];
++      })
++    : [];
++
++  return { phase, approved, comments };
++}
++
++/**
++ * Earlier phases count as started once they are approved. The current phase
++ * counts once this chat has any message. A later phase stays locked.
++ */
++export function progressForRun(
++  run: FactoryRunRecord,
++  hasMessages: boolean,
++): {
++  approved: ReadonlySet<FactoryPhase>;
++  started: ReadonlySet<FactoryPhase>;
++} {
++  const approved = new Set(run.approved);
++  const started = new Set<FactoryPhase>(approved);
++
++  if (hasMessages) {
++    started.add(run.phase);
++  }
++
++  return { approved, started };
++}
+diff --git a/app/lib/hooks/useMessageParser.ts b/app/lib/hooks/useMessageParser.ts
+index b55f79b..11a324b 100644
+--- a/app/lib/hooks/useMessageParser.ts
++++ b/app/lib/hooks/useMessageParser.ts
+@@ -1,4 +1,6 @@
+ import { useCallback, useState } from 'react';
++import { walkthroughPreviewVisible } from '~/lib/factoryPhase';
++import { walkthroughPhase } from '~/lib/factoryRun';
+ import { getMessageText } from '~/lib/persistence/messageMigration';
+ import { EnhancedStreamingMessageParser } from '~/lib/runtime/enhanced-message-parser';
+ import { workbenchStore } from '~/lib/stores/workbench';
+@@ -11,7 +13,10 @@ const messageParser = new EnhancedStreamingMessageParser({
+     onArtifactOpen: (data) => {
+       logger.trace('onArtifactOpen', data);
+ 
+-      workbenchStore.showWorkbench.set(true);
++      if (walkthroughPreviewVisible(walkthroughPhase.get())) {
++        workbenchStore.showWorkbench.set(true);
++      }
++
+       workbenchStore.addArtifact(data);
+     },
+     onArtifactClose: (data) => {
+diff --git a/app/lib/persistence/db.ts b/app/lib/persistence/db.ts
+index 5bbb1a4..a3115b8 100644
+--- a/app/lib/persistence/db.ts
++++ b/app/lib/persistence/db.ts
+@@ -2,12 +2,14 @@ import type { UIMessage } from 'ai';
+ import { migrateLegacyMessages } from './messageMigration';
+ import type { Snapshot } from './types'; // Import Snapshot type
+ import type { ChatHistoryItem } from './useChatHistory';
++import type { FactoryRunRecord } from '~/lib/factoryRun';
+ import { createScopedLogger } from '~/utils/logger';
+ 
+ export interface IChatMetadata {
+-  gitUrl: string;
++  gitUrl?: string;
+   gitBranch?: string;
+   netlifySiteId?: string;
++  factory?: FactoryRunRecord;
+ }
+ 
+ const logger = createScopedLogger('ChatHistory');
+diff --git a/app/lib/persistence/useChatHistory.ts b/app/lib/persistence/useChatHistory.ts
+index e605692..0a2314b 100644
+--- a/app/lib/persistence/useChatHistory.ts
++++ b/app/lib/persistence/useChatHistory.ts
+@@ -14,10 +14,12 @@ import {
+   duplicateChat,
+   createChatFromMessages,
+   setSnapshot,
++  updateChatMetadata,
+   type IChatMetadata,
+ } from './db';
+ import { createMessage, getMessageAnnotations, hasMessageFlag, type AnyPart } from './messageMigration';
+ import type { Snapshot } from './types';
++import type { FactoryRunRecord } from '~/lib/factoryRun';
+ import type { FileMap } from '~/lib/stores/files';
+ import { logStore } from '~/lib/stores/logs'; // Import logStore
+ import { workbenchStore } from '~/lib/stores/workbench';
+@@ -295,6 +297,22 @@ ${value.content}
+   return {
+     ready: !mixedId || ready,
+     initialMessages,
++    saveFactoryRun: async (factory: FactoryRunRecord) => {
++      const next = { ...chatMetadata.get(), factory };
++      chatMetadata.set(next);
++
++      const id = chatId.get();
++
++      if (!db || !id) {
++        return;
++      }
++
++      try {
++        await updateChatMetadata(db, id, next);
++      } catch (error) {
++        console.error(error);
++      }
++    },
+     updateChatMestaData: async (metadata: IChatMetadata) => {
+       const id = chatId.get();
+ 
+diff --git a/app/routes/api.chat.ts b/app/routes/api.chat.ts
+index 059b71e..04238eb 100644
+--- a/app/routes/api.chat.ts
++++ b/app/routes/api.chat.ts
+@@ -103,24 +103,34 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
+     },
+   });
+ 
+-  const { messages, files, promptId, contextOptimization, supabase, chatMode, designScheme, maxLLMSteps } =
+-    await request.json<{
+-      messages: Messages;
+-      files: any;
+-      promptId?: string;
+-      contextOptimization: boolean;
+-      chatMode: 'discuss' | 'build';
+-      designScheme?: DesignScheme;
+-      supabase?: {
+-        isConnected: boolean;
+-        hasSelectedProject: boolean;
+-        credentials?: {
+-          anonKey?: string;
+-          supabaseUrl?: string;
+-        };
++  const {
++    messages,
++    files,
++    promptId,
++    contextOptimization,
++    supabase,
++    chatMode,
++    factoryPhase,
++    designScheme,
++    maxLLMSteps,
++  } = await request.json<{
++    messages: Messages;
++    files: any;
++    promptId?: string;
++    contextOptimization: boolean;
++    chatMode: 'discuss' | 'build';
++    factoryPhase?: 'discovery' | 'implementation' | 'delivery' | null;
++    designScheme?: DesignScheme;
++    supabase?: {
++      isConnected: boolean;
++      hasSelectedProject: boolean;
++      credentials?: {
++        anonKey?: string;
++        supabaseUrl?: string;
+       };
+-      maxLLMSteps: number;
+-    }>();
++    };
++    maxLLMSteps: number;
++  }>();
+ 
+   const cookieHeader = request.headers.get('Cookie');
+   const apiKeys = getApiKeysFromCookie(cookieHeader);
+@@ -401,6 +411,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
+               contextOptimization,
+               contextFiles: filteredFiles,
+               chatMode,
++              factoryPhase,
+               designScheme,
+               summary,
+               messageSliceId,
+@@ -447,6 +458,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
+           contextOptimization,
+           contextFiles: filteredFiles,
+           chatMode,
++          factoryPhase,
+           designScheme,
+           summary,
+           messageSliceId,
+-- 
+2.43.0
+
