@@ -149,7 +149,7 @@ Logs print status codes, gate names, and host labels. They do not print `WEWEBPL
 
 ### Phase 4: Vercel cannot write
 
-- [ ] Fail the verdict while `hitl-web/app/api/questions/route.ts` or `hitl-web/app/api/questions/[id]/answers/route.ts` exists.
+- [x] Fail the verdict while `hitl-web/app/api/questions/route.ts` or `hitl-web/app/api/questions/[id]/answers/route.ts` exists. Those route files are removed. `scripts/gascity/pre-promotion-verdict.mjs` fails if a report says they are present.
 - [ ] Remove `WEWEBPLUS_DATABASE_URL` from Vercel project `dyad` before the verdict can pass.
 - [ ] Leave `src/ipc/handlers/vercel_handlers.ts` in place.
 
