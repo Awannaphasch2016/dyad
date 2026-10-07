@@ -155,7 +155,11 @@ probe_dyad_health() {
   local tag="$1"
   local name="dyad-harness-health-$$"
   docker rm -f "${name}" >/dev/null 2>&1 || true
-  docker run -d --name "${name}" --shm-size=1024m -e NOVNC_PASSWORD=probe "${tag}" >/dev/null
+  docker run -d --name "${name}" --shm-size=1024m \
+    -e NOVNC_PASSWORD=probe \
+    -e GAS_CITY_HOST_BRIDGE_ENABLED=true \
+    -e GAS_CITY_HOST_BRIDGE_TOKEN=probe \
+    "${tag}" >/dev/null
   local code="" ready=0
   for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
     if docker exec "${name}" curl --fail --silent "http://127.0.0.1:6080/vnc.html" >/dev/null; then
