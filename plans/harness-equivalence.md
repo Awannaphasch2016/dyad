@@ -8,6 +8,7 @@ No experiment in this file has been executed. The **Actual** column is `not run`
 
 - Store the Harness pipeline in git. A pipeline that exists only in the Harness UI fails the agent experiment before it starts.
 - Doppler remains the only secret store. The Harness run exchanges its own OIDC token for a short-lived Doppler token. It does not copy `dyad/preview`, `dyad/canary`, or `dyad/prd` into Harness or into GitHub Actions secrets.
+- Harness account `WKxXBnSFTRaOF64-h90PyQ` (`anakwannaphaschaiyong`) on `app.harness.io` accepted `HARNESS_API_KEY` on 2026-10-07. Run [37596184593](https://github.com/Awannaphasch2016/dyad/actions/runs/37596184593) printed the account id and did not print the token. Doppler identities for that issuer are not created yet.
 - Production host `13.251.216.187` and `gascity-rollout.yml` stay out of every experiment except 10, and experiment 10 uses a copy of the rollout on a non-production Docker engine.
 - Harness Kubernetes canary, Argo Rollouts, and Lambda traffic shifting are different systems. They do not pass experiments 8, 9, or 10.
 - Logs print host labels, status codes, and image digests. They do not print connection strings or tokens.
