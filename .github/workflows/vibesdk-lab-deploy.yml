@@ -5,13 +5,6 @@ name: VibeSDK lab deploy
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - cursor/vibesdk-doppler-project-fd29
-    paths:
-      - .github/workflows/vibesdk-lab-deploy.yml
-      - scripts/doppler/deploy-vibesdk-lab.mjs
-      - scripts/doppler/vibesdk-lab.mjs
 
 permissions:
   contents: read
