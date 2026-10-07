@@ -1,0 +1,35 @@
+# One-shot isolated vibeSDK lab deploy. Remove this workflow after the lab URL
+# answers a prompt. It does not deploy vibesdk-production or build.cloudflare.dev.
+
+name: VibeSDK lab deploy
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cursor/vibesdk-doppler-project-fd29
+    paths:
+      - .github/workflows/vibesdk-lab-deploy.yml
+      - scripts/doppler/deploy-vibesdk-lab.mjs
+      - scripts/doppler/vibesdk-lab.mjs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vibesdk-lab-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Deploy the isolated lab
+        env:
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+        run: node scripts/doppler/deploy-vibesdk-lab.mjs
