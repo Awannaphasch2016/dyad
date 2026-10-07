@@ -1,6 +1,7 @@
-// Create the forma Neon branch and store its URL in forma/dev.
-// The branch copies schema from the Dyad dev endpoint and copies no rows.
-// Prints branch ids and host labels only.
+// Create an empty Neon project named forma and store its URL in forma/dev.
+// Wewebplus-hitl cannot take another root branch, so forma is not a child of
+// the Dyad dev branch and starts with no Dyad rows. Prints ids and host
+// labels only.
 
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -8,53 +9,33 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-export const neonProjectId = "mute-credit-71067312";
 export const devEndpointId = "ep-wild-paper-b3yf26si";
 export const productionEndpointId = "ep-young-wave-b3cwe0rz";
-export const formaBranchName = "forma";
 const neonApi = "https://console.neon.tech/api/v2";
 
 const branchPattern = /^br-[a-z0-9-]+$/;
 
-export function branchIdForEndpoint(endpoints, endpointId) {
-  if (!Array.isArray(endpoints)) {
-    throw new Error("endpoints must be a list");
-  }
-  const match = endpoints.find((item) => endpointMatches(item, endpointId));
-  const branchId = match?.branch_id;
-  if (typeof branchId !== "string" || !branchPattern.test(branchId)) {
-    throw new Error(`endpoint ${endpointId} has no branch`);
-  }
-  return branchId;
-}
-
-function endpointMatches(item, endpointId) {
-  const fields = [item?.id, item?.host, item?.pooler_host];
-  return fields.some((value) => {
-    if (typeof value !== "string") return false;
-    return (
-      value === endpointId ||
-      value.startsWith(`${endpointId}.`) ||
-      value.startsWith(`${endpointId}-pooler`)
-    );
-  });
-}
-
-export function formaBranchBody(parentId, name = formaBranchName) {
-  if (!branchPattern.test(String(parentId))) {
-    throw new Error("schema source branch is invalid");
-  }
-  if (!/^[a-z][a-z0-9-]{0,62}$/.test(name)) {
-    throw new Error("branch name is invalid");
-  }
+export function formaProjectBody() {
   return {
-    branch: {
-      parent_id: parentId,
-      name,
-      init_source: "parent-schema",
+    project: {
+      name: "forma",
+      region_id: "aws-ap-southeast-1",
+      pg_version: 17,
     },
-    endpoints: [{ type: "read_write" }],
   };
+}
+
+export function defaultBranchId(branches) {
+  if (!Array.isArray(branches) || branches.length === 0) {
+    throw new Error("forma project has no branch");
+  }
+  const found =
+    branches.find((item) => item.default === true || item.primary === true) ||
+    branches[0];
+  if (!branchPattern.test(found?.id || "")) {
+    throw new Error("forma branch id is missing");
+  }
+  return found.id;
 }
 
 export function formaHostLabel(hostname) {
@@ -143,13 +124,13 @@ async function listCollection(apiKey, path, collection) {
   return all;
 }
 
-async function waitForOperations(apiKey, operations) {
+async function waitForOperations(apiKey, projectId, operations) {
   for (const operation of operations || []) {
     if (!operation?.id) continue;
     for (let attempt = 0; attempt < 40; attempt += 1) {
       const current = await neonRequest(
         apiKey,
-        `/projects/${neonProjectId}/operations/${operation.id}`,
+        `/projects/${projectId}/operations/${operation.id}`,
       );
       const status = current.operation?.status;
       if (status === "finished") break;
@@ -162,11 +143,11 @@ async function waitForOperations(apiKey, operations) {
   }
 }
 
-async function connectionUriReady(apiKey, branchId) {
+async function connectionUriReady(apiKey, projectId, branchId) {
   let lastError = new Error("Neon connection URI was not ready");
   for (let attempt = 0; attempt < 15; attempt += 1) {
     try {
-      return await connectionUri(apiKey, branchId);
+      return await connectionUri(apiKey, projectId, branchId);
     } catch (error) {
       lastError = error;
       const message = error instanceof Error ? error.message : "";
@@ -177,7 +158,7 @@ async function connectionUriReady(apiKey, branchId) {
   throw lastError;
 }
 
-async function connectionUri(apiKey, branchId) {
+async function connectionUri(apiKey, projectId, branchId) {
   const params = new URLSearchParams({
     branch_id: branchId,
     database_name: "neondb",
@@ -186,7 +167,7 @@ async function connectionUri(apiKey, branchId) {
   });
   const body = await neonRequest(
     apiKey,
-    `/projects/${neonProjectId}/connection_uri?${params}`,
+    `/projects/${projectId}/connection_uri?${params}`,
   );
   if (typeof body.uri !== "string" || !/^postgres(ql)?:\/\//.test(body.uri)) {
     throw new Error("Neon did not return a connection URI");
@@ -237,6 +218,42 @@ function readApiKey() {
   return apiKey;
 }
 
+async function branchesReady(apiKey, projectId) {
+  let branches = [];
+  for (let attempt = 0; attempt < 15; attempt += 1) {
+    branches = await listCollection(
+      apiKey,
+      `/projects/${projectId}/branches`,
+      "branches",
+    );
+    if (branches.length > 0) return branches;
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+  return branches;
+}
+
+async function ensureFormaProject(apiKey) {
+  const projects = await listCollection(apiKey, "/projects", "projects");
+  const existing = projects.find((item) => item.name === "forma");
+  if (typeof existing?.id === "string" && existing.id.length > 0) {
+    console.log("forma_neon_project=exists");
+    console.log(`neon_project=${existing.id}`);
+    return existing.id;
+  }
+  const created = await neonRequest(apiKey, "/projects", {
+    method: "POST",
+    body: formaProjectBody(),
+  });
+  const projectId = created.project?.id;
+  if (typeof projectId !== "string" || projectId.length === 0) {
+    throw new Error("forma project id is missing");
+  }
+  await waitForOperations(apiKey, projectId, created.operations);
+  console.log("forma_neon_project=created");
+  console.log(`neon_project=${projectId}`);
+  return projectId;
+}
+
 async function createFormaBranch() {
   if (!process.env.DOPPLER_TOKEN) {
     console.log("DOPPLER_ADMIN_TOKEN=absent");
@@ -245,44 +262,13 @@ async function createFormaBranch() {
   console.log("DOPPLER_ADMIN_TOKEN=present");
   const apiKey = readApiKey();
   console.log("NEON_API_KEY=present");
-  console.log(`neon_project=${neonProjectId}`);
+  const projectId = await ensureFormaProject(apiKey);
+  const branches = await branchesReady(apiKey, projectId);
+  const branchId = defaultBranchId(branches);
+  console.log(`forma_branch_id=${branchId}`);
+  console.log("forma_rows=empty");
 
-  const endpoints = await listCollection(
-    apiKey,
-    `/projects/${neonProjectId}/endpoints`,
-    "endpoints",
-  );
-  const parentId = branchIdForEndpoint(endpoints, devEndpointId);
-  console.log(`schema_source=${parentId}`);
-
-  const branches = await listCollection(
-    apiKey,
-    `/projects/${neonProjectId}/branches`,
-    "branches",
-  );
-  let branch = branches.find((item) => item.name === formaBranchName);
-  if (branch) {
-    console.log("forma_branch=exists");
-  } else {
-    const created = await neonRequest(
-      apiKey,
-      `/projects/${neonProjectId}/branches`,
-      {
-        method: "POST",
-        body: formaBranchBody(parentId),
-      },
-    );
-    branch = created.branch;
-    await waitForOperations(apiKey, created.operations);
-    console.log("forma_branch=created");
-  }
-  if (!branch?.id || !branchPattern.test(branch.id)) {
-    throw new Error("forma branch id is missing");
-  }
-  console.log(`forma_branch_id=${branch.id}`);
-  console.log("init_source=parent-schema");
-
-  const uri = await connectionUriReady(apiKey, branch.id);
+  const uri = await connectionUriReady(apiKey, projectId, branchId);
   const host = new URL(uri).hostname;
   const label = formaHostLabel(host);
   uploadDatabaseUrl(uri);

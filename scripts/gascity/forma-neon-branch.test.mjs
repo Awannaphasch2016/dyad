@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
-  branchIdForEndpoint,
+  defaultBranchId,
   formaHostLabel,
-  formaBranchBody,
+  formaProjectBody,
 } from "./forma-neon-branch.mjs";
 
 const workflow = readFileSync(
@@ -16,36 +16,25 @@ const script = readFileSync(
   "utf8",
 );
 
-test("the dev endpoint resolves to its Neon branch", () => {
-  const branchId = branchIdForEndpoint(
-    [
-      {
-        id: "ep-other",
-        host: "ep-other.example",
-        branch_id: "br-other",
-      },
-      {
-        id: "ep-wild-paper-b3yf26si",
-        host: "ep-wild-paper-b3yf26si.example",
-        pooler_host: "ep-wild-paper-b3yf26si-pooler.example",
-        branch_id: "br-dev-source",
-      },
-    ],
-    "ep-wild-paper-b3yf26si",
-  );
-  assert.equal(branchId, "br-dev-source");
+test("forma is a new empty Neon project in Singapore", () => {
+  assert.deepEqual(formaProjectBody(), {
+    project: {
+      name: "forma",
+      region_id: "aws-ap-southeast-1",
+      pg_version: 17,
+    },
+  });
 });
 
-test("a forma branch copies schema and no rows", () => {
-  assert.deepEqual(formaBranchBody("br-dev-source"), {
-    branch: {
-      parent_id: "br-dev-source",
-      name: "forma",
-      init_source: "parent-schema",
-    },
-    endpoints: [{ type: "read_write" }],
-  });
-  assert.throws(() => formaBranchBody("not-a-branch"), /schema source/);
+test("the default branch id is preferred", () => {
+  assert.equal(
+    defaultBranchId([
+      { id: "br-other", default: false },
+      { id: "br-main", default: true },
+    ]),
+    "br-main",
+  );
+  assert.throws(() => defaultBranchId([]), /no branch/);
 });
 
 test("forma refuses the shared dev and production endpoints", () => {
@@ -69,8 +58,7 @@ test("the forma branch workflow does not print a database url", () => {
   assert.equal(workflow.includes("printenv"), false);
   assert.equal(workflow.includes("dyad/prd"), false);
   assert.equal(script.includes("parent-data"), false);
-  assert.equal(script.includes("schema-only"), false);
-  assert.match(script, /parent-schema/);
-  assert.match(script, /mute-credit-71067312/);
+  assert.equal(script.includes("mute-credit-71067312"), false);
   assert.equal(script.includes("proud-salad-68182047"), false);
+  assert.match(script, /aws-ap-southeast-1/);
 });
