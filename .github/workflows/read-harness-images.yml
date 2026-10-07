@@ -21,7 +21,7 @@ jobs:
           HARNESS_ACCOUNT: WKxXBnSFTRaOF64-h90PyQ
         run: |
           python3 << 'PY'
-          import json, os, re, subprocess
+          import json, os, re, subprocess, zipfile
           from pathlib import Path
           from urllib.parse import quote
 
@@ -124,18 +124,32 @@ jobs:
                       check=False,
                       capture_output=True,
                   )
-                  raw_log = log_file.read_text("utf-8", "replace") if log_file.exists() else ""
+                  chunks = []
+                  if log_file.exists() and zipfile.is_zipfile(log_file):
+                      with zipfile.ZipFile(log_file) as archive:
+                          for name in archive.namelist():
+                              chunks.append(archive.read(name).decode("utf-8", "replace"))
+                  elif log_file.exists():
+                      chunks.append(log_file.read_text("utf-8", "replace"))
                   shown = 0
-                  for line in raw_log.splitlines():
-                      try:
-                          parsed = json.loads(line)
-                      except json.JSONDecodeError:
-                          parsed = {"out": line}
-                      text = parsed.get("out") or parsed.get("message") or ""
-                      if not text:
-                          continue
-                      print("log", ident, scrub(str(text))[:300])
-                      shown += 1
+                  for raw_log in chunks:
                       if shown >= 40:
                           break
+                      for line in raw_log.splitlines():
+                          try:
+                              parsed = json.loads(line)
+                          except json.JSONDecodeError:
+                              continue
+                          text = str(parsed.get("out") or parsed.get("message") or "")
+                          if not text or "PRIVATE KEY" in text or "BEGIN " in text:
+                              continue
+                          if not re.search(
+                              r"missing_app_key|installation_token|openssl|ghcr_login|error|Error|python|docker|exit|command not found|No such",
+                              text,
+                          ):
+                              continue
+                          print("log", ident, scrub(text)[:300])
+                          shown += 1
+                          if shown >= 40:
+                              break
           PY
