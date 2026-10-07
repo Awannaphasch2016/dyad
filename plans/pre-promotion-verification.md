@@ -124,6 +124,8 @@ Logs print status codes, gate names, and host labels. They do not print `WEWEBPL
 
 `.github/workflows/canary-verify.yml` creates the `wewebplus-canary` GitHub identity for this workflow only, compares the host labels, and checks that the identity cannot read `dyad/prd`. `services/gascity-supervisor/` is the process that calls `http://dyad:32100`. `deploy/canary/task_definition.mjs` is the ECS shape. Registering the service stays on a manual run of this workflow with deploy enabled, so a push does not move the apex or roll `gascity-server`.
 
+Run [37584719068](https://github.com/Awannaphasch2016/dyad/actions/runs/37584719068) stopped because `DOPPLER_ADMIN_TOKEN` is not available to GitHub Actions. The identity was not created. The local AWS credentials in this agent are a different account and were not used.
+
 - [ ] Read `dyad/canary` and print only the database host label. Pass when it is `ep-muddy-sky-b31adt7z-pooler`.
 - [ ] Read `dyad/prd` and print only the host label. Pass when it is `ep-young-wave-b3cwe0rz-pooler`.
 - [ ] Fail if the two labels are equal.
