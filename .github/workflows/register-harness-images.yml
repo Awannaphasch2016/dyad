@@ -1,0 +1,109 @@
+# Create the image pipeline, then update it if it already exists, then start it.
+name: Register Harness image pipeline
+
+on:
+  push:
+    branches:
+      - cursor/harness-images-5527
+    paths:
+      - .github/workflows/register-harness-images.yml
+      - deploy/harness/images.yaml
+
+permissions:
+  contents: read
+
+jobs:
+  register:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Create or update the pipeline and start it
+        env:
+          HARNESS_API_KEY: ${{ secrets.HARNESS_API_KEY }}
+          HARNESS_ACCOUNT: WKxXBnSFTRaOF64-h90PyQ
+        run: |
+          python3 << 'PY'
+          import json, os, re, subprocess
+          from pathlib import Path
+
+          api_key = os.environ["HARNESS_API_KEY"]
+          account = os.environ["HARNESS_ACCOUNT"]
+          pipeline = "dyad_harness_images"
+          long_token = re.compile(r"[A-Za-z0-9+/=]{40,}")
+
+          def scrub(text):
+              return long_token.sub("[redacted]", text or "")
+
+          def request(method, url, yaml_path):
+              out = Path("/tmp/harness-image.bin")
+              out.unlink(missing_ok=True)
+              cmd = [
+                  "curl", "-sS", "--max-time", "60", "-o", str(out), "-w", "%{http_code}",
+                  "-X", method, url, "-H", f"x-api-key: {api_key}",
+                  "-H", "Content-Type: application/yaml", "--data-binary", f"@{yaml_path}",
+              ]
+              result = subprocess.run(cmd, text=True, capture_output=True)
+              if result.returncode != 0:
+                  print("CURL_FAILED", scrub(result.stderr)[:200])
+                  raise SystemExit(1)
+              raw = out.read_text("utf-8", "replace") if out.exists() else ""
+              try:
+                  parsed = json.loads(raw) if raw else {}
+              except json.JSONDecodeError:
+                  parsed = {"raw": scrub(raw)[:300]}
+              return result.stdout.strip(), parsed
+
+          query = f"?accountIdentifier={account}&orgIdentifier=default&projectIdentifier=dyad"
+          code, body = request(
+              "POST",
+              f"https://app.harness.io/pipeline/api/pipelines/v2{query}",
+              "deploy/harness/images.yaml",
+          )
+          message = str(body.get("message") or "")
+          print("create_pipeline", code, body.get("status"), scrub(message)[:300])
+          if code not in {"200", "201"} and "exist" not in message.lower():
+              raise SystemExit(1)
+          if code not in {"200", "201"}:
+              code, body = request(
+                  "PUT",
+                  f"https://app.harness.io/pipeline/api/pipelines/v2/{pipeline}{query}",
+                  "deploy/harness/images.yaml",
+              )
+              print("update_pipeline", code, body.get("status"), scrub(str(body.get("message") or ""))[:300])
+              if code not in {"200", "201"}:
+                  raise SystemExit(1)
+
+          execute_body = Path("/tmp/harness-image-execute.yaml")
+          execute_body.write_text(
+              "pipeline:\n"
+              f"  identifier: {pipeline}\n"
+              "  properties:\n"
+              "    ci:\n"
+              "      codebase:\n"
+              "        build:\n"
+              "          type: branch\n"
+              "          spec:\n"
+              "            branch: cursor/harness-images-5527\n"
+          )
+          code, body = request(
+              "POST",
+              "https://app.harness.io/pipeline/api/pipeline/execute/"
+              f"{pipeline}{query}&moduleType=CI",
+              execute_body,
+          )
+          print("execute", code, body.get("status"), scrub(str(body.get("message") or ""))[:400])
+          data = body.get("data") if isinstance(body.get("data"), dict) else {}
+          plan = data.get("planExecution") if isinstance(data.get("planExecution"), dict) else {}
+          execution = (
+              data.get("planExecutionId")
+              or data.get("uuid")
+              or plan.get("uuid")
+              or plan.get("planExecutionId")
+              or ""
+          )
+          print("execution", execution)
+          if code not in {"200", "201"}:
+              raise SystemExit(1)
+          PY
