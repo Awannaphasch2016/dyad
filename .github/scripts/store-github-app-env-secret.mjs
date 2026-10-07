@@ -15,10 +15,6 @@ export function resolveAppId(raw) {
   return trimmed || DEFAULT_APP_ID;
 }
 
-export function mergeEnvironmentsPermission(permissions) {
-  return { ...permissions, environments: "write" };
-}
-
 export function createAppJwt(
   pem,
   appId,
@@ -42,6 +38,9 @@ export function createAppJwt(
     .toString("base64url");
   return `${unsigned}.${signature}`;
 }
+
+export const APP_PERMISSIONS_URL =
+  "https://github.com/settings/apps/dyad-harness/permissions";
 
 export function installationApprovalUrl(installationId) {
   return `https://github.com/settings/installations/${installationId}`;
@@ -135,26 +134,13 @@ export async function storeGithubAppEnvSecret({
   }
 
   const jwt = createJwt(pem, appId);
-  const app = await githubRequest("https://api.github.com/app", { token: jwt });
-  const permissions = mergeEnvironmentsPermission(app.permissions);
-  if (app.permissions?.environments !== "write") {
-    await githubRequest("https://api.github.com/app", {
-      token: jwt,
-      method: "PATCH",
-      body: { permissions },
-    });
-    console.log(
-      "Requested Environments: Read and write on the dyad-harness GitHub App.",
-    );
-  }
-
   const installation = await githubRequest(
     `https://api.github.com/repos/${repository}/installation`,
     { token: jwt },
   );
   if (installation.permissions?.environments !== "write") {
     throw new Error(
-      `The dyad-harness installation has not accepted Environments: Read and write. Approve it at ${installationApprovalUrl(installation.id)} and run this workflow again.`,
+      `dyad-harness cannot write environment secrets yet. On ${APP_PERMISSIONS_URL} set Repository permissions > Environments to Read and write, save, then accept the new permission at ${installationApprovalUrl(installation.id)} and run this workflow again.`,
     );
   }
 

@@ -4,7 +4,6 @@ import test from "node:test";
 import {
   createAppJwt,
   installationApprovalUrl,
-  mergeEnvironmentsPermission,
   resolveAppId,
   storeGithubAppEnvSecret,
 } from "./store-github-app-env-secret.mjs";
@@ -12,13 +11,6 @@ import {
 test("resolveAppId falls back to the dyad-harness app id", () => {
   assert.equal(resolveAppId(""), "5221649");
   assert.equal(resolveAppId("  42  "), "42");
-});
-
-test("mergeEnvironmentsPermission keeps existing permissions", () => {
-  assert.deepEqual(
-    mergeEnvironmentsPermission({ contents: "write", metadata: "read" }),
-    { contents: "write", metadata: "read", environments: "write" },
-  );
 });
 
 test("createAppJwt is a signed RS256 token for the app id", () => {
@@ -48,19 +40,10 @@ test("installationApprovalUrl points at the installation settings page", () => {
 });
 
 test("storeGithubAppEnvSecret writes both secret names and the app id", async () => {
-  const calls = [];
   const pem =
     "-----BEGIN PRIVATE KEY-----\nnot-a-real-key\n-----END PRIVATE KEY-----";
   const createJwt = () => "jwt";
-  const githubRequest = async (url, options = {}) => {
-    calls.push({ url, method: options.method || "GET" });
-    if (
-      url === "https://api.github.com/app" &&
-      (options.method || "GET") === "GET"
-    ) {
-      return { permissions: { contents: "write", metadata: "read" } };
-    }
-    if (url === "https://api.github.com/app") return {};
+  const githubRequest = async (url) => {
     if (url.endsWith("/installation")) {
       return { id: 77, permissions: { environments: "write" } };
     }
@@ -90,10 +73,6 @@ test("storeGithubAppEnvSecret writes both secret names and the app id", async ()
     ],
   );
   assert.equal(secrets[0].value, pem);
-  assert.equal(
-    calls.some((call) => call.method === "PATCH"),
-    true,
-  );
 });
 
 test("storeGithubAppEnvSecret stops when the installation has not accepted Environments write", async () => {
@@ -106,10 +85,7 @@ test("storeGithubAppEnvSecret stops when the installation has not accepted Envir
         appId: "5221649",
         repository: "Awannaphasch2016/dyad",
         createJwt: () => "jwt",
-        githubRequest: async (url, options = {}) => {
-          if (url === "https://api.github.com/app" && !options.method) {
-            return { permissions: { environments: "write" } };
-          }
+        githubRequest: async (url) => {
           if (url.endsWith("/installation")) return { id: 77, permissions: {} };
           throw new Error(`unexpected ${url}`);
         },
@@ -117,6 +93,6 @@ test("storeGithubAppEnvSecret stops when the installation has not accepted Envir
           throw new Error("secret should not be written");
         },
       }),
-    /settings\/installations\/77/,
+    /settings\/apps\/dyad-harness\/permissions/,
   );
 });
