@@ -2,6 +2,8 @@
 // Production resource ids are refusal checks. This module does not call Cloudflare.
 
 export const LAB_WORKER_NAME = "vibesdk-lab";
+export const LAB_PUBLIC_HOST =
+  "vibesdk-lab.karant-test-egress-canary.workers.dev";
 export const LAB_GATEWAY_ID = "vibesdk-lab";
 export const LAB_D1_NAME = "vibesdk-lab";
 export const LAB_KV_TITLE = "vibesdk-lab";
@@ -172,7 +174,7 @@ export function labWranglerConfig({ accountId, databaseId, kvId }) {
         },
         version: "1.0.0",
       },
-      CUSTOM_DOMAIN: "",
+      CUSTOM_DOMAIN: LAB_PUBLIC_HOST,
     },
     workers_dev: true,
     preview_urls: false,
@@ -205,6 +207,9 @@ export function labConfigViolations(config) {
   if (classes.includes("UserAppSandboxService")) violations.push("sandbox");
   if (config?.vars?.CLOUDFLARE_AI_GATEWAY !== LAB_GATEWAY_ID) {
     violations.push("gateway");
+  }
+  if (config?.vars?.CUSTOM_DOMAIN !== LAB_PUBLIC_HOST) {
+    violations.push("domain");
   }
   if (config?.vars?.DISPATCH_NAMESPACE) violations.push("dispatch_var");
   if (config?.vars?.ARTIFACTS_NAMESPACE) violations.push("artifacts_var");

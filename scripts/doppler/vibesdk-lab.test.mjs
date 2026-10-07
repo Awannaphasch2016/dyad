@@ -5,6 +5,7 @@ import { redact } from "./vibesdk-project.mjs";
 import {
   LAB_D1_NAME,
   LAB_GATEWAY_ID,
+  LAB_PUBLIC_HOST,
   PRODUCTION_DATABASE_ID,
   PRODUCTION_KV_ID,
   csrfTokenFromJar,
@@ -52,6 +53,7 @@ test("the lab wrangler config has no production bindings", () => {
   assert.deepEqual(labConfigViolations(config), []);
   assert.equal(config.d1_databases[0].database_name, LAB_D1_NAME);
   assert.equal(config.vars.CLOUDFLARE_AI_GATEWAY, LAB_GATEWAY_ID);
+  assert.equal(config.vars.CUSTOM_DOMAIN, LAB_PUBLIC_HOST);
   assert.equal(config.containers, undefined);
   assert.equal(config.routes, undefined);
   assert.throws(
