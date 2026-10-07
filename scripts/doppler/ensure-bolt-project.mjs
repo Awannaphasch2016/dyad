@@ -11,12 +11,14 @@ import {
   configReport,
   credentialShape,
   devInheritableBody,
+  parseDopplerReference,
   previewEnvironmentBody,
   previewInheritsBody,
   prdInheritsBody,
   projectBody,
   redact,
   referenceResolved,
+  referenceString,
   takeSecretNames,
 } from "./bolt-project.mjs";
 
@@ -74,13 +76,37 @@ async function listConfigs(token, project) {
   return payload.configs ?? [];
 }
 
-async function secretNames(token, project, config) {
-  const payload = await doppler(
+async function secretPayload(token, project, config) {
+  return doppler(
     token,
     "GET",
     `/v3/configs/config/secrets?project=${encodeURIComponent(project)}&config=${encodeURIComponent(config)}`,
   );
-  return takeSecretNames(payload);
+}
+
+async function directReference(token, project, config, name, depth = 0) {
+  const payload = await secretPayload(token, project, config);
+  const entry = payload.secrets?.[name];
+  const parsed = parseDopplerReference(
+    entry && typeof entry === "object" ? entry.raw : undefined,
+  );
+  if (entry && typeof entry === "object") {
+    entry.raw = undefined;
+    entry.computed = undefined;
+    entry.value = undefined;
+  }
+  if (!parsed) return referenceString(project, config, name);
+  if (depth >= 4) {
+    console.log(`reference_chain=${project}.${config}.${name}`);
+    process.exit(1);
+  }
+  return directReference(
+    token,
+    parsed.project,
+    parsed.config,
+    parsed.name,
+    depth + 1,
+  );
 }
 
 function mask(value) {
@@ -152,12 +178,24 @@ async function ensureBoltProject() {
   console.log("bolt_preview_inherits=bolt.dev");
   console.log("bolt_prd_inherits=none");
 
-  const sourceNames = await secretNames(
+  const sourcePayload = await secretPayload(
     token,
     VIBESDK_PROJECT_NAME,
     VIBESDK_DEV_CONFIG,
   );
-  const plan = cloudflareReferencePlan(sourceNames);
+  const sourceNames = takeSecretNames(sourcePayload);
+  const roots = {};
+  for (const wanted of cloudflareSecrets) {
+    const source = wanted.sources.find((name) => sourceNames.includes(name));
+    if (!source) continue;
+    roots[wanted.dest] = await directReference(
+      token,
+      VIBESDK_PROJECT_NAME,
+      VIBESDK_DEV_CONFIG,
+      source,
+    );
+  }
+  const plan = cloudflareReferencePlan(sourceNames, roots);
   console.log(
     `vibesdk_dev_cloudflare=${cloudflareSecrets
       .map((wanted) => {

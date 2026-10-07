@@ -48,6 +48,23 @@ test("cloudflare references fall back to the suffixed dyad names", () => {
   );
 });
 
+test("an upstream root replaces a chained vibesdk reference", () => {
+  const plan = cloudflareReferencePlan(
+    ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"],
+    {
+      CLOUDFLARE_ACCOUNT_ID: "${forma.dev.CLOUDFLARE_ACCOUNT_ID}",
+    },
+  );
+  assert.equal(
+    plan.secrets.CLOUDFLARE_ACCOUNT_ID,
+    "${forma.dev.CLOUDFLARE_ACCOUNT_ID}",
+  );
+  assert.equal(
+    plan.secrets.CLOUDFLARE_API_TOKEN,
+    "${vibesdk.dev.CLOUDFLARE_API_TOKEN}",
+  );
+});
+
 test("a missing cloudflare name is reported and not invented", () => {
   const plan = cloudflareReferencePlan(["CLOUDFLARE_API_TOKEN"]);
   assert.deepEqual(plan.missing, ["CLOUDFLARE_ACCOUNT_ID"]);

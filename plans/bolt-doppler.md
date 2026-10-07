@@ -39,7 +39,7 @@ Write these two names in `bolt` / `dev`:
 - `CLOUDFLARE_API_TOKEN` = `${vibesdk.dev.CLOUDFLARE_API_TOKEN}`
 - `CLOUDFLARE_ACCOUNT_ID` = `${vibesdk.dev.CLOUDFLARE_ACCOUNT_ID}`
 
-If `vibesdk` / `dev` stores either name with the trailing underscore used by the Dyad tunnel config, the setup job references that name instead.
+If `vibesdk` / `dev` stores either name with the trailing underscore used by the Dyad tunnel config, the setup job references that name instead. Doppler does not allow a reference to a reference. When the vibeSDK value is already a reference, bolt points at the root secret.
 
 A names-only download of vibeSDK `dev` is the first check. It confirms both names are present. It does not print values.
 

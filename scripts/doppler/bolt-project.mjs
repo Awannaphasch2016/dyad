@@ -55,7 +55,20 @@ export function prdInheritsBody() {
   };
 }
 
-export function cloudflareReferencePlan(sourceNames) {
+export function parseDopplerReference(raw) {
+  if (typeof raw !== "string") return null;
+  const match = raw
+    .trim()
+    .match(/^\$\{([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_]+)\}$/);
+  if (!match) return null;
+  return { project: match[1], config: match[2], name: match[3] };
+}
+
+export function referenceString(project, config, name) {
+  return `\${${project}.${config}.${name}}`;
+}
+
+export function cloudflareReferencePlan(sourceNames, roots = {}) {
   const names = new Set(sourceNames ?? []);
   const secrets = {};
   const missing = [];
@@ -66,7 +79,8 @@ export function cloudflareReferencePlan(sourceNames) {
       continue;
     }
     secrets[wanted.dest] =
-      `\${${VIBESDK_PROJECT_NAME}.${VIBESDK_DEV_CONFIG}.${source}}`;
+      roots[wanted.dest] ??
+      referenceString(VIBESDK_PROJECT_NAME, VIBESDK_DEV_CONFIG, source);
   }
   return { secrets, missing };
 }
