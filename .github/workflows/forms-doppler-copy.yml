@@ -45,6 +45,8 @@ jobs:
             exit 1
           fi
           echo "DOPPLER_ADMIN_TOKEN=present"
+          echo "dyad_configs:"
+          doppler configs -p dyad
           if doppler projects get forms --silent >/tmp/forms-project.json 2>/tmp/forms-project.err; then
             echo "forms_project=exists"
           else
