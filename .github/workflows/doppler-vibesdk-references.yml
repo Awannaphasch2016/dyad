@@ -1,0 +1,36 @@
+# Write Doppler references into vibesdk/dev and check the tokens.
+# The job prints names and HTTP results. It does not print secret values.
+# Runs from this branch only. Remove this file after the check.
+
+name: Check vibesdk Doppler references
+
+on:
+  push:
+    branches:
+      - cursor/vibesdk-doppler-project-fd29
+    paths:
+      - .github/workflows/doppler-vibesdk-references.yml
+      - scripts/doppler/copy-vibesdk-references.mjs
+      - scripts/doppler/vibesdk-references.mjs
+      - scripts/doppler/vibesdk-project.mjs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: doppler-vibesdk-references
+  cancel-in-progress: false
+
+jobs:
+  check:
+    if: github.ref == 'refs/heads/cursor/vibesdk-doppler-project-fd29'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Reference Dyad secrets and check the tokens
+        env:
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+        run: node scripts/doppler/copy-vibesdk-references.mjs

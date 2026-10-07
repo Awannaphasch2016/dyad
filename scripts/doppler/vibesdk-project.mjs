@@ -14,6 +14,8 @@ export function redact(text) {
   return String(text)
     .replace(/postgres(?:ql)?:\/\/\S+/gi, "postgres://redacted")
     .replace(/dp\.(?:st|pt|sa|ct|said)\.[A-Za-z0-9._-]+/g, "dp.redacted")
+    .replace(/\bsk-or-[A-Za-z0-9_-]+/g, "sk-or-redacted")
+    .replace(/\bnapi_[A-Za-z0-9_-]+/g, "napi_redacted")
     .slice(0, 180);
 }
 
