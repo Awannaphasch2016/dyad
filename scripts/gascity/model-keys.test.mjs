@@ -7,6 +7,7 @@ import {
   autoKeysAfterCopy,
   autoModelKeyNames,
   chooseDevConfig,
+  chooseModelKeySource,
   modelKeysToCopy,
 } from "./model-keys.mjs";
 
@@ -79,6 +80,43 @@ test("the dev config is chosen without using production", () => {
       { name: "dev_b", environment: "dev", root: true },
     ]),
     "",
+  );
+});
+
+test("preview supplies keys only when no dev config exists", () => {
+  const dyadOnly = [
+    {
+      name: "dyad",
+      configs: [
+        { name: "preview", environment: "preview", root: true },
+        { name: "prd", environment: "prd", root: true },
+        { name: "canary", environment: "canary", root: true },
+      ],
+    },
+  ];
+  assert.deepEqual(chooseModelKeySource(dyadOnly), {
+    project: "dyad",
+    config: "preview",
+    fallback: true,
+  });
+  assert.deepEqual(
+    chooseModelKeySource([
+      ...dyadOnly,
+      {
+        name: "dyad-labs",
+        configs: [{ name: "dev", environment: "dev", root: true }],
+      },
+    ]),
+    { project: "dyad-labs", config: "dev", fallback: false },
+  );
+  assert.equal(
+    chooseModelKeySource([
+      {
+        name: "dyad",
+        configs: [{ name: "prd", environment: "prd", root: true }],
+      },
+    ]),
+    null,
   );
 });
 

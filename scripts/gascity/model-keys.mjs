@@ -34,6 +34,43 @@ export function configLabels(configs) {
     .filter(Boolean);
 }
 
+export function sourceLabels(projects) {
+  return (projects ?? [])
+    .map((project) => {
+      const name = String(project?.name ?? "");
+      if (!name) return "";
+      return `${name}[${configLabels(project?.configs).join(",")}]`;
+    })
+    .filter(Boolean);
+}
+
+export function chooseDevSource(projects) {
+  const rows = (projects ?? [])
+    .map((project) => ({
+      project: String(project?.name ?? ""),
+      config: chooseDevConfig(project?.configs),
+    }))
+    .filter((row) => row.project && row.config);
+  const dyad = rows.find((row) => row.project === "dyad");
+  if (dyad) return { project: dyad.project, config: dyad.config };
+  const named = rows.filter((row) => /dyad/i.test(row.project));
+  if (named.length === 1) {
+    return { project: named[0].project, config: named[0].config };
+  }
+  return null;
+}
+
+export function chooseModelKeySource(projects) {
+  const fromDev = chooseDevSource(projects);
+  if (fromDev) return { ...fromDev, fallback: false };
+  const dyad = (projects ?? []).find((project) => project?.name === "dyad");
+  const hasPreview = (dyad?.configs ?? []).some(
+    (config) => config?.name === "preview",
+  );
+  if (hasPreview) return { project: "dyad", config: "preview", fallback: true };
+  return null;
+}
+
 export function chooseDevConfig(configs) {
   const rows = [];
   for (const item of configs ?? []) {

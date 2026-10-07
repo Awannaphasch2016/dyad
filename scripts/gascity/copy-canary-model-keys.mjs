@@ -4,8 +4,8 @@
 import {
   absentAutoKeys,
   autoKeysAfterCopy,
-  chooseDevConfig,
-  configLabels,
+  chooseModelKeySource,
+  sourceLabels,
   modelKeysToCopy,
 } from "./model-keys.mjs";
 
@@ -38,11 +38,11 @@ async function doppler(token, method, path, body) {
   return payload;
 }
 
-async function download(token, config) {
+async function download(token, config, project = "dyad") {
   const payload = await doppler(
     token,
     "GET",
-    `/v3/configs/config/secrets/download?project=dyad&config=${encodeURIComponent(config)}&format=json`,
+    `/v3/configs/config/secrets/download?project=${encodeURIComponent(project)}&config=${encodeURIComponent(config)}&format=json`,
   );
   return Object.fromEntries(
     Object.entries(payload).filter((entry) => typeof entry[1] === "string"),
@@ -55,16 +55,36 @@ if (!token) {
   process.exit(1);
 }
 
-const listed = await doppler(token, "GET", "/v3/configs?project=dyad");
-const configs = listed.configs ?? [];
-console.log(`configs=${configLabels(configs).join(",") || "none"}`);
-const source = chooseDevConfig(configs);
+const projectPage = await doppler(
+  token,
+  "GET",
+  "/v3/projects?page=1&per_page=100",
+);
+const projects = [];
+for (const project of projectPage.projects ?? []) {
+  const name = project?.name;
+  if (!name) continue;
+  try {
+    const listed = await doppler(
+      token,
+      "GET",
+      `/v3/configs?project=${encodeURIComponent(name)}&page=1&per_page=100`,
+    );
+    projects.push({ name, configs: listed.configs ?? [] });
+  } catch (error) {
+    if (name === "dyad") throw error;
+    console.log(`project_skip=${name}`);
+  }
+}
+console.log(`sources=${sourceLabels(projects).join(" ") || "none"}`);
+const source = chooseModelKeySource(projects);
 if (!source) {
   console.error("dev_config=absent");
   process.exit(1);
 }
-console.log(`source=dyad/${source}`);
-const dev = await download(token, source);
+console.log(`source=${source.project}/${source.config}`);
+console.log(`fallback=${source.fallback ? "preview" : "no"}`);
+const dev = await download(token, source.config, source.project);
 const canary = await download(token, "canary");
 const copy = modelKeysToCopy(dev);
 const names = Object.keys(copy);
