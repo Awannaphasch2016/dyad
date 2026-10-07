@@ -139,7 +139,10 @@ export function planFormaContainer({
   }
 
   if (!names.has("compose.dev.yml")) {
-    files.push({ path: "compose.dev.yml", contents: devCompose() });
+    files.push({
+      path: "compose.dev.yml",
+      contents: packageJson && !isDyadApp ? nodeCompose() : devCompose(),
+    });
   }
   assertFilesSafe(files);
   return {
@@ -209,8 +212,41 @@ userData
 `;
 }
 
+function nodeCompose() {
+  return `# Dev stage only. Do not run this on the production host.
+services:
+  forma:
+    build: .
+    ports:
+      - "3000:3000"
+`;
+}
+
 function nodeDockerfile(entries, packageJson) {
   const names = new Set(entries);
+  const script = packageJson.scripts?.start
+    ? "start"
+    : packageJson.scripts?.dev
+      ? "dev"
+      : "start";
+  const build = packageJson.scripts?.build
+    ? `\nRUN ${names.has("pnpm-lock.yaml") ? "pnpm" : names.has("yarn.lock") ? "yarn" : "npm"} run build`
+    : "";
+  const runner = names.has("pnpm-lock.yaml")
+    ? "pnpm"
+    : names.has("yarn.lock")
+      ? "yarn"
+      : "npm";
+  if (names.has("pnpm-lock.yaml") && names.has("pnpm-workspace.yaml")) {
+    return `FROM node:24-bookworm-slim
+WORKDIR /app
+RUN corepack enable
+COPY . .
+RUN pnpm install --frozen-lockfile${build}
+EXPOSE 3000
+CMD ["pnpm", "run", "${script}"]
+`;
+  }
   const lockfiles = [
     "package-lock.json",
     "pnpm-lock.yaml",
@@ -226,26 +262,26 @@ function nodeDockerfile(entries, packageJson) {
   } else if (names.has("package-lock.json")) {
     install = "npm ci";
   }
-  const script = packageJson.scripts?.start
-    ? "start"
-    : packageJson.scripts?.dev
-      ? "dev"
-      : "start";
   return `FROM node:24-bookworm-slim
 WORKDIR /app
 COPY ${copyList} ./
 RUN ${install}
-COPY . .
+COPY . .${build}
 EXPOSE 3000
-CMD ["npm", "run", "${script}"]
+CMD ["${runner}", "run", "${script}"]
 `;
 }
 
 function run(command, args, options = {}) {
+  const { input, ...rest } = options;
   return execFileSync(command, args, {
     encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-    ...options,
+    stdio:
+      input === undefined
+        ? ["ignore", "pipe", "pipe"]
+        : ["pipe", "pipe", "pipe"],
+    ...(input === undefined ? {} : { input }),
+    ...rest,
   });
 }
 

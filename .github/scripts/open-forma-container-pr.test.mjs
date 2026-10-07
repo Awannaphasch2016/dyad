@@ -77,7 +77,26 @@ test("a node app gets a lockfile install and does not replace a Dockerfile", () 
   assert.equal(created.kind, "node-app");
   const dockerfile = created.files.find((file) => file.path === "Dockerfile");
   assert.match(dockerfile.contents, /pnpm install --frozen-lockfile/);
-  assert.match(dockerfile.contents, /npm", "run", "dev"/);
+  assert.match(dockerfile.contents, /pnpm", "run", "dev"/);
+  const compose = created.files.find((file) => file.path === "compose.dev.yml");
+  assert.match(compose.contents, /3000:3000/);
+  assert.equal(compose.contents.includes("DYAD_BROWSER_BRIDGE"), false);
+
+  const workspace = planFormaContainer({
+    entries: ["package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml"],
+    packageJson: {
+      name: "forma",
+      scripts: { dev: "next dev", build: "next build", start: "next start" },
+    },
+    gascityDockerfile,
+    entrypoint,
+  });
+  const workspaceFile = workspace.files.find(
+    (file) => file.path === "Dockerfile",
+  );
+  assert.match(workspaceFile.contents, /COPY \. \./);
+  assert.match(workspaceFile.contents, /pnpm run build/);
+  assert.match(workspaceFile.contents, /pnpm", "run", "start"/);
 
   const existing = planFormaContainer({
     entries: ["package.json", "Dockerfile", "compose.dev.yml"],
