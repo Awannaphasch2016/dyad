@@ -6,6 +6,8 @@ import {
   blockedReferenceNames,
   chooseReference,
   cloudflareProbes,
+  credentialShape,
+  errorSummary,
   probeResult,
   referenceResolved,
   takeSecretNames,
@@ -64,6 +66,16 @@ test("secret payloads are reduced to names", () => {
   assert.deepEqual(takeSecretNames(payload), ["OPENROUTER_API_KEY"]);
   assert.equal(payload.secrets.OPENROUTER_API_KEY.raw, undefined);
   assert.equal(payload.secrets.OPENROUTER_API_KEY.computed, undefined);
+});
+
+test("credential reports name the kind of token and not its value", () => {
+  assert.equal(credentialShape("napi_example"), "napi length=12");
+  assert.equal(credentialShape("sk-or-example"), "openrouter length=13");
+  assert.equal(
+    errorSummary({ errors: [{ code: 10000, message: "Authentication error" }] })
+      .code,
+    "10000",
+  );
 });
 
 test("resolution and probe words do not include the secret", () => {

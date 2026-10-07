@@ -79,6 +79,22 @@ export function referenceResolved(value) {
   return "yes";
 }
 
+export function credentialShape(value) {
+  const text = String(value ?? "").trim();
+  if (text.startsWith("napi_")) return `napi length=${text.length}`;
+  if (text.startsWith("sk-or-")) return `openrouter length=${text.length}`;
+  if (text.startsWith("${")) return "reference";
+  if (text === "") return "absent";
+  return `other length=${text.length}`;
+}
+
+export function errorSummary(payload) {
+  const error = payload?.errors?.[0] ?? payload?.error ?? payload;
+  const code = error?.code ?? payload?.code ?? "";
+  const message = error?.message ?? payload?.message ?? "";
+  return { code: String(code), message: String(message) };
+}
+
 export function probeResult(status) {
   if (status === 200 || status === 201) return "allowed";
   if (status === 401 || status === 403) return "denied";

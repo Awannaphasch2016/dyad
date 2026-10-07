@@ -7,6 +7,8 @@ import { redact, VIBESDK_PROJECT_NAME } from "./vibesdk-project.mjs";
 import {
   chooseReference,
   cloudflareProbes,
+  credentialShape,
+  errorSummary,
   probeResult,
   referenceResolved,
   takeSecretNames,
@@ -150,10 +152,21 @@ if (referenceResolved(cloudflareToken) === "yes") {
       Accept: "application/json",
     });
     const tokenStatus = result.payload?.result?.status;
-    const suffix =
-      name === "token" && tokenStatus ? ` token_status=${tokenStatus}` : "";
-    console.log(`cloudflare_${name}=${probeResult(result.status)}${suffix}`);
+    const summary = errorSummary(result.payload);
+    const detail = [
+      name === "token" && tokenStatus ? `token_status=${tokenStatus}` : "",
+      summary.code ? `code=${redact(summary.code)}` : "",
+      result.status !== 200 && summary.message
+        ? `message=${redact(summary.message)}`
+        : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+    console.log(
+      `cloudflare_${name}=${probeResult(result.status)}${detail ? ` ${detail}` : ""}`,
+    );
   }
+  console.log(`cloudflare_token_shape=${credentialShape(cloudflareToken)}`);
 } else {
   console.log("cloudflare_token=skipped");
 }
@@ -166,7 +179,7 @@ if (referenceResolved(openRouterKey) === "yes") {
   });
   const label = keyCheck.payload?.data?.label;
   console.log(
-    `openrouter_key=${probeResult(keyCheck.status)} label=${typeof label === "string" && label ? "present" : "absent"}`,
+    `openrouter_key=${probeResult(keyCheck.status)} label=${typeof label === "string" && label ? "present" : "absent"} shape=${credentialShape(openRouterKey)}`,
   );
   const completion = await fetch(
     "https://openrouter.ai/api/v1/chat/completions",
@@ -203,11 +216,24 @@ if (referenceResolved(neonKey) === "yes") {
   const names = rows
     .map((project) => `${project.id}:${project.name}`)
     .filter((name) => name !== "undefined:undefined");
+  const neonError = errorSummary(projects.payload);
   console.log(
-    `neon_projects=${probeResult(projects.status)} count=${rows.length}`,
+    `neon_projects=${probeResult(projects.status)} count=${rows.length} shape=${credentialShape(neonKey)} code=${redact(neonError.code) || "none"} message=${redact(neonError.message) || "none"}`,
   );
   for (const name of names) console.log(`neon_project=${name}`);
-  const known = rows.find((project) => project.id === "mute-credit-71067312");
+  const direct = await apiStatus(
+    "https://console.neon.tech/api/v2/projects/mute-credit-71067312",
+    {
+      Authorization: `Bearer ${neonKey}`,
+      Accept: "application/json",
+    },
+  );
+  const directError = errorSummary(direct.payload);
+  const directName = direct.payload?.project?.name;
+  console.log(
+    `neon_known_project=${probeResult(direct.status)} name=${typeof directName === "string" ? directName : "absent"} code=${redact(directError.code) || "none"} message=${redact(directError.message) || "none"}`,
+  );
+  const known = direct.status === 200;
   if (known) {
     const branches = await apiStatus(
       "https://console.neon.tech/api/v2/projects/mute-credit-71067312/branches",
