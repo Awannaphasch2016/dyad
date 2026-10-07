@@ -87,25 +87,45 @@ if (!token) {
 
 const projects = await listProjects(token);
 console.log(`projects=${projects.join(",") || "none"}`);
-const project =
-  projectCandidates.find((name) => projects.includes(name)) ?? null;
-console.log(`claude_project=${project ?? "absent"}`);
-if (!project) process.exit(1);
 
-const devNames = await secretNames(token, project, "dev");
-if (devNames == null) {
-  console.log("ai_pilot_dev=absent");
-  process.exit(1);
+const hits = [];
+for (const name of projects) {
+  const listed = await doppler(
+    token,
+    "GET",
+    `/v3/configs?project=${encodeURIComponent(name)}&page=1&per_page=100`,
+  );
+  const configs = (listed.configs ?? [])
+    .map((config) => String(config?.name ?? ""))
+    .filter(Boolean);
+  console.log(`configs ${name}=${configs.join(",") || "none"}`);
+  for (const config of configs) {
+    const names = await secretNames(token, name, config);
+    if (names == null) continue;
+    const source = claudeSourceName(names);
+    if (!source) continue;
+    hits.push({ project: name, config, source });
+    console.log(`claude_hit=${name}/${config} name=${source}`);
+  }
 }
-const source = claudeSourceName(devNames);
-console.log(`claude_source=${source ?? "absent"} names=${devNames.length}`);
-if (!source) process.exit(1);
+
+const preferred =
+  hits.find(
+    (hit) => projectCandidates.includes(hit.project) && hit.config === "dev",
+  ) ?? null;
+if (!preferred) {
+  console.log(
+    `claude_reference=${hits.length === 0 ? "absent" : "not_ai_pilot"}`,
+  );
+  process.exit(0);
+}
+const choiceHit = preferred;
 
 const choice = chooseProjectReference(
-  project,
-  ["dev"],
-  { dev: new Set(devNames) },
-  [source],
+  choiceHit.project,
+  [choiceHit.config],
+  { [choiceHit.config]: new Set([choiceHit.source]) },
+  [choiceHit.source],
   "ANTHROPIC_API_KEY",
 );
 await doppler(token, "POST", "/v3/configs/config/secrets", {
