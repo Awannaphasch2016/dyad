@@ -23,6 +23,7 @@ jobs:
           python3 << 'PY'
           import json, os, re, subprocess
           from pathlib import Path
+          from urllib.parse import quote
 
           api_key = os.environ["HARNESS_API_KEY"]
           account = os.environ["HARNESS_ACCOUNT"]
@@ -90,9 +91,51 @@ jobs:
                   }:
                       steps[ident] = node.get("status")
               failure = ""
+              log_keys = []
               for node in graph.values():
-                  if isinstance(node, dict) and node.get("status") in {"Failed", "Errored"}:
-                      failure = node.get("failureInfo") or node.get("skipInfo") or ""
-                      break
+                  if not isinstance(node, dict) or node.get("status") not in {"Failed", "Errored"}:
+                      continue
+                  failure = node.get("failureInfo") or node.get("skipInfo") or ""
+                  key = node.get("logBaseKey")
+                  if isinstance(key, str):
+                      log_keys.append((node.get("identifier"), key))
               print("detail", execution, detail_code, json.dumps(steps), scrub(str(failure))[:240])
+              for ident, key in log_keys:
+                  print("log_key", ident)
+                  link = ""
+                  for _ in range(12):
+                      log_code, log_body = request(
+                          "POST",
+                          "https://app.harness.io/gateway/log-service/blob/download"
+                          f"?accountID={account}&prefix={quote(key, safe='')}",
+                          {},
+                      )
+                      status = log_body.get("status") if isinstance(log_body, dict) else ""
+                      print("log_http", ident, log_code, status)
+                      if status == "success" and isinstance(log_body.get("link"), str):
+                          link = log_body["link"]
+                          break
+                      subprocess.run(["sleep", "3"], check=False)
+                  if not link:
+                      continue
+                  log_file = Path("/tmp/harness-image-step.log")
+                  subprocess.run(
+                      ["curl", "-sS", "--max-time", "60", "-o", str(log_file), link],
+                      check=False,
+                      capture_output=True,
+                  )
+                  raw_log = log_file.read_text("utf-8", "replace") if log_file.exists() else ""
+                  shown = 0
+                  for line in raw_log.splitlines():
+                      try:
+                          parsed = json.loads(line)
+                      except json.JSONDecodeError:
+                          parsed = {"out": line}
+                      text = parsed.get("out") or parsed.get("message") or ""
+                      if not text:
+                          continue
+                      print("log", ident, scrub(str(text))[:300])
+                      shown += 1
+                      if shown >= 40:
+                          break
           PY
