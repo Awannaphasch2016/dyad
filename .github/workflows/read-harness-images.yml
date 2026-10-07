@@ -1,4 +1,5 @@
 # Reads the latest dyad_harness_images executions. A push of this file does not rebuild images.
+# Latest login check follows the base64 decode of the file secret.
 name: Read Harness image executions
 
 on:
