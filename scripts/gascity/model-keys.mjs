@@ -12,6 +12,47 @@ export const optionalModelKeyNames = ["AWS_BEARER_TOKEN_BEDROCK"];
 
 export const modelKeyNames = [...autoModelKeyNames, ...optionalModelKeyNames];
 
+const blockedSourceNames = new Set([
+  "prd",
+  "prod",
+  "production",
+  "canary",
+  "preview",
+  "stg",
+  "stage",
+  "staging",
+]);
+
+export function configLabels(configs) {
+  return (configs ?? [])
+    .map((item) => {
+      const name = String(item?.name ?? "");
+      const environment = String(item?.environment ?? "");
+      if (!name) return "";
+      return environment ? `${name}:${environment}` : name;
+    })
+    .filter(Boolean);
+}
+
+export function chooseDevConfig(configs) {
+  const rows = [];
+  for (const item of configs ?? []) {
+    const name = String(item?.name ?? "");
+    if (!name || blockedSourceNames.has(name)) continue;
+    rows.push({
+      name,
+      environment: String(item?.environment ?? ""),
+      root: item?.root === true,
+    });
+  }
+  if (rows.some((item) => item.name === "dev")) return "dev";
+  const devEnv = rows.filter((item) => item.environment === "dev");
+  const roots = devEnv.filter((item) => item.root);
+  if (roots.length === 1) return roots[0].name;
+  if (devEnv.length === 1) return devEnv[0].name;
+  return "";
+}
+
 function present(env, name) {
   const value = env?.[name];
   return typeof value === "string" && value.trim().length > 0;

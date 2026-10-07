@@ -6,6 +6,7 @@ import {
   assertModelKeyCopy,
   autoKeysAfterCopy,
   autoModelKeyNames,
+  chooseDevConfig,
   modelKeysToCopy,
 } from "./model-keys.mjs";
 
@@ -39,6 +40,46 @@ test("a canary key already present still counts when dev is empty", () => {
     ["OPENAI_API_KEY"],
   );
   assert.deepEqual(modelKeysToCopy({}), {});
+});
+
+test("the dev config is chosen without using production", () => {
+  assert.equal(
+    chooseDevConfig([
+      { name: "prd", environment: "prd", root: true },
+      { name: "canary", environment: "canary", root: true },
+      { name: "dev", environment: "dev", root: true },
+    ]),
+    "dev",
+  );
+  assert.equal(
+    chooseDevConfig([
+      { name: "prd", environment: "prd", root: true },
+      { name: "dev_personal", environment: "dev", root: true },
+      { name: "preview", environment: "preview", root: true },
+    ]),
+    "dev_personal",
+  );
+  assert.equal(
+    chooseDevConfig([
+      { name: "prd", environment: "prd", root: true },
+      { name: "preview", environment: "preview", root: true },
+    ]),
+    "",
+  );
+  assert.equal(
+    chooseDevConfig([
+      { name: "dev_a", environment: "dev", root: true },
+      { name: "dev_b", environment: "dev", root: false },
+    ]),
+    "dev_a",
+  );
+  assert.equal(
+    chooseDevConfig([
+      { name: "dev_a", environment: "dev", root: true },
+      { name: "dev_b", environment: "dev", root: true },
+    ]),
+    "",
+  );
 });
 
 test("a database URL in the copy is refused", () => {

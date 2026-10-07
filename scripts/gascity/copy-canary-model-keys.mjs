@@ -4,6 +4,8 @@
 import {
   absentAutoKeys,
   autoKeysAfterCopy,
+  chooseDevConfig,
+  configLabels,
   modelKeysToCopy,
 } from "./model-keys.mjs";
 
@@ -40,7 +42,7 @@ async function download(token, config) {
   const payload = await doppler(
     token,
     "GET",
-    `/v3/configs/config/secrets/download?project=dyad&config=${config}&format=json`,
+    `/v3/configs/config/secrets/download?project=dyad&config=${encodeURIComponent(config)}&format=json`,
   );
   return Object.fromEntries(
     Object.entries(payload).filter((entry) => typeof entry[1] === "string"),
@@ -53,7 +55,16 @@ if (!token) {
   process.exit(1);
 }
 
-const dev = await download(token, "dev");
+const listed = await doppler(token, "GET", "/v3/configs?project=dyad");
+const configs = listed.configs ?? [];
+console.log(`configs=${configLabels(configs).join(",") || "none"}`);
+const source = chooseDevConfig(configs);
+if (!source) {
+  console.error("dev_config=absent");
+  process.exit(1);
+}
+console.log(`source=dyad/${source}`);
+const dev = await download(token, source);
 const canary = await download(token, "canary");
 const copy = modelKeysToCopy(dev);
 const names = Object.keys(copy);
@@ -66,7 +77,6 @@ if (names.length > 0) {
 }
 const absent = absentAutoKeys(dev);
 const available = autoKeysAfterCopy(dev, canary);
-console.log("source=dyad/dev");
 console.log(`copied=${names.join(",") || "none"}`);
 console.log(`absent=${absent.join(",") || "none"}`);
 if (available.length === 0) {
