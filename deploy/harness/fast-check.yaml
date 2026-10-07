@@ -36,10 +36,15 @@ pipeline:
                     shell: Bash
                     command: |
                       set -euo pipefail
+                      prefix="${HOME}/.local/node"
+                      mkdir -p "${prefix}"
                       NODE_VERSION=24.13.1
                       curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" -o /tmp/node.tar.xz
-                      sudo tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1
-                      node -v | grep -qx "v${NODE_VERSION}"
+                      tar -xJf /tmp/node.tar.xz -C "${prefix}" --strip-components=1
+                      export PATH="${prefix}/bin:${PATH}"
+                      hash -r
+                      echo "node=$(node -v)"
+                      test "$(node -v)" = "v${NODE_VERSION}"
               - step:
                   type: Run
                   name: Install npm 11.8.0
@@ -48,47 +53,70 @@ pipeline:
                     shell: Bash
                     command: |
                       set -euo pipefail
+                      export PATH="${HOME}/.local/node/bin:${PATH}"
+                      hash -r
                       npm install -g npm@11.8.0
-                      npm -v | grep -qx "11.8.0"
+                      hash -r
+                      version="$(npm -v | tr -d '[:space:]')"
+                      echo "npm_version=${version}"
+                      test "${version}" = "11.8.0"
               - step:
                   type: Run
                   name: Install node modules
                   identifier: install_node_modules
                   spec:
                     shell: Bash
-                    command: bash scripts/npm-ci-retry.sh
+                    command: |
+                      set -euo pipefail
+                      export PATH="${HOME}/.local/node/bin:${PATH}"
+                      bash scripts/npm-ci-retry.sh
               - step:
                   type: Run
                   name: Prep test server
                   identifier: prep_test_server
                   spec:
                     shell: Bash
-                    command: cd testing/fake-llm-server && npm install && npm run build && cd -
+                    command: |
+                      set -euo pipefail
+                      export PATH="${HOME}/.local/node/bin:${PATH}"
+                      cd testing/fake-llm-server && npm install && npm run build && cd -
               - step:
                   type: Run
                   name: Presubmit check
                   identifier: presubmit
                   spec:
                     shell: Bash
-                    command: npm run presubmit
+                    command: |
+                      set -euo pipefail
+                      export PATH="${HOME}/.local/node/bin:${PATH}"
+                      npm run presubmit
               - step:
                   type: Run
                   name: Type-checking
                   identifier: typecheck
                   spec:
                     shell: Bash
-                    command: npm run ts
+                    command: |
+                      set -euo pipefail
+                      export PATH="${HOME}/.local/node/bin:${PATH}"
+                      npm run ts
               - step:
                   type: Run
                   name: Browser bridge and file sync tests
                   identifier: browser_bridge_and_file_sync
                   spec:
                     shell: Bash
-                    command: npm test -- src/main/browser_bridge.test.ts src/control_plane/file_sync.test.ts
+                    command: |
+                      set -euo pipefail
+                      export PATH="${HOME}/.local/node/bin:${PATH}"
+                      npm test -- src/main/browser_bridge.test.ts src/control_plane/file_sync.test.ts
               - step:
                   type: Run
                   name: Rollout helper tests
                   identifier: rollout_helper_tests
                   spec:
                     shell: Bash
-                    command: bash scripts/gascity/rollout.test.sh
+                    command: |
+                      set -euo pipefail
+                      export PATH="${HOME}/.local/node/bin:${PATH}"
+                      bash scripts/gascity/rollout.test.sh

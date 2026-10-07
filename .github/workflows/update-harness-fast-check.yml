@@ -1,0 +1,336 @@
+name: Update and run Harness fast-check
+
+on:
+  push:
+    branches:
+      - cursor/harness-equivalence-5527
+    paths:
+      - .github/workflows/update-harness-fast-check.yml
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Update the pipeline and start one execution
+        env:
+          HARNESS_API_KEY: ${{ secrets.HARNESS_API_KEY }}
+          HARNESS_ACCOUNT: WKxXBnSFTRaOF64-h90PyQ
+        run: |
+          python3 << 'PY'
+          import json, os, re, subprocess, time, zipfile
+          from pathlib import Path
+
+          api_key = os.environ.get("HARNESS_API_KEY") or ""
+          account = os.environ["HARNESS_ACCOUNT"]
+          org = "default"
+          project = "dyad"
+          pipeline = "dyad_fast_check"
+          previous = "nI911DyPQC2Gd1sIV6yQOw"
+          running = {
+              "Running", "AsyncWaiting", "Queued", "NotStarted", "Paused",
+              "ResourceWaiting", "WaitStepRunning", "TimedWaiting",
+              "InterventionWaiting", "ApprovalWaiting", "Discontinuing",
+              "Starting", "Waiting", "InputWaiting",
+              "QueuedLicenseLimitReached", "QueuedStepLimitReached",
+          }
+          pem = re.compile(
+              r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----",
+              re.S,
+          )
+          long_token = re.compile(r"[A-Za-z0-9+/=]{40,}")
+          database_url = re.compile(r"postgres(?:ql)?://\S+", re.I)
+          signed_url = re.compile(r"https?://\S*(?:signature|token|X-Goog|X-Amz)\S*", re.I)
+
+          def fail(message):
+              print(message[:500])
+              raise SystemExit(1)
+
+          def scrub(text):
+              text = pem.sub("[redacted-pem]", text or "")
+              text = database_url.sub("[redacted-db]", text)
+              text = signed_url.sub("[redacted-url]", text)
+              text = long_token.sub("[redacted]", text)
+              return text
+
+          def request(method, url, payload=None, yaml_path=None):
+              out = Path("/tmp/harness-response.bin")
+              if out.exists():
+                  out.unlink()
+              cmd = [
+                  "curl", "-sS", "--max-time", "60", "-o", str(out), "-w", "%{http_code}",
+                  "-X", method, url,
+                  "-H", f"x-api-key: {api_key}",
+                  "-H", "Accept: application/json",
+              ]
+              if payload is not None:
+                  body = Path("/tmp/harness-request.json")
+                  body.write_text(json.dumps(payload))
+                  cmd += ["-H", "Content-Type: application/json", "--data-binary", f"@{body}"]
+              if yaml_path is not None:
+                  cmd += ["-H", "Content-Type: application/yaml", "--data-binary", f"@{yaml_path}"]
+              result = subprocess.run(cmd, text=True, capture_output=True)
+              if result.returncode != 0:
+                  fail("CURL_FAILED " + scrub(result.stderr)[:300])
+              raw = out.read_bytes() if out.exists() else b""
+              out.unlink(missing_ok=True)
+              code = result.stdout.strip()
+              try:
+                  parsed = json.loads(raw.decode("utf-8", "replace")) if raw else {}
+              except json.JSONDecodeError:
+                  parsed = {"raw": scrub(raw.decode("utf-8", "replace"))[:300]}
+              return code, parsed, raw
+
+          def execution_id(body):
+              data = body.get("data")
+              if isinstance(data, str) and data:
+                  return data
+              if not isinstance(data, dict):
+                  return None
+              plan = data.get("planExecution") if isinstance(data.get("planExecution"), dict) else {}
+              return (
+                  data.get("planExecutionId")
+                  or data.get("executionId")
+                  or data.get("uuid")
+                  or plan.get("planExecutionId")
+                  or plan.get("uuid")
+              )
+
+          def summary_items():
+              url = (
+                  "https://app.harness.io/pipeline/api/pipelines/execution/summary"
+                  f"?accountIdentifier={account}&orgIdentifier={org}"
+                  f"&projectIdentifier={project}&pipelineIdentifier={pipeline}&page=0&size=5"
+              )
+              code, body, _raw = request("POST", url, {"filterType": "PipelineExecution"})
+              content = ((body.get("data") or {}).get("content") or []) if isinstance(body.get("data"), dict) else []
+              print("summary_http", code, "count", len(content))
+              return content
+
+          def detail(plan):
+              url = (
+                  "https://app.harness.io/pipeline/api/pipelines/execution/v2/"
+                  f"{plan}?accountIdentifier={account}&orgIdentifier={org}"
+                  f"&projectIdentifier={project}&renderFullBottomGraph=true"
+              )
+              code, body, _raw = request("GET", url)
+              print("detail_http", code)
+              return body
+
+          def print_nodes(body):
+              data = body.get("data") if isinstance(body.get("data"), dict) else {}
+              summary = data.get("pipelineExecutionSummary") or {}
+              print("pipeline_status", summary.get("status"))
+              print("run_sequence", summary.get("runSequence"))
+              failure = summary.get("failureInfo") or {}
+              message = failure.get("message") if isinstance(failure, dict) else failure
+              print("pipeline_failure", scrub(str(message or ""))[:500])
+              graph = data.get("executionGraph") or {}
+              nodes = graph.get("nodeMap") or data.get("layoutNodeMap") or {}
+              for node in list(nodes.values())[:40]:
+                  if not isinstance(node, dict):
+                      continue
+                  status = node.get("status")
+                  name = node.get("name") or node.get("identifier")
+                  info = node.get("failureInfo") or {}
+                  text = info.get("message") if isinstance(info, dict) else info
+                  if status or text:
+                      print(f"node {name} status={status} failure={scrub(str(text or ''))[:300]}")
+              return summary
+
+          def log_keys(node):
+              found = []
+              def walk(value):
+                  if isinstance(value, dict):
+                      for key, item in value.items():
+                          if isinstance(item, str) and ("log" in key.lower() or "/pipeline/" in item):
+                              found.append(item)
+                          else:
+                              walk(item)
+                  elif isinstance(value, list):
+                      for item in value[:20]:
+                          walk(item)
+              walk(node)
+              return found
+
+          def print_zip_or_text(raw):
+              path = Path("/tmp/harness-log.bin")
+              path.write_bytes(raw)
+              lines = []
+              if raw[:2] == b"PK":
+                  with zipfile.ZipFile(path) as archive:
+                      for name in archive.namelist()[:5]:
+                          text = archive.read(name).decode("utf-8", "replace")
+                          for line in text.splitlines():
+                              try:
+                                  parsed = json.loads(line)
+                              except json.JSONDecodeError:
+                                  parsed = None
+                              if isinstance(parsed, dict):
+                                  piece = parsed.get("out") or parsed.get("message") or parsed.get("logLine") or ""
+                              else:
+                                  piece = line
+                              if piece:
+                                  lines.append(scrub(str(piece)))
+              else:
+                  text = scrub(raw.decode("utf-8", "replace"))
+                  if text.lstrip().startswith("{"):
+                      try:
+                          parsed = json.loads(raw.decode("utf-8", "replace"))
+                      except json.JSONDecodeError:
+                          parsed = {}
+                      link = ""
+                      if isinstance(parsed, dict):
+                          link = str(parsed.get("link") or parsed.get("url") or "")
+                          print("log_download_status", parsed.get("status"), "has_link", bool(link))
+                      if link.startswith("https://"):
+                          fetched = Path("/tmp/harness-log-link.bin")
+                          result = subprocess.run(
+                              ["curl", "-sS", "--max-time", "60", "-L", "-o", str(fetched), "-w", "%{http_code}", link],
+                              text=True, capture_output=True,
+                          )
+                          print("log_link_http", result.stdout.strip())
+                          if fetched.exists():
+                              print_zip_or_text(fetched.read_bytes())
+                              return
+                  lines = text.splitlines()
+              interesting = [
+                  line for line in lines
+                  if re.search(r"error|ERR!|npm_version|node=|exit|command not found", line, re.I)
+              ]
+              chosen = interesting[:40] or lines[:40]
+              print("log_lines", len(lines))
+              for line in chosen:
+                  print("log", line[:300])
+
+          def download_log(prefix):
+              url = (
+                  "https://app.harness.io/gateway/log-service/blob/download"
+                  f"?accountID={account}&prefix={prefix}"
+              )
+              code, parsed, raw = request("POST", url, {})
+              print("log_http", code, "prefix_tail", prefix.split("/")[-1][:80])
+              if code == "200":
+                  print_zip_or_text(raw)
+              else:
+                  message = parsed.get("message") if isinstance(parsed, dict) else ""
+                  print("log_error", scrub(str(message))[:200])
+
+          def fetch_failed_logs(plan, summary_row):
+              body = detail(plan)
+              summary = print_nodes(body)
+              run_sequence = (
+                  summary.get("runSequence")
+                  or (summary_row or {}).get("runSequence")
+              )
+              data = body.get("data") if isinstance(body.get("data"), dict) else {}
+              graph = data.get("executionGraph") or {}
+              nodes = graph.get("nodeMap") or {}
+              prefixes = []
+              if run_sequence:
+                  prefixes.append(
+                      f"{account}/pipeline/{pipeline}/{run_sequence}/-{plan}/fast_check/install_npm"
+                  )
+              for node in nodes.values():
+                  if not isinstance(node, dict):
+                      continue
+                  if node.get("status") not in {"Failed", "Errored"}:
+                      continue
+                  identifier = node.get("identifier") or node.get("stepIdentifier")
+                  if run_sequence and identifier:
+                      prefixes.append(
+                          f"{account}/pipeline/{pipeline}/{run_sequence}/-{plan}/fast_check/{identifier}"
+                      )
+                  prefixes.extend(log_keys(node))
+              seen = set()
+              for prefix in prefixes:
+                  if not prefix or prefix in seen:
+                      continue
+                  seen.add(prefix)
+                  download_log(prefix)
+                  if len(seen) >= 4:
+                      break
+
+          if not api_key.strip():
+              fail("HARNESS_API_KEY_ABSENT")
+
+          print("PREVIOUS", previous)
+          rows = summary_items()
+          previous_row = next((row for row in rows if row.get("planExecutionId") == previous), None)
+          fetch_failed_logs(previous, previous_row)
+
+          yaml_path = Path("/tmp/fast-check.yaml")
+          yaml_path.write_text(Path("deploy/harness/fast-check.yaml").read_text())
+          update_url = (
+              "https://app.harness.io/pipeline/api/pipelines/v2/"
+              f"{pipeline}?accountIdentifier={account}&orgIdentifier={org}&projectIdentifier={project}"
+          )
+          code, updated, _raw = request("PUT", update_url, yaml_path=yaml_path)
+          print(json.dumps({
+              "step": "update_pipeline",
+              "http": code,
+              "status": updated.get("status") if isinstance(updated, dict) else None,
+              "message": scrub(str(updated.get("message") or ""))[:300] if isinstance(updated, dict) else "",
+          }))
+          if code not in {"200", "201"} or (isinstance(updated, dict) and updated.get("status") not in {None, "SUCCESS"}):
+              fail("PIPELINE_SAVE_FAILED")
+
+          execute_url = (
+              "https://app.harness.io/pipeline/api/pipeline/execute/"
+              f"{pipeline}?accountIdentifier={account}&orgIdentifier={org}"
+              f"&projectIdentifier={project}&moduleType=CI"
+          )
+          code, started, _raw = request("POST", execute_url, {})
+          started_id = execution_id(started) if isinstance(started, dict) else None
+          data = started.get("data") if isinstance(started, dict) else None
+          print(json.dumps({
+              "step": "execute_pipeline",
+              "http": code,
+              "status": started.get("status") if isinstance(started, dict) else None,
+              "message": scrub(str(started.get("message") or ""))[:300] if isinstance(started, dict) else "",
+              "data_keys": sorted(data.keys()) if isinstance(data, dict) else type(data).__name__,
+              "execution": started_id,
+          }))
+          if code not in {"200", "201"}:
+              fail("EXECUTION_NOT_STARTED")
+
+          plan = started_id
+          deadline = time.time() + 40 * 60
+          status = None
+          row = None
+          while time.time() < deadline:
+              rows = summary_items()
+              if plan:
+                  row = next((item for item in rows if item.get("planExecutionId") == plan), None)
+              if row is None:
+                  fresh = [
+                      item for item in rows
+                      if item.get("planExecutionId") and item.get("planExecutionId") != previous
+                  ]
+                  fresh.sort(key=lambda item: item.get("startTs") or 0, reverse=True)
+                  row = fresh[0] if fresh else None
+                  if row:
+                      plan = row.get("planExecutionId")
+              status = (row or {}).get("status")
+              print("execution", plan, "status=" + str(status), "run_sequence", (row or {}).get("runSequence"))
+              if plan and status and status not in running:
+                  break
+              time.sleep(30)
+          print("EXECUTION", plan)
+          print(
+              "EXECUTION_URL",
+              f"https://app.harness.io/ng/account/{account}/module/ci/orgs/{org}/projects/{project}/pipelines/{pipeline}/executions/{plan}/pipeline",
+          )
+          if not plan:
+              fail("EXECUTION_ID_MISSING")
+          if status in running or not status:
+              print("STILL_RUNNING")
+          else:
+              fetch_failed_logs(plan, row)
+              print("HARNESS_RESULT", status)
+          PY

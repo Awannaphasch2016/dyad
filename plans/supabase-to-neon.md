@@ -46,13 +46,13 @@ After the URL swap, the same person sees the same questions, the same answers, a
 
 ## Neon’s official tooling
 
-| Tool | What it does | Use it here? |
-| --- | --- | --- |
-| Import Data Assistant | Console import from a Postgres URL for databases under 10 GB. | No. Neon documents that Supabase is unsupported. |
-| `pg_dump` then `pg_restore` | Official Supabase guide. Custom-format dump, restore with `--no-owner --no-acl`. | Yes. This is the database migration. |
-| Logical replication | Publication on Supabase, subscription on Neon. Needs a direct IPv4 Supabase connection and Neon NAT addresses allowed in Supabase. Tables must already exist on Neon. | Only if the freeze window is unacceptable after the catalog. |
-| “Complete Supabase migration” (Better Auth) | Moves Auth users, rewrites RLS helpers, remaps user ids by email. | No. Identity is Clerk. |
-| CSV import | Table by table. | No. It drops constraints, indexes, and the migration journal. |
+| Tool                                        | What it does                                                                                                                                                          | Use it here?                                                  |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Import Data Assistant                       | Console import from a Postgres URL for databases under 10 GB.                                                                                                         | No. Neon documents that Supabase is unsupported.              |
+| `pg_dump` then `pg_restore`                 | Official Supabase guide. Custom-format dump, restore with `--no-owner --no-acl`.                                                                                      | Yes. This is the database migration.                          |
+| Logical replication                         | Publication on Supabase, subscription on Neon. Needs a direct IPv4 Supabase connection and Neon NAT addresses allowed in Supabase. Tables must already exist on Neon. | Only if the freeze window is unacceptable after the catalog.  |
+| “Complete Supabase migration” (Better Auth) | Moves Auth users, rewrites RLS helpers, remaps user ids by email.                                                                                                     | No. Identity is Clerk.                                        |
+| CSV import                                  | Table by table.                                                                                                                                                       | No. It drops constraints, indexes, and the migration journal. |
 
 ### What `pg_dump` / `pg_restore` moves
 
@@ -78,21 +78,21 @@ Production journal `control-plane/drizzle/meta/_journal.json` has three migratio
 
 Schema `wewebplus`:
 
-| Table | Relationships and indexes | Notes |
-| --- | --- | --- |
-| `account_connections` | Primary key `(owner_type, owner_id, provider)` | `ciphertext` is the encrypted GitHub or Supabase token. Copy the text unchanged. |
-| `apps` | Index `apps_owner_idx` on `(owner_type, owner_id)` | `supabase_project_id` is a user’s Supabase project id, not this database. |
-| `chats` | Foreign key to `apps`, cascade delete | |
-| `messages` | Foreign key to `chats`, cascade delete | `ai_messages_json` is `jsonb`. |
-| `knowledge_items` | Foreign key to `apps`, cascade delete | |
-| `phase_approvals` | Foreign key to `apps`. Unique `(app_id, phase)` | |
-| `phase_comments` | Foreign key to `apps`, cascade delete | |
-| `answer_locks` | Primary key `chat_id`. Foreign key to `chats`, cascade delete | |
-| `audit_events` | Primary key `id` | |
-| `roles` | Primary key `(org_id, role_id)` | `0001` seeds Project Manager and Developer. |
-| `memberships` | Primary key `(user_id, org_id)` | `0001` seeds the two Clerk memberships. |
-| `questions` | Unique `(org_id, idempotency_key)` | |
-| `answers` | Foreign key to `questions`, cascade delete. Unique `(question_id)`. `0002` adds nullable `gate_resolved_at` | |
+| Table                 | Relationships and indexes                                                                                   | Notes                                                                            |
+| --------------------- | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `account_connections` | Primary key `(owner_type, owner_id, provider)`                                                              | `ciphertext` is the encrypted GitHub or Supabase token. Copy the text unchanged. |
+| `apps`                | Index `apps_owner_idx` on `(owner_type, owner_id)`                                                          | `supabase_project_id` is a user’s Supabase project id, not this database.        |
+| `chats`               | Foreign key to `apps`, cascade delete                                                                       |                                                                                  |
+| `messages`            | Foreign key to `chats`, cascade delete                                                                      | `ai_messages_json` is `jsonb`.                                                   |
+| `knowledge_items`     | Foreign key to `apps`, cascade delete                                                                       |                                                                                  |
+| `phase_approvals`     | Foreign key to `apps`. Unique `(app_id, phase)`                                                             |                                                                                  |
+| `phase_comments`      | Foreign key to `apps`, cascade delete                                                                       |                                                                                  |
+| `answer_locks`        | Primary key `chat_id`. Foreign key to `chats`, cascade delete                                               |                                                                                  |
+| `audit_events`        | Primary key `id`                                                                                            |                                                                                  |
+| `roles`               | Primary key `(org_id, role_id)`                                                                             | `0001` seeds Project Manager and Developer.                                      |
+| `memberships`         | Primary key `(user_id, org_id)`                                                                             | `0001` seeds the two Clerk memberships.                                          |
+| `questions`           | Unique `(org_id, idempotency_key)`                                                                          |                                                                                  |
+| `answers`             | Foreign key to `questions`, cascade delete. Unique `(question_id)`. `0002` adds nullable `gate_resolved_at` |                                                                                  |
 
 The migrations contain no functions, triggers, row-level security policies, or extensions. Authorization is in application code (`presentQuestion`, `decideAnswer`, Clerk session checks), not in `auth.uid()`.
 
@@ -120,13 +120,13 @@ Also count rows per `wewebplus` table. Those counts are the completeness check. 
 
 ### Already a normal Postgres client
 
-| Process | Code | How it connects |
-| --- | --- | --- |
-| Dyad main process | `src/control_plane/db.ts` | `postgres(WEWEBPLUS_DATABASE_URL, { max: 4 })`, then Drizzle migrate and the membership seed. |
-| Question board on Vercel | `hitl-web/lib/db.ts` | `postgres(url, { max: 1, prepare: false, ssl: "require" })`. SQL is in `hitl-web/lib/store.ts`. |
-| Account connections | `src/control_plane/repository.ts`, `secrets.ts` | Reads and writes `account_connections` through Drizzle. |
-| Factory mirror | `src/control_plane/factory_records.ts`, `sync_local.ts`, `file_sync.ts`, `hitl_device.ts` | Same Drizzle client. |
-| Gate poller, when that process is deployed | `scripts/gascity/resolve_hitl_answer.py` | `psycopg` and the same URL. |
+| Process                                    | Code                                                                                      | How it connects                                                                                 |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Dyad main process                          | `src/control_plane/db.ts`                                                                 | `postgres(WEWEBPLUS_DATABASE_URL, { max: 4 })`, then Drizzle migrate and the membership seed.   |
+| Question board on Vercel                   | `hitl-web/lib/db.ts`                                                                      | `postgres(url, { max: 1, prepare: false, ssl: "require" })`. SQL is in `hitl-web/lib/store.ts`. |
+| Account connections                        | `src/control_plane/repository.ts`, `secrets.ts`                                           | Reads and writes `account_connections` through Drizzle.                                         |
+| Factory mirror                             | `src/control_plane/factory_records.ts`, `sync_local.ts`, `file_sync.ts`, `hitl_device.ts` | Same Drizzle client.                                                                            |
+| Gate poller, when that process is deployed | `scripts/gascity/resolve_hitl_answer.py`                                                  | `psycopg` and the same URL.                                                                     |
 
 No file under `src/control_plane/` or `hitl-web/` imports `@supabase/supabase-js`. No control-plane query calls `auth.uid()`, Realtime, Storage, or an Edge Function.
 
@@ -154,15 +154,15 @@ Agent chats and the on-device factory store stay in SQLite on the container volu
 
 ## What cannot be reproduced in Neon, and the replacement
 
-| Supabase capability | Used by the control plane? | Replacement |
-| --- | --- | --- |
-| Hosted Postgres | Yes | Neon Postgres. Same SQL. |
-| Auth / `auth.uid()` / RLS tied to the JWT | No | Clerk plus the membership table. Do not add Neon Auth for this cutover. |
-| Storage | No | None. |
-| Realtime | No | None. The board loads questions by HTTP. |
-| Edge Functions | No | None. |
-| Management API and dashboard | Only as the current host’s console | Neon console for this database. User-app Management API calls stay on Supabase. |
-| Platform roles and default privileges | Present on the server, unused by these queries | `--no-owner --no-acl`. The Neon owner role is the application role. |
+| Supabase capability                       | Used by the control plane?                     | Replacement                                                                     |
+| ----------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------- |
+| Hosted Postgres                           | Yes                                            | Neon Postgres. Same SQL.                                                        |
+| Auth / `auth.uid()` / RLS tied to the JWT | No                                             | Clerk plus the membership table. Do not add Neon Auth for this cutover.         |
+| Storage                                   | No                                             | None.                                                                           |
+| Realtime                                  | No                                             | None. The board loads questions by HTTP.                                        |
+| Edge Functions                            | No                                             | None.                                                                           |
+| Management API and dashboard              | Only as the current host’s console             | Neon console for this database. User-app Management API calls stay on Supabase. |
+| Platform roles and default privileges     | Present on the server, unused by these queries | `--no-owner --no-acl`. The Neon owner role is the application role.             |
 
 ## Database migration
 
@@ -207,12 +207,12 @@ pg_restore -v --no-owner --no-acl \
 
 No query rewrite is required when the catalog matches the migrations. The behavior change is the connection string.
 
-| Environment | Variable | Value |
-| --- | --- | --- |
-| Production Dyad process (Doppler config that the container already reads) | `WEWEBPLUS_DATABASE_URL` | Neon **direct** URL |
-| Production Vercel question board | `WEWEBPLUS_DATABASE_URL` | Neon **pooled** URL |
-| `WEWEBPLUS_SECRETS_KEY` | unchanged | Same key on both sides |
-| Preview Doppler, preview Vercel, `NEON_PARENT_BRANCH_ID` | unchanged | Preview stays on its own Neon children |
+| Environment                                                               | Variable                 | Value                                  |
+| ------------------------------------------------------------------------- | ------------------------ | -------------------------------------- |
+| Production Dyad process (Doppler config that the container already reads) | `WEWEBPLUS_DATABASE_URL` | Neon **direct** URL                    |
+| Production Vercel question board                                          | `WEWEBPLUS_DATABASE_URL` | Neon **pooled** URL                    |
+| `WEWEBPLUS_SECRETS_KEY`                                                   | unchanged                | Same key on both sides                 |
+| Preview Doppler, preview Vercel, `NEON_PARENT_BRANCH_ID`                  | unchanged                | Preview stays on its own Neon children |
 
 `compose.gascity.yml` already passes `WEWEBPLUS_DATABASE_URL` through. The image does not need a rebuild for the URL swap. Restart the process that cached the old client (`src/control_plane/db.ts` keeps a module-level client; `hitl-web/lib/db.ts` keeps one on `globalThis`). A restart is the way those caches drop the Supabase connection.
 
@@ -325,15 +325,15 @@ Rollback files on the server, mode 0600: `/opt/gascity/weaver.env.supabase-backu
 
 ## Risks
 
-| Risk | Likelihood | Impact | Mitigation |
-| --- | --- | --- | --- |
-| Import Data Assistant or a full-database dump pulls Supabase extensions and fails | High if the wrong tool is used | Restore aborts | Dump only `wewebplus` and `drizzle`. |
-| Boot reapplies migrations and dies on existing tables | High if the journal is omitted | Dyad and the board cannot open the database | Restore `drizzle.__drizzle_migrations` or insert the journal rows before boot. |
-| Production ciphertext restored onto the preview parent | Medium if the Neon project is reused | Preview branches inherit production tokens | New Neon project. Preview parent stays the Dev branch. |
-| Pooled Neon URL with prepared statements | Medium | Dyad queries fail at runtime | Direct URL for Dyad. Pooled URL only for Vercel, which already sets `prepare: false`. |
-| Clerk ids rewritten with the Better Auth guide | Low if that guide is followed | Board shows the wrong people | Do not use that guide. |
-| Cutover while both databases accept writes | Medium | Rollback loses or double-applies answers | One writer. Supabase frozen after the swap. |
-| `0003_runtime_run` applied by a newer binary | Medium when that branch deploys | Harmless `ADD COLUMN` if the journal is older; failure if the column is assumed before the binary ships | Journal rows match the binary that boots. |
+| Risk                                                                              | Likelihood                           | Impact                                                                                                  | Mitigation                                                                            |
+| --------------------------------------------------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Import Data Assistant or a full-database dump pulls Supabase extensions and fails | High if the wrong tool is used       | Restore aborts                                                                                          | Dump only `wewebplus` and `drizzle`.                                                  |
+| Boot reapplies migrations and dies on existing tables                             | High if the journal is omitted       | Dyad and the board cannot open the database                                                             | Restore `drizzle.__drizzle_migrations` or insert the journal rows before boot.        |
+| Production ciphertext restored onto the preview parent                            | Medium if the Neon project is reused | Preview branches inherit production tokens                                                              | New Neon project. Preview parent stays the Dev branch.                                |
+| Pooled Neon URL with prepared statements                                          | Medium                               | Dyad queries fail at runtime                                                                            | Direct URL for Dyad. Pooled URL only for Vercel, which already sets `prepare: false`. |
+| Clerk ids rewritten with the Better Auth guide                                    | Low if that guide is followed        | Board shows the wrong people                                                                            | Do not use that guide.                                                                |
+| Cutover while both databases accept writes                                        | Medium                               | Rollback loses or double-applies answers                                                                | One writer. Supabase frozen after the swap.                                           |
+| `0003_runtime_run` applied by a newer binary                                      | Medium when that branch deploys      | Harmless `ADD COLUMN` if the journal is older; failure if the column is assumed before the binary ships | Journal rows match the binary that boots.                                             |
 
 ## Open questions
 

@@ -2,7 +2,7 @@
 
 Written 2026-10-07. These experiments ask whether a Harness pipeline can run the same build, test, preview, and rollout behavior this repo already runs in GitHub Actions. A feature checklist is not a result. Each experiment keeps the existing scripts and external systems, points a Harness pipeline at them, and compares the two runs.
 
-No experiment in this file has been executed. The **Actual** column is `not run`. Do not treat the substitution matrix as a decision until the named experiments pass.
+Experiment 2 has one finished Harness execution, and it failed. It is not a pass. Every other experiment is still `not run`. Do not treat the substitution matrix as a decision until the named experiments pass.
 
 ## Ground rules
 
@@ -16,30 +16,30 @@ No experiment in this file has been executed. The **Actual** column is `not run`
 
 ## How a row is scored
 
-| Column | What to write |
-| --- | --- |
-| Current | The workflow file, trigger, and the behavior just observed on GitHub Actions |
-| Harness | The pipeline file, trigger, and which existing script it calls |
-| Expected | The acceptance check below |
-| Actual | The observed digest, command, status code, or log line. `not run` until then |
-| Pass | pass or fail. A missing log is a fail |
-| Performance | Wall clock next to the GitHub Actions run it is compared with |
-| Cost | GitHub Actions minutes and Harness build credits for that run. No estimate in place of a bill |
-| Complexity | Files touched, and whether a person had to use the Harness UI |
-| Gaps | Behavior the Harness run did not reproduce |
+| Column      | What to write                                                                                 |
+| ----------- | --------------------------------------------------------------------------------------------- |
+| Current     | The workflow file, trigger, and the behavior just observed on GitHub Actions                  |
+| Harness     | The pipeline file, trigger, and which existing script it calls                                |
+| Expected    | The acceptance check below                                                                    |
+| Actual      | The observed digest, command, status code, or log line. `not run` until then                  |
+| Pass        | pass or fail. A missing log is a fail                                                         |
+| Performance | Wall clock next to the GitHub Actions run it is compared with                                 |
+| Cost        | GitHub Actions minutes and Harness build credits for that run. No estimate in place of a bill |
+| Complexity  | Files touched, and whether a person had to use the Harness UI                                 |
+| Gaps        | Behavior the Harness run did not reproduce                                                    |
 
 ## What the current system actually is
 
-| Concern | Current implementation |
-| --- | --- |
-| Required CI on this fork | `.github/workflows/ci.yml` job `fast-check`. Electron, macOS, and Windows jobs run when `github.repository == 'dyad-sh/dyad'`. This fork starts them from `.github/workflows/ci-desktop.yml`. |
-| Dyad image | `Dockerfile.gascity`. Tags `ghcr.io/<owner>/dyad:ctx-<hash>` and `dyad:sha-<commit>`. The hash is `scripts/gascity/preview-image-id.mjs`. |
-| Gas City image | `.github/workflows/gascity-image.yml` builds `Awannaphasch2016/gascity` `contrib/k8s/Dockerfile.base` and `Dockerfile.agent`. Tags `ghcr.io/awannaphasch2016/gascity:sha-<sha>` and `:preview`. |
-| Preview | `.github/workflows/preview.yml` on pull request `opened`, `synchronize`, `reopened`, `closed`, `labeled`, `unlabeled`. `deploy/preview/transition.mjs` returns `update`, `destroy`, or `skip`. The runtime is Compose project `preview-<pr>` on Namespace Devbox `Wewebplus-ci`, hostname `pr-<pr>.anakwannaphaschaiyong.com`. |
-| Preview database | `deploy/preview/neon.mjs` creates Neon child `preview-pr-<pr>` of `Wewebplus-hitl` / `Dev`. Vercel project `dyad` receives `WEWEBPLUS_DATABASE_URL` on the Preview target for that git branch only. |
-| Secrets | `dopplerhq/secrets-fetch-action` with GitHub OIDC. Preview reads `dyad/preview` and `aws/dev`. Production identity `5a844bf1-8def-47f4-8ae1-9520f7bf109b` reads `dyad/prd` only from `main`. |
-| Production deploy | `.github/workflows/gascity-rollout.yml` waits until `ci.yml` succeeds, then SSHs to `ubuntu@13.251.216.187` and runs `gascity-rollout`. `scripts/gascity/rollout.sh` tags `weaver-plus:gascity-previous` and restores it if the new container does not become healthy or port 8373 does not open. |
-| Canary | Designed on `cursor/ecs-hitl-cutover-bbea` in `plans/pre-promotion-verification.md`. It is not a workflow on `main`. The canary is one ECS task on cluster `wewebplus`, shared memory 1024, Gas City calling `http://dyad:32100`, Doppler `dyad/canary`. A pass does not move the apex. |
+| Concern                  | Current implementation                                                                                                                                                                                                                                                                                                         |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Required CI on this fork | `.github/workflows/ci.yml` job `fast-check`. Electron, macOS, and Windows jobs run when `github.repository == 'dyad-sh/dyad'`. This fork starts them from `.github/workflows/ci-desktop.yml`.                                                                                                                                  |
+| Dyad image               | `Dockerfile.gascity`. Tags `ghcr.io/<owner>/dyad:ctx-<hash>` and `dyad:sha-<commit>`. The hash is `scripts/gascity/preview-image-id.mjs`.                                                                                                                                                                                      |
+| Gas City image           | `.github/workflows/gascity-image.yml` builds `Awannaphasch2016/gascity` `contrib/k8s/Dockerfile.base` and `Dockerfile.agent`. Tags `ghcr.io/awannaphasch2016/gascity:sha-<sha>` and `:preview`.                                                                                                                                |
+| Preview                  | `.github/workflows/preview.yml` on pull request `opened`, `synchronize`, `reopened`, `closed`, `labeled`, `unlabeled`. `deploy/preview/transition.mjs` returns `update`, `destroy`, or `skip`. The runtime is Compose project `preview-<pr>` on Namespace Devbox `Wewebplus-ci`, hostname `pr-<pr>.anakwannaphaschaiyong.com`. |
+| Preview database         | `deploy/preview/neon.mjs` creates Neon child `preview-pr-<pr>` of `Wewebplus-hitl` / `Dev`. Vercel project `dyad` receives `WEWEBPLUS_DATABASE_URL` on the Preview target for that git branch only.                                                                                                                            |
+| Secrets                  | `dopplerhq/secrets-fetch-action` with GitHub OIDC. Preview reads `dyad/preview` and `aws/dev`. Production identity `5a844bf1-8def-47f4-8ae1-9520f7bf109b` reads `dyad/prd` only from `main`.                                                                                                                                   |
+| Production deploy        | `.github/workflows/gascity-rollout.yml` waits until `ci.yml` succeeds, then SSHs to `ubuntu@13.251.216.187` and runs `gascity-rollout`. `scripts/gascity/rollout.sh` tags `weaver-plus:gascity-previous` and restores it if the new container does not become healthy or port 8373 does not open.                              |
+| Canary                   | Designed on `cursor/ecs-hitl-cutover-bbea` in `plans/pre-promotion-verification.md`. It is not a workflow on `main`. The canary is one ECS task on cluster `wewebplus`, shared memory 1024, Gas City calling `http://dyad:32100`, Doppler `dyad/canary`. A pass does not move the apex.                                        |
 
 ## Experiments
 
@@ -77,7 +77,7 @@ No experiment in this file has been executed. The **Actual** column is `not run`
 - `fast-check` failure fails the pipeline. A skipped Electron matrix does not.
 - Exit codes match. A Harness step that reports success after a non-zero test command is a fail.
 
-**Actual.** not scored. Pipeline `dyad_fast_check` is registered from `deploy/harness/fast-check.yaml`. Execution `nI911DyPQC2Gd1sIV6yQOw` started on branch `cursor/harness-equivalence-5527`. GitHub Actions remains the required check.
+**Actual.** not scored. Pipeline `dyad_fast_check` is registered from `deploy/harness/fast-check.yaml`. Execution `nI911DyPQC2Gd1sIV6yQOw` finished Failed. Install Node 24.13.1 succeeded. Install npm 11.8.0 exited 1, and the later steps were skipped. The execution graph named the step and the exit code. It did not include the npm command output. Each step now installs Node under the runner home directory and puts that directory on `PATH`, because a Harness step does not keep the previous step's `PATH`. GitHub Actions fast-check run [37622495342](https://github.com/Awannaphasch2016/dyad/actions/runs/37622495342) failed at presubmit on unformatted Markdown. Those files are formatted in the rerun commit. A second execution is what the next pipeline update starts. GitHub Actions remains the required check. Path filters, cancel-in-progress, and the three comparison pull requests are still open.
 
 ### 3. Preview from a pull request
 
@@ -128,12 +128,12 @@ No experiment in this file has been executed. The **Actual** column is `not run`
 
 **Current.**
 
-| Environment | Doppler config | Who may read it |
-| --- | --- | --- |
-| Preview | `dyad/preview` and `aws/dev` | Preview identity. Subject is pinned to this repo's pull-request or `cursor/*` ref, not `*` |
-| Canary | `dyad/canary` | Service account `wewebplus-canary`, intended subject is `.github/workflows/canary-verify.yml` on `cursor/ecs-hitl-cutover-bbea` |
-| Production | `dyad/prd` | Identity `5a844bf1-8def-47f4-8ae1-9520f7bf109b` from `main` only |
-| Dev database | Neon `Wewebplus-hitl` branch `Dev` | Parent of preview children. Production data is not this branch |
+| Environment  | Doppler config                     | Who may read it                                                                                                                 |
+| ------------ | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Preview      | `dyad/preview` and `aws/dev`       | Preview identity. Subject is pinned to this repo's pull-request or `cursor/*` ref, not `*`                                      |
+| Canary       | `dyad/canary`                      | Service account `wewebplus-canary`, intended subject is `.github/workflows/canary-verify.yml` on `cursor/ecs-hitl-cutover-bbea` |
+| Production   | `dyad/prd`                         | Identity `5a844bf1-8def-47f4-8ae1-9520f7bf109b` from `main` only                                                                |
+| Dev database | Neon `Wewebplus-hitl` branch `Dev` | Parent of preview children. Production data is not this branch                                                                  |
 
 The canary host label is `ep-muddy-sky-b31adt7z-pooler`. The production host label is `ep-young-wave-b3cwe0rz-pooler`. `Wewebplus-hitl` branch `prd` is `ep-royal-term-b3paoprp` and is neither of those.
 
@@ -217,14 +217,14 @@ The canary host label is `ep-muddy-sky-b31adt7z-pooler`. The production host lab
 
 **Current.** `commandForPullRequest` in `deploy/preview/transition.mjs`:
 
-| Event | Command |
-| --- | --- |
-| `labeled` with `preview` on an open pull request | `update` |
-| `opened`, `synchronize`, or `reopened` while `preview` is present | `update` |
-| `synchronize` without `preview` | `skip` |
-| `unlabeled` of `preview` | `destroy` |
-| `closed`, including merge | `destroy` |
-| `labeled` with `preview` after the pull request is closed | `skip` |
+| Event                                                             | Command   |
+| ----------------------------------------------------------------- | --------- |
+| `labeled` with `preview` on an open pull request                  | `update`  |
+| `opened`, `synchronize`, or `reopened` while `preview` is present | `update`  |
+| `synchronize` without `preview`                                   | `skip`    |
+| `unlabeled` of `preview`                                          | `destroy` |
+| `closed`, including merge                                         | `destroy` |
+| `labeled` with `preview` after the pull request is closed         | `skip`    |
 
 `CI` also listens to `closed` so in-progress jobs can cancel. `.github/workflows/cancel-ci-after-merge.yml` cancels CI after merge.
 
@@ -285,7 +285,7 @@ The canary host label is `ep-muddy-sky-b31adt7z-pooler`. The production host lab
 - The audit entry names the human or the trigger. A run that cannot be tied back to a commit SHA is a fail.
 - Finding the failed command takes no more steps than `gh run view --log-failed`.
 
-**Actual.** not run.
+**Actual.** not scored. Execution `nI911DyPQC2Gd1sIV6yQOw` was read with the execution v2 API. The graph named Install npm 11.8.0 and `exit status 1`. The command output was not in that graph. The log download API, the commit status, and the audit entry are not recorded yet.
 
 ### 15. An agent can operate the pipeline
 
@@ -306,21 +306,21 @@ The canary host label is `ep-muddy-sky-b31adt7z-pooler`. The production host lab
 
 This is the decision the experiments are for. The **Until experiments pass** column is the only recommendation that is valid today.
 
-| Piece | If the experiments pass | Until experiments pass | Stay outside Harness either way |
-| --- | --- | --- | --- |
-| `ci.yml` `fast-check` | Harness replaces the required check after three matching pull requests | GitHub Actions remains required | Node, Vitest, the test files |
-| `ci.yml` path filters and cancel-on-push | Harness trigger filters and concurrency | GitHub Actions | |
-| `ci-desktop.yml` Electron matrix | Harness manual pipeline, still not required on this fork | GitHub Actions `workflow_dispatch` | macOS and Windows runners, which Harness must provide or the matrix stays |
-| `gascity-image.yml` and `Dockerfile.gascity` | Harness runs the build and pushes GHCR | GitHub Actions publishes the tags preview deploys | GHCR, the Dockerfiles, the Gas City fork |
-| Context-hash reuse | Harness calls `preview-image-id.mjs` | GitHub Actions `identify` | The hash script. Harness layer cache is extra, not the contract |
-| Doppler fetch | Harness OIDC identity per environment | GitHub OIDC identities that already work | Doppler. Secrets are not copied |
-| Preview label lifecycle | Harness trigger plus `commandForPullRequest` | `preview.yml` | Devbox `Wewebplus-ci`, Compose, Cloudflare, Clerk |
-| Neon child and Vercel Preview variable | Harness calls `neon.mjs` and `vercel.mjs` | `preview.yml` deploy and destroy | Neon and Vercel |
-| Two previews, and cleanup | Harness, after experiments 12 and 13 | `preview.yml` | The per-PR names. Harness environments do not replace them |
-| `gascity-rollout.yml` | Harness calls `rollout.sh` on a non-production engine first. Production SSH moves only after experiment 10 passes | GitHub Actions and the host wrapper | The EC2 host, `compose.gascity.yml`, the previous-image tag |
-| ECS canary | Harness runs the canary pipeline after experiment 9 passes on cluster `wewebplus` | The canary branch's own workflow, still not promotion | ECS, ECR, the security group, Doppler `dyad/canary` |
-| Commit statuses | Harness posts the status GitHub branch protection requires | GitHub Actions checks | GitHub remains the place a pull request is merged |
-| CLA, Claude and Codex review, issue triage, stale-PR bots, security advisories, Playwright comments | Stay in GitHub Actions | Stay in GitHub Actions | `pull_request_target` and issue events. These are not deploy pipelines |
+| Piece                                                                                               | If the experiments pass                                                                                           | Until experiments pass                                | Stay outside Harness either way                                           |
+| --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------- |
+| `ci.yml` `fast-check`                                                                               | Harness replaces the required check after three matching pull requests                                            | GitHub Actions remains required                       | Node, Vitest, the test files                                              |
+| `ci.yml` path filters and cancel-on-push                                                            | Harness trigger filters and concurrency                                                                           | GitHub Actions                                        |                                                                           |
+| `ci-desktop.yml` Electron matrix                                                                    | Harness manual pipeline, still not required on this fork                                                          | GitHub Actions `workflow_dispatch`                    | macOS and Windows runners, which Harness must provide or the matrix stays |
+| `gascity-image.yml` and `Dockerfile.gascity`                                                        | Harness runs the build and pushes GHCR                                                                            | GitHub Actions publishes the tags preview deploys     | GHCR, the Dockerfiles, the Gas City fork                                  |
+| Context-hash reuse                                                                                  | Harness calls `preview-image-id.mjs`                                                                              | GitHub Actions `identify`                             | The hash script. Harness layer cache is extra, not the contract           |
+| Doppler fetch                                                                                       | Harness OIDC identity per environment                                                                             | GitHub OIDC identities that already work              | Doppler. Secrets are not copied                                           |
+| Preview label lifecycle                                                                             | Harness trigger plus `commandForPullRequest`                                                                      | `preview.yml`                                         | Devbox `Wewebplus-ci`, Compose, Cloudflare, Clerk                         |
+| Neon child and Vercel Preview variable                                                              | Harness calls `neon.mjs` and `vercel.mjs`                                                                         | `preview.yml` deploy and destroy                      | Neon and Vercel                                                           |
+| Two previews, and cleanup                                                                           | Harness, after experiments 12 and 13                                                                              | `preview.yml`                                         | The per-PR names. Harness environments do not replace them                |
+| `gascity-rollout.yml`                                                                               | Harness calls `rollout.sh` on a non-production engine first. Production SSH moves only after experiment 10 passes | GitHub Actions and the host wrapper                   | The EC2 host, `compose.gascity.yml`, the previous-image tag               |
+| ECS canary                                                                                          | Harness runs the canary pipeline after experiment 9 passes on cluster `wewebplus`                                 | The canary branch's own workflow, still not promotion | ECS, ECR, the security group, Doppler `dyad/canary`                       |
+| Commit statuses                                                                                     | Harness posts the status GitHub branch protection requires                                                        | GitHub Actions checks                                 | GitHub remains the place a pull request is merged                         |
+| CLA, Claude and Codex review, issue triage, stale-PR bots, security advisories, Playwright comments | Stay in GitHub Actions                                                                                            | Stay in GitHub Actions                                | `pull_request_target` and issue events. These are not deploy pipelines    |
 
 ## Migration order
 
@@ -341,20 +341,20 @@ GitHub-native bots in the last row of the matrix are not in this order.
 
 Copy one row per experiment after the run. Leave `not run` rather than predicting a pass.
 
-| # | Experiment | GitHub Actions run | Harness execution | Actual | Pass | Wall clock, GHA vs Harness | Cost | Gaps |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | Images | | | not run | | | | |
-| 2 | Tests | | `nI911DyPQC2Gd1sIV6yQOw` | running, not scored | | | | |
-| 3 | Preview | | | not run | | | | |
-| 4 | Image reuse | | | not run | | | | |
-| 5 | Doppler | | | not run | | | | |
-| 6 | Isolation | | | not run | | | | |
-| 7 | Neon | | | not run | | | | |
-| 8 | Connect containers | | | not run | | | | |
-| 9 | Canary | | | not run | | | | |
-| 10 | Rollback | | | not run | | | | |
-| 11 | Pull request lifecycle | | | not run | | | | |
-| 12 | Concurrent previews | | | not run | | | | |
-| 13 | Cleanup | | | not run | | | | |
-| 14 | Observability | | | not run | | | | |
-| 15 | Agent | | | not run | | | | |
+| #   | Experiment             | GitHub Actions run                                                                                   | Harness execution               | Actual                      | Pass | Wall clock, GHA vs Harness | Cost | Gaps                                          |
+| --- | ---------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------- | --------------------------- | ---- | -------------------------- | ---- | --------------------------------------------- |
+| 1   | Images                 |                                                                                                      |                                 | not run                     |      |                            |      |                                               |
+| 2   | Tests                  | [37622495342](https://github.com/Awannaphasch2016/dyad/actions/runs/37622495342) failed at presubmit | `nI911DyPQC2Gd1sIV6yQOw` Failed | npm step exit 1, not scored |      |                            |      | graph had no command output                   |
+| 3   | Preview                |                                                                                                      |                                 | not run                     |      |                            |      |                                               |
+| 4   | Image reuse            |                                                                                                      |                                 | not run                     |      |                            |      |                                               |
+| 5   | Doppler                |                                                                                                      |                                 | not run                     |      |                            |      |                                               |
+| 6   | Isolation              |                                                                                                      |                                 | not run                     |      |                            |      |                                               |
+| 7   | Neon                   |                                                                                                      |                                 | not run                     |      |                            |      |                                               |
+| 8   | Connect containers     |                                                                                                      |                                 | not run                     |      |                            |      |                                               |
+| 9   | Canary                 |                                                                                                      |                                 | not run                     |      |                            |      |                                               |
+| 10  | Rollback               |                                                                                                      |                                 | not run                     |      |                            |      |                                               |
+| 11  | Pull request lifecycle |                                                                                                      |                                 | not run                     |      |                            |      |                                               |
+| 12  | Concurrent previews    |                                                                                                      |                                 | not run                     |      |                            |      |                                               |
+| 13  | Cleanup                |                                                                                                      |                                 | not run                     |      |                            |      |                                               |
+| 14  | Observability          |                                                                                                      | `nI911DyPQC2Gd1sIV6yQOw`        | graph only, not scored      |      |                            |      | command output was not in the execution graph |
+| 15  | Agent                  |                                                                                                      |                                 | not run                     |      |                            |      |                                               |
