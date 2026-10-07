@@ -95,7 +95,8 @@ export function errorSummary(payload) {
   return { code: String(code), message: String(message) };
 }
 
-export function probeResult(status) {
+export function probeResult(status, payload) {
+  if (payload?.success === false) return "denied";
   if (status === 200 || status === 201) return "allowed";
   if (status === 401 || status === 403) return "denied";
   if (status === 404) return "absent";
@@ -111,6 +112,8 @@ export function cloudflareProbes(accountId) {
     ["account", account],
     ["workers_scripts", `${account}/workers/scripts`],
     ["d1", `${account}/d1/database`],
+    ["kv", `${account}/storage/kv/namespaces`],
+    ["r2", `${account}/r2/buckets`],
     ["dispatch_namespaces", `${account}/workers/dispatch/namespaces`],
     ["ai_gateway", `${account}/ai-gateway/gateways`],
   );

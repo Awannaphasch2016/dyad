@@ -163,7 +163,7 @@ if (referenceResolved(cloudflareToken) === "yes") {
       .filter(Boolean)
       .join(" ");
     console.log(
-      `cloudflare_${name}=${probeResult(result.status)}${detail ? ` ${detail}` : ""}`,
+      `cloudflare_${name}=${probeResult(result.status, result.payload)}${detail ? ` ${detail}` : ""}`,
     );
   }
   console.log(`cloudflare_token_shape=${credentialShape(cloudflareToken)}`);

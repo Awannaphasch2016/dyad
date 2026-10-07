@@ -83,6 +83,7 @@ test("resolution and probe words do not include the secret", () => {
   assert.equal(referenceResolved("${dyad.dev.NEON_API_KEY}"), "unresolved");
   assert.equal(referenceResolved("present"), "yes");
   assert.equal(probeResult(200), "allowed");
+  assert.equal(probeResult(200, { success: false }), "denied");
   assert.equal(probeResult(403), "denied");
   const urls = cloudflareProbes("account").map((probe) => probe[1]);
   assert.equal(
@@ -96,6 +97,14 @@ test("resolution and probe words do not include the secret", () => {
   );
   assert.equal(
     urls.some((url) => url.endsWith("/d1/database")),
+    true,
+  );
+  assert.equal(
+    urls.some((url) => url.endsWith("/storage/kv/namespaces")),
+    true,
+  );
+  assert.equal(
+    urls.some((url) => url.endsWith("/r2/buckets")),
     true,
   );
 });
