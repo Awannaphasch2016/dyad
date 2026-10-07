@@ -1,0 +1,258 @@
+name: Create Harness GitHub App key secret
+
+on:
+  push:
+    branches:
+      - cursor/harness-equivalence-5527
+    paths:
+      - .github/workflows/create-harness-app-key.yml
+
+permissions:
+  contents: read
+
+jobs:
+  create:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Convert the GitHub App key and store the file secret
+        env:
+          DYAD_HARNESS_APP_PEM: ${{ secrets.DYAD_HARNESS_APP_PEM }}
+          HARNESS_API_KEY: ${{ secrets.HARNESS_API_KEY }}
+          HARNESS_ACCOUNT: WKxXBnSFTRaOF64-h90PyQ
+        run: |
+          python3 << 'PY'
+          import json, os, re, subprocess, urllib.parse
+          from pathlib import Path
+
+          account = os.environ["HARNESS_ACCOUNT"]
+          api_key = os.environ["HARNESS_API_KEY"]
+          pem = os.environ.get("DYAD_HARNESS_APP_PEM") or ""
+          original = Path("/tmp/original.pem")
+          converted = Path("/tmp/converted.pem")
+          spec_path = Path("/tmp/secret-spec.json")
+
+          def scrub(text):
+              text = re.sub(
+                  r"-----BEGIN [A-Z0-9 ]+-----[\s\S]*?-----END [A-Z0-9 ]+-----",
+                  "[pem]",
+                  text,
+              )
+              text = re.sub(r"[A-Za-z0-9+/=]{40,}", "[blob]", text)
+              return text
+
+          def fail(message):
+              print(scrub(message))
+              raise SystemExit(1)
+
+          if not pem.strip():
+              fail("PEM_ABSENT")
+          if not api_key.strip():
+              fail("HARNESS_API_KEY_ABSENT")
+
+          normalized = pem.replace("\r\n", "\n").replace("\r", "\n").strip("\n") + "\n"
+          original.write_bytes(normalized.encode())
+          original.chmod(0o600)
+          print("original_lines", normalized.count("\n"))
+          print("original_cr", pem.count("\r"))
+          print("has_begin_rsa", "-----BEGIN RSA PRIVATE KEY-----" in normalized)
+          print("has_end_rsa", "-----END RSA PRIVATE KEY-----" in normalized)
+          print(
+              "ends_on_end_line",
+              normalized.rstrip("\n").endswith("-----END RSA PRIVATE KEY-----"),
+          )
+          if "-----BEGIN RSA PRIVATE KEY-----" not in normalized:
+              fail("PEM_MISSING_BEGIN")
+          if not normalized.rstrip("\n").endswith("-----END RSA PRIVATE KEY-----"):
+              fail("PEM_MISSING_END")
+
+          convert = subprocess.run(
+              [
+                  "openssl",
+                  "pkcs8",
+                  "-topk8",
+                  "-inform",
+                  "PEM",
+                  "-outform",
+                  "PEM",
+                  "-in",
+                  str(original),
+                  "-out",
+                  str(converted),
+                  "-nocrypt",
+              ],
+              text=True,
+              capture_output=True,
+          )
+          if convert.returncode != 0:
+              fail("OPENSSL_CONVERT_FAILED " + scrub(convert.stderr))
+          check = subprocess.run(
+              ["openssl", "pkey", "-in", str(converted), "-noout"],
+              text=True,
+              capture_output=True,
+          )
+          if check.returncode != 0:
+              fail("OPENSSL_CHECK_FAILED " + scrub(check.stderr))
+          converted_text = converted.read_text()
+          print("converted_begin", converted_text.splitlines()[0])
+          last = [line for line in converted_text.splitlines() if line]
+          print("converted_end", last[-1])
+          print("converted_cr", converted_text.count("\r"))
+
+          spec = {
+              "secret": {
+                  "type": "SecretFile",
+                  "name": "dyad-harness-app-key",
+                  "identifier": "dyad_harness_app_key",
+                  "description": "GitHub App dyad-harness private key, PKCS8",
+                  "spec": {"secretManagerIdentifier": "harnessSecretManager"},
+              }
+          }
+          spec_path.write_text(json.dumps(spec))
+
+          def curl(method, url, extra):
+              out = Path("/tmp/harness-response.json")
+              if out.exists():
+                  out.unlink()
+              result = subprocess.run(
+                  [
+                      "curl",
+                      "-sS",
+                      "-o",
+                      str(out),
+                      "-w",
+                      "%{http_code}",
+                      "-X",
+                      method,
+                      url,
+                      "-H",
+                      f"x-api-key: {api_key}",
+                      *extra,
+                  ],
+                  text=True,
+                  capture_output=True,
+              )
+              if result.returncode != 0:
+                  fail(f"CURL_FAILED {scrub(result.stderr)}")
+              body = out.read_text() if out.exists() else ""
+              return result.stdout.strip(), body
+
+          def brief(body):
+              try:
+                  data = json.loads(body)
+              except json.JSONDecodeError:
+                  print(scrub(body)[:500])
+                  return {}
+              kept = {
+                  "status": data.get("status"),
+                  "code": data.get("code"),
+                  "message": scrub(str(data.get("message") or "")),
+              }
+              secret = (data.get("data") or {}).get("secret") or {}
+              if secret:
+                  kept["secret_type"] = secret.get("type")
+                  kept["secret_name"] = secret.get("name")
+                  kept["secret_identifier"] = secret.get("identifier")
+              connector = (data.get("data") or {}).get("connector") or {}
+              if connector:
+                  kept["connector_identifier"] = connector.get("identifier")
+                  kept["connector_type"] = connector.get("type")
+              validation = data.get("data") or {}
+              if "status" in validation and not secret and not connector:
+                  kept["test_status"] = validation.get("status")
+                  kept["test_error"] = scrub(
+                      str(
+                          validation.get("errorMessage")
+                          or validation.get("errors")
+                          or ""
+                      )
+                  )
+              print(json.dumps(kept))
+              return data
+
+          query = urllib.parse.urlencode({"accountIdentifier": account})
+          create_url = f"https://app.harness.io/ng/api/v2/secrets/files?{query}"
+          code, body = curl(
+              "POST",
+              create_url,
+              [
+                  "-F",
+                  f"spec=<{spec_path};type=application/json",
+                  "-F",
+                  f"file=@{converted};type=application/x-pem-file",
+              ],
+          )
+          print("create_http", code)
+          created = brief(body)
+          message = str(created.get("message") or "")
+          if code not in {"200", "201"} and (
+              "already exists" in message.lower() or "duplicate" in message.lower()
+          ):
+              update_url = (
+                  "https://app.harness.io/ng/api/v2/secrets/files/"
+                  f"dyad_harness_app_key?{query}"
+              )
+              code, body = curl(
+                  "PUT",
+                  update_url,
+                  [
+                      "-F",
+                      f"spec=<{spec_path};type=application/json",
+                      "-F",
+                      f"file=@{converted};type=application/x-pem-file",
+                  ],
+              )
+              print("update_http", code)
+              created = brief(body)
+          if code not in {"200", "201"} or created.get("status") not in {None, "SUCCESS"}:
+              fail("SECRET_CREATE_FAILED")
+          print("SECRET_READY account.dyad_harness_app_key")
+
+          get_url = f"https://app.harness.io/ng/api/connectors/Dyad?{query}"
+          code, body = curl("GET", get_url, ["-H", "Content-Type: application/json"])
+          print("connector_get_http", code)
+          connector_body = brief(body)
+          connector = (connector_body.get("data") or {}).get("connector")
+          if not connector:
+              print("CONNECTOR_NOT_UPDATED")
+              raise SystemExit(0)
+
+          def replace_refs(node):
+              if isinstance(node, dict):
+                  for key, value in node.items():
+                      if key == "privateKeyRef":
+                          node[key] = "account.dyad_harness_app_key"
+                      else:
+                          replace_refs(value)
+              elif isinstance(node, list):
+                  for item in node:
+                      replace_refs(item)
+
+          replace_refs(connector)
+          payload = Path("/tmp/connector.json")
+          payload.write_text(json.dumps({"connector": connector}))
+          put_url = f"https://app.harness.io/ng/api/connectors/Dyad?{query}"
+          code, body = curl(
+              "PUT",
+              put_url,
+              [
+                  "-H",
+                  "Content-Type: application/json",
+                  "--data-binary",
+                  f"@{payload}",
+              ],
+          )
+          print("connector_put_http", code)
+          updated = brief(body)
+          if code not in {"200", "201"} or updated.get("status") not in {None, "SUCCESS"}:
+              print("CONNECTOR_UPDATE_FAILED")
+              raise SystemExit(0)
+
+          test_url = (
+              "https://app.harness.io/ng/api/connectors/testConnection/Dyad?" + query
+          )
+          code, body = curl("POST", test_url, [])
+          print("connector_test_http", code)
+          brief(body)
+          original.unlink(missing_ok=True)
+          converted.unlink(missing_ok=True)
+          PY
