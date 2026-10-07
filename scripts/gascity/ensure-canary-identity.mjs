@@ -68,10 +68,19 @@ async function ensureIdentity(token) {
     "GET",
     "/v3/workplace/service_accounts",
   );
-  const account = (accounts.service_accounts ?? []).find(
-    (item) =>
-      item.name === canaryServiceAccount || item.slug === canaryServiceAccount,
+  const listedAccounts =
+    accounts.service_accounts ?? accounts.workplace_service_accounts ?? [];
+  const names = listedAccounts.map(
+    (item) => `${item.slug || "no-slug"}:${item.name || "no-name"}`,
   );
+  console.log(`service_account_count=${listedAccounts.length}`);
+  console.log(`service_accounts=${names.join(",") || "none"}`);
+  const wanted = canaryServiceAccount.toLowerCase();
+  const account = listedAccounts.find((item) => {
+    const name = String(item.name || "").toLowerCase();
+    const slug = String(item.slug || "").toLowerCase();
+    return name === wanted || slug === wanted || name.includes("canary") || slug.includes("canary");
+  });
   if (!account?.slug)
     throw new Error("service account wewebplus-canary is absent");
   const listed = await doppler(
