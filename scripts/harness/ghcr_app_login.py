@@ -51,11 +51,24 @@ def sign_rs256(pem_text, message):
         header = ""
         for line in pem_text.splitlines():
             if "BEGIN " in line:
-                header = line.strip()[:80]
+                header = line.strip()
                 break
+        if "OPENSSH" in header:
+            header_kind = "openssh"
+        elif "RSA PRIVATE" in header:
+            header_kind = "pkcs1"
+        elif "ENCRYPTED" in header:
+            header_kind = "encrypted"
+        elif "PRIVATE KEY" in header:
+            header_kind = "pkcs8"
+        elif header:
+            header_kind = "other"
+        else:
+            header_kind = "missing"
+        error = error.replace("PRIVATE KEY", "key").replace("BEGIN ", "begin ")
         sys.stderr.write(
             "openssl_sign_failed"
-            f" header={header}"
+            f" header_kind={header_kind}"
             f" pem_len={len(pem_text)}"
             f" pem_lines={pem_text.count(chr(10))}"
             f" {error[:180].strip()}\n"
@@ -131,11 +144,23 @@ def installation_token(pem_text):
     return token
 
 
+def restore_pem_lines(text):
+    if text.count("\n") >= 2 or "PRIVATE KEY" not in text:
+        return text
+    match = re.search(r"(-----BEGIN [^-]+-----)\s*(.+?)\s*(-----END [^-]+-----)", text)
+    if not match:
+        return text
+    body = re.sub(r"\s+", "", match.group(2))
+    wrapped = "\n".join(body[i : i + 64] for i in range(0, len(body), 64))
+    return f"{match.group(1)}\n{wrapped}\n{match.group(3)}\n"
+
+
 def pem_from_text(text):
     if not text:
         return ""
     if "\\n" in text and text.count("\n") < 2:
         text = text.replace("\\n", "\n")
+    text = restore_pem_lines(text)
     if "PRIVATE KEY" in text and len(text) > 200:
         return text
     compact = "".join(text.split())
