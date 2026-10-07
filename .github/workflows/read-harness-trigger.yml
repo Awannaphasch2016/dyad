@@ -67,18 +67,49 @@ jobs:
           code, body = request("POST", summary, {"filterType": "PipelineExecution"})
           rows = ((body.get("data") or {}).get("content") or []) if isinstance(body.get("data"), dict) else []
           print("summary_http", code, "count", len(rows))
+          interesting_key = re.compile(
+              r"branch|pull|prNumber|commit|sha|status|identifier|name|should_run|repo",
+              re.I,
+          )
+
+          def scalars(node, path="", out=None, depth=0):
+              if out is None:
+                  out = []
+              if depth > 14 or len(out) > 300:
+                  return out
+              if isinstance(node, dict):
+                  for key, value in node.items():
+                      child = f"{path}.{key}" if path else str(key)
+                      if isinstance(value, (str, int, float, bool)) or value is None:
+                          if interesting_key.search(str(key)):
+                              out.append(f"{child}={scrub(str(value))[:160]}")
+                      else:
+                          scalars(value, child, out, depth + 1)
+              elif isinstance(node, list) and depth < 10:
+                  for index, value in enumerate(node[:30]):
+                      scalars(value, f"{path}[{index}]", out, depth + 1)
+              return out
+
           for row in rows:
               trigger = row.get("executionTriggerInfo") or {}
-              interesting = {
-                  "execution": row.get("planExecutionId"),
+              execution = row.get("planExecutionId")
+              print(json.dumps({
+                  "execution": execution,
                   "status": row.get("status"),
                   "run_sequence": row.get("runSequence"),
                   "trigger_type": trigger.get("triggerType"),
                   "start_ts": row.get("startTs"),
                   "end_ts": row.get("endTs"),
-              }
-              for key, value in row.items():
-                  if isinstance(value, str) and re.search(r"branch|pull|prNumber|repo|name", key, re.I):
-                      interesting[key] = value[:120]
-              print(json.dumps(interesting))
+              }))
+              if trigger.get("triggerType") != "WEBHOOK" or not execution:
+                  continue
+              detail = (
+                  "https://app.harness.io/pipeline/api/pipelines/execution/v2/"
+                  f"{execution}?accountIdentifier={account}&orgIdentifier=default"
+                  "&projectIdentifier=dyad&renderFullBottomGraph=true"
+              )
+              detail_code, detail_body = request("GET", detail)
+              print("detail_http", execution, detail_code, "status", detail_body.get("status"))
+              for line in scalars(detail_body.get("data") if isinstance(detail_body, dict) else {}):
+                  print("field", execution, line)
           PY
