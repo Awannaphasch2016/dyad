@@ -10,7 +10,7 @@
 # connection URI is masked and is not printed.
 # Running preview containers are stopped without deleting volumes so the
 # chat database stays and the box has memory for the new image.
-# Wake preview 48 after the tunnel returned HTTP 530.
+# Wake preview 48 after the tunnel returned HTTP 530 again.
 # The production host is not a target.
 name: Preview exec
 
