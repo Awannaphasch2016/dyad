@@ -1,4 +1,5 @@
 name: Register Harness fast-check pull request trigger
+# Re-register when the pipeline codebase build is a runtime input.
 
 on:
   push:
