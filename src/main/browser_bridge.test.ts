@@ -177,6 +177,9 @@ describe("browser bridge", () => {
       },
       console,
       setTimeout,
+      setInterval() {
+        return 0;
+      },
       Map,
       Set,
       Promise,
@@ -203,6 +206,79 @@ describe("browser bridge", () => {
     );
     const last = JSON.parse(sent[sent.length - 1]) as { args: unknown[] };
     expect(last.args).toEqual([]);
+  });
+
+  it("sends a heartbeat from the page and from the bridge server", async () => {
+    const script = browserBridgeClientScript();
+    expect(script).toContain("30000");
+    const sent: string[] = [];
+    let beat: (() => void) | undefined;
+    const sandbox = {
+      window: {},
+      location: { protocol: "http:", host: "127.0.0.1:8372" },
+      WebSocket: class {
+        readyState = 1;
+        addEventListener(type: string, listener: () => void) {
+          if (type === "open") listener();
+        }
+        send(payload: string) {
+          sent.push(payload);
+        }
+      },
+      setInterval(callback: () => void) {
+        beat = callback;
+        return 0;
+      },
+      setTimeout,
+      Map,
+      Set,
+      Promise,
+      JSON,
+      Error,
+      Array,
+      Object,
+      console,
+    };
+    vm.createContext(sandbox);
+    vm.runInContext(script, sandbox);
+    beat?.();
+    expect(sent).toContain(JSON.stringify({ type: "heartbeat" }));
+
+    const page = createServer((_req, res) => {
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      res.end("<head></head>");
+    });
+    const pagePort = await listen(page);
+    closers.push(
+      () =>
+        new Promise((resolve, reject) => {
+          page.close((error) => (error ? reject(error) : resolve()));
+        }),
+    );
+    const bridge = await startBrowserBridge({
+      devServerUrl: `http://127.0.0.1:${pagePort}`,
+      port: 0,
+      heartbeatMs: 30,
+    });
+    closers.push(() => bridge.close());
+    const socket = await openBridgeSocket(bridge.port);
+    closers.push(async () => {
+      socket.close();
+    });
+    const received: unknown[] = [];
+    socket.on("message", (data) => {
+      received.push(JSON.parse(data.toString()));
+    });
+    socket.send(JSON.stringify({ type: "heartbeat" }));
+    await waitFor(() =>
+      received.some(
+        (message) =>
+          typeof message === "object" &&
+          message !== null &&
+          (message as { type?: string }).type === "heartbeat",
+      ),
+    );
+    expect(socket.readyState).toBe(WebSocket.OPEN);
   });
 
   it("returns a handler result and pushes sender.send to the listener", async () => {
