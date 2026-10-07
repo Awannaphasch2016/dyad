@@ -1,0 +1,95 @@
+pipeline:
+  name: Dyad harness images
+  identifier: dyad_harness_images
+  orgIdentifier: default
+  projectIdentifier: dyad
+  description: Experiments 1 and 4. Push only harness- image tags. GitHub Actions stays the publisher of :preview and :sha- tags.
+  properties:
+    ci:
+      codebase:
+        connectorRef: account.Dyad
+        repoName: Awannaphasch2016/dyad
+        build:
+          type: branch
+          spec:
+            branch: cursor/harness-images-5527
+  stages:
+    - parallel:
+        - stage:
+            name: Gas City image
+            identifier: gascity_image
+            type: CI
+            spec:
+              cloneCodebase: true
+              platform:
+                os: Linux
+                arch: Amd64
+              runtime:
+                type: Cloud
+                spec: {}
+              execution:
+                steps:
+                  - step:
+                      type: Run
+                      name: Log in to GHCR
+                      identifier: gascity_ghcr_login
+                      timeout: 10m
+                      spec:
+                        shell: Bash
+                        envVariables:
+                          GH_APP_KEY: '<+secrets.getValue("account.dyad_harness_app_key_pkcs8")>'
+                        command: |
+                          set -euo pipefail
+                          python3 scripts/harness/ghcr_app_login.py | docker login ghcr.io -u x-access-token --password-stdin
+                          echo "ghcr_login=ok"
+                  - step:
+                      type: Run
+                      name: Build or reuse the Gas City image
+                      identifier: gascity_build
+                      timeout: 120m
+                      spec:
+                        shell: Bash
+                        envVariables:
+                          IMAGE_TAG_PREFIX: harness
+                        command: |
+                          set -euo pipefail
+                          bash scripts/gascity/harness-image.sh gascity
+        - stage:
+            name: Dyad image
+            identifier: dyad_image
+            type: CI
+            spec:
+              cloneCodebase: true
+              platform:
+                os: Linux
+                arch: Amd64
+              runtime:
+                type: Cloud
+                spec: {}
+              execution:
+                steps:
+                  - step:
+                      type: Run
+                      name: Log in to GHCR
+                      identifier: dyad_ghcr_login
+                      timeout: 10m
+                      spec:
+                        shell: Bash
+                        envVariables:
+                          GH_APP_KEY: '<+secrets.getValue("account.dyad_harness_app_key_pkcs8")>'
+                        command: |
+                          set -euo pipefail
+                          python3 scripts/harness/ghcr_app_login.py | docker login ghcr.io -u x-access-token --password-stdin
+                          echo "ghcr_login=ok"
+                  - step:
+                      type: Run
+                      name: Build or reuse the Dyad image
+                      identifier: dyad_build
+                      timeout: 120m
+                      spec:
+                        shell: Bash
+                        envVariables:
+                          IMAGE_TAG_PREFIX: harness
+                        command: |
+                          set -euo pipefail
+                          bash scripts/gascity/harness-image.sh dyad
