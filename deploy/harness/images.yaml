@@ -37,7 +37,7 @@ pipeline:
                       spec:
                         shell: Bash
                         envVariables:
-                          GH_APP_KEY: '<+secrets.getValue("account.dyad_harness_app_key_pkcs8")>'
+                          GH_APP_KEY: '<+secrets.getValue("account.Dyad_harness1")>'
                         command: |
                           set -euo pipefail
                           umask 077
@@ -81,7 +81,7 @@ pipeline:
                       spec:
                         shell: Bash
                         envVariables:
-                          GH_APP_KEY: '<+secrets.getValue("account.dyad_harness_app_key_pkcs8")>'
+                          GH_APP_KEY: '<+secrets.getValue("account.Dyad_harness1")>'
                         command: |
                           set -euo pipefail
                           umask 077
