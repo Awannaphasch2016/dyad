@@ -25,8 +25,14 @@ test("the vibesdk project is separate and does not inherit dyad", () => {
 test("config parents are reported without secret values", () => {
   assert.equal(inheritsLabel({}), "none");
   assert.equal(inheritsLabel({ inherits: null }), "none");
+  assert.equal(inheritsLabel({ inherits: false }), "none");
   assert.equal(inheritsLabel({ inherits: "dev" }), "dev");
   assert.equal(inheritsLabel({ inherits: { name: "dev" } }), "dev");
+  assert.equal(inheritsLabel({ inherits: { config: "dev" } }), "dev");
+  assert.equal(
+    inheritsLabel({ inherits: { project: "dyad", root: true } }),
+    "unparsed:project+root",
+  );
   assert.deepEqual(
     configReport([
       { name: "dev", inherits: null },

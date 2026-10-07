@@ -19,13 +19,24 @@ export function redact(text) {
 
 export function inheritsLabel(config) {
   const value = config?.inherits;
-  if (value == null || value === "") return "none";
+  if (value == null || value === false || value === "") return "none";
   if (typeof value === "string") return value;
-  if (typeof value === "object") {
-    const name = value.name ?? value.slug;
-    return name ? String(name) : "unknown";
+  if (Array.isArray(value)) {
+    const labels = value.map((item) => inheritsLabel({ inherits: item }));
+    return labels.filter((label) => label !== "none").join(",") || "none";
   }
-  return "unknown";
+  if (typeof value === "object") {
+    const name =
+      value.name ??
+      value.slug ??
+      value.config ??
+      value.config_name ??
+      value.environment;
+    if (typeof name === "string" && name) return name;
+    const keys = Object.keys(value).sort();
+    return keys.length === 0 ? "none" : `unparsed:${keys.join("+")}`;
+  }
+  return typeof value;
 }
 
 export function configReport(configs) {
