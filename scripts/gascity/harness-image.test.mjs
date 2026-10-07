@@ -29,6 +29,7 @@ test("harness image tags stay off the live preview tags", () => {
   assert.match(script, /preview-image-id\.mjs/);
   assert.match(script, /GAS_CITY_HOST_BRIDGE_ENABLED=true/);
   assert.match(script, /if \.Config\.Healthcheck/);
+  assert.match(script, /sha256sum -c -/);
   assert.match(script, /IMAGE_TAG_PREFIX:-harness/);
   assert.match(workflow, /IMAGE_TAG_PREFIX: harness-gha/);
   assert.match(pipeline, /IMAGE_TAG_PREFIX: harness/);

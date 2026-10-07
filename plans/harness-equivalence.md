@@ -2,7 +2,7 @@
 
 Written 2026-10-07. These experiments ask whether a Harness pipeline can run the same build, test, preview, and rollout behavior this repo already runs in GitHub Actions. A feature checklist is not a result. Each experiment keeps the existing scripts and external systems, points a Harness pipeline at them, and compares the two runs.
 
-Experiment 2 matched the corrected pull requests: a rules-only change skipped the tests, a schema-diff change ran that package’s tests, and a `src/` change ran the app fast-check and skipped the schema jobs. GitHub Actions remains the required check. Experiment 14 has a partial log and status check, and it is not a pass. Experiments 1, 3–13, and 15 are still `not run`. Do not treat the substitution matrix as a decision until the named experiments pass.
+Experiment 2 matched the corrected pull requests: a rules-only change skipped the tests, a schema-diff change ran that package’s tests, and a `src/` change ran the app fast-check and skipped the schema jobs. GitHub Actions remains the required check. Experiment 14 has a partial log and status check, and it is not a pass. Experiment 1 has a passing GitHub Actions image pair and a Harness login, and the Harness push is blocked on GitHub App package write. Experiments 3–13 and 15 are still `not run`. Do not treat the substitution matrix as a decision until the named experiments pass.
 
 ## Ground rules
 
@@ -56,7 +56,7 @@ Experiment 2 matched the corrected pull requests: a rules-only change skipped th
 - Image config digest matches for entrypoint, exposed ports, and environment. Layer bytes may differ. A byte-different layer is a pass only when the config contract matches. A different entrypoint, user, or health check is a fail.
 - The Harness build does not push to ECR and does not SSH.
 
-**Actual.** not run.
+**Actual.** Not scored. GitHub Actions run [37693544766](https://github.com/Awannaphasch2016/dyad/actions/runs/37693544766) built both images. Gas City reused `ghcr.io/awannaphasch2016/gascity:harness-gha-d47f1d3f3069` (`user=gcagent`, `gc` printed `dev`, no health check). Dyad `harness-gha-ctx-36a4e6986720` returned `factory_state_status=401` and `health=pass` with entrypoint `/app/docker/gascity-entrypoint.sh`, user `weaver`, and port `6080/tcp`. Harness execution `ZddHTr__QG62UP1jpsBayQ` logged in to GHCR with connector secret `account.Dyad_harness1`, then the Dyad push was denied: `installation not allowed to Write organization package`. The Gas City stage stopped because `br` needs glibc 2.39 and the Harness runner does not have it. The host no longer executes `br`. The package write still has to be granted on the GitHub App installation before the Harness push can be scored.
 
 ### 2. Run the same tests
 

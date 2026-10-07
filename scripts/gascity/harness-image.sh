@@ -125,9 +125,20 @@ build_gascity() {
     # shellcheck disable=SC1091
     source ./deps.env
     set +a
-    BR_INSTALL_BIN_DIR="${HOME}/.local/bin" bash .github/scripts/install-br-archive.sh "${BR_VERSION}"
-    cp "${HOME}/.local/bin/br" ./br
-    chmod 755 ./br ./gc
+    # The Harness runner's glibc is older than the br release. Copy the
+    # binary into the image context and do not execute it on the host.
+    if [[ "${BR_VERSION}" != "0.1.20" ]]; then
+      echo "unsupported_br_version=${BR_VERSION}" >&2
+      exit 1
+    fi
+    br_archive="br-v${BR_VERSION}-linux_amd64.tar.gz"
+    br_tmp="$(mktemp -d)"
+    curl -fsSL -o "${br_tmp}/${br_archive}" \
+      "https://github.com/Dicklesworthstone/beads_rust/releases/download/v${BR_VERSION}/${br_archive}"
+    echo "aefc2ef6b16c7b275f6890636c110540c7bc081e203a1e8a706a376207d1f9dd  ${br_tmp}/${br_archive}" | sha256sum -c -
+    tar -xzf "${br_tmp}/${br_archive}" -C "${br_tmp}"
+    install -m 755 "${br_tmp}/br" ./br
+    rm -rf "${br_tmp}"
     docker build -f contrib/k8s/Dockerfile.base -t "${base_tag}" .
     docker push "${base_tag}"
     docker build -f contrib/k8s/Dockerfile.agent --build-arg "BASE_IMAGE=${base_tag}" -t "${agent_tag}" .
