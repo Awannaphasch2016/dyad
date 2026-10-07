@@ -3,7 +3,7 @@ pipeline:
   identifier: dyad_harness_images
   orgIdentifier: default
   projectIdentifier: dyad
-  description: Experiments 1 and 4. Push only harness- image tags. GitHub Actions stays the publisher of :preview and :sha- tags.
+  description: Experiments 1 and 4. Push only harness- image tags. The GHCR login decodes the file secret. GitHub Actions stays the publisher of :preview and :sha- tags.
   properties:
     ci:
       codebase:

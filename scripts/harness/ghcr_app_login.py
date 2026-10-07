@@ -77,6 +77,11 @@ def self_test():
     if "PRIVATE KEY" in token:
         sys.stderr.write("self_test_leaked_key\n")
         raise SystemExit(1)
+    encoded = base64.b64encode(generated.stdout.encode("utf-8")).decode("ascii")
+    decoded = pem_from_text(encoded)
+    if "PRIVATE KEY" not in decoded or decoded != generated.stdout:
+        sys.stderr.write("self_test_base64_decode_failed\n")
+        raise SystemExit(1)
     sys.stdout.write("self_test=ok\nsegments=3\n")
 
 
@@ -107,22 +112,51 @@ def installation_token(pem_text):
     return token
 
 
+def pem_from_text(text):
+    if not text:
+        return ""
+    if "PRIVATE KEY" in text and len(text) > 200:
+        return text
+    compact = "".join(text.split())
+    if len(compact) < 40:
+        return ""
+    try:
+        decoded = base64.b64decode(compact, validate=True)
+        decoded_text = decoded.decode("utf-8")
+    except (ValueError, UnicodeDecodeError):
+        return ""
+    if "PRIVATE KEY" in decoded_text and len(decoded_text) > 200:
+        return decoded_text
+    return ""
+
+
+def text_from_candidate(candidate):
+    if os.path.isfile(candidate):
+        file_text = open(candidate, encoding="utf-8").read()
+        found = pem_from_text(file_text)
+        if found:
+            return found
+        nested = file_text.strip()
+        if nested and "\n" not in nested and nested != candidate and os.path.isfile(nested):
+            found = pem_from_text(open(nested, encoding="utf-8").read())
+            if found:
+                return found
+        return ""
+    return pem_from_text(candidate)
+
+
 def load_pem():
-    candidates = [
-        os.environ.get("GH_APP_KEY_FILE", ""),
-        os.environ.get("GH_APP_KEY", ""),
-    ]
-    saw = ""
-    for candidate in candidates:
-        if not candidate:
-            continue
-        saw = candidate
-        if os.path.isfile(candidate):
-            text = open(candidate, encoding="utf-8").read()
-            if "PRIVATE KEY" in text:
-                return text
-        if "PRIVATE KEY" in candidate:
-            return candidate
+    file_candidate = os.environ.get("GH_APP_KEY_FILE", "")
+    env_candidate = os.environ.get("GH_APP_KEY", "")
+    if file_candidate:
+        found = text_from_candidate(file_candidate)
+        if found:
+            return found
+    if env_candidate:
+        found = text_from_candidate(env_candidate)
+        if found:
+            return found
+    saw = env_candidate or file_candidate
     if not saw:
         kind = "empty"
     elif saw.startswith("<+"):
@@ -131,7 +165,16 @@ def load_pem():
         kind = "path"
     else:
         kind = "other"
-    sys.stderr.write(f"missing_app_key kind={kind} length={len(saw)}\n")
+    file_text = ""
+    if file_candidate and os.path.isfile(file_candidate):
+        file_text = open(file_candidate, encoding="utf-8").read()
+    sys.stderr.write(
+        "missing_app_key"
+        f" kind={kind}"
+        f" env_len={len(env_candidate)}"
+        f" file_len={len(file_text)}"
+        f" file_lines={file_text.count(chr(10))}\n"
+    )
     raise SystemExit(1)
 
 
