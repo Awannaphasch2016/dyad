@@ -1,0 +1,201 @@
+diff --git a/app/components/chat/BaseChat.tsx b/app/components/chat/BaseChat.tsx
+index 720388b..6f488e1 100644
+--- a/app/components/chat/BaseChat.tsx
++++ b/app/components/chat/BaseChat.tsx
+@@ -414,7 +414,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
+                 })}
+               >
+                 <div className="flex flex-col gap-2">
+-                  {deployAlert && (
++                  {deployAlert && !walkthrough && (
+                     <DeployChatAlert
+                       alert={deployAlert}
+                       clearAlert={() => clearDeployAlert?.()}
+@@ -424,7 +424,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
+                       }}
+                     />
+                   )}
+-                  {supabaseAlert && (
++                  {supabaseAlert && !walkthrough && (
+                     <SupabaseChatAlert
+                       alert={supabaseAlert}
+                       clearAlert={() => clearSupabaseAlert?.()}
+diff --git a/app/components/chat/Chat.client.tsx b/app/components/chat/Chat.client.tsx
+index 285c366..9ed73f1 100644
+--- a/app/components/chat/Chat.client.tsx
++++ b/app/components/chat/Chat.client.tsx
+@@ -17,10 +17,16 @@ import {
+   nextFactoryPhase,
+   walkthroughPreviewVisible,
+ } from '~/lib/factoryPhase';
+-import { factoryRunFromMetadata, progressForRun, walkthroughPhase, type FactoryRunRecord } from '~/lib/factoryRun';
++import {
++  factoryRunFromMetadata,
++  factoryRunToRestore,
++  progressForRun,
++  walkthroughPhase,
++  type FactoryRunRecord,
++} from '~/lib/factoryRun';
+ import { useMessageParser, usePromptEnhancer, useShortcuts } from '~/lib/hooks';
+ import { useSettings } from '~/lib/hooks/useSettings';
+-import { description, useChatHistory, chatMetadata } from '~/lib/persistence';
++import { description, useChatHistory, chatId, chatMetadata } from '~/lib/persistence';
+ import { getMessageText, createMessage, type AnyPart } from '~/lib/persistence/messageMigration';
+ import { chatStore } from '~/lib/stores/chat';
+ import { logStore } from '~/lib/stores/logs';
+@@ -130,6 +136,7 @@ export const ChatImpl = memo(
+     const [animationScope, animate] = useAnimate();
+     const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
+     const [factoryRun, setFactoryRun] = useState(() => factoryRunFromMetadata(chatMetadata.get()));
++    const restoredChatId = useRef<string | undefined>(undefined);
+     const [approvalPending, setApprovalPending] = useState(false);
+     const phaseRef = useRef(factoryRun.phase);
+     phaseRef.current = factoryRun.phase;
+@@ -643,6 +650,18 @@ export const ChatImpl = memo(
+       [input],
+     );
+ 
++    useEffect(() => {
++      const restored = factoryRunToRestore(ready, chatId.get(), restoredChatId.current, chatMetadata.get());
++
++      if (!restored) {
++        return;
++      }
++
++      restoredChatId.current = restored.chatId;
++      setFactoryRun(restored.run);
++      setChatMode(factoryPhaseChatMode(restored.run.phase) === 'build' ? 'build' : 'discuss');
++    }, [ready, initialMessages]);
++
+     useEffect(() => {
+       walkthroughPhase.set(factoryRun.phase);
+       setChatMode(factoryPhaseChatMode(factoryRun.phase) === 'build' ? 'build' : 'discuss');
+diff --git a/app/lib/factoryPhase.spec.ts b/app/lib/factoryPhase.spec.ts
+index 0a995fe..2bd5c28 100644
+--- a/app/lib/factoryPhase.spec.ts
++++ b/app/lib/factoryPhase.spec.ts
+@@ -1,4 +1,5 @@
+ import { describe, expect, it } from 'vitest';
++import { factoryRunFromMetadata, progressForRun } from './factoryRun';
+ import {
+   canContinueFactoryPhase,
+   visibleComposerActions,
+@@ -387,4 +388,53 @@ Here is what I understood. Approve to continue, or tell me what to change.
+     expect(showAssistantModelAttribution(true)).toBe(false);
+     expect(showAssistantModelAttribution(false)).toBe(true);
+   });
++
++  it('walks Bartel coffee from Discovery through Delivery and keeps the phase after reload', () => {
++    const discoveryOnly = [
++      { role: 'user', content: 'Bartel coffee' },
++      { role: 'assistant', content: 'What is on the page?' },
++    ];
++    expect(latestFactoryPhaseSummary(discoveryOnly, 'discovery')).toBeNull();
++    expect(canContinueFactoryPhase({ hasPhaseSummary: false, isStreaming: false })).toBe(false);
++    expect(walkthroughPreviewVisible('discovery')).toBe(false);
++
++    const discoverySummary = latestFactoryPhaseSummary(
++      [
++        ...discoveryOnly,
++        {
++          role: 'assistant',
++          content: '## Discovery summary\n- Page name: Bartel\n- One sentence: A coffee page\n- On the page: menu and hours',
++        },
++      ],
++      'discovery',
++    );
++    expect(discoverySummary).toContain('Bartel');
++    expect(canContinueFactoryPhase({ hasPhaseSummary: true, isStreaming: true })).toBe(false);
++    expect(canContinueFactoryPhase({ hasPhaseSummary: discoverySummary != null, isStreaming: false })).toBe(true);
++
++    const implementation = {
++      phase: nextFactoryPhase('discovery')!,
++      approved: ['discovery' as const],
++      comments: [],
++    };
++    expect(implementation.phase).toBe('implementation');
++    expect(walkthroughPreviewVisible(implementation.phase)).toBe(true);
++    expect(isFactoryPhaseUnlocked('delivery', progressForRun(implementation, true))).toBe(false);
++
++    const delivery = {
++      phase: nextFactoryPhase('implementation')!,
++      approved: ['discovery' as const, 'implementation' as const],
++      comments: [],
++    };
++    expect(delivery.phase).toBe('delivery');
++    expect(walkthroughPreviewVisible(delivery.phase)).toBe(true);
++    expect(
++      latestFactoryPhaseSummary(
++        [{ role: 'assistant', content: '## Delivery summary\n- Bartel coffee page is ready\n- Menu and hours are on the page' }],
++        'delivery',
++      ),
++    ).not.toBeNull();
++    expect(nextFactoryPhase('delivery')).toBeNull();
++    expect(factoryRunFromMetadata({ factory: delivery }).phase).toBe('delivery');
++  });
+ });
+diff --git a/app/lib/factoryRun.spec.ts b/app/lib/factoryRun.spec.ts
+index 0bd563b..f790772 100644
+--- a/app/lib/factoryRun.spec.ts
++++ b/app/lib/factoryRun.spec.ts
+@@ -1,5 +1,5 @@
+ import { describe, expect, it } from 'vitest';
+-import { factoryRunFromMetadata, progressForRun } from './factoryRun';
++import { factoryRunFromMetadata, factoryRunToRestore, progressForRun } from './factoryRun';
+ 
+ describe('factoryRun', () => {
+   it('starts a missing record at Discovery', () => {
+@@ -30,6 +30,21 @@ describe('factoryRun', () => {
+     });
+   });
+ 
++  it('restores a saved phase once the reloaded chat is ready', () => {
++    const metadata = {
++      factory: { phase: 'delivery', approved: ['discovery', 'implementation'], comments: [] },
++    };
++
++    expect(factoryRunToRestore(false, 'chat-1', undefined, metadata)).toBeNull();
++    expect(factoryRunToRestore(true, undefined, undefined, metadata)).toBeNull();
++    expect(factoryRunToRestore(true, 'chat-1', undefined, {})).toBeNull();
++
++    const restored = factoryRunToRestore(true, 'chat-1', undefined, metadata);
++    expect(restored?.run.phase).toBe('delivery');
++    expect(restored?.run.approved).toEqual(['discovery', 'implementation']);
++    expect(factoryRunToRestore(true, 'chat-1', restored?.chatId, metadata)).toBeNull();
++  });
++
+   it('does not treat Discovery messages as Implementation having started', () => {
+     const progress = progressForRun({ phase: 'discovery', approved: [], comments: [] }, true);
+     expect(progress.started.has('discovery')).toBe(true);
+diff --git a/app/lib/factoryRun.ts b/app/lib/factoryRun.ts
+index 7e4a354..bfd90a4 100644
+--- a/app/lib/factoryRun.ts
++++ b/app/lib/factoryRun.ts
+@@ -23,6 +23,27 @@ function isFactoryPhase(value: unknown): value is FactoryPhase {
+   return FACTORY_PHASES.includes(value as FactoryPhase);
+ }
+ 
++/**
++ * A reload should restore the saved phase once, after the chat record is ready.
++ * Later saves of the same chat must not replace the phase the person just changed.
++ */
++export function factoryRunToRestore(
++  ready: boolean,
++  chatId: string | undefined,
++  alreadyRestoredChatId: string | undefined,
++  metadata: { factory?: unknown } | undefined,
++): { chatId: string; run: FactoryRunRecord } | null {
++  if (!ready || !chatId || chatId === alreadyRestoredChatId) {
++    return null;
++  }
++
++  if (!metadata || metadata.factory == null) {
++    return null;
++  }
++
++  return { chatId, run: factoryRunFromMetadata(metadata) };
++}
++
+ /** Restores a saved run. A missing or broken record starts at Discovery. */
+ export function factoryRunFromMetadata(metadata: { factory?: unknown } | undefined): FactoryRunRecord {
+   const factory = metadata?.factory;
