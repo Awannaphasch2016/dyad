@@ -1,0 +1,42 @@
+pipeline:
+  name: Dyad GHCR auth probe
+  identifier: dyad_ghcr_auth
+  orgIdentifier: default
+  projectIdentifier: dyad
+  description: Pushes one scratch layer with the classic GHCR token to ghcr.io/awannaphasch2016/dyad:harness-authprobe. Does not build the Gas City or Dyad images.
+  properties:
+    ci:
+      codebase:
+        connectorRef: account.Dyad
+        repoName: Awannaphasch2016/dyad
+        build:
+          type: branch
+          spec:
+            branch: cursor/harness-images-5527
+  stages:
+    - stage:
+        name: GHCR auth
+        identifier: ghcr_auth
+        type: CI
+        spec:
+          cloneCodebase: true
+          platform:
+            os: Linux
+            arch: Amd64
+          runtime:
+            type: Cloud
+            spec: {}
+          execution:
+            steps:
+              - step:
+                  type: Run
+                  name: Probe GHCR push
+                  identifier: ghcr_auth_probe
+                  timeout: 15m
+                  spec:
+                    shell: Bash
+                    envVariables:
+                      GHCR_PUSH_TOKEN: '<+secrets.getValue("account.ghcr_push_token")>'
+                    command: |
+                      set -euo pipefail
+                      python3 scripts/harness/ghcr_app_login.py --pat-probe

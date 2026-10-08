@@ -1,3 +1,4 @@
+# Context change for the image reuse check.
 # Build stage: the full checkout, node_modules, and Forge output stay here so
 # the runtime image only carries the packaged app.
 FROM node:24-bookworm AS build

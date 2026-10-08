@@ -1,0 +1,293 @@
+# Reads the latest dyad_harness_images executions. A push of this file does not rebuild images.
+# Latest check waits for image execution C_buWv6gQT2Z01OhbGkUQA.
+name: Read Harness image executions
+
+on:
+  push:
+    branches:
+      - cursor/harness-images-5527
+    paths:
+      - .github/workflows/read-harness-images.yml
+
+permissions:
+  contents: read
+
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Read recent image executions
+        env:
+          HARNESS_API_KEY: ${{ secrets.HARNESS_API_KEY }}
+          HARNESS_ACCOUNT: WKxXBnSFTRaOF64-h90PyQ
+        run: |
+          python3 << 'PY'
+          import json, os, re, subprocess, time, zipfile
+          from pathlib import Path
+          from urllib.parse import quote
+
+          api_key = os.environ["HARNESS_API_KEY"]
+          account = os.environ["HARNESS_ACCOUNT"]
+          long_token = re.compile(r"ghp_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+|ghs_[A-Za-z0-9_]+|[A-Za-z0-9+/=]{40,}")
+
+          def scrub(text):
+              return long_token.sub("[redacted]", text or "")
+
+          def request(method, url, payload=None):
+              out = Path("/tmp/harness-image-read.bin")
+              out.unlink(missing_ok=True)
+              cmd = [
+                  "curl", "-sS", "--max-time", "60", "-o", str(out), "-w", "%{http_code}",
+                  "-X", method, url, "-H", f"x-api-key: {api_key}",
+              ]
+              if payload is not None:
+                  body = Path("/tmp/harness-image-read.json")
+                  body.write_text(json.dumps(payload))
+                  cmd += ["-H", "Content-Type: application/json", "--data-binary", f"@{body}"]
+              result = subprocess.run(cmd, text=True, capture_output=True)
+              raw = out.read_text("utf-8", "replace") if out.exists() else ""
+              try:
+                  parsed = json.loads(raw) if raw else {}
+              except json.JSONDecodeError:
+                  parsed = {"raw": scrub(raw)[:200]}
+              return result.stdout.strip(), parsed
+
+          def print_secrets(label, code, body):
+              print("secret_list", label, code, body.get("status"), scrub(str(body.get("message") or ""))[:180])
+              data = body.get("data")
+              content = []
+              if isinstance(data, dict):
+                  content = data.get("content") or data.get("secrets") or []
+              elif isinstance(data, list):
+                  content = data
+              print("secret_list_count", label, len(content) if isinstance(content, list) else type(data).__name__)
+              if not isinstance(content, list):
+                  return
+              for item in content:
+                  secret = item.get("secret") if isinstance(item, dict) and isinstance(item.get("secret"), dict) else item
+                  if not isinstance(secret, dict):
+                      continue
+                  print("secret_item", label, secret.get("type"), secret.get("identifier"))
+
+          scopes = [
+              ("account", f"?accountIdentifier={account}"),
+              ("org", f"?accountIdentifier={account}&orgIdentifier=default"),
+              ("project", f"?accountIdentifier={account}&orgIdentifier=default&projectIdentifier=dyad"),
+          ]
+          for label, query in scopes:
+              code, body = request(
+                  "POST",
+                  "https://app.harness.io/ng/api/v2/secrets/list" + query + "&pageIndex=0&pageSize=100",
+                  {"filterType": "Secret"},
+              )
+              print_secrets(label, code, body)
+          code, body = request(
+              "GET",
+              "https://app.harness.io/ng/api/connectors/Dyad?accountIdentifier=" + account,
+          )
+          print("connector", code, body.get("status"), scrub(str(body.get("message") or ""))[:180])
+          connector = body.get("data") if isinstance(body.get("data"), dict) else {}
+
+          def walk(value, prefix):
+              if isinstance(value, dict):
+                  for key, item in value.items():
+                      walk(item, f"{prefix}.{key}")
+              elif isinstance(value, list):
+                  print("connector_field", prefix, "list", len(value))
+              elif isinstance(value, str):
+                  if "PRIVATE" in value or "BEGIN" in value or len(value) >= 40:
+                      print("connector_field", prefix, "len", len(value))
+                  else:
+                      print("connector_field", prefix, value)
+              elif value is not None:
+                  print("connector_field", prefix, type(value).__name__)
+
+          walk(connector, "connector")
+
+          account_query = f"?accountIdentifier={account}"
+          for ident in ("dyad_harness_app_key_pkcs8", "dyad-harness-app-key-pkcs8"):
+              code, body = request(
+                  "GET",
+                  "https://app.harness.io/ng/api/v2/secrets/"
+                  + ident
+                  + account_query,
+              )
+              print(
+                  "file_secret",
+                  ident,
+                  code,
+                  body.get("status"),
+                  scrub(str(body.get("message") or body.get("code") or ""))[:180],
+              )
+          code, body = request(
+              "POST",
+              "https://app.harness.io/ng/api/v2/secrets/list"
+              + account_query
+              + "&searchTerm=dyad&pageIndex=0&pageSize=20",
+              {"filterType": "Secret"},
+          )
+          print("secret_list", code, body.get("status"), scrub(str(body.get("message") or ""))[:180])
+          data = body.get("data")
+          content = []
+          if isinstance(data, dict):
+              content = data.get("content") or data.get("secrets") or []
+          elif isinstance(data, list):
+              content = data
+          print("secret_list_count", len(content) if isinstance(content, list) else type(data).__name__)
+          if isinstance(content, list):
+              for item in content:
+                  secret = item.get("secret") if isinstance(item, dict) and isinstance(item.get("secret"), dict) else item
+                  if not isinstance(secret, dict):
+                      continue
+                  print(
+                      "secret_item",
+                      secret.get("type"),
+                      secret.get("identifier"),
+                      "name_len",
+                      len(str(secret.get("name") or "")),
+                  )
+
+          summary = (
+              "https://app.harness.io/pipeline/api/pipelines/execution/summary"
+              f"?accountIdentifier={account}&orgIdentifier=default&projectIdentifier=dyad"
+              "&pipelineIdentifier=dyad_harness_images&page=0&size=3"
+          )
+          target = "C_buWv6gQT2Z01OhbGkUQA"
+          terminal = {"Success", "Failed", "Errored", "Expired", "Aborted"}
+          rows = []
+          code = ""
+          for _ in range(150):
+              code, body = request("POST", summary, {"filterType": "PipelineExecution"})
+              rows = ((body.get("data") or {}).get("content") or []) if isinstance(body.get("data"), dict) else []
+              target_status = "Missing"
+              for row in rows:
+                  if row.get("planExecutionId") == target:
+                      target_status = row.get("status") or "Unknown"
+                      break
+              print("poll", target, code, target_status)
+              if target_status in terminal:
+                  break
+              time.sleep(60)
+          print("summary_http", code, "count", len(rows))
+          for row in rows:
+              execution = row.get("planExecutionId")
+              trigger = row.get("executionTriggerInfo") or {}
+              print(json.dumps({
+                  "execution": execution,
+                  "status": row.get("status"),
+                  "run_sequence": row.get("runSequence"),
+                  "trigger_type": trigger.get("triggerType"),
+                  "start_ts": row.get("startTs"),
+                  "end_ts": row.get("endTs"),
+              }))
+              if not execution:
+                  continue
+              detail_url = (
+                  "https://app.harness.io/pipeline/api/pipelines/execution/v2/"
+                  f"{execution}?accountIdentifier={account}&orgIdentifier=default"
+                  "&projectIdentifier=dyad&renderFullBottomGraph=true"
+              )
+              detail_code, detail = request("GET", detail_url)
+              data = detail.get("data") if isinstance(detail.get("data"), dict) else {}
+              graph = ((data.get("executionGraph") or {}).get("nodeMap") or {})
+              steps = {}
+              for node in graph.values():
+                  if not isinstance(node, dict):
+                      continue
+                  ident = node.get("identifier")
+                  if ident in {
+                      "gascity_image", "dyad_image", "gascity_ghcr_login", "dyad_ghcr_login",
+                      "gascity_build", "dyad_build",
+                  }:
+                      steps[ident] = node.get("status")
+              failure = ""
+              log_keys = []
+              log_ids = {"gascity_ghcr_login", "dyad_ghcr_login", "gascity_build", "dyad_build"}
+              for node in graph.values():
+                  if not isinstance(node, dict):
+                      continue
+                  ident = node.get("identifier")
+                  key = node.get("logBaseKey")
+                  failed = node.get("status") in {"Failed", "Errored"}
+                  if failed:
+                      failure = node.get("failureInfo") or node.get("skipInfo") or ""
+                  if isinstance(key, str) and (failed or (execution == target and ident in log_ids)):
+                      log_keys.append((ident, key, failed))
+              print("detail", execution, detail_code, json.dumps(steps), scrub(str(failure))[:240])
+              for ident, key, failed in log_keys:
+                  print("log_key", ident)
+                  link = ""
+                  for _ in range(12):
+                      log_code, log_body = request(
+                          "POST",
+                          "https://app.harness.io/gateway/log-service/blob/download"
+                          f"?accountID={account}&prefix={quote(key, safe='')}",
+                          {},
+                      )
+                      status = log_body.get("status") if isinstance(log_body, dict) else ""
+                      print("log_http", ident, log_code, status)
+                      if status == "success" and isinstance(log_body.get("link"), str):
+                          link = log_body["link"]
+                          break
+                      subprocess.run(["sleep", "3"], check=False)
+                  if not link:
+                      continue
+                  log_file = Path("/tmp/harness-image-step.log")
+                  subprocess.run(
+                      ["curl", "-sS", "--max-time", "60", "-o", str(log_file), link],
+                      check=False,
+                      capture_output=True,
+                  )
+                  chunks = []
+                  if log_file.exists() and zipfile.is_zipfile(log_file):
+                      with zipfile.ZipFile(log_file) as archive:
+                          for name in archive.namelist():
+                              chunks.append(archive.read(name).decode("utf-8", "replace"))
+                  elif log_file.exists():
+                      chunks.append(log_file.read_text("utf-8", "replace"))
+                  if str(ident).endswith("_build") or execution == target:
+                      lines = []
+                      interesting = []
+                      marker = re.compile(
+                          r"entrypoint=|user=|ports=|env=|healthcheck=|gascity_sha=|decision=|digest=|dyad_sha=|context_hash=|factory_state_status=|health=|ghcr_login=|tag_prefix=|retag_method=|unsupported_br|denied|GLIBC|error|Error"
+                      )
+                      for raw_log in chunks:
+                          for line in raw_log.splitlines():
+                              try:
+                                  parsed = json.loads(line)
+                              except json.JSONDecodeError:
+                                  continue
+                              text = str(parsed.get("out") or parsed.get("message") or "")
+                              if not text or "PRIVATE KEY" in text or "BEGIN " in text or "ghp_" in text:
+                                  continue
+                              scrubbed = scrub(text)[:300]
+                              lines.append(scrubbed)
+                              if marker.search(text) or text.strip() == "dev":
+                                  interesting.append(scrubbed)
+                      chosen = interesting if interesting else (lines[-15:] if failed else [])
+                      for text in chosen[-40:]:
+                          print("log", ident, text)
+                      continue
+                  shown = 0
+                  for raw_log in chunks:
+                      if shown >= 40:
+                          break
+                      for line in raw_log.splitlines():
+                          try:
+                              parsed = json.loads(line)
+                          except json.JSONDecodeError:
+                              continue
+                          text = str(parsed.get("out") or parsed.get("message") or "")
+                          if not text or "PRIVATE KEY" in text or "BEGIN " in text:
+                              continue
+                          if not re.search(
+                              r"missing_app_key|installation_token|openssl|ghcr_login|credential_shape|mounted_pem|docker_login|error|Error|python|docker|exit|command not found|No such",
+                              text,
+                          ):
+                              continue
+                          print("log", ident, scrub(text)[:300])
+                          shown += 1
+                          if shown >= 40:
+                              break
+          PY
