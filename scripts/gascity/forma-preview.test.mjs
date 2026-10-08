@@ -1,20 +1,23 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { commandForPullRequest } from "../../deploy/preview/transition.mjs";
 import {
   FORMA_NEON_PROJECT_ID,
   FORMA_PARENT_BRANCH_ID,
+  assertFormaCommitSource,
   assertFormaTarget,
+  assertPreviewEnvironment,
+  dockerignoreWithSecretsExcluded,
   formaBranchName,
-  applyOpenRouterOverlay,
+  formaDockerfile,
+  formaImageTag,
+  formaPreviewComment,
   includeDeploymentFile,
-  openRouterOverlayFiles,
   previewEnv,
   previewVariablePayload,
+  requestedFormaSha,
   withDeploymentHostOrigin,
   withDeploymentHostOriginTest,
   selectVercelProject,
@@ -201,23 +204,75 @@ test("a Forma token uses the one visible project and never the dyad project", ()
   );
 });
 
-test("the OpenRouter overlay is what the preview deploys", async () => {
-  const files = await openRouterOverlayFiles();
-  assert.ok(files.includes("lib/openrouter.ts"));
-  assert.ok(files.includes("lib/openrouter-job.ts"));
-  assert.ok(files.includes("lib/config.ts"));
-  const checkout = await mkdtemp(join(tmpdir(), "forma-overlay-"));
-  await applyOpenRouterOverlay(checkout);
-  const config = await readFile(join(checkout, "lib/config.ts"), "utf8");
-  assert.match(config, /OPENROUTER_API_KEY/);
-  assert.match(config, /providerMode/);
-  const worker = await readFile(join(checkout, "lib/worker.ts"), "utf8");
-  assert.match(worker, /executeOpenRouterJob/);
-  const studio = await readFile(
-    join(checkout, "components/studio.tsx"),
+test("the preview deploys a Forma commit instead of copying the editor", async () => {
+  const source = await readFile(
+    new URL("./forma-preview.mjs", import.meta.url),
     "utf8",
   );
-  assert.equal(studio.includes(".env.local"), false);
-  assert.match(studio, /provider === "openrouter"/);
-  assert.match(studio, /OpenRouter × Vercel Sandbox/);
+  const migrateStart = source.indexOf("async function migrate");
+  const migrateEnd = source.indexOf("\nasync function probeStatus");
+  const migrate = source.slice(migrateStart, migrateEnd);
+  assert.equal(migrate.includes("applyOpenRouterOverlay"), false);
+  assert.equal(migrate.includes("publishOpenRouterCommit"), false);
+  assert.equal(migrate.includes("publishSignInFix"), false);
+  const runStart = source.indexOf("export async function runFormaPreview");
+  const run = source.slice(runStart);
+  assert.equal(run.includes("publishSignInFix"), false);
+  assert.equal(run.includes("applyOpenRouterOverlay"), false);
+  assert.equal(assertPreviewEnvironment(""), "preview");
+  assert.equal(assertPreviewEnvironment("preview"), "preview");
+  assert.throws(
+    () => assertPreviewEnvironment("production"),
+    /Only the preview environment is implemented/,
+  );
+  assert.equal(requestedFormaSha(""), "");
+  const sha = "a".repeat(40);
+  assert.equal(requestedFormaSha(sha), sha);
+  assert.throws(() => requestedFormaSha("abc"), /40 hex/);
+  assert.equal(formaImageTag(sha), `ghcr.io/awannaphasch2016/forma:sha-${sha}`);
+  assert.equal(
+    assertFormaCommitSource(
+      "if (originHost === requestHost) return;",
+      'const base = "https://openrouter.ai/api/v1";',
+    ),
+    true,
+  );
+  assert.equal(
+    assertFormaCommitSource("const expected = process.env.APP_URL", ""),
+    false,
+  );
+  assert.equal(
+    formaPreviewComment("https://forma.example", sha).includes(sha),
+    true,
+  );
+  assert.equal(
+    dockerignoreWithSecretsExcluded(".git\nnode_modules\n"),
+    ".git\nnode_modules\n.env\n.env.*\n.next\n",
+  );
+  assert.equal(
+    dockerignoreWithSecretsExcluded(
+      ".env\n.env.*\n.git\nnode_modules\n.next\n",
+    ),
+    null,
+  );
+  assert.equal(formaDockerfile().includes("DATABASE_URL"), false);
+  assert.equal(formaDockerfile().includes("OPENROUTER"), false);
+  const workflow = await readFile(
+    new URL("../../deploy/forma/publish-image.yml", import.meta.url),
+    "utf8",
+  );
+  assert.match(workflow, /name: Publish Forma image/);
+  assert.match(workflow, /ghcr\.io\/awannaphasch2016\/forma:sha-/);
+  assert.match(workflow, /forma_image=ghcr\.io\/awannaphasch2016\/forma@/);
+  assert.equal(workflow.includes("OPENROUTER"), false);
+  assert.equal(workflow.includes("DATABASE_URL"), false);
+  const preview = await readFile(
+    new URL("../../.github/workflows/preview-forma.yml", import.meta.url),
+    "utf8",
+  );
+  assert.match(preview, /name: PR Preview - Forma/);
+  assert.match(preview, /cursor\/forma-pr-preview-5014/);
+  assert.match(preview, /FORMA_SHA/);
+  assert.match(preview, /FORMA_ENVIRONMENT/);
+  assert.equal(preview.includes("packages: write"), false);
 });

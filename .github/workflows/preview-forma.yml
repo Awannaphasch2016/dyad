@@ -1,34 +1,41 @@
-name: Forma preview
+name: PR Preview - Forma
 
-# One Vercel preview and one Neon branch for a Forma pull request.
-# Does not print secret values and does not use the Dyad preview database.
-# Push this file again after the Forma Vercel token in Doppler changes.
+# Deploy one Forma commit to the Vercel preview. The image publish runs in
+# the Forma repository. This job does not copy the editor and does not run
+# the container.
 
 on:
   workflow_dispatch:
     inputs:
+      sha:
+        description: Full Forma commit SHA. Empty uses the walkthrough branch tip.
+        required: false
+      environment:
+        description: Environment name. Only preview is implemented.
+        required: false
+        default: preview
       pr:
         description: Forma pull request number
         required: false
   push:
     branches:
-      - cursor/forma-preview-per-pr-5014
+      - cursor/forma-pr-preview-5014
     paths:
       - .github/workflows/preview-forma.yml
       - scripts/gascity/forma-preview.mjs
       - scripts/gascity/forma-preview.test.mjs
-      - scripts/gascity/forma-openrouter/**
+      - deploy/forma/**
 
 permissions:
   contents: read
 
 concurrency:
-  group: preview-forma
+  group: pr-preview-forma
   cancel-in-progress: false
 
 jobs:
   deploy:
-    if: github.ref == 'refs/heads/cursor/forma-preview-per-pr-5014'
+    if: github.ref == 'refs/heads/cursor/forma-pr-preview-5014'
     runs-on: ubuntu-latest
     environment: ai-bots
     timeout-minutes: 45
@@ -46,6 +53,7 @@ jobs:
           repositories: forma
           permission-contents: write
           permission-pull-requests: write
+          permission-workflows: write
 
       - name: Use Node 24
         uses: actions/setup-node@v5
@@ -64,6 +72,8 @@ jobs:
           DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
           GH_TOKEN: ${{ steps.app.outputs.token }}
           FORMA_PR: ${{ inputs.pr }}
+          FORMA_SHA: ${{ inputs.sha }}
+          FORMA_ENVIRONMENT: ${{ inputs.environment || 'preview' }}
         run: |
           set -euo pipefail
           set +x

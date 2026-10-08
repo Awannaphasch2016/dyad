@@ -9,6 +9,7 @@ import {
   mkdtemp,
   readdir,
   readFile,
+  rm,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -204,6 +205,73 @@ export function previewEnv({ pooledUrl, directUrl, secrets }) {
     runtime: { ...shared, DATABASE_URL: pooledUrl },
     build: { ...shared, DATABASE_URL: directUrl },
   };
+}
+
+export function assertPreviewEnvironment(environment = "preview") {
+  const value = String(environment ?? "").trim() || "preview";
+  if (value !== "preview") {
+    throw new Error("Only the preview environment is implemented");
+  }
+  return "preview";
+}
+
+export function requestedFormaSha(value = "") {
+  const sha = String(value ?? "").trim();
+  if (!sha) return "";
+  if (!/^[0-9a-f]{40}$/.test(sha)) {
+    throw new Error("Forma commit SHA must be 40 hex characters");
+  }
+  return sha;
+}
+
+export function formaImageTag(sha) {
+  const resolved = requestedFormaSha(sha);
+  if (!resolved) {
+    throw new Error("Forma commit SHA must be 40 hex characters");
+  }
+  return `ghcr.io/awannaphasch2016/forma:sha-${resolved}`;
+}
+
+export function assertFormaCommitSource(httpText, editorText) {
+  const http = String(httpText || "");
+  const editor = String(editorText || "");
+  return (
+    http.includes("originHost === requestHost") &&
+    editor.includes("openrouter.ai/api/v1")
+  );
+}
+
+export function formaPreviewComment(url, sha) {
+  return `Forma preview: ${url}\n\nCommit: ${sha}\n\nImage: ${formaImageTag(sha)}`;
+}
+
+export function dockerignoreWithSecretsExcluded(current) {
+  const required = [".env", ".env.*", ".git", "node_modules", ".next"];
+  const lines = String(current ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  let changed = current === null || current === undefined;
+  for (const line of required) {
+    if (!lines.includes(line)) {
+      lines.push(line);
+      changed = true;
+    }
+  }
+  if (!changed) return null;
+  return `${lines.join("\n")}\n`;
+}
+
+export function formaDockerfile() {
+  return `FROM node:24-bookworm-slim
+WORKDIR /app
+RUN corepack enable
+COPY . .
+RUN pnpm install --frozen-lockfile
+RUN pnpm run build
+EXPOSE 3000
+CMD ["pnpm", "start"]
+`;
 }
 
 function assertSafeUrl(url, pooled) {
@@ -578,7 +646,7 @@ export async function applyOpenRouterOverlay(
   return files;
 }
 
-async function publishOpenRouterCommit(checkout, files) {
+async function publishFormaCommit(checkout, files, message) {
   // git push has no credential for the private Forma repo. The app token can
   // write the commit through the Git Data API instead.
   const head = JSON.parse(
@@ -625,10 +693,7 @@ async function publishOpenRouterCommit(checkout, files) {
       JSON.stringify({ base_tree: parentCommit.tree.sha, tree }),
     ),
   );
-  if (created.sha === parentCommit.tree.sha) {
-    console.log("forma_openrouter=present");
-    return;
-  }
+  if (created.sha === parentCommit.tree.sha) return "";
   const commit = JSON.parse(
     gh(
       [
@@ -640,7 +705,7 @@ async function publishOpenRouterCommit(checkout, files) {
         "-",
       ],
       JSON.stringify({
-        message: "Build previews with the OpenRouter key.",
+        message,
         tree: created.sha,
         parents: [parent],
       }),
@@ -657,10 +722,88 @@ async function publishOpenRouterCommit(checkout, files) {
     ],
     JSON.stringify({ sha: commit.sha }),
   );
-  console.log("forma_openrouter=committed");
+  return commit.sha;
 }
 
-async function migrate(directUrl) {
+function formaImageWorkflowPath() {
+  return fileURLToPath(
+    new URL("../../deploy/forma/publish-image.yml", import.meta.url),
+  );
+}
+
+async function readOptional(path) {
+  try {
+    return await readFile(path, "utf8");
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+function sameText(left, right) {
+  return (
+    String(left).replace(/\r\n/g, "\n") === String(right).replace(/\r\n/g, "\n")
+  );
+}
+
+async function bootstrapFormaImage(checkout, branchTip) {
+  if (!branchTip) {
+    console.log("forma_image_workflow=skipped");
+    return "";
+  }
+  const workflowText = await readFile(formaImageWorkflowPath(), "utf8");
+  const updates = [];
+  const workflowPath = ".github/workflows/publish-image.yml";
+  const currentWorkflow = await readOptional(join(checkout, workflowPath));
+  if (currentWorkflow === null || !sameText(currentWorkflow, workflowText)) {
+    updates.push({ path: workflowPath, text: workflowText });
+  }
+  const ignorePath = ".dockerignore";
+  const currentIgnore = await readOptional(join(checkout, ignorePath));
+  const nextIgnore = dockerignoreWithSecretsExcluded(currentIgnore);
+  if (nextIgnore !== null) {
+    updates.push({ path: ignorePath, text: nextIgnore });
+  }
+  const dockerPath = "Dockerfile";
+  const currentDocker = await readOptional(join(checkout, dockerPath));
+  if (currentDocker === null) {
+    updates.push({ path: dockerPath, text: formaDockerfile() });
+    console.log("forma_dockerfile=added");
+  } else {
+    console.log("forma_dockerfile=present");
+  }
+  if (updates.length === 0) {
+    console.log("forma_image_workflow=present");
+    return "";
+  }
+  const previous = new Map();
+  for (const update of updates) {
+    previous.set(update.path, await readOptional(join(checkout, update.path)));
+    await mkdir(dirname(join(checkout, update.path)), { recursive: true });
+    await writeFile(join(checkout, update.path), update.text);
+  }
+  try {
+    const sha = await publishFormaCommit(
+      checkout,
+      updates.map((update) => update.path),
+      "Publish the Forma image for this commit.",
+    );
+    console.log(
+      sha ? "forma_image_workflow=committed" : "forma_image_workflow=present",
+    );
+    return sha;
+  } catch (error) {
+    for (const [path, text] of previous) {
+      const full = join(checkout, path);
+      if (text === null) await rm(full, { force: true });
+      else await writeFile(full, text);
+    }
+    console.log(`forma_image_workflow=unavailable ${redact(error.message)}`);
+    return "";
+  }
+}
+
+async function cloneWalkthrough(requestedSha) {
   const checkout = await mkdtemp(join(tmpdir(), "forma-preview-"));
   run("gh", [
     "repo",
@@ -673,85 +816,56 @@ async function migrate(directUrl) {
     "--branch",
     WALKTHROUGH_BRANCH,
   ]);
-  const files = await applyOpenRouterOverlay(checkout);
-  await publishOpenRouterCommit(checkout, files);
-  run("corepack", ["enable"], { cwd: checkout });
-  run("pnpm", ["install", "--frozen-lockfile"], { cwd: checkout });
-  const envFile = join(checkout, ".env.local");
+  let sha = run("git", ["rev-parse", "HEAD"], { cwd: checkout }).trim();
+  if (!requestedSha || requestedSha === sha) {
+    return { checkout, sha, branchTip: true };
+  }
+  run("git", ["fetch", "--depth", "1", "origin", requestedSha], {
+    cwd: checkout,
+  });
+  run("git", ["checkout", "--detach", "FETCH_HEAD"], { cwd: checkout });
+  sha = run("git", ["rev-parse", "HEAD"], { cwd: checkout }).trim();
+  if (sha !== requestedSha) {
+    throw new Error("Forma checkout did not match the requested commit");
+  }
+  return { checkout, sha, branchTip: false };
+}
+
+async function requireFormaCommitSource(checkout) {
+  const http = (await readOptional(join(checkout, "lib/http.ts"))) || "";
+  const editor =
+    (await readOptional(join(checkout, "lib/openrouter.ts"))) || "";
+  if (!assertFormaCommitSource(http, editor)) {
+    throw new Error(
+      "Forma commit does not contain the sign-in check and OpenRouter editor",
+    );
+  }
+}
+
+async function migrate(directUrl) {
+  const requested = requestedFormaSha(process.env.FORMA_SHA);
+  const cloned = await cloneWalkthrough(requested);
+  await requireFormaCommitSource(cloned.checkout);
+  const committed = await bootstrapFormaImage(
+    cloned.checkout,
+    cloned.branchTip,
+  );
+  const sha = committed || cloned.sha;
+  console.log(`forma_sha=${sha}`);
+  console.log("forma_source=commit");
+  run("corepack", ["enable"], { cwd: cloned.checkout });
+  run("pnpm", ["install", "--frozen-lockfile"], { cwd: cloned.checkout });
+  const envFile = join(cloned.checkout, ".env.local");
   await writeFile(envFile, `DATABASE_URL=${directUrl}\n`);
   const output = run("pnpm", ["exec", "tsx", "scripts/migrate.ts"], {
-    cwd: checkout,
+    cwd: cloned.checkout,
     env: { DATABASE_URL: directUrl },
   });
   if (!output.includes("Database schema ready.")) {
     throw new Error("Database schema was not ready");
   }
   console.log("forma_migrate=ready");
-  return checkout;
-}
-
-function formaContentPath(path) {
-  return path.split("/").map(encodeURIComponent).join("/");
-}
-
-function readFormaFile(path) {
-  const payload = JSON.parse(
-    gh([
-      "api",
-      `repos/${FORMA_REPOSITORY}/contents/${formaContentPath(path)}?ref=${encodeURIComponent(WALKTHROUGH_BRANCH)}`,
-    ]),
-  );
-  return {
-    sha: payload.sha,
-    text: Buffer.from(payload.content || "", "base64").toString("utf8"),
-  };
-}
-
-function writeFormaFile(path, content, sha, message) {
-  gh(
-    [
-      "api",
-      "--method",
-      "PUT",
-      `repos/${FORMA_REPOSITORY}/contents/${formaContentPath(path)}`,
-      "--input",
-      "-",
-    ],
-    JSON.stringify({
-      message,
-      content: Buffer.from(content).toString("base64"),
-      branch: WALKTHROUGH_BRANCH,
-      sha,
-    }),
-  );
-}
-
-function publishSignInFix() {
-  const http = readFormaFile("lib/http.ts");
-  const test = readFormaFile("tests/core.test.ts");
-  const nextHttp = withDeploymentHostOrigin(http.text);
-  const nextTest = withDeploymentHostOriginTest(test.text);
-  if (nextHttp === http.text && nextTest === test.text) {
-    console.log("forma_signin=present");
-    return;
-  }
-  if (nextHttp !== http.text) {
-    writeFormaFile(
-      "lib/http.ts",
-      nextHttp,
-      http.sha,
-      "Allow the preview host to open the workspace.",
-    );
-  }
-  if (nextTest !== test.text) {
-    writeFormaFile(
-      "tests/core.test.ts",
-      nextTest,
-      test.sha,
-      "Cover the preview host sign-in check.",
-    );
-  }
-  console.log("forma_signin=committed");
+  return { checkout: cloned.checkout, sha };
 }
 
 async function probeStatus(url) {
@@ -1230,7 +1344,38 @@ async function resolveVercelProject(adminToken, secrets) {
   );
 }
 
-function comment(pr, url) {
+async function noteFormaImage(sha) {
+  const tag = formaImageTag(sha);
+  let response = null;
+  try {
+    response = await fetch(
+      `https://ghcr.io/v2/awannaphasch2016/forma/manifests/sha-${sha}`,
+      {
+        headers: {
+          Accept:
+            "application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json",
+          ...(process.env.GH_TOKEN
+            ? { Authorization: `Bearer ${process.env.GH_TOKEN}` }
+            : {}),
+        },
+      },
+    );
+  } catch {
+    response = null;
+  }
+  if (!response || response.status === 401 || response.status === 403) {
+    console.log(`forma_image=unavailable ${tag}`);
+    return;
+  }
+  const digest = response.headers.get("docker-content-digest") || "";
+  if (response.ok && /^sha256:[0-9a-f]{64}$/.test(digest)) {
+    console.log(`forma_image=ghcr.io/awannaphasch2016/forma@${digest}`);
+    return;
+  }
+  console.log(`forma_image=pending ${tag}`);
+}
+
+function comment(pr, url, sha) {
   gh([
     "pr",
     "comment",
@@ -1238,11 +1383,15 @@ function comment(pr, url) {
     "--repo",
     FORMA_REPOSITORY,
     "--body",
-    `Forma preview: ${url}\n\nSign in with APP_PASSWORD from Doppler project forma, config dev. Send uses the OpenRouter key already stored there.`,
+    formaPreviewComment(url, sha),
   ]);
 }
 
 export async function runFormaPreview() {
+  const environment = assertPreviewEnvironment(
+    process.env.FORMA_ENVIRONMENT ?? "",
+  );
+  console.log(`forma_environment=${environment}`);
   const token = process.env.DOPPLER_ADMIN_TOKEN ?? "";
   if (!token) {
     console.log("DOPPLER_ADMIN_TOKEN=absent");
@@ -1267,9 +1416,8 @@ export async function runFormaPreview() {
   const pr = process.env.FORMA_PR || ensureWalkthroughPullRequest();
   console.log(`forma_pr=${pr}`);
   notePullRequestLinks(pr);
-  publishSignInFix();
   const branch = await ensureNeonBranch(secrets.NEON_API_KEY, pr);
-  const checkout = await migrate(branch.direct);
+  const prepared = await migrate(branch.direct);
   const env = previewEnv({
     pooledUrl: branch.pooled,
     directUrl: branch.direct,
@@ -1278,11 +1426,12 @@ export async function runFormaPreview() {
   env.runtime.VERCEL_TOKEN = vercel.token;
   env.runtime.VERCEL_PROJECT_ID = vercel.project.id;
   env.runtime.VERCEL_ORG_ID = vercel.project.accountId;
-  const url = await deploy(checkout, env, vercel.project);
+  const url = await deploy(prepared.checkout, env, vercel.project);
   await probeSignIn(url);
   await probeStatus(url);
+  await noteFormaImage(prepared.sha);
   console.log(`forma_url=${url}`);
-  comment(pr, url);
+  comment(pr, url, prepared.sha);
 }
 
 const entry = process.argv[1];
