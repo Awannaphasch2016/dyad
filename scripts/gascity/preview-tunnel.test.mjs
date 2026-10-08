@@ -217,19 +217,17 @@ exit 0
         PREVIEW_SKIP_TUNNEL: "1",
         DOCKER_LOG: join(root, "docker.log"),
         NODE_LOG: join(root, "node.log"),
-        CLOUDFLARE_API_TOKEN_: "",
-        CLOUDFLARE_ZONE_ID_: "",
-        CLOUDFLARE_ACCOUNT_ID: "",
         CLOUDFLARE_API_TOKEN: "",
         CLOUDFLARE_ZONE_ID: "",
-        CLOUDFLARE_ACCOUNT_ID_: "",
+        CLOUDFLARE_ACCOUNT_ID: "",
         ...env,
       },
     });
   try {
     const skipped = run({});
     assert.equal(skipped.status, 0, skipped.stderr);
-    assert.match(skipped.stdout, /CLOUDFLARE_API_TOKEN_: absent/);
+    assert.match(skipped.stdout, /CLOUDFLARE_API_TOKEN: absent/);
+    assert.match(skipped.stdout, /CLOUDFLARE_ZONE_ID: absent/);
     assert.equal(existsSync(join(root, "node.log")), false);
     assert.equal(
       readFileSync(join(root, "docker.log"), "utf8").includes(
@@ -242,12 +240,14 @@ exit 0
     const created = run({
       CLOUDFLARE_API_TOKEN: "api-token",
       CLOUDFLARE_ZONE_ID: "zone-id",
-      CLOUDFLARE_ACCOUNT_ID_: "account-id",
+      CLOUDFLARE_ACCOUNT_ID: "account-id",
     });
     assert.equal(created.status, 0, created.stderr);
-    assert.match(created.stdout, /CLOUDFLARE_API_TOKEN_: present/);
-    assert.match(created.stdout, /CLOUDFLARE_ZONE_ID_: present/);
+    assert.match(created.stdout, /CLOUDFLARE_API_TOKEN: present/);
+    assert.match(created.stdout, /CLOUDFLARE_ZONE_ID: present/);
     assert.match(created.stdout, /CLOUDFLARE_ACCOUNT_ID: present/);
+    assert.equal(created.stdout.includes("CLOUDFLARE_API_TOKEN_"), false);
+    assert.equal(created.stdout.includes("CLOUDFLARE_ZONE_ID_"), false);
     assert.equal(created.stdout.includes("api-token"), false);
     assert.equal(created.stdout.includes("stub-tunnel-token"), false);
     const nodeLog = readFileSync(join(root, "node.log"), "utf8");

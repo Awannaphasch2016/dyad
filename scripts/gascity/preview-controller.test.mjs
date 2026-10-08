@@ -74,6 +74,11 @@ test("the preview database export uses the child branch, not the parent URL", ()
     {
       WEWEBPLUS_DATABASE_URL: parent,
       CLERK_PUBLISHABLE_KEY: "pk_test",
+      CLOUDFLARE_API_TOKEN: "cf-token",
+      CLOUDFLARE_ZONE_ID: "cf-zone",
+      CLOUDFLARE_ACCOUNT_ID: "cf-account",
+      CLOUDFLARE_API_TOKEN_: "must-not-export",
+      CLOUDFLARE_ZONE_ID_: "must-not-export",
       EC2_SSH_KEY: "must-not-export",
       NEON_API_KEY: "must-not-export",
     },
@@ -82,8 +87,14 @@ test("the preview database export uses the child branch, not the parent URL", ()
   assert.equal(text.includes(parent), false);
   assert.equal(text.includes("EC2_SSH_KEY"), false);
   assert.equal(text.includes("NEON_API_KEY"), false);
+  assert.equal(text.includes("CLOUDFLARE_API_TOKEN_"), false);
+  assert.equal(text.includes("CLOUDFLARE_ZONE_ID_"), false);
+  assert.equal(text.includes("must-not-export"), false);
   assert.match(text, /export WEWEBPLUS_DATABASE_URL=/);
   assert.match(text, /export CLERK_PUBLISHABLE_KEY='pk_test'/);
+  assert.match(text, /export CLOUDFLARE_API_TOKEN='cf-token'/);
+  assert.match(text, /export CLOUDFLARE_ZONE_ID='cf-zone'/);
+  assert.match(text, /export CLOUDFLARE_ACCOUNT_ID='cf-account'/);
   assert.equal(shellQuote("a'b"), "'a'\\''b'");
   assert.equal(previewBranchName(20), "preview-pr-20");
   assert.throws(() => previewBranchName("20;rm"), /Pull request number/);

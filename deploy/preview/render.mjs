@@ -8,6 +8,9 @@ const runtimeKeys = [
   "AWS_ACCESS_KEY_ID",
   "AWS_SECRET_ACCESS_KEY",
   "AWS_REGION",
+  "CLOUDFLARE_API_TOKEN",
+  "CLOUDFLARE_ZONE_ID",
+  "CLOUDFLARE_ACCOUNT_ID",
 ];
 
 export function shellQuote(value) {
