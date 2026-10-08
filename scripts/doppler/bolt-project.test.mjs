@@ -6,9 +6,12 @@ import {
   patchChatReady,
 } from "./patch-bolt-polyfills.mjs";
 import {
+  chooseOpenRouterSource,
   cloudflareReferencePlan,
   configReport,
   githubEnvAssignment,
+  isProductionConfig,
+  openRouterReferencePlan,
   previewEnvironmentBody,
   previewInheritsBody,
   prdInheritsBody,
@@ -124,9 +127,15 @@ test("the preview job reads Doppler and does not store Cloudflare secrets on bol
     "utf8",
   );
   assert.match(deploy, /secrets\.DOPPLER_ADMIN_TOKEN/);
+  assert.match(deploy, /ensure-bolt-project\.mjs/);
   assert.match(deploy, /export-bolt-preview-env\.mjs/);
+  assert.match(
+    deploy,
+    /wrangler secret put OPEN_ROUTER_API_KEY --name bolt-walkthrough-55d6/,
+  );
   assert.equal(deploy.includes("secrets.CLOUDFLARE_API_TOKEN"), false);
   assert.equal(deploy.includes("secrets.CLOUDFLARE_ACCOUNT_ID"), false);
+  assert.equal(deploy.includes('echo "$OPEN_ROUTER_API_KEY"'), false);
 });
 
 test("the chat restore effect no longer reads an unbound ready", () => {
@@ -150,12 +159,59 @@ test("the polyfill patch skips the rolldown runtime", () => {
   assert.throws(() => patchBrowserPolyfills("no transform here"));
 });
 
-test("github env export accepts only the two Cloudflare names", () => {
+test("github env export accepts Cloudflare names and the OpenRouter key", () => {
   const assignment = githubEnvAssignment("CLOUDFLARE_API_TOKEN", "token-value");
   assert.match(
     assignment,
     /^CLOUDFLARE_API_TOKEN<<BOLT_CLOUDFLARE_API_TOKEN_EOF/,
   );
+  const openRouter = githubEnvAssignment("OPEN_ROUTER_API_KEY", "sk-or-test");
+  assert.match(
+    openRouter,
+    /^OPEN_ROUTER_API_KEY<<BOLT_OPEN_ROUTER_API_KEY_EOF/,
+  );
   assert.throws(() => githubEnvAssignment("WEWEBPLUS_DATABASE_URL", "x"));
+  assert.throws(() => githubEnvAssignment("OPENROUTER_API_KEY", "x"));
   assert.throws(() => githubEnvAssignment("CLOUDFLARE_API_TOKEN", ""));
+});
+
+test("the OpenRouter reference uses bolt's env name", () => {
+  const plan = openRouterReferencePlan(
+    { project: "dyad", config: "dev", name: "OPENROUTER_API_KEY" },
+    "${dyad.dev.OPENROUTER_API_KEY}",
+  );
+  assert.deepEqual(plan.missing, []);
+  assert.equal(
+    plan.secrets.OPEN_ROUTER_API_KEY,
+    "${dyad.dev.OPENROUTER_API_KEY}",
+  );
+});
+
+test("a missing OpenRouter key is reported and not invented", () => {
+  const plan = openRouterReferencePlan(null);
+  assert.deepEqual(plan.missing, ["OPEN_ROUTER_API_KEY"]);
+  assert.equal(plan.secrets.OPEN_ROUTER_API_KEY, undefined);
+});
+
+test("OpenRouter source prefers the first non-production name", () => {
+  assert.equal(isProductionConfig("prd"), true);
+  assert.equal(isProductionConfig("production"), true);
+  assert.equal(isProductionConfig("preview"), false);
+  assert.equal(isProductionConfig("product"), false);
+  const found = chooseOpenRouterSource([
+    { project: "bolt", config: "dev", names: ["OPEN_ROUTER_API_KEY"] },
+    { project: "dyad", config: "prd", names: ["OPENROUTER_API_KEY"] },
+    { project: "vibesdk", config: "dev", names: ["CLOUDFLARE_API_TOKEN"] },
+    { project: "dyad", config: "dev", names: ["OPENROUTER_API_KEY"] },
+    {
+      project: "forma",
+      config: "dev",
+      names: ["OPEN_ROUTER_API_KEY"],
+    },
+  ]);
+  assert.deepEqual(found, {
+    project: "dyad",
+    config: "dev",
+    name: "OPENROUTER_API_KEY",
+  });
 });

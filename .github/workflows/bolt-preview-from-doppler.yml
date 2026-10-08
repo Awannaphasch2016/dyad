@@ -10,6 +10,7 @@ on:
       - cursor/bolt-doppler-55d6
     paths:
       - .github/workflows/bolt-preview-from-doppler.yml
+      - scripts/doppler/ensure-bolt-project.mjs
       - scripts/doppler/export-bolt-preview-env.mjs
       - scripts/doppler/bolt-project.mjs
       - scripts/doppler/patch-bolt-polyfills.mjs
@@ -29,6 +30,14 @@ jobs:
     steps:
       - name: Check out the export script
         uses: actions/checkout@v4
+
+      - name: Reference the OpenRouter key on bolt preview
+        env:
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+        run: |
+          set -euo pipefail
+          set +x
+          node scripts/doppler/ensure-bolt-project.mjs
 
       - name: Read bolt preview from Doppler
         env:
@@ -82,3 +91,11 @@ jobs:
             echo "preview_url=${url:-absent}"
           } >> "$GITHUB_STEP_SUMMARY"
           test -n "$url"
+
+      - name: Give the Worker the OpenRouter key
+        working-directory: bolt
+        run: |
+          set -euo pipefail
+          set +x
+          printf '%s' "$OPEN_ROUTER_API_KEY" | pnpm exec wrangler secret put OPEN_ROUTER_API_KEY --name bolt-walkthrough-55d6
+          echo "openrouter=configured" >> "$GITHUB_STEP_SUMMARY"

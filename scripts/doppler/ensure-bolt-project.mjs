@@ -1,16 +1,22 @@
-// Create Doppler project bolt and reference the vibesdk/dev Cloudflare names.
-// Prints names and shapes only. Does not print secret values or read dyad.
+// Create Doppler project bolt and reference Cloudflare plus the OpenRouter key.
+// Prints names and shapes only. Does not print secret values.
 
 import { pathToFileURL } from "node:url";
 import {
   BOLT_PROJECT_NAME,
   VIBESDK_DEV_CONFIG,
   VIBESDK_PROJECT_NAME,
+  OPEN_ROUTER_API_KEY,
+  chooseOpenRouterSource,
   cloudflareReferencePlan,
   cloudflareSecrets,
   configReport,
   credentialShape,
   devInheritableBody,
+  isProductionConfig,
+  openRouterReferencePlan,
+  openRouterSearchOrder,
+  openRouterSourceNames,
   parseDopplerReference,
   previewEnvironmentBody,
   previewInheritsBody,
@@ -113,6 +119,72 @@ function mask(value) {
   if (typeof value === "string" && value.length > 0) {
     console.log(`::add-mask::${value}`);
   }
+}
+
+async function namedSecrets(token, project, config) {
+  const configs = await listConfigs(token, project);
+  const names = new Set(configs.map((item) => item?.name).filter(Boolean));
+  if (!names.has(config)) return null;
+  const payload = await secretPayload(token, project, config);
+  return takeSecretNames(payload);
+}
+
+async function openRouterPlaces(token, projects) {
+  const places = [];
+  const seen = new Set();
+
+  async function add(project, config) {
+    const key = `${project}.${config}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    if (!projects.includes(project)) {
+      places.push({ project, config, names: [], missing: true });
+      return;
+    }
+    try {
+      const names = await namedSecrets(token, project, config);
+      if (!names) {
+        places.push({ project, config, names: [], missing: true });
+        return;
+      }
+      places.push({ project, config, names });
+    } catch (error) {
+      console.log(
+        `openrouter_lookup=${project}.${config} failed ${redact(error?.message || error)}`,
+      );
+      places.push({ project, config, names: [], missing: true });
+    }
+  }
+
+  for (const place of openRouterSearchOrder) {
+    await add(place.project, place.config);
+  }
+  for (const project of projects) {
+    if (project === BOLT_PROJECT_NAME) continue;
+    let configs = [];
+    try {
+      configs = await listConfigs(token, project);
+    } catch (error) {
+      console.log(
+        `openrouter_lookup=${project} failed ${redact(error?.message || error)}`,
+      );
+      continue;
+    }
+    for (const config of configs) {
+      const name = String(config?.name ?? "");
+      if (!name || isProductionConfig(name)) continue;
+      await add(project, name);
+    }
+  }
+  return places;
+}
+
+function openRouterCheckLabel(place) {
+  if (place.missing) return `${place.project}.${place.config}=unreachable`;
+  const name = openRouterSourceNames.find((candidate) =>
+    place.names.includes(candidate),
+  );
+  return `${place.project}.${place.config}=${name ?? "absent"}`;
 }
 
 async function ensureBoltProject() {
@@ -220,6 +292,36 @@ async function ensureBoltProject() {
     console.log(`reference=${reference}`);
   }
 
+  const places = await openRouterPlaces(token, projects);
+  const preferred = places.filter((place) =>
+    openRouterSearchOrder.some(
+      (wanted) =>
+        wanted.project === place.project && wanted.config === place.config,
+    ),
+  );
+  console.log(
+    `openrouter_checked=${preferred.map(openRouterCheckLabel).join(",") || "none"}`,
+  );
+  const found = chooseOpenRouterSource(places);
+  if (!found) {
+    console.log("openrouter_key=absent");
+    process.exit(1);
+  }
+  const openRouterRoot = await directReference(
+    token,
+    found.project,
+    found.config,
+    found.name,
+  );
+  console.log(`openrouter_source=${openRouterRoot}`);
+  const openRouterPlan = openRouterReferencePlan(found, openRouterRoot);
+  await doppler(token, "POST", "/v3/configs/config/secrets", {
+    project: BOLT_PROJECT_NAME,
+    config: "dev",
+    secrets: openRouterPlan.secrets,
+  });
+  console.log(`reference=${openRouterPlan.secrets[OPEN_ROUTER_API_KEY]}`);
+
   configs = await listConfigs(token, BOLT_PROJECT_NAME);
   for (const line of configReport(configs)) console.log(line);
 
@@ -229,7 +331,10 @@ async function ensureBoltProject() {
     `/v3/configs/config/secrets/download?project=${BOLT_PROJECT_NAME}&config=preview&format=json`,
   );
   let unresolved = false;
-  for (const name of cloudflareSecrets.map((wanted) => wanted.dest)) {
+  for (const name of [
+    ...cloudflareSecrets.map((wanted) => wanted.dest),
+    OPEN_ROUTER_API_KEY,
+  ]) {
     const value = preview[name];
     mask(value);
     const state = referenceResolved(value);
@@ -244,15 +349,16 @@ async function ensureBoltProject() {
     "GET",
     `/v3/configs/config/secrets/download?project=${BOLT_PROJECT_NAME}&config=prd&format=json`,
   );
-  const productionNames = cloudflareSecrets
-    .map((wanted) => wanted.dest)
-    .filter((name) => referenceResolved(production[name]) !== "absent");
+  const productionNames = [
+    ...cloudflareSecrets.map((wanted) => wanted.dest),
+    OPEN_ROUTER_API_KEY,
+  ].filter((name) => referenceResolved(production[name]) !== "absent");
   for (const name of Object.keys(production)) production[name] = undefined;
   if (productionNames.length > 0) {
-    console.log(`bolt_prd_cloudflare=present ${productionNames.join(",")}`);
+    console.log(`bolt_prd_secrets=present ${productionNames.join(",")}`);
     process.exit(1);
   }
-  console.log("bolt_prd_cloudflare=absent");
+  console.log("bolt_prd_secrets=absent");
 }
 
 const entry = process.argv[1];

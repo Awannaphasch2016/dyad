@@ -5,9 +5,26 @@ export const BOLT_PROJECT_NAME = "bolt";
 export const VIBESDK_PROJECT_NAME = "vibesdk";
 export const VIBESDK_DEV_CONFIG = "dev";
 
+export const OPEN_ROUTER_API_KEY = "OPEN_ROUTER_API_KEY";
+
+export const openRouterSourceNames = [
+  "OPEN_ROUTER_API_KEY",
+  "OPENROUTER_API_KEY",
+];
+
+// Dev and preview only. Production configs are skipped by the caller.
+export const openRouterSearchOrder = [
+  { project: "vibesdk", config: "dev" },
+  { project: "dyad", config: "dev" },
+  { project: "dyad", config: "preview" },
+  { project: "forma", config: "dev" },
+  { project: "forma", config: "preview" },
+];
+
 export const boltPreviewSecretNames = [
   "CLOUDFLARE_API_TOKEN",
   "CLOUDFLARE_ACCOUNT_ID",
+  OPEN_ROUTER_API_KEY,
 ];
 
 export function githubEnvAssignment(name, value) {
@@ -33,11 +50,45 @@ export const cloudflareSecrets = [
   },
 ];
 
+export function isProductionConfig(name) {
+  return /^(prd|prod|production)(?:[_-]|$)/i.test(String(name ?? ""));
+}
+
+export function chooseOpenRouterSource(places) {
+  for (const place of places ?? []) {
+    if (place?.project === BOLT_PROJECT_NAME) continue;
+    if (isProductionConfig(place?.config)) continue;
+    const name = openRouterSourceNames.find((candidate) =>
+      (place?.names ?? []).includes(candidate),
+    );
+    if (!name) continue;
+    return {
+      project: String(place.project),
+      config: String(place.config),
+      name,
+    };
+  }
+  return null;
+}
+
+export function openRouterReferencePlan(found, root) {
+  if (!found && !root) {
+    return { secrets: {}, missing: [OPEN_ROUTER_API_KEY] };
+  }
+  return {
+    secrets: {
+      [OPEN_ROUTER_API_KEY]:
+        root ?? referenceString(found.project, found.config, found.name),
+    },
+    missing: [],
+  };
+}
+
 export function projectBody() {
   return {
     name: BOLT_PROJECT_NAME,
     description:
-      "Bolt walkthrough. Cloudflare names reference vibesdk/dev. prd stays empty.",
+      "Bolt walkthrough. Cloudflare and OpenRouter names are references. prd stays empty.",
   };
 }
 

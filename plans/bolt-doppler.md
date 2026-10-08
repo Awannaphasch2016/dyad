@@ -12,32 +12,35 @@ Project slug: `bolt`.
 
 | Config    | Inheritance    | What it holds                                                             |
 | --------- | -------------- | ------------------------------------------------------------------------- |
-| `dev`     | root config    | The two Cloudflare names, as references to vibeSDK `dev`.                 |
-| `preview` | inherits `dev` | The same two names. This is the config the preview deploy reads.          |
+| `dev`     | root config    | Cloudflare names, plus `OPEN_ROUTER_API_KEY`, as references.              |
+| `preview` | inherits `dev` | The same names. This is the config the preview deploy reads.              |
 | `prd`     | no inheritance | Empty. Production stays closed until the preview walkthrough is accepted. |
 
 ```text
-vibeSDK / dev
-  CLOUDFLARE_API_TOKEN
-  CLOUDFLARE_ACCOUNT_ID
-        |
-        | Doppler reference, same value
-        v
-bolt / dev
+vibeSDK / dev                         existing OpenRouter key
+  CLOUDFLARE_API_TOKEN                (vibeSDK, Dyad, or Forma dev/preview)
+  CLOUDFLARE_ACCOUNT_ID                        |
+        |                                      | Doppler reference
+        | Doppler reference                    v
+        v                               bolt / dev
+bolt / dev                              OPEN_ROUTER_API_KEY
         |
         | inherits
         v
-bolt / preview  --->  Awannaphasch2016/bolt.diy repository secrets
+bolt / preview  --->  Worker secret OPEN_ROUTER_API_KEY
 ```
 
 `bolt` / `prd` is not on that path.
 
 ## Names
 
-Write these two names in `bolt` / `dev`:
+Write these names in `bolt` / `dev`:
 
 - `CLOUDFLARE_API_TOKEN` = `${vibesdk.dev.CLOUDFLARE_API_TOKEN}`
 - `CLOUDFLARE_ACCOUNT_ID` = `${vibesdk.dev.CLOUDFLARE_ACCOUNT_ID}`
+- `OPEN_ROUTER_API_KEY` = a reference to the existing OpenRouter key
+
+Bolt reads `OPEN_ROUTER_API_KEY` on the Worker. The source may be stored as `OPENROUTER_API_KEY`. The setup job looks in vibeSDK `dev`, then Dyad `dev` and `preview`, then Forma `dev` and `preview`, then any other non-production config. It follows a reference to its root. It does not read `prd`.
 
 If `vibesdk` / `dev` stores either name with the trailing underscore used by the Dyad tunnel config, the setup job references that name instead. Doppler does not allow a reference to a reference. When the vibeSDK value is already a reference, bolt points at the root secret.
 
@@ -57,17 +60,19 @@ The Dyad preview tunnel token stays on the preview host. It is the token for `pr
 - `aws` keeps the Bedrock keys.
 - `forma` stays its own project.
 - vibeSDK `dev` keeps the original Cloudflare values. Bolt references them.
-- A model key is not added. On the preview site, one key is entered in bolt’s settings in the browser.
+- The OpenRouter key stays in the project that already holds it. Bolt `dev` only stores a reference, under the name the Worker reads.
 
 ## How the preview job receives them
 
-Doppler `bolt` / `preview` is the source of truth. The deploy job in this repo reads those two names with `DOPPLER_ADMIN_TOKEN` while the job is running and passes them to Wrangler. They are not copied into GitHub secrets on `Awannaphasch2016/bolt.diy`.
+Doppler `bolt` / `preview` is the source of truth. The deploy job in this repo reads the Cloudflare names and `OPEN_ROUTER_API_KEY` with `DOPPLER_ADMIN_TOKEN` while the job is running. Wrangler deploys the Worker, then stores `OPEN_ROUTER_API_KEY` as a Worker secret. Nothing is copied into GitHub secrets on `Awannaphasch2016/bolt.diy`.
+
+The chat route already passes the Worker env into the OpenRouter provider. With that secret set, choosing OpenRouter calls OpenRouter. The browser does not need a pasted key.
 
 Bolt’s own Preview Deployment workflow only looks at GitHub secrets, so that workflow stays unused for this walkthrough.
 
 ## Done when
 
 - Project `bolt` has configs `dev`, `preview`, and `prd`.
-- A names-only download of `bolt` / `preview` shows `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` non-empty.
-- `prd` has neither name.
-- The preview URL comes from the job that read `bolt` / `preview`.
+- A names-only download of `bolt` / `preview` shows `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, and `OPEN_ROUTER_API_KEY` non-empty.
+- `prd` has none of those names.
+- The preview Worker has the OpenRouter secret, and the preview URL comes from the job that read `bolt` / `preview`.
