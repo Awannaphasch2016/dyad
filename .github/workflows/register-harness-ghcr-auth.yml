@@ -233,25 +233,38 @@ jobs:
               chunks = []
               if log_file.exists() and zipfile.is_zipfile(log_file):
                   with zipfile.ZipFile(log_file) as archive:
+                      print("log_entries", ident, len(archive.namelist()))
                       for name in archive.namelist():
                           chunks.append(archive.read(name).decode("utf-8", "replace"))
               elif log_file.exists():
+                  print("log_entries", ident, "plain", log_file.stat().st_size)
                   chunks.append(log_file.read_text("utf-8", "replace"))
+              else:
+                  print("log_entries", ident, "missing")
+              collected = []
               for raw_log in chunks:
                   for line in raw_log.splitlines():
+                      if "PRIVATE KEY" in line or "BEGIN " in line:
+                          continue
+                      text = ""
                       try:
                           parsed = json.loads(line)
                       except json.JSONDecodeError:
+                          text = line
+                      else:
+                          if isinstance(parsed, dict):
+                              for key in ("out", "message", "log", "text"):
+                                  value = parsed.get(key)
+                                  if isinstance(value, str) and value:
+                                      text = value
+                                      break
+                              if not text:
+                                  text = "keys=" + ",".join(sorted(parsed)[:12])
+                      if not text:
                           continue
-                      text = str(parsed.get("out") or parsed.get("message") or "")
-                      if not text or "PRIVATE KEY" in text or "BEGIN " in text:
-                          continue
-                      if not re.search(
-                          r"installation_http|installation_repos|token_explicit|token_default|package_http|push_probe|push_token|probe_tag_delete|missing_app_key|ghcr_login|docker_login|openssl_sign|push_token_kind|token_len",
-                          text,
-                      ):
-                          continue
-                      print("log", ident, scrub(text)[:300])
-                      shown += 1
+                      collected.append(scrub(text)[:300])
+              for text in collected[-25:]:
+                  print("log", ident, text)
+                  shown += 1
           print("probe_lines", shown, "final", status)
           PY
