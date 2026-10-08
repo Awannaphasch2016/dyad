@@ -161,7 +161,15 @@ export async function republishFormaImage({ token, fetchImpl = fetch }) {
       }),
     },
   );
-  if (!updated.ok) throw new Error(`forma_workflow_put ${updated.status}`);
+  if (!updated.ok) {
+    let message = "";
+    try {
+      message = (await updated.json())?.message ?? "";
+    } catch {
+      message = "";
+    }
+    throw new Error(`forma_workflow_put ${updated.status} ${message}`.trim());
+  }
   const body = await updated.json();
   const sha = body.commit?.sha;
   if (!/^[0-9a-f]{40}$/.test(sha ?? "")) {

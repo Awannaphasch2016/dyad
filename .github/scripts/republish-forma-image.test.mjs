@@ -85,13 +85,14 @@ test("republish leaves an owner-login workflow unchanged", async () => {
   assert.equal(calls.includes("PUT"), false);
 });
 
-test("the dyad workflow only asks Forma for content write", () => {
+test("the dyad workflow asks Forma for contents and workflows write", () => {
   const workflow = readFileSync(
     new URL("../workflows/republish-forma-image.yml", import.meta.url),
     "utf8",
   );
   assert.equal(workflow.includes("repositories: forma"), true);
   assert.equal(workflow.includes("permission-contents: write"), true);
+  assert.equal(workflow.includes("permission-workflows: write"), true);
   assert.equal(workflow.includes("permission-actions:"), false);
   assert.equal(workflow.includes("permission-packages:"), false);
   assert.equal(workflow.includes("DOPPLER"), false);

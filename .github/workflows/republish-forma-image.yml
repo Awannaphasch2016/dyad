@@ -34,6 +34,7 @@ jobs:
           owner: Awannaphasch2016
           repositories: forma
           permission-contents: write
+          permission-workflows: write
 
       - name: Publish as the repository owner
         env:
