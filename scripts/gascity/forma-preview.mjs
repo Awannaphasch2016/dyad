@@ -446,7 +446,25 @@ async function projectList(token, teamId) {
   return listed.projects || [];
 }
 
-async function ensureVercelProject(token) {
+async function ensureVercelProject(token, existing = {}) {
+  if (existing.projectId) {
+    const query = existing.orgId
+      ? `?teamId=${encodeURIComponent(existing.orgId)}`
+      : "";
+    try {
+      const project = await vercelApi(
+        token,
+        "GET",
+        `/v9/projects/${encodeURIComponent(existing.projectId)}${query}`,
+      );
+      console.log("vercel_project=existing");
+      return project;
+    } catch (error) {
+      console.log(
+        `vercel_project=existing_unreadable ${redact(error.message)}`,
+      );
+    }
+  }
   let teamRows = [];
   try {
     const teams = await vercelApi(token, "GET", "/v2/teams");
@@ -493,7 +511,10 @@ async function ensureVercelProject(token) {
 
 async function deploy(checkout, env) {
   const token = env.runtime.VERCEL_TOKEN;
-  const project = await ensureVercelProject(token);
+  const project = await ensureVercelProject(token, {
+    projectId: env.runtime.VERCEL_PROJECT_ID,
+    orgId: env.runtime.VERCEL_ORG_ID,
+  });
   await mkdir(join(checkout, ".vercel"), { recursive: true });
   await writeFile(
     join(checkout, ".vercel", "project.json"),
@@ -501,7 +522,7 @@ async function deploy(checkout, env) {
   );
   const args = ["deploy", "--yes", "--token", token];
   for (const [key, value] of Object.entries(env.runtime)) {
-    if (!value || key === "VERCEL_TOKEN") continue;
+    if (!value || key.startsWith("VERCEL_")) continue;
     args.push("--env", `${key}=${value}`);
   }
   for (const [key, value] of Object.entries(env.build)) {
@@ -552,6 +573,17 @@ export async function runFormaPreview() {
     process.exitCode = 1;
     return;
   }
+  const vercelNames = Object.keys(secrets)
+    .filter((name) => name.startsWith("VERCEL_"))
+    .sort();
+  console.log(`forma_dev_vercel_names=${vercelNames.join(",") || "none"}`);
+  const deployments = JSON.parse(
+    gh(["api", `repos/${FORMA_REPOSITORY}/deployments?per_page=10`]),
+  );
+  const deploymentUrls = deployments
+    .map((item) => item?.payload?.web_url || item?.environment || "")
+    .filter(Boolean);
+  console.log(`forma_github_deployments=${deploymentUrls.join(",") || "none"}`);
   const pr = process.env.FORMA_PR || ensureWalkthroughPullRequest();
   console.log(`forma_pr=${pr}`);
   const branch = await ensureNeonBranch(secrets.NEON_API_KEY, pr);
@@ -563,6 +595,8 @@ export async function runFormaPreview() {
     secrets,
   });
   env.runtime.VERCEL_TOKEN = secrets.VERCEL_TOKEN;
+  env.runtime.VERCEL_PROJECT_ID = secrets.VERCEL_PROJECT_ID;
+  env.runtime.VERCEL_ORG_ID = secrets.VERCEL_ORG_ID;
   const url = await deploy(checkout, env);
   console.log(`forma_url=${url}`);
   comment(pr, url);
