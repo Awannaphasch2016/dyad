@@ -1,0 +1,152 @@
+name: preview-forma
+
+# A pull request in this repository pins published images in
+# deploy/preview-forma/compose.yml. The preview-forma label starts one Forma
+# task on the load balancer recorded in deploy/preview-forma/host.json.
+# Builder repositories only publish images. This job pulls those pins.
+# It does not build them and it does not upload source to Vercel.
+#
+# Label removal and a closed pull request stop the task and delete only the
+# Neon branch preview-forma-<number>.
+
+on:
+  pull_request:
+    types: [labeled, unlabeled, synchronize, reopened, closed]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number in this repository
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: preview-forma-${{ github.event.pull_request.number || inputs.pr || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  decide:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      command: ${{ steps.decide.outputs.command }}
+      pr: ${{ steps.decide.outputs.pr }}
+    steps:
+      - name: Check out the orchestrator
+        uses: actions/checkout@v5
+
+      - name: Decide
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          ACTION: ${{ github.event.action }}
+          LABEL: ${{ github.event.label.name }}
+          CLOSED: ${{ github.event.pull_request.state == 'closed' }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+          PR: ${{ github.event.pull_request.number || inputs.pr }}
+        run: node deploy/preview-forma/run.mjs decide
+
+  check:
+    needs: decide
+    if: needs.decide.outputs.command == 'update'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: ai-bots
+    steps:
+      - name: Check out the labeled commit
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Create a package-read token
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.DYAD_GITHUB_APP_ID || '5221649' }}
+          private-key: ${{ secrets.DYAD_GITHUB_APP_PEM_KEY }}
+          owner: Awannaphasch2016
+          repositories: forma,bolt.diy,vibesdk
+          permission-packages: read
+
+      - name: Check the pinned images
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PREVIEW_FORMA_DOCKER_HOST: ${{ vars.PREVIEW_FORMA_DOCKER_HOST }}
+          COMPOSE: deploy/preview-forma/compose.yml
+        run: node deploy/preview-forma/run.mjs check
+
+  launch:
+    needs: [decide, check]
+    if: needs.check.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ai-bots
+    steps:
+      - name: Check out the orchestrator
+        uses: actions/checkout@v5
+
+      - name: Create a package-read token
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.DYAD_GITHUB_APP_ID || '5221649' }}
+          private-key: ${{ secrets.DYAD_GITHUB_APP_PEM_KEY }}
+          owner: Awannaphasch2016
+          repositories: forma,bolt.diy,vibesdk
+          permission-packages: read
+
+      - name: Check the pinned image
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          COMPOSE: deploy/preview-forma/compose.yml
+        run: node deploy/preview-forma/run.mjs check
+
+      - name: Install the schema client
+        run: npm install --prefix "$RUNNER_TEMP/pg" --ignore-scripts pg@8.16.3
+
+      - name: Choose the pull request
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DECIDE_PR: ${{ needs.decide.outputs.pr }}
+        run: |
+          set +x
+          if [ -n "$DECIDE_PR" ]; then
+            number="$DECIDE_PR"
+          else
+            number="$(gh pr view --json number --jq .number)"
+          fi
+          case "$number" in
+            ''|*[!0-9]*) echo "Pull request number must be digits" >&2; exit 1 ;;
+          esac
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+
+      - name: Start the preview
+        env:
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+          PR: ${{ steps.pr.outputs.number }}
+          PREVIEW_FORMA_PG: ${{ runner.temp }}/pg
+        run: |
+          set +x
+          node deploy/preview-forma/launch.mjs up
+
+  down:
+    needs: decide
+    if: needs.decide.outputs.command == 'destroy'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: ai-bots
+    steps:
+      - name: Check out the orchestrator
+        uses: actions/checkout@v5
+
+      - name: Stop the preview
+        env:
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+          PR: ${{ needs.decide.outputs.pr }}
+        run: |
+          set +x
+          node deploy/preview-forma/launch.mjs down
