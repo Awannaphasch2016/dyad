@@ -42,5 +42,9 @@ jobs:
           git config user.email "cursoragent@cursor.com"
           git checkout -b cursor/forma-shared-auth-5014
           git am --keep-cr ../deploy/forma/shared-sign-in.patch
-          git -c credential.helper= -c http.extraheader="AUTHORIZATION: bearer ${GH_TOKEN}" push origin cursor/forma-shared-auth-5014
+          askpass="$(mktemp)"
+          printf '%s\n' '#!/bin/sh' 'case "$1" in' '*Username*) printf "%s" "x-access-token";;' '*) printf "%s" "$GH_TOKEN";;' 'esac' > "$askpass"
+          chmod 700 "$askpass"
+          GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 git -c credential.helper= push origin HEAD:cursor/forma-shared-auth-5014
+          rm -f "$askpass"
           echo "forma_sign_in_sha=$(git rev-parse HEAD)"

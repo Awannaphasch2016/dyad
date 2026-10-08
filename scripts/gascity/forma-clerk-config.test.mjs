@@ -6,6 +6,7 @@ import {
   membershipRoleSummary,
   neonSqlHost,
   redact,
+  shouldRetargetMembershipStore,
 } from "./forma-clerk-config.mjs";
 
 test("missing Forma sign-in names reference dyad preview", () => {
@@ -30,6 +31,19 @@ test("a live Clerk key stops before any session is opened", () => {
     /Refusing a live Clerk key/,
   );
   assert.doesNotThrow(() => assertDevelopmentClerk("test", "test"));
+});
+
+test("a missing membership table retargets the shared database", () => {
+  assert.equal(
+    shouldRetargetMembershipStore(
+      'relation "wewebplus.memberships" does not exist 42P01',
+    ),
+    true,
+  );
+  assert.equal(
+    shouldRetargetMembershipStore("Membership store is unavailable (401)"),
+    false,
+  );
 });
 
 test("the membership query uses the direct Neon host", () => {

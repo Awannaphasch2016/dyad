@@ -56,6 +56,11 @@ export function neonSqlHost(databaseUrl) {
   return endpoint.hostname.replace("-pooler.", ".");
 }
 
+export function shouldRetargetMembershipStore(message) {
+  const text = String(message ?? "");
+  return text.includes("42P01") || text.includes("does not exist");
+}
+
 export function membershipRoleSummary(rows) {
   const counts = new Map();
   for (const row of rows ?? []) {
@@ -178,9 +183,27 @@ export async function ensureFormaClerkConfig(token) {
   ) {
     throw new Error("Forma dev is missing the development sign-in names");
   }
-  const roles = membershipRoleSummary(
-    await membershipRoles(secrets.WEWEBPLUS_DATABASE_URL),
-  );
+  let membershipRows;
+  try {
+    membershipRows = await membershipRoles(secrets.WEWEBPLUS_DATABASE_URL);
+  } catch (error) {
+    if (!shouldRetargetMembershipStore(error?.message)) throw error;
+    await doppler(token, "POST", "/v3/configs/config/secrets", {
+      project: FORMA_PROJECT,
+      config: FORMA_CONFIG,
+      secrets: {
+        WEWEBPLUS_DATABASE_URL: referenceString(
+          SHARED_SOURCE.project,
+          SHARED_SOURCE.config,
+          "WEWEBPLUS_DATABASE_URL",
+        ),
+      },
+    });
+    console.log("forma_wewebplus_database=retargeted");
+    secrets = await download(token);
+    membershipRows = await membershipRoles(secrets.WEWEBPLUS_DATABASE_URL);
+  }
+  const roles = membershipRoleSummary(membershipRows);
   console.log(`forma_membership_roles=${roles || "none"}`);
   if (!roles.includes("project-manager:1") || !roles.includes("developer:1")) {
     throw new Error("Wewebplus is missing the two gate roles");
