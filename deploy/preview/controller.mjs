@@ -5,6 +5,7 @@ import { writeFileSync } from "node:fs";
 import { commandForPullRequest } from "./transition.mjs";
 import { deletePreviewBranch, ensurePreviewBranch } from "./neon.mjs";
 import { previewRuntime } from "./render.mjs";
+import { cloudflareStatus, dopplerCloudflareNames } from "./cloudflare_env.mjs";
 
 const dopplerDownloadUrl =
   "https://api.doppler.com/v3/configs/config/secrets/download?format=json";
@@ -31,6 +32,13 @@ async function runtimeEnv() {
     if (!process.env.NEON_API_KEY && downloaded.NEON_API_KEY) {
       process.env.NEON_API_KEY = downloaded.NEON_API_KEY;
     }
+    const names = dopplerCloudflareNames(downloaded);
+    console.log(
+      names.length
+        ? `Doppler Cloudflare names: ${names.join(", ")}`
+        : "Doppler Cloudflare names: none",
+    );
+    console.log(cloudflareStatus(downloaded, "Doppler"));
     return downloaded;
   }
   return {};

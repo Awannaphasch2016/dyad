@@ -277,6 +277,11 @@ test("preview image workflow updates the shared Devbox after publish", () => {
     workflow,
     /PREVIEW_SKIP_TUNNEL=1 bash scripts\/gascity\/preview-up\.sh/,
   );
+  assert.match(workflow, /secrets\.CLOUDFLARE_API_TOKEN/);
+  assert.match(workflow, /secrets\.CLOUDFLARE_ZONE_ID/);
+  assert.match(workflow, /secrets\.CLOUDFLARE_ACCOUNT_ID/);
+  assert.equal(workflow.includes("CLOUDFLARE_API_TOKEN_"), false);
+  assert.equal(workflow.includes("CLOUDFLARE_ZONE_ID_"), false);
   assert.match(workflow, /https:\/\/pr-\$\{PR\}\.anakwannaphaschaiyong\.com/);
   assert.equal(workflow.includes("13.251.216.187"), false);
 });
