@@ -36,11 +36,11 @@ jobs:
         run: |
           set -euo pipefail
           set +x
-          git clone --depth 1 --branch cursor/forma-preview-walkthrough https://github.com/Awannaphasch2016/forma.git forma-sign-in
+          git -c credential.helper= clone --depth 1 --branch cursor/forma-preview-walkthrough https://github.com/Awannaphasch2016/forma.git forma-sign-in
           cd forma-sign-in
           git config user.name "Cursor Agent"
           git config user.email "cursoragent@cursor.com"
           git checkout -b cursor/forma-shared-auth-5014
           git am --keep-cr ../deploy/forma/shared-sign-in.patch
-          git -c http.extraheader="AUTHORIZATION: bearer ${GH_TOKEN}" push origin cursor/forma-shared-auth-5014
+          git -c credential.helper= -c http.extraheader="AUTHORIZATION: bearer ${GH_TOKEN}" push origin cursor/forma-shared-auth-5014
           echo "forma_sign_in_sha=$(git rev-parse HEAD)"

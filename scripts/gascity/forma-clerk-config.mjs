@@ -130,7 +130,9 @@ async function membershipRoles(databaseUrl) {
     }),
   });
   if (!response.ok) {
-    throw new Error(`Membership store is unavailable (${response.status}).`);
+    throw new Error(
+      `Membership store is unavailable (${response.status}) ${redact(await response.text()).slice(0, 180)}`,
+    );
   }
   const payload = await response.json();
   const fields = payload.fields ?? [];
