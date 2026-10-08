@@ -164,6 +164,34 @@ def http_json(method: str, url: str, headers: dict[str, str], body: dict | None 
     return code, parsed
 
 
+def failure_fields(parsed: dict) -> None:
+    print("response_keys", ",".join(sorted(parsed)))
+    code = parsed.get("code")
+    if code:
+        print("response_code", code)
+    correlation = parsed.get("correlationId")
+    if isinstance(correlation, str) and correlation:
+        print("correlation_id", correlation[:80])
+    message = scrub(str(parsed.get("message") or ""))[:240]
+    if message:
+        print("custom_token_message", message)
+    detailed = scrub(str(parsed.get("detailedMessage") or ""))[:240]
+    if detailed:
+        print("custom_token_detail", detailed)
+
+
+def token_request(api_key: str, url: str, body: dict) -> tuple[int, dict, str]:
+    code, parsed = http_json(
+        "POST",
+        url,
+        {"x-api-key": api_key, "Content-Type": "application/json"},
+        body,
+    )
+    if not isinstance(parsed, dict):
+        return code, {}, ""
+    return code, parsed, find_jwt(parsed)
+
+
 def probe_harness() -> int:
     api_key = os.environ.get("HARNESS_API_KEY", "")
     if not api_key:
@@ -175,42 +203,69 @@ def probe_harness() -> int:
         f"account/{ACCOUNT}:org/default:project/dyad:"
         f"pipeline/{pipeline_id}:environment/{environment_id}"
     )
-    code, parsed = http_json(
-        "POST",
-        "https://app.harness.io/ng/api/oidc/id-token/custom",
-        {"x-api-key": api_key, "Content-Type": "application/json"},
-        {
-            "accountId": ACCOUNT,
-            "aud": AUDIENCE,
-            "sub": subject,
-            "oidcIdTokenCustomAttributesStructure": {
-                "account_id": ACCOUNT,
-                "organization_id": "default",
-                "project_id": "dyad",
-                "pipeline_id": pipeline_id,
-                "environment_id": environment_id,
-                "context": "PIPELINE_EXECUTION",
-            },
+    attributes = {
+        "account_id": ACCOUNT,
+        "organization_id": "default",
+        "project_id": "dyad",
+        "pipeline_id": pipeline_id,
+        "environment_id": environment_id,
+        "context": "PIPELINE_EXECUTION",
+    }
+    minimal = {
+        "accountId": ACCOUNT,
+        "aud": AUDIENCE,
+        "oidcIdTokenCustomAttributesStructure": {"account_id": ACCOUNT},
+    }
+    full = {
+        "accountId": ACCOUNT,
+        "aud": AUDIENCE,
+        "sub": subject,
+        "oidcIdTokenCustomAttributesStructure": attributes,
+    }
+    existing = {
+        "accountId": ACCOUNT,
+        "aud": AUDIENCE,
+        "oidcIdTokenCustomAttributesStructure": {
+            "account_id": ACCOUNT,
+            "organization_id": "default",
+            "project_id": "dyad",
+            "pipeline_id": "dyad_harness_images",
         },
+    }
+    direct = "https://app.harness.io/ng/api/oidc/id-token/custom"
+    gateway = (
+        "https://app.harness.io/gateway/ng/api/oidc/id-token/custom"
+        f"?accountIdentifier={ACCOUNT}"
     )
-    status = parsed.get("status") if isinstance(parsed, dict) else ""
-    print("custom_token_http", code, status)
-    if not isinstance(parsed, dict):
-        return 1
-    token = find_jwt(parsed)
-    if not token:
-        message = scrub(str(parsed.get("message") or ""))[:240]
-        print("oidc_token=absent")
-        if message:
-            print("custom_token_message", message)
-        return 1
-    payload = decode_payload(token)
-    lines = claim_lines(payload)
-    print("\n".join(lines))
-    signed_sub = payload.get("sub")
-    print("sub_matches_request=" + ("yes" if signed_sub == subject else "no"))
-    print("aud_matches_request=" + ("yes" if payload.get("aud") in (AUDIENCE, [AUDIENCE]) else "no"))
-    return 1 if "wildcard=yes" in lines else 0
+    attempts = (
+        ("minimal", direct, minimal),
+        ("full", direct, full),
+        ("existing_pipeline", direct, existing),
+        ("gateway_minimal", gateway, minimal),
+    )
+    last: dict = {}
+    for name, url, body in attempts:
+        code, parsed, token = token_request(api_key, url, body)
+        status = parsed.get("status") if parsed else ""
+        print(f"custom_token_http attempt={name}", code, status)
+        last = parsed
+        if not token:
+            continue
+        payload = decode_payload(token)
+        print(f"oidc_token=present attempt={name}")
+        lines = claim_lines(payload)
+        print("\n".join(lines))
+        signed_sub = payload.get("sub")
+        print("sub_matches_request=" + ("yes" if signed_sub == subject else "no"))
+        print(
+            "aud_matches_request="
+            + ("yes" if payload.get("aud") in (AUDIENCE, [AUDIENCE]) else "no")
+        )
+        return 1 if "wildcard=yes" in lines else 0
+    print("oidc_token=absent")
+    if last:
+        failure_fields(last)
+    return 1
 
 
 def list_field(parsed: object, key: str) -> list:
@@ -262,15 +317,25 @@ def probe_doppler() -> int:
             config = identity.get("config") if isinstance(identity.get("config"), dict) else {}
             claims_type = str(config.get("claims_type") or "")
             claims = config.get("claims") if isinstance(config.get("claims"), dict) else {}
-            wildcard = "yes" if "*" in json.dumps(claims) or "?" in json.dumps(claims) else "no"
+            rendered_claims = json.dumps(claims, sort_keys=True)
+            wildcard = "yes" if "*" in rendered_claims or "?" in rendered_claims else "no"
+            print("identity_keys", ",".join(sorted(identity)))
+            print("identity_config_keys", ",".join(sorted(config)))
             print(
                 "identity"
                 f" slug={slug}"
-                f" id={identity.get('id') or identity.get('identity') or ''}"
                 f" name={identity.get('name') or ''}"
                 f" claims_type={claims_type}"
                 f" wildcard={wildcard}"
             )
+            for key, value in identity.items():
+                if isinstance(value, str) and re.fullmatch(
+                    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    value,
+                    re.I,
+                ):
+                    print(f"identity_uuid field={key} value={value}")
+            print("identity_claims", scrub(rendered_claims)[:500])
     for project in ("dyad", "aws"):
         env_code, environments = http_json(
             "GET",
