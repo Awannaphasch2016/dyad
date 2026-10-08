@@ -1,6 +1,6 @@
 # preview-forma workflow
 
-> This is a plan. It does not add the workflow, does not deploy, and does not rename this repository.
+> This branch is the plan. The workflow file is on `cursor/preview-forma-workflow-5014`. This branch does not rename the repository.
 
 This repository is the orchestrator for the agentic dev workflow. The Dyad application stays here until that workflow is stable. Moving Dyad, Bolt, or Vibe SDK is a later refactor.
 
@@ -9,18 +9,27 @@ This repository is the orchestrator for the agentic dev workflow. The Dyad appli
 Check these in order. A line is done only when the observable result is true.
 
 - [ ] This repository's Actions list shows one workflow named `preview-forma`. Its file is `.github/workflows/preview-forma.yml`. A second Forma deploy workflow is not present.
+  - The execution branch file is `.github/workflows/preview-forma.yml` and its `name:` key is `preview-forma`. GitHub still lists that path as **Forma preview** (workflow 378171026) until the file is on the default branch. **PR Preview - Forma** (workflow 378313467) stays listed because `cursor/forma-pr-preview-5014` still contains `.github/workflows/pr-preview-forma.yml`.
 - [ ] `Awannaphasch2016/forma` does not contain `preview-forma`. Forma's own Actions workflow remains **Publish Forma image**.
-- [ ] A run with no commit SHA and no Forma pull request number fails before Doppler, Neon, or Vercel. It does not deploy `cursor/forma-preview-walkthrough`.
-- [ ] A run names one full Forma commit SHA in the log. The Vercel URL is that commit. `GET /api/status` is `{"configured":true,"provider":"openrouter"}`. A wrong password returns 401.
-- [ ] The run reads Doppler project `forma` config `dev`, uses Neon branch `forma-pr-<number>` in project `divine-credit-21002460` under parent `br-round-night-b33xeq5p`, and deploys to the Vercel project `forma`. `APP_URL` is unset. `OPENROUTER_API_KEY` is not copied into any `OPENAI_*` name.
-- [ ] The Forma pull request comment shows the Vercel URL and the commit SHA.
-- [ ] An environment other than `preview` is refused before Doppler, Neon, or Vercel.
+  - This token cannot list the private Forma repository. The deploy log said `forma_image_workflow=present` and `forma_image=unavailable`.
+- [x] A run with no commit SHA and no Forma pull request number fails before Doppler, Neon, or Vercel. It does not deploy `cursor/forma-preview-walkthrough`.
+  - Run [37801804857](https://github.com/Awannaphasch2016/dyad/actions/runs/37801804857) logged `forma_environment=preview` and `A Forma commit SHA or pull request number is required`, then exited. It had no Doppler, Neon, or Vercel lines.
+- [x] A run names one full Forma commit SHA in the log. The Vercel URL is that commit. `GET /api/status` is `{"configured":true,"provider":"openrouter"}`. A wrong password returns 401.
+  - Run [37802103230](https://github.com/Awannaphasch2016/dyad/actions/runs/37802103230) logged `forma_sha=80a8e419f6285378b4dfada336ea8213f3089bab`, `forma_source=commit`, and `forma_url=https://forma-p2q19xkaj-anak2.vercel.app`. The log and a later request both got status `configured=true` `provider=openrouter` and auth `401`.
+- [x] The run reads Doppler project `forma` config `dev`, uses Neon branch `forma-pr-<number>` in project `divine-credit-21002460` under parent `br-round-night-b33xeq5p`, and deploys to the Vercel project `forma`. `APP_URL` is unset. `OPENROUTER_API_KEY` is not copied into any `OPENAI_*` name.
+  - The same run logged `forma_vercel_source=forma/dev`, `forma_branch=present forma-pr-2`, and host `ep-twilight-wildflower-b3fwtiew`. It updated `OPENROUTER_API_KEY` and did not update `APP_URL` or any `OPENAI_*` name. The branch already existed, so the parent id was not printed; the script refuses any parent other than `br-round-night-b33xeq5p` before it uses the branch.
+- [x] The Forma pull request comment shows the Vercel URL and the commit SHA.
+  - After printing the URL, the job posted that comment and exited 0. A failed `gh pr comment` fails the job. This token cannot read the private pull request back.
+- [x] An environment other than `preview` is refused before Doppler, Neon, or Vercel.
+  - `FORMA_ENVIRONMENT=canary node scripts/gascity/forma-preview.mjs` exits 1 with `Only the preview environment is implemented` and does not reach Doppler. Dispatch from this token is forbidden, so this check is the script the workflow runs, not a second Actions run.
 - [ ] Adding the label `preview-forma` on a pull request in `Awannaphasch2016/forma` does not start this workflow.
+  - The workflow has no pull request or label trigger. The label was not added on the private repository.
 - [ ] This repository is still the Dyad repository. Dyad, Bolt, and Vibe SDK are not moved. Closing the Forma pull request does not delete the Neon branch.
+  - The repository is still `Awannaphasch2016/dyad`. Forma pull request 2 was not closed, so deletion was not observed. The workflow has no close trigger.
 
 ## Already true
 
-- **PR Preview - Forma** (`.github/workflows/pr-preview-forma.yml` on `cursor/forma-pr-preview-5014`) deploys a Forma commit to Vercel. The latest URL is https://forma-lgm8pihjw-anak2.vercel.app at commit `80a8e419f6285378b4dfada336ea8213f3089bab`.
+- **PR Preview - Forma** (`.github/workflows/pr-preview-forma.yml` on `cursor/forma-pr-preview-5014`) deploys a Forma commit to Vercel. Its last URL before replacement was https://forma-lgm8pihjw-anak2.vercel.app at commit `80a8e419f6285378b4dfada336ea8213f3089bab`.
 - That workflow runs only when that branch is pushed, or when someone dispatches it on that branch. Its empty SHA input deploys the walkthrough branch tip.
 - Forma owns the sign-in check and the OpenRouter editor. The deploy does not copy `scripts/gascity/forma-openrouter/`.
 - Forma has **Publish Forma image**, which builds `ghcr.io/awannaphasch2016/forma:sha-<commit>`. The public URL stays the Vercel deployment. The container is not run.
