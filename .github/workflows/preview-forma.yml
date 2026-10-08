@@ -6,9 +6,8 @@ name: preview-forma
 # Builder repositories only publish images. This job pulls those pins.
 # It does not build them and it does not upload source to Vercel.
 #
-# The push trigger on this branch starts that same task so the preview can be
-# checked without a label click. Label removal and a closed pull request stop
-# the task and delete only the Neon branch preview-forma-<number>.
+# Label removal and a closed pull request stop the task and delete only the
+# Neon branch preview-forma-<number>.
 
 on:
   pull_request:
@@ -18,9 +17,6 @@ on:
       pr:
         description: Pull request number in this repository
         required: true
-  push:
-    branches:
-      - cursor/preview-forma-compose-5014
 
 permissions:
   contents: read
@@ -84,7 +80,7 @@ jobs:
 
   launch:
     needs: [decide, check]
-    if: always() && (needs.check.result == 'success' || (github.event_name == 'push' && github.ref == 'refs/heads/cursor/preview-forma-compose-5014'))
+    if: needs.check.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: ai-bots
