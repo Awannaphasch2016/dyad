@@ -11,7 +11,7 @@ Draft PR 82 adds the label path in this repository. It does not start a containe
 - The job asks for `permission-packages: read`. `PREVIEW_FORMA_DOCKER_HOST` is unset, so it stops before Doppler, Neon, and Docker.
 - Cleanup would use Neon branch `preview-forma-<number>` in `divine-credit-21002460`, parent `br-round-night-b33xeq5p`. It refuses `forma-pr-*`, `proud-salad-68182047`, `ep-young-wave-b3cwe0rz`, Devbox `Wewebplus-ci`, and `weaver-plus`. With no host it logs `preview_forma_down=skipped` and does not call Neon. `forma-pr-2` is untouched.
 - **Publish Forma image** is not on `forma` `main`. A local commit on `cursor/publish-image-main-5014` could not be pushed: `cursor[bot]` receives HTTP 403 from `Awannaphasch2016/forma`. The image that already exists is still the walkthrough tag above.
-- The Docker host is still unchosen. That is the blocker before a live label test.
+- The host is ECS Fargate in `ap-southeast-1`, on a new cluster. It is not Devbox `Wewebplus-ci` and not the production EC2 host. Doppler `aws/dev` user `anak` can assume `arn:aws:iam::755283537543:role/preview-forma-deploy`, which has policy `preview-forma-fargate` (compute only in that region, IAM only on `role/preview-forma-*`). Run [37840598579](https://github.com/Awannaphasch2016/dyad/actions/runs/37840598579). The cluster, task definition, load balancer, and security group are not created. No container has been started.
 
 This repository is the orchestrator. A preview pull request here can run more than one container, including more than one image from the same builder repository. The label belongs on that pull request. Forma, Bolt, and Vibe SDK only publish images. Moving those applications out of this repository waits until the orchestration pattern is stable.
 
@@ -28,7 +28,7 @@ The revised shape:
 
 The existing `preview` label stays the Dyad Devbox preview. This workflow uses a different label so the two do not start each other. `preview-forma` is the first label. The Compose file is what allows a second container. Renaming the label can wait until a second builder is actually in the file.
 
-The Docker host that runs Compose is not chosen here. It is not the production EC2 host. It is not Devbox `Wewebplus-ci`, because that machine is the Dyad `preview` label. Picking the host is a blocker before a live label test, not a reason to put the label back on Forma.
+The host is ECS Fargate in `ap-southeast-1`, a new cluster. It is not the production EC2 host. It is not Devbox `Wewebplus-ci`, because that machine is the Dyad `preview` label. One task holds every container listed in the Compose file. Neon stays outside the task. The cluster does not exist yet, so a live label test is still blocked. That is not a reason to put the label back on Forma.
 
 ## What was already proven
 
@@ -50,7 +50,7 @@ These facts stay true. They describe the Vercel source deploy, which this direct
 | Vercel upload of Forma's source                | `docker compose` pull and up of the pinned images                                                                                                                                                               |
 | One Forma commit per preview                   | One Compose file, one or more image tags                                                                                                                                                                        |
 | Neon branch `forma-pr-<forma number>`          | Neon branch for **this** pull request number, still under `divine-credit-21002460`, parent `br-round-night-b33xeq5p`                                                                                            |
-| Public URL is a Vercel preview URL             | Public URL is whatever the chosen Docker host exposes. The Vercel URL above remains the old proof                                                                                                               |
+| Public URL is a Vercel preview URL             | Public URL is the load balancer for the Fargate service in `ap-southeast-1`. That load balancer is not created yet. The Vercel URL above remains the old proof                                                  |
 | Re-read the Forma label before writing the URL | The workflow is the labeled pull request. Unlabel and close are events in this repository. `commandForPullRequest(event, "preview-forma")` already returns `update` or `destroy` and is not wired to a workflow |
 
 Forma does not get a new workflow besides image publish. Publish currently runs only on a push to `cursor/forma-preview-walkthrough`. `forma` `main` has a Dockerfile and no workflow. A tag has to exist before an orchestrator pull request can pin it.
@@ -69,7 +69,7 @@ Forma does not get a new workflow besides image publish. Publish currently runs 
 
 ## Before any merge
 
-1. Choose the Docker host. Not the production EC2 host. Not Devbox `Wewebplus-ci`.
+1. The host is ECS Fargate in `ap-southeast-1`. Next is the cluster, task definition, and load balancer, using role `preview-forma-deploy`. Not the production EC2 host. Not Devbox `Wewebplus-ci`.
 2. Move **Publish Forma image** onto `forma` `main` so a commit SHA can be pinned. The workflow already exists on the walkthrough branch.
 3. The job that pulls requests `permission-packages: read`. The installation already allows it.
 4. Add `on.pull_request` for `labeled`, `unlabeled`, `synchronize`, `reopened`, and `closed`, limited to the `preview-forma` label, in this repository. Do not add that trigger to the Dyad `preview` workflow.
