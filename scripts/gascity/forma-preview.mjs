@@ -272,29 +272,47 @@ function gh(args, input) {
   return run("gh", args, { input });
 }
 
-function ensureWalkthroughPullRequest() {
-  const existing = gh([
-    "pr",
-    "list",
-    "--repo",
-    FORMA_REPOSITORY,
-    "--head",
-    `Awannaphasch2016:${WALKTHROUGH_BRANCH}`,
-    "--state",
-    "open",
-    "--json",
-    "number",
-  ]);
-  const rows = JSON.parse(existing || "[]");
-  if (rows[0]?.number) return String(rows[0].number);
-  const main = JSON.parse(
+function openPull(head) {
+  const listed = JSON.parse(
     gh([
       "api",
-      `repos/${FORMA_REPOSITORY}/git/ref/heads/main`,
-      "--jq",
-      "{sha:.object.sha}",
+      `repos/${FORMA_REPOSITORY}/pulls?head=Awannaphasch2016:${encodeURIComponent(head)}&state=open`,
     ]),
   );
+  const found = listed.find((pull) => pull.head?.ref === head);
+  if (found?.number) return String(found.number);
+  const pull = JSON.parse(
+    gh(
+      [
+        "api",
+        "--method",
+        "POST",
+        `repos/${FORMA_REPOSITORY}/pulls`,
+        "--input",
+        "-",
+      ],
+      JSON.stringify({
+        title: "Preview Forma",
+        head,
+        base: "main",
+        body: "Preview this Forma commit on its own Neon branch.",
+      }),
+    ),
+  );
+  return String(pull.number);
+}
+
+function ensureWalkthroughPullRequest() {
+  const ref = spawnSync(
+    "gh",
+    ["api", `repos/${FORMA_REPOSITORY}/git/ref/heads/${WALKTHROUGH_BRANCH}`],
+    { encoding: "utf8", env: process.env },
+  );
+  if (ref.status === 0) return openPull(WALKTHROUGH_BRANCH);
+  const main = JSON.parse(
+    gh(["api", `repos/${FORMA_REPOSITORY}/git/ref/heads/main`]),
+  );
+  main.sha = main.object.sha;
   const note =
     "This pull request is the Forma preview walkthrough.\nThe site is the Vercel preview commented below.\n";
   const blob = JSON.parse(
@@ -364,25 +382,7 @@ function ensureWalkthroughPullRequest() {
       sha: commit.sha,
     }),
   );
-  const pull = JSON.parse(
-    gh(
-      [
-        "api",
-        "--method",
-        "POST",
-        `repos/${FORMA_REPOSITORY}/pulls`,
-        "--input",
-        "-",
-      ],
-      JSON.stringify({
-        title: "Preview Forma",
-        head: WALKTHROUGH_BRANCH,
-        base: "main",
-        body: "Preview this Forma commit on its own Neon branch.",
-      }),
-    ),
-  );
-  return String(pull.number);
+  return openPull(WALKTHROUGH_BRANCH);
 }
 
 async function migrate(directUrl) {
