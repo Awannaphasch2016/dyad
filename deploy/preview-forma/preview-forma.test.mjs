@@ -4,7 +4,12 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { commandForFormaPreview } from "./command.mjs";
-import { manifestUrl, pinnedImages } from "./compose.mjs";
+import {
+  manifestUrl,
+  parseCompose,
+  pinnedImages,
+  readPinnedImages,
+} from "./compose.mjs";
 import { assertPreviewHost } from "./host.mjs";
 import { decideFromEnv, planDown } from "./run.mjs";
 import {
@@ -127,6 +132,19 @@ test("compose pins published images and rejects a build", () => {
   );
   assert.match(committed, new RegExp(sha));
   assert.equal(committed.includes("build:"), false);
+  assert.throws(
+    () => parseCompose("services:\n  forma:\n    - broken\n"),
+    /unsupported/,
+  );
+});
+
+test("the committed compose file parses without a package install", async () => {
+  const images = await readPinnedImages(
+    fileURLToPath(new URL("./compose.yml", import.meta.url)),
+  );
+  assert.equal(images.length, 1);
+  assert.equal(images[0].service, "forma");
+  assert.equal(images[0].image, formaImage);
 });
 
 test("cleanup names only this pull request and refuses the known hosts", () => {

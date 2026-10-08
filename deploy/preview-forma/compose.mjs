@@ -1,5 +1,31 @@
 import { readFile } from "node:fs/promises";
-import { parse } from "yaml";
+
+// The runner does not install this repository. Accept only the small compose
+// shape this preview uses.
+export function parseCompose(text) {
+  const document = { services: {} };
+  let current = null;
+  for (const raw of String(text).split(/\r?\n/)) {
+    if (/^\s*#/.test(raw) || !raw.trim()) continue;
+    if (raw.trim() === "services:") continue;
+    const service = /^ {2}([A-Za-z0-9][A-Za-z0-9._-]*):\s*$/.exec(raw);
+    if (service) {
+      current = service[1];
+      document.services[current] = {};
+      continue;
+    }
+    const field = /^ {4}([A-Za-z0-9_-]+):\s*(\S.*?)\s*$/.exec(raw);
+    if (current && field) {
+      document.services[current][field[1]] = field[2].replace(
+        /^["']|["']$/g,
+        "",
+      );
+      continue;
+    }
+    throw new Error("Compose file has an unsupported line");
+  }
+  return document;
+}
 
 const pinnedImage =
   /^ghcr\.io\/awannaphasch2016\/([a-z0-9][a-z0-9._-]{0,100})(?::sha-([0-9a-f]{40})|@sha256:([0-9a-f]{64}))$/;
@@ -42,7 +68,7 @@ export function pinnedImages(document) {
 
 export async function readPinnedImages(path) {
   const text = await readFile(path, "utf8");
-  return pinnedImages(parse(text));
+  return pinnedImages(parseCompose(text));
 }
 
 export function manifestUrl(image) {
