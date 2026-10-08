@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   redact,
@@ -106,23 +105,4 @@ test("registry access logs the pull scope and not the token", () => {
   const token = `header.${payload}.signature-secret`;
   assert.equal(registryAccess(token), "awannaphasch2016/forma:pull");
   assert.equal(registryAccess("not-a-jwt"), "none");
-});
-
-test("the workflow only reads after requesting the four grants", () => {
-  const workflow = readFileSync(
-    new URL("../workflows/verify-forma-app-access.yml", import.meta.url),
-    "utf8",
-  );
-  for (const permission of [
-    "permission-contents: write",
-    "permission-packages: write",
-    "permission-pull-requests: write",
-    "permission-workflows: write",
-  ]) {
-    assert.equal(workflow.includes(permission), true);
-  }
-  assert.equal(workflow.includes("repositories: forma,bolt.diy,vibesdk"), true);
-  assert.equal(workflow.includes("permission-actions:"), false);
-  assert.equal(workflow.includes("git push"), false);
-  assert.equal(workflow.includes("DOPPLER"), false);
 });

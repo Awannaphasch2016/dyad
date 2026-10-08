@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // Read-only check for the dyad-harness installation.
-// The workflow asks for contents, packages, pull requests, and workflows
-// write on forma, bolt.diy, and vibesdk. Token creation fails when any of
-// those grants is missing. This script then only sends GET requests.
+// Run 37843149097 created a token for contents, packages, pull requests,
+// and workflows write on forma, bolt.diy, and vibesdk. Repository, file,
+// and pull request reads succeeded. The GHCR manifest stayed forbidden and
+// the registry access list was empty. The push-triggered workflow was
+// removed after that run. Do not add it back as a standing secret job.
 
 import { writeSync } from "node:fs";
 import { pathToFileURL } from "node:url";
