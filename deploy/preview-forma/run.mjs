@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 // Decide, check pins, or skip cleanup. No Doppler, Neon, or Docker call.
 
-import { appendFileSync } from "node:fs";
+import { appendFileSync, readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { commandForFormaPreview } from "./command.mjs";
 import { manifestUrl, readPinnedImages } from "./compose.mjs";
+import { assertPreviewHost } from "./host.mjs";
 import {
   assertDockerHost,
   assertFormaPreviewTarget,
@@ -13,8 +14,12 @@ import {
   formaPreviewBranchName,
 } from "./target.mjs";
 
-const manifestAccept =
-  "application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json";
+const manifestAccept = [
+  "application/vnd.oci.image.manifest.v1+json",
+  "application/vnd.oci.image.index.v1+json",
+  "application/vnd.docker.distribution.manifest.list.v2+json",
+  "application/vnd.docker.distribution.manifest.v2+json",
+].join(", ");
 
 export function decideFromEnv(env = process.env) {
   const pr = String(env.PR ?? "").trim();
@@ -80,9 +85,12 @@ export async function checkCompose(env = process.env) {
       console.log(`preview_forma_digest=${item.service} ${digest}`);
     }
   }
-  assertDockerHost(env.PREVIEW_FORMA_DOCKER_HOST);
-  console.log("preview_forma_runner=absent");
-  throw new Error("Compose runner is not configured");
+  const override = String(env.PREVIEW_FORMA_DOCKER_HOST ?? "").trim();
+  if (override) assertDockerHost(override);
+  const hostPath = env.HOST || "deploy/preview-forma/host.json";
+  const host = assertPreviewHost(JSON.parse(readFileSync(hostPath, "utf8")));
+  console.log(`preview_forma_host=${host.albDns}`);
+  console.log("preview_forma_task=not_started");
 }
 
 export function planDown(env = process.env) {
@@ -91,18 +99,10 @@ export function planDown(env = process.env) {
     parentId: FORMA_PARENT_BRANCH_ID,
     branchName: formaPreviewBranchName(env.PR),
   });
-  let host = "";
-  try {
-    host = assertDockerHost(env.PREVIEW_FORMA_DOCKER_HOST);
-  } catch (error) {
-    if (String(error.message).includes("not set")) {
-      console.log("preview_forma_down=skipped host=absent");
-      return { action: "skip", ...target };
-    }
-    throw error;
-  }
-  console.log(`preview_forma_down=blocked host=${host}`);
-  throw new Error("Compose runner is not configured");
+  const override = String(env.PREVIEW_FORMA_DOCKER_HOST ?? "").trim();
+  if (override) assertDockerHost(override);
+  console.log("preview_forma_down=skipped task=not_started");
+  return { action: "skip", ...target };
 }
 
 async function main() {

@@ -5,6 +5,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { commandForFormaPreview } from "./command.mjs";
 import { manifestUrl, pinnedImages } from "./compose.mjs";
+import { assertPreviewHost } from "./host.mjs";
 import { decideFromEnv, planDown } from "./run.mjs";
 import {
   assertDockerHost,
@@ -170,7 +171,30 @@ test("cleanup names only this pull request and refuses the known hosts", () => {
   });
 });
 
-test("the workflow stops before Doppler, Neon, and Docker", () => {
+test("the recorded host is the Fargate load balancer and the task stays stopped", () => {
+  const host = JSON.parse(
+    readFileSync(new URL("./host.json", import.meta.url), "utf8"),
+  );
+  assert.equal(assertPreviewHost(host).started, false);
+  assert.equal(
+    host.albDns,
+    "preview-forma-2018533952.ap-southeast-1.elb.amazonaws.com",
+  );
+  assert.throws(
+    () => assertPreviewHost({ ...host, started: true }),
+    /stay stopped/,
+  );
+  assert.throws(
+    () =>
+      assertPreviewHost({
+        ...host,
+        albDns: "wewebplus-ci.ap-southeast-1.elb.amazonaws.com",
+      }),
+    /Dyad preview host/,
+  );
+});
+
+test("the workflow checks the host and does not start a task", () => {
   const workflow = readFileSync(
     new URL("../../.github/workflows/preview-forma.yml", import.meta.url),
     "utf8",
@@ -191,9 +215,13 @@ test("the workflow stops before Doppler, Neon, and Docker", () => {
       encoding: "utf8",
     },
   );
-  assert.equal(skipped.status, 1);
+  assert.equal(skipped.status, 0);
   assert.match(skipped.stdout, /preview_forma_image=forma/);
-  assert.match(skipped.stdout, /PREVIEW_FORMA_DOCKER_HOST is not set/);
+  assert.match(
+    skipped.stdout,
+    /preview_forma_host=preview-forma-2018533952.ap-southeast-1.elb.amazonaws.com/,
+  );
+  assert.match(skipped.stdout, /preview_forma_task=not_started/);
   const down = spawnSync(
     process.execPath,
     ["deploy/preview-forma/run.mjs", "down"],
@@ -204,5 +232,5 @@ test("the workflow stops before Doppler, Neon, and Docker", () => {
     },
   );
   assert.equal(down.status, 0);
-  assert.match(down.stdout, /preview_forma_down=skipped host=absent/);
+  assert.match(down.stdout, /preview_forma_down=skipped task=not_started/);
 });

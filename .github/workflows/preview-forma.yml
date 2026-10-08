@@ -5,8 +5,9 @@ name: preview-forma
 # workflow. Builder repositories only publish images. This job pulls those
 # pins. It does not build them and it does not upload source to Vercel.
 #
-# PREVIEW_FORMA_DOCKER_HOST is unset, so the job stops before Doppler, Neon,
-# and Docker. The Dyad preview host and the production host are refused.
+# The host is the Fargate load balancer in deploy/preview-forma/host.json.
+# This job checks the pinned images and does not start a task. The Dyad
+# preview host and the production host are refused.
 
 on:
   pull_request:
