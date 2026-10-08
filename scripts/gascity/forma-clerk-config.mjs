@@ -45,6 +45,17 @@ export function assertDevelopmentClerk(publishableKind, secretKind) {
   }
 }
 
+export function neonSqlHost(databaseUrl) {
+  const endpoint = new URL(databaseUrl);
+  if (
+    endpoint.protocol !== "postgresql:" &&
+    endpoint.protocol !== "postgres:"
+  ) {
+    throw new Error("Membership store is unavailable.");
+  }
+  return endpoint.hostname.replace("-pooler.", ".");
+}
+
 export function membershipRoleSummary(rows) {
   const counts = new Map();
   for (const row of rows ?? []) {
@@ -103,18 +114,14 @@ async function download(token) {
 }
 
 async function membershipRoles(databaseUrl) {
-  const endpoint = new URL(databaseUrl);
-  if (
-    endpoint.protocol !== "postgresql:" &&
-    endpoint.protocol !== "postgres:"
-  ) {
-    throw new Error("Membership store is unavailable.");
-  }
-  const response = await fetch(`https://${endpoint.host}/sql`, {
+  const host = neonSqlHost(databaseUrl);
+  const direct = new URL(databaseUrl);
+  direct.hostname = host;
+  const response = await fetch(`https://${host}/sql`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Neon-Connection-String": databaseUrl,
+      "Neon-Connection-String": direct.toString(),
     },
     body: JSON.stringify({
       query:
@@ -122,7 +129,9 @@ async function membershipRoles(databaseUrl) {
       params: [],
     }),
   });
-  if (!response.ok) throw new Error("Membership store is unavailable.");
+  if (!response.ok) {
+    throw new Error(`Membership store is unavailable (${response.status}).`);
+  }
   const payload = await response.json();
   const fields = payload.fields ?? [];
   return (payload.rows ?? []).map((row) => {

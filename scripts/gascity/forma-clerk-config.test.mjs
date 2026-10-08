@@ -4,6 +4,7 @@ import {
   assertDevelopmentClerk,
   clerkReferencePlan,
   membershipRoleSummary,
+  neonSqlHost,
   redact,
 } from "./forma-clerk-config.mjs";
 
@@ -29,6 +30,15 @@ test("a live Clerk key stops before any session is opened", () => {
     /Refusing a live Clerk key/,
   );
   assert.doesNotThrow(() => assertDevelopmentClerk("test", "test"));
+});
+
+test("the membership query uses the direct Neon host", () => {
+  assert.equal(
+    neonSqlHost(
+      "postgresql://owner:secret@ep-example-pooler.c-4.us-east-1.aws.neon.tech/neondb",
+    ),
+    "ep-example.c-4.us-east-1.aws.neon.tech",
+  );
 });
 
 test("membership logs count roles and secret text is redacted", () => {
