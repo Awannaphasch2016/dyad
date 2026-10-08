@@ -9,6 +9,7 @@ on:
   push:
     branches:
       - cursor/preview-bridge-proof-9e7a
+      - cursor/formula-config-ui-55d6
 
 permissions:
   contents: read

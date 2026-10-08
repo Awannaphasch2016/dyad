@@ -1,17 +1,17 @@
 # Formula pages for three phases
 
-First iteration: three plain-text formula pages. Each page edits one phase. This plan does not add the pages yet.
+First iteration: three plain-text formula pages. Each page edits one phase. This branch implements the pages.
 
 Web builders stay unwired until these pages work. Cooking and running beads stay on the GasCity host. The preview workflow does neither.
 
 ## What this iteration does
 
-| In this iteration | Later |
-| --- | --- |
+| In this iteration                             | Later                                                           |
+| --------------------------------------------- | --------------------------------------------------------------- |
 | Discovery, Implementation, and Delivery pages | Connecting the saved formulas to DYAD, Forma, Bolt, or Vibe SDK |
-| Validate, save, reload, and undo on each page | Cooking or running beads from the preview |
-| History of each save in the preview database | A diff instead of the full text, or a Durable Object |
-| | A visual formula editor |
+| Validate, save, reload, and undo on each page | Cooking or running beads from the preview                       |
+| History of each save in the preview database  | A diff instead of the full text, or a Durable Object            |
+|                                               | A visual formula editor                                         |
 
 GitHub Actions deploys the pages inside the existing `dyad` preview container. The pages edit formula text. GasCity keeps the current file and, later, creates and runs the beads.
 
@@ -19,20 +19,20 @@ GitHub Actions deploys the pages inside the existing `dyad` preview container. T
 
 A formula edit touches two places. They do different jobs.
 
-| Store | What it holds | Who reads it |
-| --- | --- | --- |
-| `<cityRoot>/formulas/<name>.toml` on the GasCity host | The current formula text | GasCity's compiler, `gc formula show`, and a later cook |
-| `wewebplus.formula_revisions` in the preview Postgres | One row per successful save: phase name, time, and the full text | The formula page, for reload and undo |
+| Store                                                 | What it holds                                                    | Who reads it                                            |
+| ----------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------- |
+| `<cityRoot>/formulas/<name>.toml` on the GasCity host | The current formula text                                         | GasCity's compiler, `gc formula show`, and a later cook |
+| `wewebplus.formula_revisions` in the preview Postgres | One row per successful save: phase name, time, and the full text | The formula page, for reload and undo                   |
 
 GasCity's SQLite `beads` table is the work created by a cook. A formula edit does not write a row there. Beads already cooked from an older file stay as they are. The new text applies to the next cook.
 
 The three files are:
 
-| Page | File | `formula` name inside the file |
-| --- | --- | --- |
-| Discovery | `<cityRoot>/formulas/discovery.toml` | `discovery` |
-| Implementation | `<cityRoot>/formulas/implementation.toml` | `implementation` |
-| Delivery | `<cityRoot>/formulas/delivery.toml` | `delivery` |
+| Page           | File                                      | `formula` name inside the file |
+| -------------- | ----------------------------------------- | ------------------------------ |
+| Discovery      | `<cityRoot>/formulas/discovery.toml`      | `discovery`                    |
+| Implementation | `<cityRoot>/formulas/implementation.toml` | `implementation`               |
+| Delivery       | `<cityRoot>/formulas/delivery.toml`       | `delivery`                     |
 
 The preview database is the Neon branch the preview deploy already attaches. The table is new. `wewebplus.audit_events` is not the history. It records an action, not the formula text.
 
@@ -99,7 +99,7 @@ The pages ship inside the existing `dyad` service (`Dockerfile.gascity`, `compos
 
 The preview URL is `https://pr-<n>.anakwannaphaschaiyong.com`. The preview image does not contain `gc`. The preview workflow does not cook or sling. `gascity-rollout.yml` is not how these pages are deployed.
 
-`preview-image.yml` on this base publishes only for `cursor/preview-bridge-proof-9e7a`. The implementation branch has to be allowed to publish the same `dyad` image. That change still must not cook or sling.
+`preview-image.yml` publishes this branch the same way it publishes `cursor/preview-bridge-proof-9e7a`: the `dyad` image only. That workflow does not cook or sling.
 
 ## What "working" means
 
