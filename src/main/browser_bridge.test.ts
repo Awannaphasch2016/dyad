@@ -588,6 +588,13 @@ describe("browser bridge", () => {
       "/",
     );
     expect(other.status).toBe(404);
+    const down = await requestWithHost(
+      bridge.port,
+      "p52149.anakwannaphaschaiyong.com",
+      "/",
+    );
+    expect(down.status).toBe(502);
+    expect(down.body).toBe("Preview is not reachable");
     const upgraded = await upgradeWithHost(bridge.port, host, "/vite-hmr");
     expect(upgraded.startsWith("HTTP/1.1 101")).toBe(true);
     expect(upgradeUrl).toBe("/vite-hmr");
