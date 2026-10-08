@@ -386,7 +386,7 @@ function ensureWalkthroughPullRequest() {
 }
 
 async function migrate(directUrl) {
-  const checkout = mkdtemp(join(tmpdir(), "forma-preview-"));
+  const checkout = await mkdtemp(join(tmpdir(), "forma-preview-"));
   run("gh", [
     "repo",
     "clone",
