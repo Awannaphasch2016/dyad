@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { patchBrowserPolyfills } from "./patch-bolt-polyfills.mjs";
 import {
   cloudflareReferencePlan,
   configReport,
@@ -123,6 +124,15 @@ test("the preview job reads Doppler and does not store Cloudflare secrets on bol
   assert.match(deploy, /export-bolt-preview-env\.mjs/);
   assert.equal(deploy.includes("secrets.CLOUDFLARE_API_TOKEN"), false);
   assert.equal(deploy.includes("secrets.CLOUDFLARE_ACCOUNT_ID"), false);
+});
+
+test("the polyfill patch skips the rolldown runtime", () => {
+  const source =
+    "transform(code: string, id: string) {\n      return null;\n    }";
+  const patched = patchBrowserPolyfills(source);
+  assert.match(patched, /id\.includes\("rolldown"\)/);
+  assert.equal(patchBrowserPolyfills(patched), patched);
+  assert.throws(() => patchBrowserPolyfills("no transform here"));
 });
 
 test("github env export accepts only the two Cloudflare names", () => {

@@ -12,6 +12,7 @@ on:
       - .github/workflows/bolt-preview-from-doppler.yml
       - scripts/doppler/export-bolt-preview-env.mjs
       - scripts/doppler/bolt-project.mjs
+      - scripts/doppler/patch-bolt-polyfills.mjs
 
 permissions:
   contents: read
@@ -55,6 +56,9 @@ jobs:
           node-version: 22
           cache: pnpm
           cache-dependency-path: bolt/pnpm-lock.yaml
+
+      - name: Keep the Buffer shim out of the runtime chunk
+        run: node scripts/doppler/patch-bolt-polyfills.mjs bolt/vite.config.ts
 
       - name: Install bolt
         working-directory: bolt
