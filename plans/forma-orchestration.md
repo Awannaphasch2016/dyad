@@ -6,14 +6,27 @@
 
 Check these in order. A line is done only when the observable result is true.
 
-- [ ] The sign-in host check and the OpenRouter editor are commits in `Awannaphasch2016/forma`. This repository does not copy those files during deploy.
-- [ ] The preview log names one full Forma commit SHA. The Vercel deployment is that commit.
+- [x] The sign-in host check and the OpenRouter editor are commits in `Awannaphasch2016/forma`. This repository does not copy those files during deploy.
+- [x] The preview log names one full Forma commit SHA. The Vercel deployment is that commit.
 - [ ] Forma’s build publishes `ghcr.io/awannaphasch2016/forma:sha-<commit>` and the log shows the image digest `sha256:…`. The URL you open is still a Vercel URL.
-- [ ] The workflow **PR Preview - Forma** in this repository accepts that commit SHA and an environment. The environment defaults to `preview`.
-- [ ] Preview uses Doppler project `forma` config `dev`, Neon branch `forma-pr-<number>` in project `divine-credit-21002460`, and the Vercel project `forma`. `APP_URL` is unset. The OpenRouter key is not copied into any `OPENAI_*` name.
-- [ ] The Forma pull request comment shows the Vercel URL and the commit SHA.
+- [x] The workflow **PR Preview - Forma** in this repository accepts that commit SHA and an environment. The environment defaults to `preview`.
+- [x] Preview uses Doppler project `forma` config `dev`, Neon branch `forma-pr-<number>` in project `divine-credit-21002460`, and the Vercel project `forma`. `APP_URL` is unset. The OpenRouter key is not copied into any `OPENAI_*` name.
+- [x] The Forma pull request comment shows the Vercel URL and the commit SHA.
 - [ ] The same SHA can be named again with a different environment and no new image build. That second deploy is not part of this plan.
-- [ ] This repository is still the Dyad repository. Dyad, Bolt, and Vibe SDK are not moved.
+- [x] This repository is still the Dyad repository. Dyad, Bolt, and Vibe SDK are not moved.
+
+## Evidence
+
+[PR Preview - Forma run 37760424992](https://github.com/Awannaphasch2016/dyad/actions/runs/37760424992) on branch `cursor/forma-pr-preview-5014`.
+
+- `forma_sha=5c8417894bced54ca25123c96fa34b27cce9298b`
+- `forma_source=commit`
+- `forma_environment=preview`
+- `forma_url=https://forma-hs90r9mvg-anak2.vercel.app`
+- `GET /api/status` is `{"configured":true,"provider":"openrouter"}`. A wrong password returns 401.
+- The job did not copy `scripts/gascity/forma-openrouter/`.
+- `forma_image_workflow=unavailable`. The dyad-harness GitHub App installation cannot edit workflow files, so Forma's image workflow was not added and no digest was published. The open URL is still the Vercel deployment.
+- Naming an environment other than `preview` is refused in code. A second environment was not deployed.
 
 ## Already true
 
