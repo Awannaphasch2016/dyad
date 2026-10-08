@@ -10,7 +10,7 @@ Passing a phase is what allows Harness to take over that workflow. GitHub remain
 | ----------------------------- | ------------------------ | ----------------------------------------------------------------------------------- |
 | 1. Mirror CI                  | 2                        | Pass. GitHub Actions is still the required check.                                   |
 | Logs                          | 14                       | Started, not scored. Does not block phase 2. Must be scored before the set is done. |
-| 2. Mirror image reuse         | 1, 4                     | In progress. GitHub Actions images passed. The app installation already has packages write. A one-layer push probe is checking the package ACL. |
+| 2. Mirror image reuse         | 1, 4                     | Blocked on a classic `write:packages` token. The app token has `packages=write` and GHCR still denies the push. |
 | 3. Secrets and isolation      | 5, 6                     | Not run. Required before any preview deploy.                                        |
 | 4. One preview, then a second | 3, 7, 8, 11, 13, then 12 | Not run.                                                                            |
 | 5. Agent trial                | 15                       | Not run.                                                                            |
@@ -28,6 +28,10 @@ Passing a phase is what allows Harness to take over that workflow. GitHub remain
 - Do not SSH to `13.251.216.187`. Do not change the apex DNS record for `anakwannaphaschaiyong.com`.
 - This schedule does not change branch protection. Switching a required check is a separate step after that experiment's row says pass.
 - The Electron matrix stays out unless it is explicitly requested.
+
+## Needed to continue phase 2
+
+The GitHub App installation is already correct. Save a classic personal access token as the repository secret `GHCR_PUSH_TOKEN`. Do not paste that token into chat. The image build stays stopped until that secret exists.
 
 ## Human steps still open
 
