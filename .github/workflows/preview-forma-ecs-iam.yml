@@ -1,0 +1,34 @@
+name: preview-forma ECS IAM
+
+# One shot on this branch. Attaches preview-forma-fargate to the Doppler
+# aws/dev caller. Do not merge this file to main.
+
+on:
+  push:
+    branches:
+      - cursor/preview-forma-ecs-iam-5014
+    paths:
+      - .github/workflows/preview-forma-ecs-iam.yml
+      - scripts/gascity/preview-forma-iam.mjs
+      - scripts/gascity/preview-forma-iam.test.mjs
+
+permissions:
+  contents: read
+
+jobs:
+  attach:
+    if: github.ref == 'refs/heads/cursor/preview-forma-ecs-iam-5014'
+    runs-on: ubuntu-latest
+    environment: ai-bots
+    timeout-minutes: 10
+    steps:
+      - name: Check out the IAM script
+        uses: actions/checkout@v5
+
+      - name: Attach the Fargate policy
+        env:
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+        run: |
+          set -euo pipefail
+          set +x
+          node scripts/gascity/preview-forma-iam.mjs
