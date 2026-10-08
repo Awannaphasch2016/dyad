@@ -1,45 +1,91 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { redact, republishFormaImage } from "./republish-forma-image.mjs";
+import {
+  publishWorkflow,
+  redact,
+  republishFormaImage,
+  workflowNeedsOwnerLogin,
+} from "./republish-forma-image.mjs";
 
-test("republish keeps the same tree and hides the token", async () => {
-  const parent = "80a8e419f6285378b4dfada336ea8213f3089bab";
-  const tree = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-  const next = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+test("owner login workflow does not use the app actor", () => {
+  assert.equal(workflowNeedsOwnerLogin("username: ${{ github.actor }}"), true);
+  assert.equal(
+    workflowNeedsOwnerLogin(publishWorkflow.replaceAll("\\${", "${")),
+    false,
+  );
+  assert.equal(publishWorkflow.includes("github.actor"), false);
+  assert.equal(publishWorkflow.includes("DOPPLER"), false);
+  assert.equal(publishWorkflow.includes("permission-actions"), false);
+  assert.equal(publishWorkflow.includes('visibility: "public"'), true);
+});
+
+test("republish replaces the actor login and hides the token", async () => {
   const calls = [];
+  const fileSha = "cccccccccccccccccccccccccccccccccccccccc";
+  const commit = "dddddddddddddddddddddddddddddddddddddddd";
   const fetchImpl = async (url, options = {}) => {
     calls.push({
       url: String(url),
       method: options.method,
       body: options.body,
     });
-    if (
-      String(url).endsWith("/git/ref/heads/cursor/forma-preview-walkthrough")
-    ) {
-      return { ok: true, json: async () => ({ object: { sha: parent } }) };
+    if (!options.method) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          sha: fileSha,
+          content: Buffer.from(
+            "username: ${{ github.actor }}\n",
+            "utf8",
+          ).toString("base64"),
+        }),
+      };
     }
-    if (String(url).endsWith(`/git/commits/${parent}`)) {
-      return { ok: true, json: async () => ({ tree: { sha: tree } }) };
-    }
-    if (options.method === "POST") {
-      return { ok: true, json: async () => ({ sha: next }) };
-    }
-    return { ok: true, status: 200, json: async () => ({}) };
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ commit: { sha: commit } }),
+    };
   };
   const result = await republishFormaImage({
     token: "ghs_secret",
     fetchImpl,
   });
-  assert.deepEqual(result, { parent, sha: next });
-  const created = JSON.parse(calls.find((call) => call.method === "POST").body);
-  assert.equal(created.tree, tree);
-  assert.deepEqual(created.parents, [parent]);
+  assert.deepEqual(result, { updated: true, sha: commit });
+  const put = JSON.parse(calls.find((call) => call.method === "PUT").body);
+  const written = Buffer.from(put.content, "base64").toString("utf8");
+  assert.equal(put.sha, fileSha);
+  assert.equal(put.branch, "cursor/forma-preview-walkthrough");
+  assert.equal(written.includes("github.actor"), false);
+  assert.equal(
+    written.includes("username: ${{ github.repository_owner }}"),
+    true,
+  );
   assert.equal(JSON.stringify(result).includes("ghs_secret"), false);
-  assert.equal(redact("ghs_secret").includes("ghs_secret"), false);
+  assert.equal(redact("Bearer ghs_secret").includes("ghs_secret"), false);
 });
 
-test("the workflow only asks Forma for content write", () => {
+test("republish leaves an owner-login workflow unchanged", async () => {
+  const calls = [];
+  const fetchImpl = async (url, options = {}) => {
+    calls.push(options.method ?? "GET");
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        sha: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        content: Buffer.from(publishWorkflow, "utf8").toString("base64"),
+      }),
+    };
+  };
+  const result = await republishFormaImage({ token: "ghs_secret", fetchImpl });
+  assert.equal(result.updated, false);
+  assert.equal(calls.includes("PUT"), false);
+});
+
+test("the dyad workflow only asks Forma for content write", () => {
   const workflow = readFileSync(
     new URL("../workflows/republish-forma-image.yml", import.meta.url),
     "utf8",
@@ -47,5 +93,6 @@ test("the workflow only asks Forma for content write", () => {
   assert.equal(workflow.includes("repositories: forma"), true);
   assert.equal(workflow.includes("permission-contents: write"), true);
   assert.equal(workflow.includes("permission-actions:"), false);
+  assert.equal(workflow.includes("permission-packages:"), false);
   assert.equal(workflow.includes("DOPPLER"), false);
 });

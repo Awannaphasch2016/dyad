@@ -35,7 +35,7 @@ jobs:
           repositories: forma
           permission-contents: write
 
-      - name: Commit the same Forma tree again
+      - name: Publish as the repository owner
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
