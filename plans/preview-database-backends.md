@@ -94,11 +94,11 @@ Vibe SDK's comment contains the app name and the full URL as text. Dyad's log li
 
 ### Architecture
 
-| Label | App | Runtime | Database | URL |
-| --- | --- | --- | --- | --- |
-| `preview` | Dyad, including Gas City | Namespace devbox `Wewebplus-ci` | Neon branch `preview-pr-<number>` | `https://pr-<number>.anakwannaphaschaiyong.com` and `https://gc-pr-<number>.anakwannaphaschaiyong.com` |
-| `preview-vibesdk` | Vibe SDK | Worker `vibesdk-pr-<number>` | New empty D1 database for that pull request | `https://vibesdk-pr-<number>.karant-test-egress-canary.workers.dev` |
-| `preview-bolt` | Bolt, later | Bolt's own Cloudflare deploy | Bolt's own vendor | Chosen with Bolt's deploy |
+| Label             | App                      | Runtime                         | Database                                    | URL                                                                                                    |
+| ----------------- | ------------------------ | ------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `preview`         | Dyad, including Gas City | Namespace devbox `Wewebplus-ci` | Neon branch `preview-pr-<number>`           | `https://pr-<number>.anakwannaphaschaiyong.com` and `https://gc-pr-<number>.anakwannaphaschaiyong.com` |
+| `preview-vibesdk` | Vibe SDK                 | Worker `vibesdk-pr-<number>`    | New empty D1 database for that pull request | `https://vibesdk-pr-<number>.karant-test-egress-canary.workers.dev`                                    |
+| `preview-bolt`    | Bolt, later              | Bolt's own Cloudflare deploy    | Bolt's own vendor                           | Chosen with Bolt's deploy                                                                              |
 
 Label matching is exact. `preview` does not match `preview-vibesdk` or `preview-bolt`.
 
@@ -142,17 +142,17 @@ No Dyad API change. The pull-request comment is the status.
 
 ### Phase 1: Decision function
 
-- [ ] Add the optional label argument, default `preview`. The existing `preview` tests pass without editing their calls.
-- [ ] Test that `preview` and `preview-vibesdk` do not match each other.
-- [ ] Test close, unlabel, push-without-label, and label-on-a-closed-pull-request for `preview-vibesdk`.
+- [x] Add the optional label argument, default `preview`. The existing `preview` tests pass without editing their calls.
+- [x] Test that `preview` and `preview-vibesdk` do not match each other.
+- [x] Test close, unlabel, push-without-label, and label-on-a-closed-pull-request for `preview-vibesdk`.
 
 ### Phase 2: Vibe SDK preview
 
-- [ ] Create the Worker, empty D1 database, KV namespace, and R2 bucket for `vibesdk-pr-<number>`.
-- [ ] Migrate that D1 database only. Refuse the lab and production ids first.
-- [ ] Set `CUSTOM_DOMAIN` to the workers.dev host. Point Think at OpenRouter.
-- [ ] Comment the URL after health succeeds. Leave Dyad's `preview_url=` log as it is.
-- [ ] On unlabel or close, delete those resources. A second run of the delete finds nothing and succeeds.
+- [x] Create the Worker, empty D1 database, KV namespace, and R2 bucket for `vibesdk-pr-<number>`.
+- [x] Migrate that D1 database only. Refuse the lab and production ids first.
+- [x] Set `CUSTOM_DOMAIN` to the workers.dev host. Point Think at OpenRouter.
+- [x] Comment the URL after health succeeds. Leave Dyad's `preview_url=` log as it is.
+- [x] On unlabel or close, delete those resources. A second run of the delete finds nothing and succeeds.
 
 ### Phase 3: Bolt
 
@@ -160,30 +160,30 @@ No Dyad API change. The pull-request comment is the status.
 
 ## Testing Strategy
 
-- [ ] The existing preview controller tests still pass without editing their expectations.
-- [ ] A new test shows that unlabeling `preview` while `preview-vibesdk` remains destroys only Dyad's command, and the reverse destroys only Vibe SDK's command.
+- [x] The existing preview controller tests still pass without editing their expectations.
+- [x] A new test shows that unlabeling `preview` while `preview-vibesdk` remains destroys only Dyad's command, and the reverse destroys only Vibe SDK's command.
 - [ ] A disposable pair of pull requests with `preview-vibesdk`: both URLs healthy, a signup on one absent from the other.
 - [ ] Remove `preview-vibesdk` from a pull request that also has `preview`. Dyad's URL still serves. The Vibe SDK Worker and D1 database are gone.
 - [ ] Add `preview` alone. The Dyad URL is unchanged and no `vibesdk-pr-<number>` Worker exists.
 
 ## Risks & Mitigations
 
-| Risk | Likelihood | Impact | Mitigation |
-| --- | --- | --- | --- |
-| A prefix check treats `preview-vibesdk` as Dyad's label | Medium | High | Compare the whole label string. Tests cover both directions. |
-| Vibe SDK jobs are inserted into `preview.yml` | Medium | High | Separate workflow file. |
-| Bolt and Vibe SDK share a D1 database because both use Cloudflare | Medium | High | Bolt does not call the D1 module. Its workflow does not exist until its vendor is named. |
-| A preview migrates `vibesdk-lab` or production D1 | Low | High | Refuse those names and ids before create, migrate, or delete. |
-| Close on every pull request deletes a database that was never created | High | Low | Delete by the pull-request name and succeed when it is already gone. |
-| Dyad deploys queue behind Vibe SDK builds | Low | Medium | Vibe SDK does not use `preview-devbox-wewebplus-ci`. |
-| Reviewers add `preview-bolt` and get silence | Medium | Medium | Do not register that workflow until Bolt can publish a URL. |
-| Reviewers expect the generated app inside Vibe SDK to have a public URL | High | Medium | The comment says the preview is the builder. |
+| Risk                                                                    | Likelihood | Impact | Mitigation                                                                               |
+| ----------------------------------------------------------------------- | ---------- | ------ | ---------------------------------------------------------------------------------------- |
+| A prefix check treats `preview-vibesdk` as Dyad's label                 | Medium     | High   | Compare the whole label string. Tests cover both directions.                             |
+| Vibe SDK jobs are inserted into `preview.yml`                           | Medium     | High   | Separate workflow file.                                                                  |
+| Bolt and Vibe SDK share a D1 database because both use Cloudflare       | Medium     | High   | Bolt does not call the D1 module. Its workflow does not exist until its vendor is named. |
+| A preview migrates `vibesdk-lab` or production D1                       | Low        | High   | Refuse those names and ids before create, migrate, or delete.                            |
+| Close on every pull request deletes a database that was never created   | High       | Low    | Delete by the pull-request name and succeed when it is already gone.                     |
+| Dyad deploys queue behind Vibe SDK builds                               | Low        | Medium | Vibe SDK does not use `preview-devbox-wewebplus-ci`.                                     |
+| Reviewers add `preview-bolt` and get silence                            | Medium     | Medium | Do not register that workflow until Bolt can publish a URL.                              |
+| Reviewers expect the generated app inside Vibe SDK to have a public URL | High       | Medium | The comment says the preview is the builder.                                             |
 
 ## Open Questions
 
 - Bolt's database vendor and hostname. The label name is reserved. The workflow waits.
 - Dyad keeps the Actions log. Vibe SDK uses a pull-request comment. `preview.yml` does not gain `pull-requests: write`.
-- Which Doppler identity the Vibe SDK workflow uses. It stays off `preview.yml`. The lab admin token is a last resort for the Vibe SDK workflow only.
+- The Vibe SDK workflow uses the same Doppler OIDC identity as Dyad, reading `dyad/preview`. It does not receive the lab admin token.
 
 ## Decision Log
 
@@ -200,6 +200,8 @@ No Dyad API change. The pull-request comment is the status.
 - `vibesdk-lab` remains the manual walkthrough.
 - Generated-app hosting inside Vibe SDK stays deferred.
 - The Bolt workflow stays deferred until its database vendor is named. The reserved label name is not a workflow yet.
+- Vibe SDK preview uses Doppler OIDC against `dyad/preview`. The lab admin token is not given to that workflow.
+- Vibe SDK preview does not use the Namespace devbox. Wrangler publishes the Worker directly.
 
 ---
 
