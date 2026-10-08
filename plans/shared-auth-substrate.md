@@ -47,7 +47,7 @@ The matching role sees the question text and can submit one answer. The other ro
 The Bolt adapter is the only new sign-in work in this plan.
 
 1. The walkthrough page gets a sign-in control that uses the Development publishable key.
-2. The Gmail account signs in as Project Manager. The FU.edu account signs in as Developer. Both are members of Wewebplus.
+2. `anakwannaphaschaiyong@gmail.com` signs in with Google as Project Manager. `awannaphasch2016@fau.edu` signs in with Microsoft as Developer. Both are members of Wewebplus.
 3. A session with that one organization opens Wewebplus. There is no organization picker in this check.
 4. The question list calls `/api/hitl` with the Clerk session cookie. The role comes from `wewebplus.memberships` for that Clerk user id.
 5. Bolt does not grow a user table. Chat history stays in the browser. The question and the paused run do not.
@@ -56,15 +56,15 @@ The membership row keeps `org_id`. A later organization is another row and a sel
 
 Before the page uses the key, confirm the preview publishable key starts with `pk_test_`. A `pk_live_` key means the preview is pointed at production, and the work stops.
 
-The two Development user ids go into `wewebplus.memberships` on the preview database. The same Gmail and FU.edu accounts can sign into Production later and will receive different user ids. Those Production ids are not part of this check.
+The two Development user ids go into `wewebplus.memberships` on the preview database. The same Google and FAU Microsoft accounts can sign into Production later and will receive different user ids. Those Production ids are not part of this check.
 
 ## Check
 
 Use Chrome on a computer. Open the walkthrough URL.
 
 - Signed out: Discovery, Implementation, and Delivery still finish, and the phase bar has no question box.
-- Normal window: Gmail account. The page shows Wewebplus and Project Manager.
-- Private window: FU.edu account. The page shows Wewebplus and Developer.
+- Normal window: `anakwannaphaschaiyong@gmail.com` with Google. The page shows Wewebplus and Project Manager.
+- Private window: `awannaphasch2016@fau.edu` with Microsoft. The page shows Wewebplus and Developer.
 
 With one stored question for each phase:
 
