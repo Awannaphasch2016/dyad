@@ -4,7 +4,6 @@ import {
   assertCanaryDnsName,
   assertCanaryHostname,
   canaryAppsDnsRecord,
-  canaryCertificateOrder,
   canaryDnsRecord,
   canaryIngress,
   ensureCanaryTunnel,
@@ -19,7 +18,7 @@ test("the canary tunnel serves the Dyad page on the pre hostname", () => {
   assert.equal(ingress.config.ingress[0].service, "http://127.0.0.1:8373");
   assert.equal(
     ingress.config.ingress[1].hostname,
-    "*.apps.pre.anakwannaphaschaiyong.com",
+    "*.anakwannaphaschaiyong.com",
   );
   assert.equal(ingress.config.ingress[1].service, "http://127.0.0.1:8373");
   assert.equal(
@@ -61,7 +60,7 @@ test("the canary tunnel writes only the pre hostname", async () => {
       );
       assert.equal(
         body.config.ingress[1].hostname,
-        "*.apps.pre.anakwannaphaschaiyong.com",
+        "*.anakwannaphaschaiyong.com",
       );
       return json({ success: true, result: {} });
     }
@@ -70,25 +69,15 @@ test("the canary tunnel writes only the pre hostname", async () => {
     }
     if (path.endsWith("/dns_records") && init.method === "POST") {
       const body = JSON.parse(init.body);
+      if (body.name === "anakwannaphaschaiyong.com") {
+        throw new Error("refusing apex write");
+      }
       calls.push(`dns ${body.name}`);
       return json({ success: true, result: { id: "record" } });
     }
-    if (
-      path.includes("/ssl/certificate_packs") &&
-      (init.method || "GET") === "GET"
-    ) {
-      return json({ success: true, result: [] });
-    }
-    if (
-      path.endsWith("/ssl/certificate_packs/order") &&
-      init.method === "POST"
-    ) {
-      const body = JSON.parse(init.body);
-      calls.push(`cert ${body.hosts.join(",")}`);
-      return json({
-        success: true,
-        result: { id: "pack", status: "pending_validation" },
-      });
+    if (path.includes("/dns_records/") && init.method === "DELETE") {
+      calls.push(`delete ${path}`);
+      return json({ success: true, result: { id: "gone" } });
     }
     throw new Error(`unexpected ${url}`);
   };
@@ -105,14 +94,7 @@ test("the canary tunnel writes only the pre hostname", async () => {
   assert.equal(written, "tunnel-token");
   assert.deepEqual(
     calls.filter((call) => call.startsWith("dns ")),
-    [
-      "dns pre.anakwannaphaschaiyong.com",
-      "dns *.apps.pre.anakwannaphaschaiyong.com",
-    ],
-  );
-  assert.deepEqual(
-    calls.filter((call) => call.startsWith("cert ")),
-    ["cert anakwannaphaschaiyong.com,*.apps.pre.anakwannaphaschaiyong.com"],
+    ["dns pre.anakwannaphaschaiyong.com", "dns *.anakwannaphaschaiyong.com"],
   );
   assert.equal(
     calls.some((call) => call.includes("anakwannaphaschaiyong.com/dns")),
@@ -133,17 +115,11 @@ test("the apex cannot be the canary record", () => {
   assert.equal(record.name, "pre.anakwannaphaschaiyong.com");
   assert.equal(
     canaryAppsDnsRecord("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee").name,
-    "*.apps.pre.anakwannaphaschaiyong.com",
+    "*.anakwannaphaschaiyong.com",
   );
   assert.throws(() => assertCanaryDnsName("anakwannaphaschaiyong.com"), /apex/);
   assert.throws(
     () => assertCanaryDnsName("www.anakwannaphaschaiyong.com"),
     /apex/,
   );
-  const order = canaryCertificateOrder();
-  assert.equal(
-    order.hosts.includes("*.apps.pre.anakwannaphaschaiyong.com"),
-    true,
-  );
-  assert.equal(order.hosts.includes("www.anakwannaphaschaiyong.com"), false);
 });

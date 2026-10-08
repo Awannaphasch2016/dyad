@@ -31,6 +31,7 @@ import { getTrustedIpcHandler } from "@/ipc/handlers/trusted_handle";
 import {
   isPreviewAppsHost,
   previewPortFromHost,
+  refusesPublicHost,
 } from "@/preview_iframe/public_preview_url";
 import {
   VALID_INVOKE_CHANNELS,
@@ -629,6 +630,8 @@ export function startBrowserBridge(
     if (!host || !isPreviewAppsHost(host)) return null;
     return previewPortFromHost(host);
   };
+  const rejectPublicHost = (host: string | undefined) =>
+    !!host && (isPreviewAppsHost(host) || refusesPublicHost(host));
   const server: Server = createServer((req, res) => {
     const host = req.headers.host;
     if (host && isPreviewAppsHost(host)) {
@@ -644,6 +647,11 @@ export function startBrowserBridge(
       });
       return;
     }
+    if (rejectPublicHost(host)) {
+      res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+      res.end("Not found");
+      return;
+    }
     if (devServerUrl) {
       proxyHttp(devServerUrl, req, res);
     } else if (rendererDir) {
@@ -652,7 +660,7 @@ export function startBrowserBridge(
   });
   server.on("upgrade", (req, socket, head) => {
     const host = req.headers.host;
-    if (host && isPreviewAppsHost(host)) {
+    if (host && (isPreviewAppsHost(host) || refusesPublicHost(host))) {
       const previewPort = previewProxy(host);
       if (previewPort === null) {
         socket.destroy();

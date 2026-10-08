@@ -1,7 +1,8 @@
 // Named tunnel for the canary hostname. The apex is never a write target.
 
 export const canaryHostname = "pre.anakwannaphaschaiyong.com";
-export const canaryAppsHostname = "*.apps.pre.anakwannaphaschaiyong.com";
+export const canaryAppsHostname = "*.anakwannaphaschaiyong.com";
+export const retiredCanaryAppsHostname = "*.apps.pre.anakwannaphaschaiyong.com";
 export const apexHostname = "anakwannaphaschaiyong.com";
 export const canaryTunnelName = "wewebplus-canary";
 
@@ -15,7 +16,13 @@ export function assertCanaryHostname(hostname) {
 }
 
 export function assertCanaryDnsName(name) {
-  if (name === canaryHostname || name === canaryAppsHostname) return;
+  if (
+    name === canaryHostname ||
+    name === canaryAppsHostname ||
+    name === retiredCanaryAppsHostname
+  ) {
+    return;
+  }
   if (name === apexHostname || name === `www.${apexHostname}`) {
     throw new Error("Refusing to change the apex");
   }
@@ -117,7 +124,7 @@ export async function ensureCanaryTunnel({
     zoneId,
     canaryAppsDnsRecord(tunnel.id),
   );
-  await ensureCanaryCertificate(fetchImpl, apiToken, zoneId);
+  await deleteRetiredPreviewDns(fetchImpl, apiToken, zoneId);
   return {
     hostname: canaryHostname,
     tunnelId: tunnel.id,
@@ -155,43 +162,26 @@ export function canaryAppsDnsRecord(tunnelId) {
   return tunnelCname(canaryAppsHostname, tunnelId);
 }
 
-export function canaryCertificateOrder() {
-  return {
-    type: "advanced",
-    hosts: [apexHostname, canaryAppsHostname],
-    certificate_authority: "lets_encrypt",
-    validation_method: "txt",
-    validity_days: 90,
-  };
-}
-
-async function ensureCanaryCertificate(fetchImpl, token, zoneId) {
-  const packs = await cloudflare(
+async function deleteRetiredPreviewDns(fetchImpl, token, zoneId) {
+  assertCanaryDnsName(retiredCanaryAppsHostname);
+  const existing = await cloudflare(
     fetchImpl,
     token,
-    `/zones/${zoneId}/ssl/certificate_packs?status=all`,
+    `/zones/${zoneId}/dns_records?type=CNAME&name=${encodeURIComponent(retiredCanaryAppsHostname)}`,
   );
-  const covered = Array.isArray(packs)
-    ? packs.find(
-        (pack) =>
-          Array.isArray(pack.hosts) &&
-          pack.hosts.includes(canaryAppsHostname) &&
-          pack.status !== "deleted" &&
-          pack.status !== "expired",
-      )
-    : undefined;
-  if (covered) return covered;
-  const order = canaryCertificateOrder();
-  if (!order.hosts.includes(canaryAppsHostname)) {
-    throw new Error(
-      "Refusing to order a certificate without the preview names",
-    );
+  const current = Array.isArray(existing) ? existing[0] : undefined;
+  if (!current?.id) return;
+  if (
+    current.name !== retiredCanaryAppsHostname &&
+    current.name !== `${retiredCanaryAppsHostname}.`
+  ) {
+    throw new Error("Refusing to change a hostname other than the canary");
   }
-  return cloudflare(
+  await cloudflare(
     fetchImpl,
     token,
-    `/zones/${zoneId}/ssl/certificate_packs/order`,
-    { method: "POST", body: JSON.stringify(order) },
+    `/zones/${zoneId}/dns_records/${current.id}`,
+    { method: "DELETE" },
   );
 }
 

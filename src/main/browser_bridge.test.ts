@@ -571,23 +571,23 @@ describe("browser bridge", () => {
       port: 0,
     });
     closers.push(() => bridge.close());
-    const host = `${previewPort}.apps.pre.anakwannaphaschaiyong.com`;
+    const host = `p${previewPort}.anakwannaphaschaiyong.com`;
     const preview = await requestWithHost(bridge.port, host, "/about");
     expect(preview.status).toBe(200);
     expect(preview.body).toBe("<html>/about</html>");
     expect(preview.body.includes("data-dyad-browser-bridge")).toBe(false);
     const refused = await requestWithHost(
       bridge.port,
-      "32100.apps.pre.anakwannaphaschaiyong.com",
+      "p32100.anakwannaphaschaiyong.com",
       "/",
     );
     expect(refused.status).toBe(404);
-    const apex = await requestWithHost(
+    const other = await requestWithHost(
       bridge.port,
-      `${previewPort}.apps.anakwannaphaschaiyong.com`,
+      "www.anakwannaphaschaiyong.com",
       "/",
     );
-    expect(apex.status).toBe(404);
+    expect(other.status).toBe(404);
     const upgraded = await upgradeWithHost(bridge.port, host, "/vite-hmr");
     expect(upgraded.startsWith("HTTP/1.1 101")).toBe(true);
     expect(upgradeUrl).toBe("/vite-hmr");

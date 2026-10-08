@@ -1,5 +1,6 @@
 // The public preview iframe cannot open the container's localhost proxy.
-// A hostname under apps.<page host> stays a different origin from the Dyad page.
+// p<port>.anakwannaphaschaiyong.com is a different origin from the Dyad page
+// and is covered by the existing one-level certificate.
 
 import {
   PROXY_FALLBACK_MAX_ATTEMPTS,
@@ -8,10 +9,8 @@ import {
   PROXY_PORT_RANGE,
 } from "../../shared/ports";
 
-const APEX_HOSTS = new Set([
-  "anakwannaphaschaiyong.com",
-  "www.anakwannaphaschaiyong.com",
-]);
+const APEX_HOSTNAME = "anakwannaphaschaiyong.com";
+const CANARY_PAGE_HOSTNAME = "pre.anakwannaphaschaiyong.com";
 
 export function isPreviewProxyPort(port: number): boolean {
   return (
@@ -25,19 +24,30 @@ function hostnameOf(host: string): string {
   return host.split(":")[0]?.trim().toLowerCase() ?? "";
 }
 
+export function isCanaryPageHost(host: string): boolean {
+  const hostname = hostnameOf(host);
+  return (
+    hostname === CANARY_PAGE_HOSTNAME ||
+    hostname === "localhost" ||
+    hostname === "127.0.0.1"
+  );
+}
+
 export function isPreviewAppsHost(host: string): boolean {
-  return /^\d+\.apps\./.test(hostnameOf(host));
+  return /^p\d+\.anakwannaphaschaiyong\.com$/.test(hostnameOf(host));
+}
+
+export function refusesPublicHost(host: string): boolean {
+  const hostname = hostnameOf(host);
+  if (!hostname || isCanaryPageHost(hostname)) return false;
+  return hostname === APEX_HOSTNAME || hostname.endsWith(`.${APEX_HOSTNAME}`);
 }
 
 export function previewPortFromHost(host: string): number | null {
-  const hostname = hostnameOf(host);
-  const match = /^(\d+)\.apps\.(.+)$/.exec(hostname);
+  const match = /^p(\d+)\.anakwannaphaschaiyong\.com$/.exec(hostnameOf(host));
   if (!match) return null;
   const port = Number(match[1]);
-  const parent = match[2] ?? "";
-  if (!parent || APEX_HOSTS.has(parent) || !isPreviewProxyPort(port)) {
-    return null;
-  }
+  if (!isPreviewProxyPort(port)) return null;
   return port;
 }
 
@@ -75,5 +85,5 @@ export function publicPreviewUrl(
     return proxyUrl;
   }
   const path = `${proxy.pathname}${proxy.search}${proxy.hash}`;
-  return `${page.protocol}//${port}.apps.${page.hostname}${path}`;
+  return `${page.protocol}//p${port}.${APEX_HOSTNAME}${path}`;
 }
