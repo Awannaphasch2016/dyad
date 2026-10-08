@@ -1,6 +1,7 @@
 // Named tunnel for the canary hostname. The apex is never a write target.
 
 export const canaryHostname = "pre.anakwannaphaschaiyong.com";
+export const canaryAppsHostname = "*.apps.pre.anakwannaphaschaiyong.com";
 export const apexHostname = "anakwannaphaschaiyong.com";
 export const canaryTunnelName = "wewebplus-canary";
 
@@ -13,12 +14,21 @@ export function assertCanaryHostname(hostname) {
   }
 }
 
+export function assertCanaryDnsName(name) {
+  if (name === canaryHostname || name === canaryAppsHostname) return;
+  if (name === apexHostname || name === `www.${apexHostname}`) {
+    throw new Error("Refusing to change the apex");
+  }
+  throw new Error("Refusing to change a hostname other than the canary");
+}
+
 export function canaryIngress() {
   assertCanaryHostname(canaryHostname);
   return {
     config: {
       ingress: [
         { hostname: canaryHostname, service: "http://127.0.0.1:8373" },
+        { hostname: canaryAppsHostname, service: "http://127.0.0.1:8373" },
         { service: "http_status:404" },
       ],
     },
@@ -95,34 +105,18 @@ export async function ensureCanaryTunnel({
   )?.trim();
   if (!tunnelToken) throw new Error("Cloudflare did not return a tunnel token");
   await writeToken(tunnelToken);
-  const record = canaryDnsRecord(tunnel.id);
-  const existing = await cloudflare(
+  await upsertCanaryDns(
     fetchImpl,
     apiToken,
-    `/zones/${zoneId}/dns_records?type=CNAME&name=${encodeURIComponent(canaryHostname)}`,
+    zoneId,
+    canaryDnsRecord(tunnel.id),
   );
-  const current = Array.isArray(existing) ? existing[0] : undefined;
-  if (
-    current &&
-    current.name &&
-    current.name !== canaryHostname &&
-    current.name !== `${canaryHostname}.`
-  ) {
-    throw new Error("Refusing to change a hostname other than the canary");
-  }
-  if (!current) {
-    await cloudflare(fetchImpl, apiToken, `/zones/${zoneId}/dns_records`, {
-      method: "POST",
-      body: JSON.stringify(record),
-    });
-  } else if (current.content !== record.content || current.proxied !== true) {
-    await cloudflare(
-      fetchImpl,
-      apiToken,
-      `/zones/${zoneId}/dns_records/${current.id}`,
-      { method: "PATCH", body: JSON.stringify(record) },
-    );
-  }
+  await upsertCanaryDns(
+    fetchImpl,
+    apiToken,
+    zoneId,
+    canaryAppsDnsRecord(tunnel.id),
+  );
   return {
     hostname: canaryHostname,
     tunnelId: tunnel.id,
@@ -138,16 +132,57 @@ export function cloudflareConfig(env) {
   };
 }
 
-export function canaryDnsRecord(tunnelId) {
-  assertCanaryHostname(canaryHostname);
+function tunnelCname(name, tunnelId) {
+  assertCanaryDnsName(name);
   if (!/^[0-9a-f-]{36}$/i.test(tunnelId || "")) {
     throw new Error("Tunnel id is not a UUID");
   }
   return {
     type: "CNAME",
-    name: canaryHostname,
+    name,
     content: `${tunnelId}.cfargotunnel.com`,
     proxied: true,
     ttl: 1,
   };
+}
+
+export function canaryDnsRecord(tunnelId) {
+  return tunnelCname(canaryHostname, tunnelId);
+}
+
+export function canaryAppsDnsRecord(tunnelId) {
+  return tunnelCname(canaryAppsHostname, tunnelId);
+}
+
+async function upsertCanaryDns(fetchImpl, token, zoneId, record) {
+  assertCanaryDnsName(record.name);
+  const existing = await cloudflare(
+    fetchImpl,
+    token,
+    `/zones/${zoneId}/dns_records?type=CNAME&name=${encodeURIComponent(record.name)}`,
+  );
+  const current = Array.isArray(existing) ? existing[0] : undefined;
+  if (
+    current &&
+    current.name &&
+    current.name !== record.name &&
+    current.name !== `${record.name}.`
+  ) {
+    throw new Error("Refusing to change a hostname other than the canary");
+  }
+  if (!current) {
+    await cloudflare(fetchImpl, token, `/zones/${zoneId}/dns_records`, {
+      method: "POST",
+      body: JSON.stringify(record),
+    });
+    return;
+  }
+  if (current.content !== record.content || current.proxied !== true) {
+    await cloudflare(
+      fetchImpl,
+      token,
+      `/zones/${zoneId}/dns_records/${current.id}`,
+      { method: "PATCH", body: JSON.stringify(record) },
+    );
+  }
 }

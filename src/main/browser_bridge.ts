@@ -29,6 +29,10 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { WEB_BRIDGE_SENDER_ID } from "@/control_plane/session_store";
 import { getTrustedIpcHandler } from "@/ipc/handlers/trusted_handle";
 import {
+  isPreviewAppsHost,
+  previewPortFromHost,
+} from "@/preview_iframe/public_preview_url";
+import {
   VALID_INVOKE_CHANNELS,
   VALID_RECEIVE_CHANNELS,
   VALID_SEND_CHANNELS,
@@ -412,6 +416,7 @@ function proxyHttp(
   devServerUrl: string,
   req: IncomingMessage,
   res: ServerResponse,
+  options?: { injectBridgeScript?: boolean; unavailableMessage?: string },
 ) {
   const target = new URL(devServerUrl);
   const client = target.protocol === "https:" ? httpsRequest : httpRequest;
@@ -426,7 +431,11 @@ function proxyHttp(
     (upstreamRes) => {
       const contentType = String(upstreamRes.headers["content-type"] ?? "");
       const status = upstreamRes.statusCode ?? 200;
-      if (status === 200 && contentType.includes("text/html")) {
+      if (
+        options?.injectBridgeScript !== false &&
+        status === 200 &&
+        contentType.includes("text/html")
+      ) {
         const chunks: Buffer[] = [];
         upstreamRes.on("data", (chunk) => {
           chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
@@ -462,7 +471,7 @@ function proxyHttp(
       return;
     }
     res.writeHead(502, { "content-type": "text/plain; charset=utf-8" });
-    res.end("Dyad renderer is not reachable");
+    res.end(options?.unavailableMessage ?? "Dyad renderer is not reachable");
   });
   req.pipe(upstream);
 }
@@ -616,7 +625,25 @@ export function startBrowserBridge(
   };
   const sender = new BridgeSender(push, true);
   const socketServer = new WebSocketServer({ noServer: true });
+  const previewProxy = (host: string | undefined) => {
+    if (!host || !isPreviewAppsHost(host)) return null;
+    return previewPortFromHost(host);
+  };
   const server: Server = createServer((req, res) => {
+    const host = req.headers.host;
+    if (host && isPreviewAppsHost(host)) {
+      const previewPort = previewProxy(host);
+      if (previewPort === null) {
+        res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+        res.end("Not found");
+        return;
+      }
+      proxyHttp(`http://127.0.0.1:${previewPort}`, req, res, {
+        injectBridgeScript: false,
+        unavailableMessage: "Preview is not reachable",
+      });
+      return;
+    }
     if (devServerUrl) {
       proxyHttp(devServerUrl, req, res);
     } else if (rendererDir) {
@@ -624,6 +651,16 @@ export function startBrowserBridge(
     }
   });
   server.on("upgrade", (req, socket, head) => {
+    const host = req.headers.host;
+    if (host && isPreviewAppsHost(host)) {
+      const previewPort = previewProxy(host);
+      if (previewPort === null) {
+        socket.destroy();
+        return;
+      }
+      proxyUpgrade(`http://127.0.0.1:${previewPort}`, req, socket, head);
+      return;
+    }
     const pathname = new URL(req.url ?? "/", "http://127.0.0.1").pathname;
     if (pathname === BROWSER_BRIDGE_SOCKET_PATH) {
       socketServer.handleUpgrade(req, socket, head, (webSocket) => {

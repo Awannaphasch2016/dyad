@@ -1,7 +1,8 @@
 // @vitest-environment node
 
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
-import { createServer, type Server } from "node:http";
+import { createServer, request as httpRequest, type Server } from "node:http";
+import { connect as netConnect } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import vm from "node:vm";
@@ -544,4 +545,107 @@ describe("browser bridge", () => {
     await registry.complete("create-1", cleanup);
     expect(cleanup).not.toHaveBeenCalled();
   });
+
+  it("proxies an apps hostname to the preview port and refuses other ports", async () => {
+    const upstream = createServer((req, res) => {
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      res.end(`<html>${req.url}</html>`);
+    });
+    let upgradeUrl = "";
+    upstream.on("upgrade", (req, socket) => {
+      upgradeUrl = req.url ?? "";
+      socket.write(
+        "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n",
+      );
+      socket.end();
+    });
+    const previewPort = await listenAt(upstream, 52140);
+    closers.push(
+      () =>
+        new Promise((resolve, reject) => {
+          upstream.close((error) => (error ? reject(error) : resolve()));
+        }),
+    );
+    const bridge = await startBrowserBridge({
+      devServerUrl: "http://127.0.0.1:9",
+      port: 0,
+    });
+    closers.push(() => bridge.close());
+    const host = `${previewPort}.apps.pre.anakwannaphaschaiyong.com`;
+    const preview = await requestWithHost(bridge.port, host, "/about");
+    expect(preview.status).toBe(200);
+    expect(preview.body).toBe("<html>/about</html>");
+    expect(preview.body.includes("data-dyad-browser-bridge")).toBe(false);
+    const refused = await requestWithHost(
+      bridge.port,
+      "32100.apps.pre.anakwannaphaschaiyong.com",
+      "/",
+    );
+    expect(refused.status).toBe(404);
+    const apex = await requestWithHost(
+      bridge.port,
+      `${previewPort}.apps.anakwannaphaschaiyong.com`,
+      "/",
+    );
+    expect(apex.status).toBe(404);
+    const upgraded = await upgradeWithHost(bridge.port, host, "/vite-hmr");
+    expect(upgraded.startsWith("HTTP/1.1 101")).toBe(true);
+    expect(upgradeUrl).toBe("/vite-hmr");
+  });
 });
+
+function listenAt(server: Server, port: number): Promise<number> {
+  return new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, "127.0.0.1", () => resolve(port));
+  });
+}
+
+function requestWithHost(
+  port: number,
+  host: string,
+  path: string,
+): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const req = httpRequest(
+      { hostname: "127.0.0.1", port, path, headers: { host } },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        });
+        res.on("end", () => {
+          resolve({
+            status: res.statusCode ?? 0,
+            body: Buffer.concat(chunks).toString("utf8"),
+          });
+        });
+      },
+    );
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+function upgradeWithHost(
+  port: number,
+  host: string,
+  path: string,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const socket = netConnect(port, "127.0.0.1", () => {
+      socket.write(
+        `GET ${path} HTTP/1.1\r\nHost: ${host}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n`,
+      );
+    });
+    let data = "";
+    socket.on("data", (chunk) => {
+      data += chunk.toString();
+      if (data.includes("\r\n\r\n")) {
+        socket.end();
+        resolve(data);
+      }
+    });
+    socket.on("error", reject);
+  });
+}

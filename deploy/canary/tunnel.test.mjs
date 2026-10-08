@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  assertCanaryDnsName,
   assertCanaryHostname,
+  canaryAppsDnsRecord,
   canaryDnsRecord,
   canaryIngress,
   ensureCanaryTunnel,
@@ -14,6 +16,17 @@ test("the canary tunnel serves the Dyad page on the pre hostname", () => {
     "pre.anakwannaphaschaiyong.com",
   );
   assert.equal(ingress.config.ingress[0].service, "http://127.0.0.1:8373");
+  assert.equal(
+    ingress.config.ingress[1].hostname,
+    "*.apps.pre.anakwannaphaschaiyong.com",
+  );
+  assert.equal(ingress.config.ingress[1].service, "http://127.0.0.1:8373");
+  assert.equal(
+    ingress.config.ingress.some(
+      (rule) => rule.hostname === "anakwannaphaschaiyong.com",
+    ),
+    false,
+  );
   assert.equal(JSON.stringify(ingress).includes("6080"), false);
   assert.equal(JSON.stringify(ingress).includes("8787"), false);
 });
@@ -45,6 +58,10 @@ test("the canary tunnel writes only the pre hostname", async () => {
         body.config.ingress[0].hostname,
         "pre.anakwannaphaschaiyong.com",
       );
+      assert.equal(
+        body.config.ingress[1].hostname,
+        "*.apps.pre.anakwannaphaschaiyong.com",
+      );
       return json({ success: true, result: {} });
     }
     if (path.endsWith("/dns_records") && (init.method || "GET") === "GET") {
@@ -52,7 +69,7 @@ test("the canary tunnel writes only the pre hostname", async () => {
     }
     if (path.endsWith("/dns_records") && init.method === "POST") {
       const body = JSON.parse(init.body);
-      assert.equal(body.name, "pre.anakwannaphaschaiyong.com");
+      calls.push(`dns ${body.name}`);
       return json({ success: true, result: { id: "record" } });
     }
     throw new Error(`unexpected ${url}`);
@@ -68,6 +85,13 @@ test("the canary tunnel writes only the pre hostname", async () => {
   });
   assert.equal(result.hostname, "pre.anakwannaphaschaiyong.com");
   assert.equal(written, "tunnel-token");
+  assert.deepEqual(
+    calls.filter((call) => call.startsWith("dns ")),
+    [
+      "dns pre.anakwannaphaschaiyong.com",
+      "dns *.apps.pre.anakwannaphaschaiyong.com",
+    ],
+  );
   assert.equal(
     calls.some((call) => call.includes("anakwannaphaschaiyong.com/dns")),
     false,
@@ -85,4 +109,13 @@ test("the apex cannot be the canary record", () => {
   );
   const record = canaryDnsRecord("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
   assert.equal(record.name, "pre.anakwannaphaschaiyong.com");
+  assert.equal(
+    canaryAppsDnsRecord("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee").name,
+    "*.apps.pre.anakwannaphaschaiyong.com",
+  );
+  assert.throws(() => assertCanaryDnsName("anakwannaphaschaiyong.com"), /apex/);
+  assert.throws(
+    () => assertCanaryDnsName("www.anakwannaphaschaiyong.com"),
+    /apex/,
+  );
 });

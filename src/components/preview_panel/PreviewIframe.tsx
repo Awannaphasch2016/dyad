@@ -88,6 +88,7 @@ import { recordingStatusMessage } from "./RecordingBanner";
 import { RecordingBannerHost } from "./RecordingBannerHost";
 import { RecordingStorageWarningDialog } from "./RecordingStorageWarningDialog";
 import { resolvePreviewBrowserUrl } from "./previewBrowserUrl";
+import { publicPreviewUrl } from "@/preview_iframe/public_preview_url";
 import { PreviewLoadingScreen } from "./PreviewLoadingScreen";
 import { PreviewErrorBanner } from "./PreviewErrorBanner";
 import { useTranslation } from "react-i18next";
@@ -122,6 +123,10 @@ export const PreviewIframe = ({
   const selectedAppId = useAtomValue(selectedAppIdAtom);
   const isPreviewOpen = useAtomValue(isPreviewOpenAtom);
   const { appUrl, originalUrl, mode } = useCurrentAppUrl(selectedAppId);
+  const iframeAppUrl = publicPreviewUrl(
+    typeof window === "undefined" ? "http://127.0.0.1/" : window.location.href,
+    appUrl,
+  );
   const appRunManager = useAppRunRemoteManager();
   const selectedChatId = useAtomValue(selectedChatIdAtom);
   const { streamMessage } = useStreamChat();
@@ -166,7 +171,7 @@ export const PreviewIframe = ({
     onIframeLoaded,
   } = usePreviewIframe({
     appId: selectedAppId,
-    appUrl,
+    appUrl: iframeAppUrl,
     iframeRef,
     onSharedMachineEvent: (event) => screenshotAdapterHandlerRef.current(event),
     onComponentMessage: (event) => componentMessageHandlerRef.current(event),
@@ -214,7 +219,7 @@ export const PreviewIframe = ({
     // Asks first — setup clears the preview's cookies and local storage.
     recorder.requestStartRecording(
       iframeState.currentUrlSource === "dyad"
-        ? sameOriginStartPath(currentHistoryUrl, appUrl)
+        ? sameOriginStartPath(currentHistoryUrl, iframeAppUrl)
         : undefined,
     );
   };
@@ -986,7 +991,7 @@ export const PreviewIframe = ({
 
   // Function to navigate to a specific route
   const navigateToRoute = (path: string) => {
-    if (!iframeRef.current?.contentWindow || !appUrl) {
+    if (!iframeRef.current?.contentWindow || !iframeAppUrl) {
       return false;
     }
 
@@ -1000,7 +1005,7 @@ export const PreviewIframe = ({
     }
 
     // Create the full URL by combining the base URL with the path
-    const baseUrl = new URL(appUrl).origin;
+    const baseUrl = new URL(iframeAppUrl).origin;
     const newUrl = new URL(normalized.path, baseUrl).href;
 
     sendIframeEvent({ type: "NAVIGATE", path: newUrl });
@@ -1055,7 +1060,7 @@ export const PreviewIframe = ({
       const url = await resolvePreviewBrowserUrl({
         isCloudMode,
         selectedAppId,
-        originalUrl,
+        originalUrl: iframeAppUrl ?? originalUrl,
         createCloudSandboxShareLink,
       });
       await ipc.system.openExternalUrl(url);
