@@ -2,6 +2,17 @@
 
 > This is a plan. It does not merge, does not deploy, and does not change Clerk.
 
+## Execution
+
+Draft PR 82 adds the label path in this repository. It does not start a container.
+
+- The `preview-forma` label on a pull request here reads `deploy/preview-forma/compose.yml`. Every service must pin `ghcr.io/awannaphasch2016/<name>:sha-<40 hex>` or `@sha256:<64 hex>`. A `build` key is rejected. The committed pin is `sha-80a8e419f6285378b4dfada336ea8213f3089bab`.
+- The Dyad `preview` label is not this workflow. Closing a pull request without `preview-forma` does not destroy anything.
+- The job asks for `permission-packages: read`. `PREVIEW_FORMA_DOCKER_HOST` is unset, so it stops before Doppler, Neon, and Docker.
+- Cleanup would use Neon branch `preview-forma-<number>` in `divine-credit-21002460`, parent `br-round-night-b33xeq5p`. It refuses `forma-pr-*`, `proud-salad-68182047`, `ep-young-wave-b3cwe0rz`, Devbox `Wewebplus-ci`, and `weaver-plus`. With no host it logs `preview_forma_down=skipped` and does not call Neon. `forma-pr-2` is untouched.
+- **Publish Forma image** is not on `forma` `main`. A local commit on `cursor/publish-image-main-5014` could not be pushed: `cursor[bot]` receives HTTP 403 from `Awannaphasch2016/forma`. The image that already exists is still the walkthrough tag above.
+- The Docker host is still unchosen. That is the blocker before a live label test.
+
 This repository is the orchestrator. A preview pull request here can run more than one container, including more than one image from the same builder repository. The label belongs on that pull request. Forma, Bolt, and Vibe SDK only publish images. Moving those applications out of this repository waits until the orchestration pattern is stable.
 
 ## Direction
