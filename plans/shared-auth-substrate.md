@@ -1,70 +1,52 @@
-# Shared authentication for the four builders
+# Bolt on the shared sign-in
 
-DYAD, Forma, Bolt, and Vibe SDK sign in through one Clerk application. The first check is two people in one organization, Wewebplus. Each builder keeps its own app database.
+Bolt is the first builder on the shared sign-in. DYAD, Forma, and Vibe SDK stay as they are until Bolt’s adapter passes the two-person check. The same Clerk application and the same Wewebplus membership rows are what those builders will use later.
 
-This plan does not change Clerk, does not delete users, and does not fill `bolt` / `prd`.
+This plan does not change Clerk’s production instance, does not delete users, and does not fill `bolt` / `prd`.
 
-## What is already true
+## What Bolt does today
 
-| Builder  | Sign-in today                                      | Where a person lives                         | Organization                                      |
-| -------- | -------------------------------------------------- | -------------------------------------------- | ------------------------------------------------- |
-| DYAD     | Clerk widget                                       | Clerk, plus `wewebplus.memberships`          | Yes. A private account also exists.               |
-| Forma    | One workspace password, `APP_PASSWORD`             | One `demo-owner` inside a signed cookie      | No                                                |
-| Bolt     | None                                               | This browser's IndexedDB                     | No                                                |
-| Vibe SDK | Email and password, Google, GitHub, or Cloudflare | D1 `users`, `sessions`, `user_oauth_identities` | No                                             |
+Bolt has no sign-in page. The walkthrough at `https://bolt-walkthrough-55d6.karant-test-egress-canary.workers.dev` opens straight into chat. Chat history stays in that browser’s IndexedDB.
 
-Forma is `Awannaphasch2016/forma` at `c7f4fad`. The password check is `app/api/auth/route.ts`. The cookie is `studio_session` in `lib/auth.ts`. Projects in `db/schema.sql` are keyed by that one owner id.
+The preview Worker can already read a Clerk session and a `wewebplus.memberships` row for the question list. A signed-out request to `/api/hitl` returns `Sign in to continue.` and the question box stays hidden. The page never starts a Clerk session, so the two Wewebplus people cannot open the box.
 
-Bolt is `Awannaphasch2016/bolt.diy` at `8584d65` on `cursor/website-walkthrough-55d6`. Password fields there save a GitHub, GitLab, Vercel, Netlify, or Supabase token. They do not create a Bolt user.
+Bolt’s Doppler preview config references the Clerk keys and `WEWEBPLUS_DATABASE_URL` from `dyad` / `preview`. Those names are Worker secrets. `bolt` / `prd` is empty.
 
-Vibe SDK is `Awannaphasch2016/vibesdk` at `9da158d`. Login is `worker/api/controllers/auth/controller.ts`. An app belongs to `users.id`. There is no organization table.
+The role rules the adapter must keep:
 
-DYAD already verifies a Clerk session in the main process. The gate role is the row in `wewebplus.memberships`. Clerk `org:admin` can invite. It does not answer a gate. The seeded organization is `org_3JuOz4PCITqmueMeKYhcFUXAEIH`. Those user ids belong to the Clerk instance that created them. A different instance gives the same Gmail person a different user id.
+| Step | Phase | Who can answer |
+| --- | --- | --- |
+| `plan-approve` | Discovery | Project Manager |
+| `review-approve-dev` | Implementation | Developer |
+| `review-approve-pm` | Delivery | Project Manager |
 
-## The substrate
+The matching role sees the question text and can submit one answer. The other role in Wewebplus sees `Waiting on …` and no text. The answer returns `resolved: false`. The build stays paused.
 
-One Clerk application.
+## The adapter
 
-| Instance    | Keys                    | Who uses it                                      |
-| ----------- | ----------------------- | ------------------------------------------------ |
-| Development | `pk_test_` / `sk_test_` | Local, dev, and every PR preview of all four builders |
-| Production  | `pk_live_` / `sk_live_` | The production domain only                       |
+The Bolt adapter is the only new sign-in work in this plan.
 
-A person is a Clerk user. Wewebplus is a Clerk organization. The role is a row in `wewebplus.memberships`: `project-manager` or `developer`.
+1. The walkthrough page gets a sign-in control that uses the Development publishable key.
+2. The Gmail account signs in as Project Manager. The FU.edu account signs in as Developer. Both are members of Wewebplus.
+3. A session with that one organization opens Wewebplus. There is no organization picker in this check.
+4. The question list calls `/api/hitl` with the Clerk session cookie. The role comes from `wewebplus.memberships` for that Clerk user id.
+5. Bolt does not grow a user table. Chat history stays in the browser.
 
-A preview Neon branch holds the membership rows and the questions. DYAD, Forma, Bolt, and Vibe SDK each keep their own project database. Closing the preview drops the branch. The two Clerk users stay.
+The membership row keeps `org_id`. A later organization is another row and a selection step. This plan does not add organization creation.
 
-A session with one organization opens Wewebplus. The membership row still has `org_id`, so a later organization is another row and a selection step. This plan does not add organization creation.
+Before the page uses the key, confirm the preview publishable key starts with `pk_test_`. A `pk_live_` key means the preview is pointed at production, and the work stops.
 
-`dyad` / `preview` holds the Development Clerk keys. `dyad` / `prd` holds the Production keys. Forma, Bolt, and Vibe preview configs reference the Development names. They do not reference `prd`. Before a preview uses the Development key, confirm it starts with `pk_test_`. A `pk_live_` value on preview means that preview is production, and the work stops.
-
-## Seed
-
-On the Development instance:
-
-1. Sign in with the Gmail account. That user is Project Manager.
-2. Sign in with the FU.edu Microsoft account. That user is Developer.
-3. Both are members of Wewebplus.
-4. Write those two Development user ids into `wewebplus.memberships` on the preview database branch.
-
-The same two external accounts sign into Production later and receive Production user ids. Production memberships use those Production ids.
-
-## Each builder
-
-**DYAD.** Keep the Clerk session check and `decideAnswer`. The two-person check uses the Wewebplus organization. The account switcher stays able to show another organization later.
-
-**Forma.** Replace the password cookie with the Clerk session. `ownerId()` returns the Clerk user id. Projects stay in Forma's Postgres and are listed for that user inside Wewebplus. `APP_PASSWORD` stops being the way in.
-
-**Bolt.** Add a sign-in page that uses the Development publishable key. The question list reads the Clerk session and the membership row. Chat history can stay in the browser until a later plan. Bolt does not gain its own user table.
-
-**Vibe SDK.** Product sign-in becomes the Clerk session. Apps stay in D1, stored under the Clerk user id and the Wewebplus org id. The existing email, Google, GitHub, and Cloudflare login is not the shared identity. This plan does not import or delete those D1 users.
+The two Development user ids go into `wewebplus.memberships` on the preview database. The same Gmail and FU.edu accounts can sign into Production later and will receive different user ids. Those Production ids are not part of this check.
 
 ## Check
 
-Use Chrome on a computer. Open one builder that has the sign-in page.
+Use Chrome on a computer. Open the walkthrough URL.
 
-- Normal window: Gmail account, Project Manager.
-- Private window: FU.edu account, Developer.
+- Signed out: Discovery, Implementation, and Delivery still finish, and the phase bar has no question box.
+- Normal window: Gmail account. The page shows Wewebplus and Project Manager.
+- Private window: FU.edu account. The page shows Wewebplus and Developer.
+
+With one stored question for each phase:
 
 1. Discovery. The Project Manager sees the question text and submits `approve` once. The Developer sees `Waiting on Project Manager for plan-approve.`
 2. Implementation. The Developer submits `approve` once. The Project Manager sees the waiting line.
@@ -72,6 +54,6 @@ Use Chrome on a computer. Open one builder that has the sign-in page.
 
 After each submit the status is `answered`, the field is gone, and the build stays paused.
 
-## Left for later
+## After Bolt passes
 
-Organization creation, a second organization, importing Vibe SDK's D1 users, and production keys on any preview. `bolt` / `prd` stays empty until this check passes.
+Forma, Vibe SDK, and any remaining DYAD preview wiring copy this adapter: the same Development Clerk application, the same two users, and the same Wewebplus membership rows. Each of those builders still keeps its own project database. That work is a later plan.
