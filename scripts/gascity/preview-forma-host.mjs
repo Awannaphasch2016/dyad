@@ -134,6 +134,81 @@ export function shouldUseUserForCluster(error) {
   );
 }
 
+export function withServiceLinkedRole(document, accountId) {
+  if (!/^[0-9]{12}$/.test(accountId)) {
+    throw new Error("AWS account id must be 12 digits");
+  }
+  if (!Array.isArray(document?.Statement)) {
+    throw new Error("Policy document has no statements");
+  }
+  if (
+    document.Statement.some((item) => item.Sid === "PreviewFormaServiceRoles")
+  ) {
+    return document;
+  }
+  const doc = structuredClone(document);
+  doc.Statement.push({
+    Sid: "PreviewFormaServiceRoles",
+    Effect: "Allow",
+    Action: "iam:CreateServiceLinkedRole",
+    Resource: [
+      `arn:aws:iam::${accountId}:role/aws-service-role/elasticloadbalancing.amazonaws.com/AWSServiceRoleForElasticLoadBalancing`,
+      `arn:aws:iam::${accountId}:role/aws-service-role/ecs.amazonaws.com/AWSServiceRoleForECS`,
+    ],
+    Condition: {
+      StringLike: {
+        "iam:AWSServiceName": [
+          "elasticloadbalancing.amazonaws.com",
+          "ecs.amazonaws.com",
+        ],
+      },
+    },
+  });
+  return doc;
+}
+
+export async function allowServiceLinkedRoles({ run, accountId }) {
+  const policyArn = `arn:aws:iam::${accountId}:policy/preview-forma-fargate`;
+  const policy = JSON.parse(
+    await run([
+      "iam",
+      "get-policy",
+      "--policy-arn",
+      policyArn,
+      "--output",
+      "json",
+    ]),
+  );
+  const versionId = policy.Policy.DefaultVersionId;
+  const version = JSON.parse(
+    await run([
+      "iam",
+      "get-policy-version",
+      "--policy-arn",
+      policyArn,
+      "--version-id",
+      versionId,
+      "--output",
+      "json",
+    ]),
+  );
+  const raw = version.PolicyVersion.Document;
+  const document =
+    typeof raw === "string" ? JSON.parse(decodeURIComponent(raw)) : raw;
+  const next = withServiceLinkedRole(document, accountId);
+  if (next === document) return { updated: false, policyArn };
+  await run([
+    "iam",
+    "create-policy-version",
+    "--policy-arn",
+    policyArn,
+    "--set-as-default",
+    "--policy-document",
+    JSON.stringify(next),
+  ]);
+  return { updated: true, policyArn };
+}
+
 export function roleEnv(credentials, baseEnv) {
   const accessKey = String(credentials?.AccessKeyId ?? "");
   const secret = String(credentials?.SecretAccessKey ?? "");
@@ -691,6 +766,12 @@ export async function createPreviewFormaHost({
   if (account !== PREVIEW_FORMA_ACCOUNT) {
     throw new Error("Refusing an unexpected AWS account");
   }
+  const userRun = async (args) => aws(args, userEnv);
+  const policy = await allowServiceLinkedRoles({
+    run: userRun,
+    accountId: account,
+  });
+  if (policy.updated) await sleep(10000);
   const caller = aws(
     ["sts", "get-caller-identity", "--query", "Arn", "--output", "text"],
     userEnv,

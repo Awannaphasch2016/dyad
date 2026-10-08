@@ -11,8 +11,10 @@ import {
   redact,
   roleEnv,
   selectPublicSubnets,
+  allowServiceLinkedRoles,
   shouldUseUserForCluster,
   taskDefinitionDocument,
+  withServiceLinkedRole,
 } from "./preview-forma-host.mjs";
 
 test("host names stay in ap-southeast-1 and do not start a task", () => {
@@ -306,6 +308,52 @@ test("ensure host creates the load balancer and does not start a task", async ()
   assert.equal(second.includes("create-load-balancer"), false);
   assert.equal(second.includes("register-task-definition"), false);
   assert.equal(second.includes("run-task"), false);
+});
+
+test("service role permission keeps the existing policy statements", async () => {
+  const original = {
+    Version: "2012-10-17",
+    Statement: [
+      {
+        Sid: "PreviewFormaCompute",
+        Effect: "Allow",
+        Action: "ecs:CreateCluster",
+      },
+    ],
+  };
+  const calls = [];
+  const run = async (args) => {
+    calls.push(args[1]);
+    if (args[1] === "get-policy") {
+      return JSON.stringify({ Policy: { DefaultVersionId: "v1" } });
+    }
+    if (args[1] === "get-policy-version") {
+      return JSON.stringify({ PolicyVersion: { Document: original } });
+    }
+    if (args[1] === "create-policy-version") {
+      const document = JSON.parse(args[args.indexOf("--policy-document") + 1]);
+      assert.equal(document.Statement[0].Sid, "PreviewFormaCompute");
+      assert.equal(document.Statement[1].Sid, "PreviewFormaServiceRoles");
+      assert.equal(document.Statement[1].Action, "iam:CreateServiceLinkedRole");
+      return "";
+    }
+    throw new Error(`unexpected ${args[1]}`);
+  };
+  const result = await allowServiceLinkedRoles({
+    run,
+    accountId: PREVIEW_FORMA_ACCOUNT,
+  });
+  assert.equal(result.updated, true);
+  assert.equal(calls.includes("create-policy-version"), true);
+  const again = withServiceLinkedRole(
+    withServiceLinkedRole(original, PREVIEW_FORMA_ACCOUNT),
+    PREVIEW_FORMA_ACCOUNT,
+  );
+  assert.equal(
+    again.Statement.filter((item) => item.Sid === "PreviewFormaServiceRoles")
+      .length,
+    1,
+  );
 });
 
 test("the host workflow is a one-shot and does not run a task", () => {
