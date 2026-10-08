@@ -12,6 +12,10 @@ import {
 const APEX_HOSTNAME = "anakwannaphaschaiyong.com";
 const CANARY_PAGE_HOSTNAME = "pre.anakwannaphaschaiyong.com";
 
+// The canary page frames the generated app. The preview proxy adds this
+// origin to frame-ancestors only when the bridge names it on the request.
+export const CANARY_PAGE_ORIGIN = `https://${CANARY_PAGE_HOSTNAME}`;
+
 export function isPreviewProxyPort(port: number): boolean {
   return (
     (port >= PROXY_PORT_BASE && port < PROXY_PORT_BASE + PROXY_PORT_RANGE) ||

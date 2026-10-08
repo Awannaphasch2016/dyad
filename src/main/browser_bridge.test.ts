@@ -621,7 +621,9 @@ describe("browser bridge", () => {
   });
 
   it("proxies an apps hostname to the preview port and refuses other ports", async () => {
+    let seenAncestor = "";
     const upstream = createServer((req, res) => {
+      seenAncestor = String(req.headers["x-dyad-preview-ancestor"] ?? "");
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
       res.end(`<html>${req.url}</html>`);
     });
@@ -646,10 +648,13 @@ describe("browser bridge", () => {
     });
     closers.push(() => bridge.close());
     const host = `p${previewPort}.anakwannaphaschaiyong.com`;
-    const preview = await requestWithHost(bridge.port, host, "/about");
+    const preview = await requestWithHost(bridge.port, host, "/about", {
+      "x-dyad-preview-ancestor": "https://evil.example",
+    });
     expect(preview.status).toBe(200);
     expect(preview.body).toBe("<html>/about</html>");
     expect(preview.body.includes("data-dyad-browser-bridge")).toBe(false);
+    expect(seenAncestor).toBe("https://pre.anakwannaphaschaiyong.com");
     const refused = await requestWithHost(
       bridge.port,
       "p32100.anakwannaphaschaiyong.com",
@@ -686,10 +691,11 @@ function requestWithHost(
   port: number,
   host: string,
   path: string,
+  headers: Record<string, string> = {},
 ): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
     const req = httpRequest(
-      { hostname: "127.0.0.1", port, path, headers: { host } },
+      { hostname: "127.0.0.1", port, path, headers: { host, ...headers } },
       (res) => {
         const chunks: Buffer[] = [];
         res.on("data", (chunk) => {

@@ -33,6 +33,7 @@ import {
   getTrustedIpcSendHandler,
 } from "@/ipc/handlers/trusted_handle";
 import {
+  CANARY_PAGE_ORIGIN,
   isPreviewAppsHost,
   previewPortFromHost,
   refusesPublicHost,
@@ -417,7 +418,8 @@ function proxyHeaders(
     if (
       lower === "host" ||
       lower === "accept-encoding" ||
-      lower === "content-length"
+      lower === "content-length" ||
+      lower === "x-dyad-preview-ancestor"
     ) {
       continue;
     }
@@ -432,17 +434,25 @@ function proxyHttp(
   devServerUrl: string,
   req: IncomingMessage,
   res: ServerResponse,
-  options?: { injectBridgeScript?: boolean; unavailableMessage?: string },
+  options?: {
+    injectBridgeScript?: boolean;
+    unavailableMessage?: string;
+    frameAncestor?: string;
+  },
 ) {
   const target = new URL(devServerUrl);
   const client = target.protocol === "https:" ? httpsRequest : httpRequest;
+  const headers = proxyHeaders(req.headers, target.host);
+  if (options?.frameAncestor) {
+    headers["x-dyad-preview-ancestor"] = options.frameAncestor;
+  }
   const upstream = client(
     {
       hostname: target.hostname,
       port: target.port || (target.protocol === "https:" ? 443 : 80),
       method: req.method,
       path: req.url,
-      headers: proxyHeaders(req.headers, target.host),
+      headers,
     },
     (upstreamRes) => {
       const contentType = String(upstreamRes.headers["content-type"] ?? "");
@@ -659,6 +669,7 @@ export function startBrowserBridge(
       proxyHttp(`http://127.0.0.1:${previewPort}`, req, res, {
         injectBridgeScript: false,
         unavailableMessage: "Preview is not reachable",
+        frameAncestor: CANARY_PAGE_ORIGIN,
       });
       return;
     }

@@ -399,8 +399,49 @@ function rewriteSetCookieHeaders(headers) {
   return headers;
 }
 
-const PROXY_FRAME_ANCESTORS_CSP =
+const BASE_FRAME_ANCESTORS_CSP =
   "frame-ancestors 'self' file: http://localhost:* http://127.0.0.1:* http://[::1]:*";
+// Kept in sync with CANARY_PAGE_ORIGIN. A request may name this parent only.
+const DEFAULT_PUBLIC_PREVIEW_FRAME_ANCESTORS = [
+  "https://pre.anakwannaphaschaiyong.com",
+];
+
+function isPublicPreviewAncestor(value) {
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === "https:" &&
+      url.username === "" &&
+      url.password === "" &&
+      url.port === "" &&
+      url.pathname === "/" &&
+      url.search === "" &&
+      url.hash === "" &&
+      url.origin === value
+    );
+  } catch {
+    return false;
+  }
+}
+
+const publicPreviewFrameAncestors = new Set(
+  (Array.isArray(workerData?.publicPreviewFrameAncestors)
+    ? workerData.publicPreviewFrameAncestors
+    : DEFAULT_PUBLIC_PREVIEW_FRAME_ANCESTORS
+  ).filter((value) => isPublicPreviewAncestor(value)),
+);
+
+function previewFrameAncestorsCsp(clientReq) {
+  const header = clientReq?.headers?.["x-dyad-preview-ancestor"];
+  const requested = Array.isArray(header) ? header[0] : header;
+  if (
+    typeof requested === "string" &&
+    publicPreviewFrameAncestors.has(requested)
+  ) {
+    return `${BASE_FRAME_ANCESTORS_CSP} ${requested}`;
+  }
+  return BASE_FRAME_ANCESTORS_CSP;
+}
 
 function appendHeader(headers, name, value) {
   const lowerName = name.toLowerCase();
@@ -420,12 +461,12 @@ function appendHeader(headers, name, value) {
   return headers;
 }
 
-function applyProxyFrameAncestorsCsp(headers) {
+function applyProxyFrameAncestorsCsp(headers, clientReq) {
   // Separate CSP header means app-supplied policies keep enforcing unchanged.
   return appendHeader(
     headers,
     "content-security-policy",
-    PROXY_FRAME_ANCESTORS_CSP,
+    previewFrameAncestorsCsp(clientReq),
   );
 }
 
@@ -464,6 +505,7 @@ const server = http.createServer((clientReq, clientRes) => {
 
   /* Copy request headers but rewrite Host / Origin / Referer */
   const headers = { ...clientReq.headers, host: target.host, ...fixedHeaders };
+  delete headers["x-dyad-preview-ancestor"];
   if (headers.origin) headers.origin = target.origin;
   if (headers.referer) {
     try {
@@ -503,7 +545,7 @@ const server = http.createServer((clientReq, clientRes) => {
 
     if (!inject) {
       rewriteSetCookieHeaders(upRes.headers);
-      applyProxyFrameAncestorsCsp(upRes.headers);
+      applyProxyFrameAncestorsCsp(upRes.headers, clientReq);
       clientRes.writeHead(upRes.statusCode, upRes.headers);
       return void upRes.pipe(clientRes);
     }
@@ -534,7 +576,7 @@ const server = http.createServer((clientReq, clientRes) => {
         delete hdrs["expires"];
         hdrs["cache-control"] = "no-store, must-revalidate";
         rewriteSetCookieHeaders(hdrs);
-        applyProxyFrameAncestorsCsp(hdrs);
+        applyProxyFrameAncestorsCsp(hdrs, clientReq);
 
         clientRes.writeHead(upRes.statusCode, hdrs);
         clientRes.end(patched);
@@ -567,6 +609,7 @@ server.on("upgrade", (req, socket, _head) => {
 
   const isTLS = target.protocol === "https:";
   const headers = { ...req.headers, host: target.host, ...fixedHeaders };
+  delete headers["x-dyad-preview-ancestor"];
   if (headers.origin) headers.origin = target.origin;
 
   const upReq = (isTLS ? https : http).request({

@@ -29,6 +29,9 @@ on:
       - src/main/browser_bridge.test.ts
       - src/control_plane/access.ts
       - src/control_plane/access.test.ts
+      - src/ipc/utils/start_proxy_server.ts
+      - src/__tests__/proxy_server_csp.test.ts
+      - worker/proxy_server.js
       - deploy/canary/**
       - services/gascity-supervisor/**
 

@@ -4,6 +4,7 @@ import path from "node:path";
 import { Worker } from "node:worker_threads";
 
 import { afterEach, describe, expect, it } from "vitest";
+import { CANARY_PAGE_ORIGIN } from "../preview_iframe/public_preview_url";
 
 const WORKER_PATH = path.resolve(
   __dirname,
@@ -38,9 +39,12 @@ function startUpstream({
 } = {}): Promise<{
   close: () => Promise<void>;
   origin: string;
+  headers: () => http.IncomingHttpHeaders;
 }> {
   return new Promise((resolve, reject) => {
-    const server = http.createServer((_req, res) => {
+    let lastHeaders: http.IncomingHttpHeaders = {};
+    const server = http.createServer((req, res) => {
+      lastHeaders = req.headers;
       res.writeHead(200, {
         "content-length": Buffer.byteLength(body),
         "content-type": contentType,
@@ -55,6 +59,7 @@ function startUpstream({
       resolve({
         close: () => new Promise<void>((res) => server.close(() => res())),
         origin: `http://localhost:${port}`,
+        headers: () => lastHeaders,
       });
     });
   });
@@ -129,6 +134,10 @@ describe("proxy worker Content-Security-Policy", () => {
 
   async function proxyResponse(
     upstreamOpts?: Parameters<typeof startUpstream>[0],
+    request: {
+      headers?: http.OutgoingHttpHeaders;
+      ancestors?: string[];
+    } = {},
   ) {
     const upstream = await startUpstream(upstreamOpts);
     cleanup.push(upstream.close);
@@ -139,6 +148,9 @@ describe("proxy worker Content-Security-Policy", () => {
       maxPortAttempts: 20,
       port,
       targetOrigin: upstream.origin,
+      ...(request.ancestors
+        ? { publicPreviewFrameAncestors: request.ancestors }
+        : {}),
     });
     const proxyPort = await waitForStart();
 
@@ -146,9 +158,15 @@ describe("proxy worker Content-Security-Policy", () => {
       body: string;
       headers: http.IncomingHttpHeaders;
       rawHeaders: string[];
+      upstreamHeaders: http.IncomingHttpHeaders;
     }>((resolve, reject) => {
       const req = http.get(
-        { host: "localhost", path: "/", port: proxyPort },
+        {
+          host: "localhost",
+          path: "/",
+          port: proxyPort,
+          headers: request.headers,
+        },
         (res) => {
           const chunks: Buffer[] = [];
           res.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
@@ -157,6 +175,7 @@ describe("proxy worker Content-Security-Policy", () => {
               body: Buffer.concat(chunks).toString("utf8"),
               headers: res.headers,
               rawHeaders: res.rawHeaders,
+              upstreamHeaders: upstream.headers(),
             }),
           );
         },
@@ -200,5 +219,37 @@ describe("proxy worker Content-Security-Policy", () => {
     expect(
       rawHeaderValues(response.rawHeaders, "content-security-policy"),
     ).toEqual([appCsp, PROXY_FRAME_ANCESTORS_CSP]);
+  });
+
+  it("lets the canary page frame the preview and refuses every other parent", async () => {
+    const allowed = await proxyResponse(
+      {
+        body: "<html><head></head><body>surf</body></html>",
+        contentType: "text/html",
+      },
+      {
+        headers: { "x-dyad-preview-ancestor": CANARY_PAGE_ORIGIN },
+      },
+    );
+    expect(allowed.body).toContain("<body>surf</body>");
+    expect(
+      rawHeaderValues(allowed.rawHeaders, "content-security-policy"),
+    ).toEqual([`${PROXY_FRAME_ANCESTORS_CSP} ${CANARY_PAGE_ORIGIN}`]);
+    expect(allowed.upstreamHeaders["x-dyad-preview-ancestor"]).toBeUndefined();
+
+    const refused = await proxyResponse(undefined, {
+      headers: { "x-dyad-preview-ancestor": "https://evil.example" },
+    });
+    expect(
+      rawHeaderValues(refused.rawHeaders, "content-security-policy"),
+    ).toEqual([PROXY_FRAME_ANCESTORS_CSP]);
+
+    const emptyAllowlist = await proxyResponse(undefined, {
+      ancestors: [],
+      headers: { "x-dyad-preview-ancestor": CANARY_PAGE_ORIGIN },
+    });
+    expect(
+      rawHeaderValues(emptyAllowlist.rawHeaders, "content-security-policy"),
+    ).toEqual([PROXY_FRAME_ANCESTORS_CSP]);
   });
 });
