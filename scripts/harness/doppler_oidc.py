@@ -565,6 +565,42 @@ def harness_request(
     return code, parsed if isinstance(parsed, dict) else {}
 
 
+def print_saved_identities(parsed: dict) -> None:
+    blobs: list[str] = []
+
+    def walk(value: object) -> None:
+        if isinstance(value, str) and "identit" in value.lower():
+            blobs.append(value)
+        elif isinstance(value, dict):
+            for item in value.values():
+                walk(item)
+        elif isinstance(value, list):
+            for item in value:
+                walk(item)
+
+    walk(parsed)
+    print("saved_identity_blobs", len(blobs))
+    shown = 0
+    for blob in blobs:
+        for line in blob.splitlines():
+            if not any(
+                word in line
+                for word in (
+                    "identit",
+                    "audience",
+                    "subject",
+                    "pipeline_id",
+                    "environment_id",
+                    "tokenMode",
+                )
+            ):
+                continue
+            print("saved", scrub(line.strip())[:220])
+            shown += 1
+            if shown >= 20:
+                return
+
+
 def interesting_log_line(text: str) -> bool:
     markers = (
         "env_name=",
@@ -616,6 +652,7 @@ def print_step_logs(api_key: str, account: str, execution: str) -> None:
         if ident != "print_oidc_claims":
             continue
         print("step", ident, node.get("status"))
+        print("step_keys", ",".join(sorted(str(key) for key in node)))
         key = node.get("logBaseKey")
         if not isinstance(key, str) or not key:
             print("log_key=absent")
@@ -712,6 +749,13 @@ def register_probe() -> int:
         )
         if code not in {200, 201}:
             return 1
+    saved_code, saved = harness_request(
+        api_key,
+        "GET",
+        f"https://app.harness.io/pipeline/api/pipelines/v2/{pipeline}{query}",
+    )
+    print("saved_pipeline", saved_code, saved.get("status"))
+    print_saved_identities(saved)
     execute_yaml = (
         "pipeline:\n"
         f"  identifier: {pipeline}\n"
