@@ -20,8 +20,16 @@ test("the OIDC probe does not use a wildcard or print a database URL", () => {
   assert.equal(script.includes("gascity-server"), false);
   assert.match(workflow, /cursor\/harness-doppler-5527/);
   assert.match(workflow, /secrets\.HARNESS_API_KEY/);
-  assert.match(workflow, /secrets\.DOPPLER_ADMIN_TOKEN/);
-  assert.match(workflow, /probe-once/);
+  assert.match(workflow, /register-probe/);
+  assert.equal(workflow.includes("DOPPLER_ADMIN_TOKEN"), false);
+  const pipeline = readFileSync(
+    new URL("../../deploy/harness/oidc-probe.yaml", import.meta.url),
+    "utf8",
+  );
+  assert.match(pipeline, /dyad_oidc_probe/);
+  assert.match(pipeline, /runtime-claims/);
+  assert.equal(pipeline.includes("HARNESS_API_KEY"), false);
+  assert.equal(pipeline.includes("postgres://"), false);
   assert.equal(workflow.includes("printenv"), false);
   assert.equal(workflow.includes("postgres://"), false);
 });

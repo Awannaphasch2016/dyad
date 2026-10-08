@@ -411,6 +411,23 @@ def self_test() -> int:
         "scrub_token": token not in scrubbed,
         "scrub_user": "user:secret" not in f"db_endpoint={label}",
     }
+    import io
+    from contextlib import redirect_stdout
+
+    os.environ["PLUGIN_OIDC_TOKEN_ID"] = token
+    os.environ.pop("HARNESS_WI_HANDLE", None)
+    os.environ.pop("HARNESS_WI_MINT_URL", None)
+    buffer = io.StringIO()
+    try:
+        with redirect_stdout(buffer):
+            runtime_status = runtime_claims()
+    finally:
+        os.environ.pop("PLUGIN_OIDC_TOKEN_ID", None)
+    runtime_output = buffer.getvalue()
+    checks["runtime_status"] = runtime_status == 0
+    checks["runtime_present"] = "oidc_env=present" in runtime_output
+    checks["runtime_claim"] = "claim pipeline_id=" in runtime_output
+    checks["runtime_hidden"] = token not in runtime_output and email not in runtime_output
     failed = [name for name, ok in checks.items() if not ok]
     if failed:
         print("self_test=fail " + ",".join(failed))
@@ -422,6 +439,293 @@ def self_test() -> int:
     return 0
 
 
+def runtime_claims() -> int:
+    for key in sorted(os.environ):
+        upper = key.upper()
+        if "OIDC" in upper or upper.startswith("HARNESS_WI") or "JWT" in upper:
+            print(f"env_name={key}")
+    token = os.environ.get("PLUGIN_OIDC_TOKEN_ID", "")
+    print("oidc_env=" + ("present" if token else "absent"))
+    if token:
+        try:
+            print("\n".join(claim_lines(decode_payload(token))))
+        except (ValueError, json.JSONDecodeError):
+            print("oidc_claims=unreadable")
+    handle = os.environ.get("HARNESS_WI_HANDLE", "")
+    mint = os.environ.get("HARNESS_WI_MINT_URL", "")
+    print("wi_handle=" + ("present" if handle else "absent"))
+    scheme = mint.split(":", 1)[0] if mint else "absent"
+    if scheme not in {"http", "https", "absent"}:
+        scheme = "other"
+    print(f"wi_mint_scheme={scheme}")
+    print("hcli=" + ("present" if shutil_which("hcli") else "absent"))
+    if not handle or not mint.startswith(("http://", "https://")):
+        return 0
+    code, parsed = http_json(
+        "POST",
+        mint,
+        {"Content-Type": "application/json"},
+        {"handle": handle, "name": "doppler"},
+    )
+    print("mint_http", code)
+    minted = ""
+    if isinstance(parsed, dict):
+        candidate = parsed.get("oidc_token") or parsed.get("token") or ""
+        if isinstance(candidate, str):
+            minted = candidate
+        error = parsed.get("error")
+        if isinstance(error, str) and error:
+            print("mint_error", scrub(error)[:180])
+    if not minted:
+        print("mint_token=absent")
+        return 0
+    try:
+        print("\n".join(claim_lines(decode_payload(minted))))
+    except (ValueError, json.JSONDecodeError):
+        print("mint_claims=unreadable")
+    return 0
+
+
+def shutil_which(name: str) -> str:
+    import shutil
+
+    return shutil.which(name) or ""
+
+
+def harness_request(
+    api_key: str,
+    method: str,
+    url: str,
+    yaml_text: str | None = None,
+    payload: dict | None = None,
+) -> tuple[int, dict]:
+    headers = {"x-api-key": api_key}
+    body = None
+    if yaml_text is not None:
+        headers["Content-Type"] = "application/yaml"
+        body = yaml_text.encode("utf-8")
+    elif payload is not None:
+        headers["Content-Type"] = "application/json"
+        body = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(url, data=body, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            raw = response.read().decode("utf-8", "replace")
+            code = response.status
+    except urllib.error.HTTPError as error:
+        raw = error.read().decode("utf-8", "replace")
+        code = error.code
+    try:
+        parsed = json.loads(raw) if raw else {}
+    except json.JSONDecodeError:
+        parsed = {"message": scrub(raw)[:240]}
+    return code, parsed if isinstance(parsed, dict) else {}
+
+
+def interesting_log_line(text: str) -> bool:
+    markers = (
+        "env_name=",
+        "oidc_env=",
+        "oidc_claims=",
+        "wi_handle=",
+        "wi_mint_scheme=",
+        "hcli=",
+        "mint_http",
+        "mint_error",
+        "mint_token=",
+        "mint_claims=",
+        "claim ",
+        "claim_absent",
+        "claim_time",
+        "wildcard=",
+        "extra_claim_key=",
+    )
+    return any(marker in text for marker in markers)
+
+
+def print_step_logs(api_key: str, account: str, execution: str) -> None:
+    import time
+    import zipfile
+    from pathlib import Path
+    from urllib.parse import quote
+
+    code, detail = harness_request(
+        api_key,
+        "GET",
+        "https://app.harness.io/pipeline/api/pipelines/execution/v2/"
+        f"{execution}?accountIdentifier={account}&orgIdentifier=default"
+        "&projectIdentifier=dyad&renderFullBottomGraph=true",
+    )
+    print("detail_http", code)
+    graph = (((detail.get("data") or {}).get("executionGraph") or {}).get("nodeMap") or {})
+    if not isinstance(graph, dict):
+        return
+    for node in graph.values():
+        if not isinstance(node, dict):
+            continue
+        ident = str(node.get("identifier") or "")
+        if ident != "print_oidc_claims":
+            continue
+        print("step", ident, node.get("status"))
+        key = node.get("logBaseKey")
+        if not isinstance(key, str) or not key:
+            print("log_key=absent")
+            return
+        link = ""
+        for _ in range(12):
+            log_code, log_body = harness_request(
+                api_key,
+                "POST",
+                "https://app.harness.io/gateway/log-service/blob/download"
+                f"?accountID={account}&prefix={quote(key, safe='')}",
+                payload={},
+            )
+            log_status = log_body.get("status") if isinstance(log_body, dict) else ""
+            print("log_http", log_code, log_status)
+            if log_status == "success" and isinstance(log_body.get("link"), str):
+                link = log_body["link"]
+                break
+            time.sleep(3)
+        if not link:
+            print("log_link=absent")
+            return
+        log_file = Path("/tmp/harness-oidc-step.log")
+        log_file.unlink(missing_ok=True)
+        download = urllib.request.urlopen(link, timeout=60)
+        log_file.write_bytes(download.read())
+        download.close()
+        chunks: list[str] = []
+        if zipfile.is_zipfile(log_file):
+            with zipfile.ZipFile(log_file) as archive:
+                print("log_entries", len(archive.namelist()))
+                for name in archive.namelist():
+                    chunks.append(archive.read(name).decode("utf-8", "replace"))
+        else:
+            chunks.append(log_file.read_text("utf-8", "replace"))
+        log_file.unlink(missing_ok=True)
+        shown = 0
+        for raw_log in chunks:
+            for line in raw_log.splitlines():
+                if "PRIVATE KEY" in line or "BEGIN " in line:
+                    continue
+                text = line
+                try:
+                    parsed = json.loads(line)
+                except json.JSONDecodeError:
+                    text = line
+                else:
+                    text = ""
+                    if isinstance(parsed, dict):
+                        for field in ("out", "message", "log", "text"):
+                            value = parsed.get(field)
+                            if isinstance(value, str) and value:
+                                text = value
+                                break
+                if not interesting_log_line(text):
+                    continue
+                print("log", scrub(text)[:300])
+                shown += 1
+        print("log_matches", shown)
+
+
+def register_probe() -> int:
+    import time
+    from pathlib import Path
+
+    api_key = os.environ.get("HARNESS_API_KEY", "")
+    if not api_key:
+        print("harness_api_key=absent")
+        return 1
+    account = ACCOUNT
+    pipeline = "dyad_oidc_probe"
+    yaml_text = Path("deploy/harness/oidc-probe.yaml").read_text("utf-8")
+    query = f"?accountIdentifier={account}&orgIdentifier=default&projectIdentifier=dyad"
+    code, body = harness_request(
+        api_key,
+        "POST",
+        f"https://app.harness.io/pipeline/api/pipelines/v2{query}",
+        yaml_text=yaml_text,
+    )
+    message = scrub(str(body.get("message") or ""))[:300]
+    print("create_pipeline", code, body.get("status"), message)
+    if code not in {"200", "201"}:
+        code, body = harness_request(
+            api_key,
+            "PUT",
+            f"https://app.harness.io/pipeline/api/pipelines/v2/{pipeline}{query}",
+            yaml_text=yaml_text,
+        )
+        print(
+            "update_pipeline",
+            code,
+            body.get("status"),
+            scrub(str(body.get("message") or ""))[:300],
+        )
+        if code not in {"200", "201"}:
+            return 1
+    execute_yaml = (
+        "pipeline:\n"
+        f"  identifier: {pipeline}\n"
+        "  properties:\n"
+        "    ci:\n"
+        "      codebase:\n"
+        "        build:\n"
+        "          type: branch\n"
+        "          spec:\n"
+        "            branch: cursor/harness-doppler-5527\n"
+    )
+    code, body = harness_request(
+        api_key,
+        "POST",
+        "https://app.harness.io/pipeline/api/pipeline/execute/"
+        f"{pipeline}{query}&moduleType=CI",
+        yaml_text=execute_yaml,
+    )
+    data = body.get("data") if isinstance(body.get("data"), dict) else {}
+    plan = data.get("planExecution") if isinstance(data.get("planExecution"), dict) else {}
+    execution = (
+        data.get("planExecutionId")
+        or data.get("uuid")
+        or plan.get("uuid")
+        or plan.get("planExecutionId")
+        or ""
+    )
+    print("execute", code, body.get("status"), execution)
+    if code not in {"200", "201"} or not execution:
+        print("execute_message", scrub(str(body.get("message") or ""))[:300])
+        return 1
+    terminal = {"Success", "Failed", "Errored", "Expired", "Aborted"}
+    status = "Unknown"
+    summary_url = (
+        "https://app.harness.io/pipeline/api/pipelines/execution/summary"
+        f"?accountIdentifier={account}&orgIdentifier=default&projectIdentifier=dyad"
+        f"&pipelineIdentifier={pipeline}&page=0&size=5"
+    )
+    for _ in range(45):
+        summary_code, summary_body = harness_request(
+            api_key,
+            "POST",
+            summary_url,
+            payload={"filterType": "PipelineExecution"},
+        )
+        rows = []
+        summary_data = summary_body.get("data")
+        if isinstance(summary_data, dict) and isinstance(summary_data.get("content"), list):
+            rows = summary_data["content"]
+        status = "Missing"
+        for row in rows:
+            if isinstance(row, dict) and row.get("planExecutionId") == execution:
+                status = str(row.get("status") or "Unknown")
+                break
+        print("poll", summary_code, status)
+        if status in terminal:
+            break
+        time.sleep(20)
+    print_step_logs(api_key, account, str(execution))
+    print("final", status)
+    return 0 if status == "Success" else 1
+
+
 def main(argv: list[str]) -> int:
     if argv == ["--self-test"]:
         return self_test()
@@ -429,6 +733,10 @@ def main(argv: list[str]) -> int:
         harness_status = probe_harness()
         doppler_status = probe_doppler()
         return harness_status or doppler_status
+    if argv == ["runtime-claims"]:
+        return runtime_claims()
+    if argv == ["register-probe"]:
+        return register_probe()
     print("usage")
     return 2
 

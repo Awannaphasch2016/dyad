@@ -1,0 +1,39 @@
+pipeline:
+  name: Dyad OIDC probe
+  identifier: dyad_oidc_probe
+  orgIdentifier: default
+  projectIdentifier: dyad
+  description: Experiment 5 probe. Print allowlisted OIDC claims from the execution. Do not create a Doppler identity.
+  properties:
+    ci:
+      codebase:
+        connectorRef: account.Dyad
+        repoName: Awannaphasch2016/dyad
+        build:
+          type: branch
+          spec:
+            branch: cursor/harness-doppler-5527
+  stages:
+    - stage:
+        name: OIDC claims
+        identifier: oidc_claims
+        type: CI
+        spec:
+          cloneCodebase: true
+          platform:
+            os: Linux
+            arch: Amd64
+          runtime:
+            type: Cloud
+            spec: {}
+          execution:
+            steps:
+              - step:
+                  type: Run
+                  name: Print allowlisted OIDC claims
+                  identifier: print_oidc_claims
+                  spec:
+                    shell: Bash
+                    command: |
+                      set -euo pipefail
+                      python3 scripts/harness/doppler_oidc.py runtime-claims
