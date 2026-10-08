@@ -737,8 +737,32 @@ async function waitForDeployment(token, project, deployment) {
   throw new Error("Vercel deployment did not become ready");
 }
 
+async function disableVercelAuthentication(token, project) {
+  const query = teamQuery(project);
+  const current = await vercelApi(
+    token,
+    "GET",
+    `/v9/projects/${encodeURIComponent(project.id)}${query}`,
+  );
+  const deploymentType = current?.ssoProtection?.deploymentType || "absent";
+  console.log(`forma_sso=${deploymentType}`);
+  if (!current?.ssoProtection) return;
+  await vercelApi(
+    token,
+    "PATCH",
+    `/v9/projects/${encodeURIComponent(project.id)}${query}`,
+    { ssoProtection: null },
+  );
+  console.log("forma_sso=disabled");
+}
+
 async function deploy(checkout, env, project) {
   const token = env.runtime.VERCEL_TOKEN;
+  try {
+    await disableVercelAuthentication(token, project);
+  } catch (error) {
+    console.log(`forma_sso=unchanged ${redact(error.message)}`);
+  }
   const values = {
     ...env.runtime,
     DATABASE_URL: env.build.DATABASE_URL,
