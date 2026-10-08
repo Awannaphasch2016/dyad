@@ -458,10 +458,20 @@ def runtime_claims() -> int:
     if scheme not in {"http", "https", "absent"}:
         scheme = "other"
     print(f"wi_mint_scheme={scheme}")
+    for name in ("preview",):
+        minted = find_jwt(os.environ.get(name, ""))
+        if not minted:
+            print(f"identity_env=absent name={name}")
+            continue
+        print(f"identity_env=present name={name}")
+        try:
+            print("\n".join(claim_lines(decode_payload(minted))))
+        except (ValueError, json.JSONDecodeError):
+            print("identity_claims=unreadable")
     hcli = shutil_which("hcli")
     print("hcli=" + ("present" if hcli else "absent"))
     if hcli:
-        print_hcli_help(hcli)
+        mint_named_identity(hcli, "preview")
     if not handle or not mint.startswith(("http://", "https://")):
         return 0
     code, parsed = http_json(
@@ -489,41 +499,34 @@ def runtime_claims() -> int:
     return 0
 
 
-def print_hcli_help(binary: str) -> None:
+def mint_named_identity(binary: str, name: str) -> None:
     import subprocess
 
-    commands = (
-        [binary, "identity", "token", "--help"],
-        [binary, "identity", "token"],
-        [binary, "identity", "token", "--name", "doppler"],
-        [binary, "identity", "token", "doppler"],
-    )
-    for args in commands:
+    args = [binary, "identity", "token", "--name", name, "--audience", AUDIENCE]
+    try:
+        result = subprocess.run(args, text=True, capture_output=True, timeout=20)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        print("hcli_cmd", "identity token", "error", type(error).__name__)
+        return
+    print("hcli_cmd", "identity token", "exit", result.returncode)
+    minted = find_jwt((result.stdout or "").strip())
+    if minted:
+        print(f"hcli_token=present name={name}")
         try:
-            result = subprocess.run(args, text=True, capture_output=True, timeout=15)
-        except (OSError, subprocess.TimeoutExpired) as error:
-            print("hcli_cmd", " ".join(args[1:]), "error", type(error).__name__)
+            print("\n".join(claim_lines(decode_payload(minted))))
+        except (ValueError, json.JSONDecodeError):
+            print("hcli_claims=unreadable")
+        return
+    text = scrub((result.stdout or "") + "\n" + (result.stderr or ""))
+    shown = 0
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
             continue
-        print("hcli_cmd", " ".join(args[1:]), "exit", result.returncode)
-        combined = (result.stdout or "") + "\n" + (result.stderr or "")
-        minted = find_jwt(result.stdout.strip()) or find_jwt(combined)
-        if minted:
-            print("hcli_token=present")
-            try:
-                print("\n".join(claim_lines(decode_payload(minted))))
-            except (ValueError, json.JSONDecodeError):
-                print("hcli_claims=unreadable")
-            continue
-        text = scrub(combined)
-        shown = 0
-        for line in text.splitlines():
-            stripped = line.strip()
-            if not stripped:
-                continue
-            print("hcli_help", stripped[:200])
-            shown += 1
-            if shown >= 30:
-                break
+        print("hcli_help", stripped[:200])
+        shown += 1
+        if shown >= 12:
+            break
 
 
 def shutil_which(name: str) -> str:
@@ -572,6 +575,8 @@ def interesting_log_line(text: str) -> bool:
         "hcli=",
         "hcli_cmd",
         "hcli_help",
+        "identity_env=",
+        "identity_claims=",
         "hcli_token=",
         "hcli_claims=",
         "mint_http",

@@ -32,6 +32,14 @@ pipeline:
                   type: Run
                   name: Print allowlisted OIDC claims
                   identifier: print_oidc_claims
+                  identities:
+                    preview:
+                      audience: https://api.doppler.com
+                      tokenMode: STANDARD
+                      subjectTemplate: account/WKxXBnSFTRaOF64-h90PyQ:org/default:project/dyad:pipeline/dyad_oidc_probe:environment/preview
+                      customClaims:
+                        pipeline_id: dyad_oidc_probe
+                        environment_id: preview
                   spec:
                     shell: Bash
                     command: |
