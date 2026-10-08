@@ -2,8 +2,7 @@ name: PR Preview - Forma
 
 # Deploy one Forma commit to the Vercel preview. The image publish runs in
 # the Forma repository. This job does not copy the editor and does not run
-# the container. The Forma app installation has no workflows permission, so
-# this job does not request one.
+# the container.
 
 on:
   workflow_dispatch:
@@ -54,6 +53,7 @@ jobs:
           repositories: forma
           permission-contents: write
           permission-pull-requests: write
+          permission-workflows: write
 
       - name: Use Node 24
         uses: actions/setup-node@v5
