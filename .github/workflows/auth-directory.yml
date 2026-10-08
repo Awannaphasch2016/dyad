@@ -3,7 +3,12 @@
 name: Auth directory
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - cursor/shared-auth-substrate-55d6
+    paths:
+      - scripts/doppler/list-auth-directory.mjs
+      - .github/workflows/auth-directory.yml
 
 permissions:
   contents: read
