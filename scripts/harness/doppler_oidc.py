@@ -648,7 +648,7 @@ def register_probe() -> int:
     )
     message = scrub(str(body.get("message") or ""))[:300]
     print("create_pipeline", code, body.get("status"), message)
-    if code not in {"200", "201"}:
+    if code not in {200, 201}:
         code, body = harness_request(
             api_key,
             "PUT",
@@ -661,7 +661,7 @@ def register_probe() -> int:
             body.get("status"),
             scrub(str(body.get("message") or ""))[:300],
         )
-        if code not in {"200", "201"}:
+        if code not in {200, 201}:
             return 1
     execute_yaml = (
         "pipeline:\n"
@@ -691,7 +691,7 @@ def register_probe() -> int:
         or ""
     )
     print("execute", code, body.get("status"), execution)
-    if code not in {"200", "201"} or not execution:
+    if code not in {200, 201} or not execution:
         print("execute_message", scrub(str(body.get("message") or ""))[:300])
         return 1
     terminal = {"Success", "Failed", "Errored", "Expired", "Aborted"}
