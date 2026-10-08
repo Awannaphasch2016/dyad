@@ -1,7 +1,9 @@
 #!/usr/bin/env node
-// Create the preview-forma Fargate host in ap-southeast-1.
-// Assumes role preview-forma-deploy. Does not run a task or create a service.
-// Does not print credentials.
+// Run 37854936747 created the preview-forma host in ap-southeast-1 and did
+// not start a task. Load balancer:
+// preview-forma-2018533952.ap-southeast-1.elb.amazonaws.com
+// The push-triggered workflow was removed after that run. Do not add this
+// script back as a standing secret job. Does not print credentials.
 
 import { spawnSync } from "node:child_process";
 import { writeSync } from "node:fs";

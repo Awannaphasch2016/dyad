@@ -360,16 +360,11 @@ test("service role permission keeps the existing policy statements", async () =>
   );
 });
 
-test("the host workflow is a one-shot and does not run a task", () => {
-  const workflow = readFileSync(
-    new URL("../../.github/workflows/preview-forma-host.yml", import.meta.url),
-    "utf8",
+test("the one-shot host workflow is not on the branch", () => {
+  assert.throws(() =>
+    readFileSync(
+      new URL("../../.github/workflows/preview-forma-host.yml", import.meta.url),
+      "utf8",
+    ),
   );
-  assert.equal(workflow.includes("environment: ai-bots"), true);
-  assert.equal(workflow.includes("DOPPLER_ADMIN_TOKEN"), true);
-  assert.equal(workflow.includes("permission-actions:"), false);
-  assert.equal(workflow.includes("run-task"), false);
-  assert.equal(workflow.includes("create-service"), false);
-  assert.equal(workflow.includes("wewebplus-ci"), false);
-  assert.equal(workflow.includes("dyad/prd"), false);
 });
