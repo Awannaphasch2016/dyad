@@ -1,0 +1,37 @@
+# Store the formula preview role address in Doppler from the production host.
+# Does not roll out the host and does not print secret values.
+name: Formula preview role
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cursor/formula-config-ui-55d6
+    paths:
+      - scripts/gascity/setup_formula_role.py
+      - .github/workflows/preview-formula-role.yml
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Store the role address from the production host
+        env:
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          python3 scripts/gascity/write_ssh_key.py "$RUNNER_TEMP/gascity-ec2"
+          ssh -i "$RUNNER_TEMP/gascity-ec2" \
+            -o UserKnownHostsFile="$GITHUB_WORKSPACE/.github/gascity_known_hosts" \
+            -o StrictHostKeyChecking=yes \
+            -o IdentitiesOnly=yes \
+            -o ConnectTimeout=20 \
+            ubuntu@13.251.216.187 \
+            "python3 -" < scripts/gascity/setup_formula_role.py

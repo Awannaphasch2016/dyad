@@ -2,7 +2,7 @@
 // Prints the load balancer URL. Does not print secret values.
 
 import { randomBytes } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -25,6 +25,19 @@ const EXECUTION_ROLE = "formula-preview-execution";
 const TASK_ROLE = "formula-preview-task";
 const IMAGE_PATTERN =
   /^[0-9]{12}\.dkr\.ecr\.ap-southeast-1\.amazonaws\.com\/dyad-formula-preview@sha256:[a-f0-9]{64}$/;
+
+export const FORMULA_ROLE_ARN =
+  /^arn:aws:iam::[0-9]{12}:role\/[A-Za-z0-9+=,.@_-]+$/;
+
+export function formulaRoleArn(env = {}, download = {}) {
+  for (const value of [
+    env.AWS_PREVIEW_FORMULA_ROLE_ARN,
+    download.AWS_PREVIEW_FORMULA_ROLE_ARN,
+  ]) {
+    if (typeof value === "string" && FORMULA_ROLE_ARN.test(value)) return value;
+  }
+  return "";
+}
 
 const COPIED_SECRETS = [
   "WEWEBPLUS_DATABASE_URL",
@@ -1066,9 +1079,48 @@ function arg(name) {
   return index === -1 ? "" : process.argv[index + 1] || "";
 }
 
+async function downloadDoppler(token) {
+  const response = await fetch(
+    "https://api.doppler.com/v3/configs/config/secrets/download?format=json",
+    {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Doppler download failed (${response.status})`);
+  }
+  return response.json();
+}
+
+async function writeRoleArn() {
+  const out = arg("--out");
+  if (!out) throw new Error("Missing --out");
+  let download = {};
+  if (process.env.DOPPLER_TOKEN) {
+    download = await downloadDoppler(process.env.DOPPLER_TOKEN);
+  }
+  const roleArn = formulaRoleArn(process.env, download);
+  if (!roleArn) {
+    console.error(
+      "AWS_PREVIEW_FORMULA_ROLE_ARN is absent from Doppler and from the GitHub secret.",
+    );
+    console.error(
+      "The role must trust repo:Awannaphasch2016/dyad:ref:refs/heads/cursor/formula-config-ui-55d6",
+    );
+    process.exitCode = 1;
+    return;
+  }
+  writeFileSync(out, roleArn, { mode: 0o600 });
+  process.stdout.write("present\n");
+}
+
 async function main() {
   const command = process.argv[2];
   const run = cliRunner();
+  if (command === "role-arn") {
+    await writeRoleArn();
+    return;
+  }
   if (command === "ensure-repository") {
     const repository = await ensureRepository(run);
     process.stdout.write(`repository=${repository}\n`);
@@ -1084,7 +1136,7 @@ async function main() {
     return;
   }
   throw new Error(
-    "Usage: formula_ecs.mjs <ensure-repository|sync> [--image digest] [--runtime file]",
+    "Usage: formula_ecs.mjs <role-arn|ensure-repository|sync> [--out file] [--image digest] [--runtime file]",
   );
 }
 

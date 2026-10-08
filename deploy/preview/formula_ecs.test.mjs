@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   AwsError,
   assertFormulaImage,
   buildTaskDefinition,
+  formulaRoleArn,
   ingressChanges,
   mergeFormulaSecrets,
   parseShellExports,
@@ -47,6 +49,26 @@ test("shell exports round-trip without keeping Cloudflare values", () => {
   assert.equal(Object.hasOwn(values, "CLOUDFLARE_API_TOKEN"), false);
   assert.equal(Object.hasOwn(values, "GAS_CITY_CITY_NAME"), false);
   assert.equal(Object.hasOwn(values, "AWS_REGION"), false);
+});
+
+test("the formula role address comes from Doppler or the GitHub secret", () => {
+  const arn = "arn:aws:iam::123456789012:role/github-preview-formula";
+  assert.equal(formulaRoleArn({}, { AWS_PREVIEW_FORMULA_ROLE_ARN: arn }), arn);
+  assert.equal(formulaRoleArn({ AWS_PREVIEW_FORMULA_ROLE_ARN: arn }, {}), arn);
+  assert.equal(
+    formulaRoleArn({ AWS_PREVIEW_FORMULA_ROLE_ARN: "nope" }, {}),
+    "",
+  );
+  assert.equal(
+    formulaRoleArn(
+      {},
+      {
+        CLOUDFLARE_API_TOKEN: "secret-token",
+        AWS_PREVIEW_FORMULA_ROLE_ARN: "",
+      },
+    ),
+    "",
+  );
 });
 
 test("a missing database URL does not invent a local file", () => {
@@ -244,6 +266,52 @@ test("the formula workflow deploys to ECS and does not cook", () => {
   assert.equal(workflow.includes("6080"), false);
   assert.equal(workflow.includes("CLOUDFLARE_"), false);
   assert.equal(compose.includes("DYAD_BROWSER_BRIDGE_HOST"), false);
+  assert.match(workflow, /formula_ecs\.mjs role-arn/);
+});
+
+test("the production host stores the role address without printing it", () => {
+  const script = readFileSync(
+    new URL("../../scripts/gascity/setup_formula_role.py", import.meta.url),
+    "utf8",
+  );
+  const workflow = readFileSync(
+    new URL(
+      "../../.github/workflows/preview-formula-role.yml",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  assert.match(script, /AWS_PREVIEW_FORMULA_ROLE_ARN/);
+  assert.match(script, /dyad-preview\.token/);
+  assert.match(script, /def redact/);
+  assert.equal(script.includes("set -x"), false);
+  assert.equal(script.includes("gascity-rollout"), false);
+  assert.match(workflow, /EC2_SSH_KEY/);
+  assert.match(workflow, /gascity_known_hosts/);
+  assert.match(workflow, /setup_formula_role\.py/);
+  assert.equal(workflow.includes("gascity-rollout"), false);
+  const check = spawnSync(
+    "python3",
+    [
+      "-c",
+      [
+        "import importlib.util, json",
+        "spec = importlib.util.spec_from_file_location('setup', 'scripts/gascity/setup_formula_role.py')",
+        "mod = importlib.util.module_from_spec(spec)",
+        "spec.loader.exec_module(mod)",
+        "policy = mod.trust_policy('123456789012')",
+        "sub = policy['Statement'][0]['Condition']['StringEquals']['token.actions.githubusercontent.com:sub']",
+        "assert sub == mod.TRUST_SUB",
+        "text = json.dumps(mod.permissions_policy('123456789012'))",
+        "assert 'iam:CreateUser' not in text",
+        "assert 'formula-preview-execution' in text",
+        "print('ok')",
+      ].join("\n"),
+    ],
+    { encoding: "utf8" },
+  );
+  assert.equal(check.status, 0, check.stderr);
+  assert.match(check.stdout, /ok/);
 });
 
 function memoryAws() {
