@@ -8,7 +8,7 @@ Check these in order. A line is done only when the observable result is true.
 
 - [x] The sign-in host check and the OpenRouter editor are commits in `Awannaphasch2016/forma`. This repository does not copy those files during deploy.
 - [x] The preview log names one full Forma commit SHA. The Vercel deployment is that commit.
-- [ ] Forma’s build publishes `ghcr.io/awannaphasch2016/forma:sha-<commit>` and the log shows the image digest `sha256:…`. The URL you open is still a Vercel URL.
+- [ ] Forma’s build publishes `ghcr.io/awannaphasch2016/forma:sha-<commit>` and the log shows the image digest `sha256:…`. The URL you open is still a Vercel URL. The workflow file is committed. The digest is in Forma's **Publish Forma image** log.
 - [x] The workflow **PR Preview - Forma** in this repository accepts that commit SHA and an environment. The environment defaults to `preview`.
 - [x] Preview uses Doppler project `forma` config `dev`, Neon branch `forma-pr-<number>` in project `divine-credit-21002460`, and the Vercel project `forma`. `APP_URL` is unset. The OpenRouter key is not copied into any `OPENAI_*` name.
 - [x] The Forma pull request comment shows the Vercel URL and the commit SHA.
@@ -25,7 +25,7 @@ Check these in order. A line is done only when the observable result is true.
 - `forma_url=https://forma-hs90r9mvg-anak2.vercel.app`
 - `GET /api/status` is `{"configured":true,"provider":"openrouter"}`. A wrong password returns 401.
 - The job did not copy `scripts/gascity/forma-openrouter/`.
-- `forma_image_workflow=unavailable`. The dyad-harness GitHub App installation cannot edit workflow files, so Forma's image workflow was not added and no digest was published. The open URL is still the Vercel deployment.
+- Later run [37768264116](https://github.com/Awannaphasch2016/dyad/actions/runs/37768264116) committed the image workflow. `forma_sha=80a8e419f6285378b4dfada336ea8213f3089bab`. `forma_url=https://forma-lgm8pihjw-anak2.vercel.app`. `forma_image_workflow=committed`. The registry read from this repository returned unavailable. The digest belongs in Forma's **Publish Forma image** log.
 - Naming an environment other than `preview` is refused in code. A second environment was not deployed.
 
 ## Already true
