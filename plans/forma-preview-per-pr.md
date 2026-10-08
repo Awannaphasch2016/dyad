@@ -71,11 +71,11 @@ The comment contains the app name and the full URL as text.
 
 ## Technical design
 
-| Label | Repository | Runtime | Database | URL |
-| --- | --- | --- | --- | --- |
-| `preview` | `Awannaphasch2016/dyad` | Namespace devbox `Wewebplus-ci` | Neon branch `preview-pr-<number>` in `mute-credit-71067312` | `https://pr-<number>.anakwannaphaschaiyong.com` |
-| `preview-vibesdk` | `Awannaphasch2016/dyad` | Worker `vibesdk-pr-<number>` | New empty D1 database `vibesdk-pr-<number>` | `https://vibesdk-pr-<number>.karant-test-egress-canary.workers.dev` |
-| `preview-forma` | `Awannaphasch2016/forma` | Vercel preview of that pull request | Neon branch `forma-pr-<number>` in `divine-credit-21002460` | The Vercel preview URL written on the pull request |
+| Label             | Repository               | Runtime                             | Database                                                    | URL                                                                 |
+| ----------------- | ------------------------ | ----------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------- |
+| `preview`         | `Awannaphasch2016/dyad`  | Namespace devbox `Wewebplus-ci`     | Neon branch `preview-pr-<number>` in `mute-credit-71067312` | `https://pr-<number>.anakwannaphaschaiyong.com`                     |
+| `preview-vibesdk` | `Awannaphasch2016/dyad`  | Worker `vibesdk-pr-<number>`        | New empty D1 database `vibesdk-pr-<number>`                 | `https://vibesdk-pr-<number>.karant-test-egress-canary.workers.dev` |
+| `preview-forma`   | `Awannaphasch2016/forma` | Vercel preview of that pull request | Neon branch `forma-pr-<number>` in `divine-credit-21002460` | The Vercel preview URL written on the pull request                  |
 
 The workflow file is `.github/workflows/preview-forma.yml` in `Awannaphasch2016/forma`, so the label event is visible. It checks out that pull request's head. It does not run `preview.yml` and it does not take the lock `preview-devbox-wewebplus-ci`.
 
