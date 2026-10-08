@@ -71,7 +71,7 @@ jobs:
         env:
           DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
           GH_TOKEN: ${{ steps.app.outputs.token }}
-          FORMA_PR: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.pr || inputs.pr }}
+          FORMA_PR: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.pr || inputs.pr || (github.event_name == 'push' && '2' || '') }}
           FORMA_SHA: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.sha || inputs.sha }}
           FORMA_ENVIRONMENT: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.environment || inputs.environment || 'preview' }}
         run: |
