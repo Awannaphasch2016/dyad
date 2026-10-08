@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -78,6 +84,7 @@ function memory() {
         return messages.filter((row) => row.chat_id === params[0]);
       }
       if (sql === WORKFLOW_SQL.insertMessage) {
+        if (messages.some((row) => row.id === params[0])) return [];
         messages.push({
           id: params[0],
           chat_id: params[1],
@@ -213,84 +220,79 @@ test("the snapshot hides the seeded discovery question", () => {
   assert.equal(view.canDownload, false);
 });
 
-test("both roles read one project and only the project manager prompts", async () => {
+test("both roles read one project and only the project manager records a discovery prompt", async () => {
   const store = memory();
   const sent = await call(store, "user_pm", {
     method: "POST",
-    createId: "m1",
-    json: { command: "prompt", body: "Page name is North Pier Fish." },
-    complete: async () => "North Pier Fish sells fish on the pier.",
+    json: {
+      command: "record",
+      messages: [
+        { id: "u1", role: "user", content: "Page name is North Pier Fish." },
+        {
+          id: "a1",
+          role: "assistant",
+          content: "North Pier Fish sells fish on the pier.",
+        },
+      ],
+    },
   });
   assert.equal(sent.status, 200);
   assert.equal(sent.body.snapshot.messages.length, 2);
+  assert.equal(sent.body.snapshot.messages[0].id, "u1");
   assert.equal(sent.body.snapshot.messages[1].content.includes("pier"), true);
+  assert.equal(sent.body.snapshot.roleId, "project-manager");
   const developer = await call(store, "user_dev", { method: "GET" });
   assert.equal(developer.body.canSend, false);
+  assert.equal(developer.body.waitingLabel, "Waiting on the Project Manager.");
   assert.deepEqual(developer.body.messages, sent.body.snapshot.messages);
   const rejected = await call(store, "user_dev", {
     method: "POST",
-    json: { command: "prompt", body: "I should not send this." },
+    json: {
+      command: "record",
+      messages: [
+        { id: "bad", role: "user", content: "I should not send this." },
+      ],
+    },
   });
   assert.equal(rejected.status, 403);
   assert.equal(store.messages.length, 2);
-});
-
-test("a failed reply is still stored for the other browser", async () => {
-  const store = memory();
-  const sent = await call(store, "user_pm", {
+  const duplicate = await call(store, "user_pm", {
     method: "POST",
-    createId: "m2",
-    json: { command: "prompt", body: "A fish shop." },
-    complete: async () => {
-      throw new Error("openrouter down");
+    json: {
+      command: "record",
+      messages: [
+        { id: "u1", role: "user", content: "Page name is North Pier Fish." },
+        {
+          id: "a1",
+          role: "assistant",
+          content: "North Pier Fish sells fish on the pier.",
+        },
+      ],
     },
   });
-  assert.equal(sent.status, 200);
-  assert.equal(
-    sent.body.snapshot.messages[1].content,
-    "The reply could not be started.",
-  );
-  assert.equal(store.project.busy, false);
-});
-
-test("a second prompt waits while the first run holds the project", async () => {
-  const store = memory();
-  let release;
-  const hold = new Promise((resolve) => {
-    release = resolve;
-  });
-  const first = call(store, "user_pm", {
+  assert.equal(duplicate.status, 200);
+  assert.equal(store.messages.length, 2);
+  const empty = await call(store, "user_pm", {
     method: "POST",
-    createId: "m3",
-    json: { command: "prompt", body: "First prompt." },
-    complete: async () => {
-      await hold;
-      return "Summary.";
+    json: {
+      command: "record",
+      messages: [{ id: "empty", role: "user", content: " " }],
     },
   });
-  let second;
-  for (let attempt = 0; attempt < 20 && !store.project.busy; attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
-  second = await call(store, "user_pm", {
-    method: "POST",
-    json: { command: "prompt", body: "Second prompt." },
-    complete: async () => "No.",
-  });
-  assert.equal(second.status, 409);
-  release();
-  const done = await first;
-  assert.equal(done.status, 200);
-  assert.equal(store.messages.filter((row) => row.role === "user").length, 1);
+  assert.equal(empty.status, 400);
 });
 
 test("implementation belongs to the developer and delivery to the project manager", async () => {
   const store = memory();
   await call(store, "user_pm", {
     method: "POST",
-    createId: "m4",
-    json: { command: "prompt", body: "North Pier <Fish>." },
-    complete: async () => "A fish shop.",
+    json: {
+      command: "record",
+      messages: [
+        { id: "u-fish", role: "user", content: "North Pier <Fish>." },
+        { id: "a-fish", role: "assistant", content: "A fish shop." },
+      ],
+    },
   });
   const blocked = await call(store, "user_dev", {
     method: "POST",
@@ -302,6 +304,7 @@ test("implementation belongs to the developer and delivery to the project manage
     json: { command: "transition" },
   });
   assert.equal(moved.body.snapshot.phase, "implementation");
+  assert.equal(moved.body.snapshot.waitingLabel, "Waiting on the Developer.");
   assert.equal(moved.body.snapshot.questions.length, 1);
   assert.equal(moved.body.snapshot.questions[0].body, null);
   assert.equal(moved.body.snapshot.questions[0].canAnswer, false);
@@ -420,64 +423,112 @@ test("a removed membership and a signed-out request are denied", async () => {
   assert.match(document, /A &amp; B/);
 });
 
-test("the walkthrough page polls the shared project", () => {
+test("the walkthrough page uses the builder chat and one gate", () => {
   const root = mkdtempSync(join(tmpdir(), "bolt-workflow-"));
   const bar = join(root, "app/components/factory");
   mkdirSync(bar, { recursive: true });
   writeFileSync(
     join(bar, "FactoryPhaseBar.tsx"),
     [
+      "import { useState } from 'react';",
       "import type { FactoryPhaseComment } from '~/lib/factoryRun';",
+      "export function FactoryPhaseBar() {",
+      "  const [comment, setComment] = useState('');",
       "              disabled={!unlocked}",
       "        {showApproval && (",
       "        {showApproval && !canApprove && (",
       '      <p className="mt-2 text-xs text-bolt-elements-textSecondary">',
       "        {factoryPhaseHint(phase)}",
+      "}",
     ].join("\n"),
   );
-  mkdirSync(join(root, "app/components/chat"), { recursive: true });
+  const chatDir = join(root, "app/components/chat");
+  mkdirSync(chatDir, { recursive: true });
   writeFileSync(
-    join(root, "app/components/chat/ChatBox.tsx"),
+    join(chatDir, "ChatBox.tsx"),
     [
-      "        <textarea",
-      "          ref={props.textareaRef}",
+      "import { classNames } from '~/utils/classNames';",
       "          onKeyDown={(event) => {",
       "            if (event.key === 'Enter') {",
+      "              onClick={(event) => {",
+      "                if (props.isStreaming) {",
       "            props.walkthrough",
       "              ? 'Describe the page'",
     ].join("\n"),
   );
+  writeFileSync(
+    join(chatDir, "Chat.client.tsx"),
+    [
+      "import { BaseChat } from './BaseChat';",
+      "      onFinish: ({ message }) => {",
+      "        setProgressAnnotations([]);",
+      "    return (",
+      "      <BaseChat",
+    ].join("\n"),
+  );
+  writeFileSync(
+    join(chatDir, "BaseChat.tsx"),
+    [
+      "import ChatAlert from './ChatAlert';",
+      "                {incomingProgressAnnotations && <ProgressCompilation data={incomingProgressAnnotations} />}",
+      "                <ChatBox",
+    ].join("\n"),
+  );
+  mkdirSync(join(root, "app/lib/hooks"), { recursive: true });
+  writeFileSync(
+    join(root, "app/lib/hooks/useMessageParser.ts"),
+    [
+      "import { workbenchStore } from '~/lib/stores/workbench';",
+      "      if (data.action.type !== 'file') {",
+      "        workbenchStore.addAction(data);",
+      "      }",
+    ].join("\n"),
+  );
   applyBoltHitlPatches(root);
   const lines = applyBoltWorkflowPatches(root);
-  assert.match(lines.join("\n"), /shared_project_module=written/);
+  assert.match(lines.join("\n"), /shared_session_module=written/);
   const barSource = readFileSync(join(bar, "FactoryPhaseBar.tsx"), "utf8");
-  assert.match(barSource, /<SharedProject \/>/);
+  assert.equal(barSource.includes("HitlGateList"), false);
+  assert.equal(barSource.includes("SharedProject"), false);
   assert.equal(barSource.includes("disabled={!unlocked}"), false);
   assert.match(barSource, /false && showApproval && \(/);
-  const chat = readFileSync(
-    join(root, "app/components/chat/ChatBox.tsx"),
+  assert.match(barSource, /data-testid="shared-download"/);
+  assert.match(barSource, /useStore\(sharedSnapshot\)/);
+  const chat = readFileSync(join(chatDir, "ChatBox.tsx"), "utf8");
+  assert.match(chat, /sharedSendOpen\(\)/);
+  assert.equal(chat.includes("readOnly"), false);
+  assert.equal(chat.includes("Use the shared project prompt above"), false);
+  assert.match(chat, /Describe the page/);
+  const client = readFileSync(join(chatDir, "Chat.client.tsx"), "utf8");
+  assert.match(client, /useSharedChat\(/);
+  assert.match(client, /recordSharedFinish\(message\)/);
+  const base = readFileSync(join(chatDir, "BaseChat.tsx"), "utf8");
+  assert.match(base, /SharedGateDialog/);
+  const parser = readFileSync(
+    join(root, "app/lib/hooks/useMessageParser.ts"),
     "utf8",
   );
-  assert.match(chat, /readOnly=\{Boolean\(props\.walkthrough\)\}/);
-  assert.match(chat, /Use the shared project prompt above/);
-  assert.match(chat, /if \(props\.walkthrough\)/);
+  assert.match(parser, /sharedReplayIds/);
   const server = workflowServerSource();
-  assert.match(server, /anthropic\/claude-sonnet-5\.5/);
+  assert.equal(server.includes("openrouter.ai"), false);
+  assert.match(server, /command === 'record'/);
+  assert.match(server, /on conflict \(id\) do nothing/);
   assert.match(server, /resolved: false/);
   assert.equal(server.includes("DurableObject"), false);
   assert.match(
     server,
     new RegExp(WORKFLOW_SQL.casPhase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
   );
-  const page = readFileSync(
-    join(root, "app/components/factory/SharedProject.tsx"),
+  const session = readFileSync(join(root, "app/lib/hitl/session.tsx"), "utf8");
+  assert.match(session, /setInterval\(load, 2000\)/);
+  assert.match(session, /factory-document\.html/);
+  const gate = readFileSync(
+    join(root, "app/components/factory/SharedGateDialog.tsx"),
     "utf8",
   );
-  assert.match(page, /setInterval\(load, 2000\)/);
-  assert.match(page, /factory-document\.html/);
-  const replaced = readFileSync(join(bar, "FactoryPhaseBar.tsx"), "utf8");
-  assert.equal(replaced.includes("HitlGateList"), false);
-  assert.equal(replaced.match(/<SharedProject \/>/g)?.length, 1);
+  assert.match(gate, /data-testid="shared-gate"/);
+  assert.equal(existsSync(join(bar, "SharedProject.tsx")), false);
+  assert.equal(existsSync(join(bar, "HitlGateList.tsx")), false);
 });
 
 test("the deploy publishes this branch", () => {
@@ -488,6 +539,7 @@ test("the deploy publishes this branch", () => {
     ),
     "utf8",
   );
+  assert.match(workflow, /cursor\/builder-session-hitl-851d/);
   assert.match(workflow, /cursor\/shared-hitl-workflow-851d/);
   assert.match(workflow, /bolt-workflow\.mjs/);
 });
