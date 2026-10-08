@@ -8,9 +8,11 @@ Bolt is the first builder on the shared sign-in. Forma still asks for a workspac
 
 A line is done only when the observable result is true.
 
-- [ ] `forma` / `dev` has `CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, and `WEWEBPLUS_DATABASE_URL`. The publishable key is a `pk_test_` key. The values are not printed.
-- [ ] The Forma page has a Sign in control. The workspace password field is gone.
-- [ ] Signed out, the studio does not open.
+- [x] `forma` / `dev` has `CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, and `WEWEBPLUS_DATABASE_URL`. The publishable key is a `pk_test_` key. The values are not printed.
+  - Run [37838046506](https://github.com/Awannaphasch2016/dyad/actions/runs/37838046506) logged `forma_clerk_publishable=test`, `forma_clerk_secret=test`, and `forma_membership_roles=developer:1,project-manager:1`. The database name was present and did not contain `wewebplus.memberships`, so it was changed to a reference to `dyad` / `preview`.
+- [x] The Forma page has a Sign in control. The workspace password field is gone.
+  - Commit `53191a6e7b317f7927eaa77e10bbf3e2b996cad1` on `Awannaphasch2016/forma` branch `cursor/forma-shared-auth-5014`. The password field is not in that commit. A browser has not opened it yet, because this plan does not run the preview deploy.
+- [ ] Signed out, the studio does not open. This waits for a preview deploy of commit `53191a6`.
 - [ ] `anakwannaphaschaiyong@gmail.com` with Google sees Wewebplus and Project Manager.
 - [ ] `awannaphasch2016@fau.edu` with Microsoft sees Wewebplus and Developer.
 - [ ] Reload keeps the session. Sign out returns to the Sign in control.
