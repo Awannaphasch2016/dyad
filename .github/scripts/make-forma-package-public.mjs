@@ -244,7 +244,19 @@ if (entry && import.meta.url === pathToFileURL(entry).href) {
     log("GH_TOKEN=absent");
     process.exit(1);
   }
-  makeFormaPackagePublic({ token, log }).catch((error) => {
+  const run = async () => {
+    if (process.env.FORMA_BRANCH_CLEANUP === "1") {
+      const response = await fetch(
+        `https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${branch}`,
+        { method: "DELETE", headers: githubHeaders(token) },
+      );
+      log(`forma_branch_delete=${response.status}`);
+      if (response.status !== 204 && response.status !== 404) process.exit(1);
+      return;
+    }
+    await makeFormaPackagePublic({ token, log });
+  };
+  run().catch((error) => {
     log(redact(error?.message || String(error)));
     process.exit(1);
   });

@@ -39,6 +39,7 @@ jobs:
       - name: Make the Forma package public
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
+          FORMA_BRANCH_CLEANUP: "1"
         run: |
           set -euo pipefail
           set +x
