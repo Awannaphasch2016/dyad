@@ -7,8 +7,9 @@
  * build the renderer files next to the main bundle are served directly.
  *
  * Started only when DYAD_BROWSER_BRIDGE=1. The desktop BrowserWindow is
- * unchanged. The preview pane, the terminal, and one-way ipcMain.on sends
- * stay desktop-only.
+ * unchanged. The preview pane and the terminal stay desktop-only. Preview-view
+ * sends stay no-ops here. First-prompt commit and cancel are delivered so a
+ * dropped phone socket does not delete an app whose prompt was submitted.
  */
 import { EventEmitter } from "node:events";
 import {
@@ -27,7 +28,10 @@ import type { IpcMainInvokeEvent } from "electron";
 import log from "electron-log";
 import { WebSocketServer, type WebSocket } from "ws";
 import { WEB_BRIDGE_SENDER_ID } from "@/control_plane/session_store";
-import { getTrustedIpcHandler } from "@/ipc/handlers/trusted_handle";
+import {
+  getTrustedIpcHandler,
+  getTrustedIpcSendHandler,
+} from "@/ipc/handlers/trusted_handle";
 import {
   isPreviewAppsHost,
   previewPortFromHost,
@@ -318,10 +322,21 @@ export async function dispatchBrowserInvoke(
   );
 }
 
-export function dispatchBrowserSend(channel: string): void {
+export function dispatchBrowserSend(
+  channel: string,
+  args: readonly unknown[] = [],
+  sender?: BridgeSender,
+): Promise<void> {
   if (!sendChannels.has(channel)) {
     throw new Error(`Invalid channel: ${channel}`);
   }
+  const handler = getTrustedIpcSendHandler(channel);
+  // Preview-view sends are allowlisted and have no bridge handler. They move
+  // a desktop WebContentsView, so a missing handler stays a no-op.
+  if (!handler) return Promise.resolve();
+  return Promise.resolve(
+    handler(bridgeEvent(sender ?? new BridgeSender(() => {})), ...args),
+  ).then(() => undefined);
 }
 
 function readMessage(raw: unknown): {
@@ -370,7 +385,7 @@ async function handleSocketMessage(
   if (!message) return null;
   try {
     if (message.type === "send") {
-      dispatchBrowserSend(message.channel);
+      await dispatchBrowserSend(message.channel, message.args, sender);
       return { id: message.id, type: "result", result: null };
     }
     const result = await dispatchBrowserInvoke(

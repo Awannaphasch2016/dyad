@@ -22,11 +22,15 @@ import {
   WEB_BRIDGE_SENDER_ID,
 } from "@/control_plane/session_store";
 import { registerClerkHandlers } from "@/ipc/handlers/clerk_handlers";
+import { registerFirstPromptHandlers } from "@/ipc/handlers/first_prompt_handlers";
 import {
   clearTrustedIpcHandlersForTesting,
   registerTrustedIpcHandler,
 } from "@/ipc/handlers/trusted_handle";
-import { FirstPromptCreationRegistry } from "@/ipc/services/first_prompt_creation_service";
+import {
+  FirstPromptCreationRegistry,
+  firstPromptCreationRegistry,
+} from "@/ipc/services/first_prompt_creation_service";
 import {
   BROWSER_BRIDGE_SOCKET_PATH,
   browserBridgeClientScript,
@@ -73,6 +77,16 @@ function openBridgeSocket(port: number): Promise<WebSocket> {
 }
 
 function invokeOnSocket(socket: WebSocket, id: number): Promise<unknown> {
+  return sendOnSocket(socket, id, "invoke", "get-user-settings", []);
+}
+
+function sendOnSocket(
+  socket: WebSocket,
+  id: number,
+  type: "invoke" | "send",
+  channel: string,
+  args: unknown[],
+): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const onMessage = (data: { toString(): string }) => {
       const message = JSON.parse(data.toString()) as {
@@ -90,14 +104,7 @@ function invokeOnSocket(socket: WebSocket, id: number): Promise<unknown> {
       resolve(message.result);
     };
     socket.on("message", onMessage);
-    socket.send(
-      JSON.stringify({
-        id,
-        type: "invoke",
-        channel: "get-user-settings",
-        args: [],
-      }),
-    );
+    socket.send(JSON.stringify({ id, type, channel, args }));
   });
 }
 
@@ -544,6 +551,73 @@ describe("browser bridge", () => {
     const cleanup = vi.fn(async () => {});
     await registry.complete("create-1", cleanup);
     expect(cleanup).not.toHaveBeenCalled();
+  });
+
+  it("keeps a submitted app when the last browser socket closes", async () => {
+    const bridge = await startSocketBridge();
+    const operationId = "bridge-commit-keep";
+    registerFirstPromptHandlers();
+    registerTrustedIpcHandler("get-user-settings", async (event) => {
+      firstPromptCreationRegistry.track(operationId, event.sender);
+      return { ok: true };
+    });
+    const socket = await openBridgeSocket(bridge.port);
+    await invokeOnSocket(socket, 1);
+    const cleanup = vi.fn(async () => {});
+    await firstPromptCreationRegistry.complete(operationId, cleanup);
+    await expect(
+      sendOnSocket(socket, 2, "send", "first-prompt:commit-creation", [
+        { operationId },
+      ]),
+    ).resolves.toBeNull();
+    socket.close();
+    await waitForSocketClose(socket);
+    expect(cleanup).not.toHaveBeenCalled();
+  });
+
+  it("deletes an unfinished app when cancel arrives on the browser socket", async () => {
+    const bridge = await startSocketBridge();
+    const operationId = "bridge-cancel-delete";
+    registerFirstPromptHandlers();
+    registerTrustedIpcHandler("get-user-settings", async (event) => {
+      firstPromptCreationRegistry.track(operationId, event.sender);
+      return { ok: true };
+    });
+    const socket = await openBridgeSocket(bridge.port);
+    closers.push(async () => {
+      socket.close();
+    });
+    await invokeOnSocket(socket, 1);
+    const cleanup = vi.fn(async () => {});
+    await firstPromptCreationRegistry.complete(operationId, cleanup);
+    await expect(
+      sendOnSocket(socket, 2, "send", "first-prompt:cancel-creation", [
+        { operationId },
+      ]),
+    ).resolves.toBeNull();
+    expect(cleanup).toHaveBeenCalledOnce();
+  });
+
+  it("leaves an unfinished app temporary when the commit payload is invalid", async () => {
+    const bridge = await startSocketBridge();
+    const operationId = "bridge-commit-invalid";
+    registerFirstPromptHandlers();
+    registerTrustedIpcHandler("get-user-settings", async (event) => {
+      firstPromptCreationRegistry.track(operationId, event.sender);
+      return { ok: true };
+    });
+    const socket = await openBridgeSocket(bridge.port);
+    await invokeOnSocket(socket, 1);
+    const cleanup = vi.fn(async () => {});
+    await firstPromptCreationRegistry.complete(operationId, cleanup);
+    await expect(
+      sendOnSocket(socket, 2, "send", "first-prompt:commit-creation", [
+        { operationId: "" },
+      ]),
+    ).resolves.toBeNull();
+    socket.close();
+    await waitForSocketClose(socket);
+    expect(cleanup).toHaveBeenCalledOnce();
   });
 
   it("proxies an apps hostname to the preview port and refuses other ports", async () => {

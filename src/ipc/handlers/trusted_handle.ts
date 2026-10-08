@@ -17,6 +17,7 @@ type TrustedIpcHandlerOptions = {
 };
 
 const trustedHandlers = new Map<string, IpcHandler>();
+const trustedSendHandlers = new Map<string, IpcHandler>();
 
 /**
  * The handler passed to {@link registerTrustedIpcHandler}, without the
@@ -27,8 +28,20 @@ export function getTrustedIpcHandler(channel: string): IpcHandler | undefined {
   return trustedHandlers.get(channel);
 }
 
+/**
+ * The handler passed to {@link registerTrustedIpcSend}, without the renderer
+ * trust check. The browser bridge calls this for one-way sends. Desktop IPC
+ * still goes through `ipcMain.on` and `assertTrustedRenderer`.
+ */
+export function getTrustedIpcSendHandler(
+  channel: string,
+): IpcHandler | undefined {
+  return trustedSendHandlers.get(channel);
+}
+
 export function clearTrustedIpcHandlersForTesting(): void {
   trustedHandlers.clear();
+  trustedSendHandlers.clear();
 }
 
 /**
@@ -54,6 +67,35 @@ export function registerTrustedIpcHandler(
         return options.onTrustFailure(error, event, ...args);
       }
       throw error;
+    }
+    return handler(event, ...args);
+  });
+}
+
+/**
+ * Registers a one-way send the browser bridge can deliver. Desktop callers
+ * still pass `assertTrustedRenderer`. The bridge calls
+ * {@link getTrustedIpcSendHandler} because `BridgeSender` has no renderer
+ * frame and would fail that check.
+ *
+ * A trust failure is dropped. `onTrustFailure` preserves a handler's existing
+ * log line. The raw handler stays responsible for invalid payloads.
+ */
+export function registerTrustedIpcSend(
+  channel: string,
+  handler: IpcHandler,
+  options: TrustedIpcHandlerOptions = {},
+): void {
+  trustedSendHandlers.set(channel, handler);
+  // `on` is optional: browser-bridge unit tests mock ipcMain with only `handle`.
+  ipcMain?.on?.(channel, (event, ...args) => {
+    try {
+      assertTrustedRenderer(event);
+    } catch (error) {
+      if (options.onTrustFailure) {
+        return options.onTrustFailure(error, event, ...args);
+      }
+      return;
     }
     return handler(event, ...args);
   });

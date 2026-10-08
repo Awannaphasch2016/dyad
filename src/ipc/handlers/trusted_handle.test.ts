@@ -10,6 +10,10 @@ const mocks = vi.hoisted(() => ({
     string,
     (event: unknown, ...args: unknown[]) => Promise<unknown> | unknown
   >(),
+  listeners: new Map<
+    string,
+    Array<(event: unknown, ...args: unknown[]) => Promise<unknown> | unknown>
+  >(),
 }));
 
 vi.mock("electron", () => ({
@@ -23,11 +27,28 @@ vi.mock("electron", () => ({
         ) => Promise<unknown> | unknown,
       ) => mocks.handlers.set(channel, handler),
     ),
+    on: vi.fn(
+      (
+        channel: string,
+        handler: (
+          event: unknown,
+          ...args: unknown[]
+        ) => Promise<unknown> | unknown,
+      ) => {
+        const listeners = mocks.listeners.get(channel) ?? [];
+        listeners.push(handler);
+        mocks.listeners.set(channel, listeners);
+      },
+    ),
   },
 }));
 
-const { getTrustedIpcHandler, registerTrustedIpcHandler } =
-  await import("./trusted_handle");
+const {
+  getTrustedIpcHandler,
+  getTrustedIpcSendHandler,
+  registerTrustedIpcHandler,
+  registerTrustedIpcSend,
+} = await import("./trusted_handle");
 
 function eventFor(url: string) {
   const frame = { url };
@@ -56,6 +77,7 @@ function listProductionTypeScriptFiles(dir: string): string[] {
 describe("registerTrustedIpcHandler", () => {
   beforeEach(() => {
     mocks.handlers.clear();
+    mocks.listeners.clear();
     configureTrustedRenderer({
       devServerUrl: "http://localhost:5173",
       packagedRendererUrl: "file:///app/renderer/main_window/index.html",
@@ -136,5 +158,60 @@ describe("registerTrustedIpcHandler", () => {
       .map((filePath) => path.relative(process.cwd(), filePath));
 
     expect(directRegistrations).toEqual([]);
+  });
+});
+
+describe("registerTrustedIpcSend", () => {
+  beforeEach(() => {
+    mocks.handlers.clear();
+    mocks.listeners.clear();
+    configureTrustedRenderer({
+      devServerUrl: "http://localhost:5173",
+      packagedRendererUrl: "file:///app/renderer/main_window/index.html",
+    });
+  });
+
+  it("runs send handlers for the trusted renderer", () => {
+    const implementation = vi.fn();
+    registerTrustedIpcSend("send-trusted", implementation);
+
+    mocks.listeners.get("send-trusted")?.[0]?.(
+      eventFor("http://localhost:5173/chat"),
+      { operationId: "create-1" },
+    );
+
+    expect(implementation).toHaveBeenCalledOnce();
+  });
+
+  it("drops an untrusted send before the handler", () => {
+    const implementation = vi.fn();
+    const onTrustFailure = vi.fn();
+    registerTrustedIpcSend("send-untrusted", implementation, {
+      onTrustFailure,
+    });
+
+    mocks.listeners.get("send-untrusted")?.[0]?.(
+      eventFor("https://attacker.example/"),
+      { operationId: "create-1" },
+    );
+
+    expect(implementation).not.toHaveBeenCalled();
+    expect(onTrustFailure).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a send handler the browser bridge can call without the trust check", () => {
+    const implementation = vi.fn();
+    registerTrustedIpcSend("send-bridge", implementation);
+
+    getTrustedIpcSendHandler("send-bridge")?.(
+      eventFor("https://attacker.example/") as never,
+      { operationId: "create-1" },
+    );
+
+    expect(implementation).toHaveBeenCalledOnce();
+    mocks.listeners.get("send-bridge")?.[0]?.(
+      eventFor("https://attacker.example/"),
+    );
+    expect(implementation).toHaveBeenCalledOnce();
   });
 });
