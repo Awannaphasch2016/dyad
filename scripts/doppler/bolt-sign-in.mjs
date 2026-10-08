@@ -9,27 +9,7 @@ export const WALKTHROUGH_ORIGIN =
 export const WALKTHROUGH_APP_ID = "bolt-walkthrough";
 export const PROJECT_MANAGER_EMAIL = "anakwannaphaschaiyong@gmail.com";
 export const DEVELOPER_EMAIL = "awannaphasch2016@fau.edu";
-
-export const WALKTHROUGH_QUESTIONS = [
-  {
-    phase: "discovery",
-    stepId: "plan-approve",
-    roleId: "project-manager",
-    body: "Approve the Discovery plan.",
-  },
-  {
-    phase: "implementation",
-    stepId: "review-approve-dev",
-    roleId: "developer",
-    body: "Approve the Implementation review.",
-  },
-  {
-    phase: "delivery",
-    stepId: "review-approve-pm",
-    roleId: "project-manager",
-    body: "Approve the Delivery review.",
-  },
-];
+export const WALKTHROUGH_CHAT_ID = "bolt-walkthrough-chat";
 
 const SCHEMA = [
   "create schema if not exists wewebplus",
@@ -87,6 +67,28 @@ const SCHEMA = [
   )`,
   "create unique index if not exists answers_question_unique on wewebplus.answers (question_id)",
   "alter table wewebplus.answers add column if not exists gate_resolved_at timestamptz",
+  `create table if not exists wewebplus.chats (
+    id text primary key not null,
+    app_id text not null,
+    title text,
+    created_at timestamptz not null default now()
+  )`,
+  `create table if not exists wewebplus.messages (
+    id text primary key not null,
+    chat_id text not null,
+    role text not null,
+    content text not null,
+    ai_messages_json jsonb,
+    created_at timestamptz not null default now()
+  )`,
+  `create table if not exists wewebplus.project_state (
+    app_id text primary key not null,
+    phase text not null,
+    delivered_at timestamptz,
+    document_html text,
+    busy boolean not null default false
+  )`,
+  "alter table wewebplus.project_state add column if not exists busy boolean not null default false",
 ];
 
 export function clerkKeyKind(value) {
@@ -173,23 +175,17 @@ export function membershipSeedStatements({
         "insert into wewebplus.apps (id, owner_type, owner_id, name, slug) values ($1, 'org', $2, 'Bolt walkthrough', $1) on conflict (id) do nothing",
       params: [WALKTHROUGH_APP_ID, organizationId],
     },
-  );
-  for (const question of WALKTHROUGH_QUESTIONS) {
-    const id = `${WALKTHROUGH_APP_ID}:${question.phase}:${question.stepId}`;
-    statements.push({
+    {
       query:
-        "insert into wewebplus.questions (id, org_id, app_id, phase, run_id, step_id, target_role_id, visibility, status, body, idempotency_key) values ($1, $2, $3, $4, $3, $5, $6, 'role', 'open', $7, $1) on conflict (org_id, idempotency_key) do nothing",
-      params: [
-        id,
-        organizationId,
-        WALKTHROUGH_APP_ID,
-        question.phase,
-        question.stepId,
-        question.roleId,
-        question.body,
-      ],
-    });
-  }
+        "insert into wewebplus.chats (id, app_id, title) values ($1, $2, 'Bolt walkthrough') on conflict (id) do nothing",
+      params: [WALKTHROUGH_CHAT_ID, WALKTHROUGH_APP_ID],
+    },
+    {
+      query:
+        "insert into wewebplus.project_state (app_id, phase) values ($1, 'discovery') on conflict (app_id) do nothing",
+      params: [WALKTHROUGH_APP_ID],
+    },
+  );
   return statements;
 }
 
@@ -340,7 +336,7 @@ export async function seedBoltSignIn() {
   for (const statement of statements) {
     await neonQuery(databaseUrl.trim(), statement.query, statement.params);
   }
-  console.log(`memberships=2 questions=${WALKTHROUGH_QUESTIONS.length}`);
+  console.log("memberships=2 project_state=kept");
   await allowWalkthroughOrigin(secret.trim());
 }
 

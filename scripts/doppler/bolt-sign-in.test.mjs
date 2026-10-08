@@ -249,7 +249,10 @@ test("the preview seed does not reset an answered question", () => {
     developerId: "user_live_dev",
   });
   const sql = statements.map((item) => item.query).join("\n");
-  assert.match(sql, /on conflict \(org_id, idempotency_key\) do nothing/);
+  assert.match(sql, /on conflict \(app_id\) do nothing/);
+  assert.equal(sql.includes("plan-approve"), false);
+  assert.equal(sql.includes("review-approve-pm"), false);
+  assert.equal(sql.includes("do update set phase"), false);
   assert.equal(sql.includes("user_3K58"), false);
   const roles = statements.filter((item) =>
     item.query.includes("into wewebplus.memberships"),
