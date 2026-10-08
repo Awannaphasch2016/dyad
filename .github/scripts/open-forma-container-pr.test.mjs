@@ -9,6 +9,7 @@ import {
   clearCheckoutGitAuth,
   credentialHelperSource,
   gitCredentialEnv,
+  formaMergeBody,
   planFormaContainer,
   pullRequestCopy,
   redact,
@@ -44,6 +45,31 @@ test("the opener targets the forma repository and the harness app", () => {
     assert.equal(workflow.includes(marker), false);
     assert.throws(() => assertSafeText(`container ${marker}`), /Refusing/);
   }
+});
+
+test("merge accepts only the forma container branch into main", () => {
+  const body = formaMergeBody({
+    base: { ref: "main", repo: { full_name: "Awannaphasch2016/forma" } },
+    head: { ref: "cursor/forma-container-5014" },
+  });
+  assert.equal(body.merge_method, "squash");
+  assert.equal(body.commit_title, "Add the Forma dev container");
+  assert.throws(
+    () =>
+      formaMergeBody({
+        base: { ref: "main", repo: { full_name: "Awannaphasch2016/dyad" } },
+        head: { ref: "cursor/forma-container-5014" },
+      }),
+    /Refusing to merge/,
+  );
+  assert.throws(
+    () =>
+      formaMergeBody({
+        base: { ref: "main", repo: { full_name: "Awannaphasch2016/forma" } },
+        head: { ref: "main" },
+      }),
+    /Refusing to merge head/,
+  );
 });
 
 test("an empty forma repo receives the dev container", () => {

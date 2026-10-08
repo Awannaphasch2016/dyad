@@ -155,6 +155,23 @@ function assertFilesSafe(files) {
   for (const file of files) assertSafeText(file.contents);
 }
 
+export function formaMergeBody(pull) {
+  const baseRepo = pull.base?.repo?.full_name;
+  if (baseRepo && baseRepo !== FORMA_REPOSITORY) {
+    throw new Error(`Refusing to merge ${baseRepo}`);
+  }
+  if (pull.base?.ref !== FORMA_BASE_BRANCH) {
+    throw new Error(`Refusing to merge base ${pull.base?.ref}`);
+  }
+  if (pull.head?.ref !== FORMA_BRANCH) {
+    throw new Error(`Refusing to merge head ${pull.head?.ref}`);
+  }
+  return {
+    commit_title: "Add the Forma dev container",
+    merge_method: "squash",
+  };
+}
+
 export function pullRequestCopy(kind) {
   if (kind === "node-app") {
     return {
@@ -527,25 +544,78 @@ export function openFormaContainerPullRequest({
     env,
     secrets,
   );
-  const existing = Array.isArray(pulls) ? pulls[0]?.html_url : "";
-  if (existing) {
-    note(`forma_pr=${existing}`);
-    return { url: existing, kind: plan.kind, base: resolvedBase };
+  let pull = Array.isArray(pulls) ? pulls[0] : null;
+  if (!pull) {
+    const copy = pullRequestCopy(plan.kind);
+    pull = ghJson(
+      ["api", "--method", "POST", `repos/${repository}/pulls`, "--input", "-"],
+      env,
+      secrets,
+      JSON.stringify({
+        title: copy.title,
+        head: branch,
+        base: resolvedBase,
+        body: copy.body,
+      }),
+    );
   }
-  const copy = pullRequestCopy(plan.kind);
-  const created = ghJson(
-    ["api", "--method", "POST", `repos/${repository}/pulls`, "--input", "-"],
+  note(`forma_pr=${pull.html_url}`);
+  const merged = mergeFormaPullRequest({
+    repository,
+    number: pull.number,
     env,
     secrets,
-    JSON.stringify({
-      title: copy.title,
-      head: branch,
-      base: resolvedBase,
-      body: copy.body,
-    }),
+  });
+  note(`forma_merged=${merged.merged} forma_sha=${merged.sha}`);
+  return {
+    url: pull.html_url,
+    merged: merged.merged,
+    sha: merged.sha,
+    kind: plan.kind,
+    base: resolvedBase,
+  };
+}
+
+function mergeFormaPullRequest({ repository, number, env, secrets }) {
+  const pull = ghJson(
+    ["api", `repos/${repository}/pulls/${number}`],
+    env,
+    secrets,
   );
-  note(`forma_pr=${created.html_url}`);
-  return { url: created.html_url, kind: plan.kind, base: resolvedBase };
+  if (pull.merged) {
+    return { merged: true, sha: pull.merge_commit_sha };
+  }
+  const body = formaMergeBody(pull);
+  try {
+    return ghJson(
+      [
+        "api",
+        "--method",
+        "PUT",
+        `repos/${repository}/pulls/${number}/merge`,
+        "--input",
+        "-",
+      ],
+      env,
+      secrets,
+      JSON.stringify(body),
+    );
+  } catch (error) {
+    if (!/405|not allowed/i.test(String(error.message))) throw error;
+    return ghJson(
+      [
+        "api",
+        "--method",
+        "PUT",
+        `repos/${repository}/pulls/${number}/merge`,
+        "--input",
+        "-",
+      ],
+      env,
+      secrets,
+      JSON.stringify({ ...body, merge_method: "merge" }),
+    );
+  }
 }
 
 function contentExists(repository, filePath, ref, env, secrets) {
