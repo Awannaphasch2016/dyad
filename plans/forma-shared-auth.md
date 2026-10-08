@@ -11,13 +11,15 @@ A line is done only when the observable result is true.
 - [x] `forma` / `dev` has `CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, and `WEWEBPLUS_DATABASE_URL`. The publishable key is a `pk_test_` key. The values are not printed.
   - Run [37838046506](https://github.com/Awannaphasch2016/dyad/actions/runs/37838046506) logged `forma_clerk_publishable=test`, `forma_clerk_secret=test`, and `forma_membership_roles=developer:1,project-manager:1`. The database name was present and did not contain `wewebplus.memberships`, so it was changed to a reference to `dyad` / `preview`.
 - [x] The Forma page has a Sign in control. The workspace password field is gone.
-  - Commit `53191a6e7b317f7927eaa77e10bbf3e2b996cad1` on `Awannaphasch2016/forma` branch `cursor/forma-shared-auth-5014`. The password field is not in that commit. A browser has not opened it yet, because this plan does not run the preview deploy.
-- [ ] Signed out, the studio does not open. This waits for a preview deploy of commit `53191a6`.
-- [ ] `anakwannaphaschaiyong@gmail.com` with Google sees Wewebplus and Project Manager.
-- [ ] `awannaphasch2016@fau.edu` with Microsoft sees Wewebplus and Developer.
-- [ ] Reload keeps the session. Sign out returns to the Sign in control.
-- [ ] A project created by one account is not listed for the other account.
-- [ ] `GET /api/status` still reports OpenRouter. A `pk_live_` key is not sent to the browser.
+  - Commit `53191a6e7b317f7927eaa77e10bbf3e2b996cad1` on `Awannaphasch2016/forma` branch `cursor/forma-shared-auth-5014`, [Forma pull request 3](https://github.com/Awannaphasch2016/forma/pull/3). Preview https://forma-675788cjk-anak2.vercel.app serves a bundle that contains `Sign in` and does not contain the workspace password.
+- [x] Signed out, the studio does not open.
+  - `GET /api/auth` returns `{"signedIn":false,"organization":null,"role":null}`. `GET /api/projects` returns 401.
+- [ ] `anakwannaphaschaiyong@gmail.com` with Google sees Wewebplus and Project Manager. This needs that Google account in a browser.
+- [ ] `awannaphasch2016@fau.edu` with Microsoft sees Wewebplus and Developer. This needs that Microsoft account in a browser.
+- [ ] Reload keeps the session. Sign out returns to the Sign in control. This needs one of those two signed-in browsers.
+- [ ] A project created by one account is not listed for the other account. This needs both signed-in browsers.
+- [x] `GET /api/status` still reports OpenRouter. A `pk_live_` key is not sent to the browser.
+  - `GET /api/status` is `{"configured":true,"provider":"openrouter"}`. `GET /api/clerk` returns a `pk_test_` key. The key value is not recorded here. Run [37839132476](https://github.com/Awannaphasch2016/dyad/actions/runs/37839132476) logged `forma_clerk=test` and `forma_clerk_origin=added`.
 
 ## Already true
 
@@ -72,11 +74,11 @@ Projects already stored under the `demo-owner` hash stay in the database and do 
 
 `scripts/gascity/forma-sign-in.mjs` stays the tested decision. The Forma route calls that decision after it has loaded the Clerk user and the membership rows.
 
-The preview runner is a later change, on the preview-forma branch. It uploads `CLERK_SECRET_KEY` and `CLERK_PUBLISHABLE_KEY` to the Vercel preview target only, then adds the new deployment origin to the Development Clerk instance. This plan does not merge that workflow and does not run it.
+The preview runner change is on the preview-forma branch, [PR 77](https://github.com/Awannaphasch2016/dyad/pull/77). It uploads `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`, and `WEWEBPLUS_DATABASE_URL` to the Vercel preview target only, then adds the new deployment origin to the Development Clerk instance. Run [37839132476](https://github.com/Awannaphasch2016/dyad/actions/runs/37839132476) deployed commit `53191a6` and added `https://forma-675788cjk-anak2.vercel.app`. It did not merge the workflow and did not change the Clerk production instance.
 
 ## Check
 
-Use Chrome on the Forma preview URL.
+Use Chrome on https://forma-675788cjk-anak2.vercel.app. Steps 1 and 7 are already true on that URL. Steps 2 through 6 need the two accounts.
 
 1. Signed out, the password field is absent and the studio does not list projects.
 2. The normal window signs in with Google as `anakwannaphaschaiyong@gmail.com`. The header shows Wewebplus and Project Manager.
