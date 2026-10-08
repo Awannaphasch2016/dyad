@@ -1,0 +1,48 @@
+name: Verify Forma GitHub App access
+
+# Read-only check that dyad-harness can mint a token for forma, bolt.diy,
+# and vibesdk with contents, packages, pull requests, and workflows write,
+# then read the Forma repository and its published image. Do not merge.
+
+on:
+  push:
+    branches:
+      - cursor/verify-forma-github-app-5014
+    paths:
+      - .github/workflows/verify-forma-app-access.yml
+      - .github/scripts/verify-forma-app-access.mjs
+      - .github/scripts/verify-forma-app-access.test.mjs
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/cursor/verify-forma-github-app-5014'
+    runs-on: ubuntu-latest
+    environment: ai-bots
+    timeout-minutes: 10
+    steps:
+      - name: Check out the check
+        uses: actions/checkout@v5
+
+      - name: Create the app token
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.DYAD_GITHUB_APP_ID || '5221649' }}
+          private-key: ${{ secrets.DYAD_GITHUB_APP_PEM_KEY }}
+          owner: Awannaphasch2016
+          repositories: forma,bolt.diy,vibesdk
+          permission-contents: write
+          permission-packages: write
+          permission-pull-requests: write
+          permission-workflows: write
+
+      - name: Read Forma and the published image
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          set +x
+          node .github/scripts/verify-forma-app-access.mjs
