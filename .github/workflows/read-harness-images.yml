@@ -1,5 +1,5 @@
 # Reads the latest dyad_harness_images executions. A push of this file does not rebuild images.
-# Latest check waits for image execution Itvp5dx5TFCXOW4U8zhzXg.
+# Latest check waits for image execution 68SGCs9LTcOjVj2lPwKw3A.
 name: Read Harness image executions
 
 on:
@@ -153,7 +153,7 @@ jobs:
               f"?accountIdentifier={account}&orgIdentifier=default&projectIdentifier=dyad"
               "&pipelineIdentifier=dyad_harness_images&page=0&size=3"
           )
-          target = "Itvp5dx5TFCXOW4U8zhzXg"
+          target = "68SGCs9LTcOjVj2lPwKw3A"
           terminal = {"Success", "Failed", "Errored", "Expired", "Aborted"}
           rows = []
           code = ""
@@ -250,7 +250,7 @@ jobs:
                       lines = []
                       interesting = []
                       marker = re.compile(
-                          r"entrypoint=|user=|ports=|env=|healthcheck=|gascity_sha=|decision=|digest=|dyad_sha=|context_hash=|factory_state_status=|health=|ghcr_login=|tag_prefix=|unsupported_br|denied|GLIBC|error|Error"
+                          r"entrypoint=|user=|ports=|env=|healthcheck=|gascity_sha=|decision=|digest=|dyad_sha=|context_hash=|factory_state_status=|health=|ghcr_login=|tag_prefix=|retag_method=|unsupported_br|denied|GLIBC|error|Error"
                       )
                       for raw_log in chunks:
                           for line in raw_log.splitlines():
