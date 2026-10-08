@@ -29,6 +29,16 @@ const OPENAI_NAMES = [
 ];
 
 const DYAD_VERCEL_PROJECT = "dyad";
+const FORMA_VERCEL_NAMES = ["forma", "openai-agents-api-v0-clone"];
+
+export const VERCEL_TOKEN_SOURCES = [
+  ["dyad", "preview"],
+  ["dyad", "dev"],
+  ["dyad", "stg"],
+  ["dyad", "canary"],
+  ["vibesdk", "dev"],
+  ["ai-pilot", "dev"],
+];
 
 export function selectVercelProject(projects, projectId = "") {
   const list = Array.isArray(projects) ? projects : [];
@@ -39,8 +49,10 @@ export function selectVercelProject(projects, projectId = "") {
     }
     if (match) return match;
   }
-  const named = list.find((item) => item.name === "forma");
-  if (named) return named;
+  for (const name of FORMA_VERCEL_NAMES) {
+    const named = list.find((item) => item.name === name);
+    if (named) return named;
+  }
   const others = list.filter((item) => item.name !== DYAD_VERCEL_PROJECT);
   if (list.length === 1 && others.length === 1) return others[0];
   if (list.length > 0 && others.length === 0) {
@@ -106,6 +118,7 @@ function redact(text) {
     .replace(/dp\.(?:st|pt|sa|ct)\.[A-Za-z0-9._-]+/g, "dp.redacted")
     .replace(/\bsk-or-[A-Za-z0-9_-]+/g, "sk-or-redacted")
     .replace(/\bsk-[A-Za-z0-9_-]{8,}/g, "sk-redacted")
+    .replace(/\bvcp_[A-Za-z0-9_-]+/g, "vcp_redacted")
     .slice(0, 900);
 }
 
@@ -530,12 +543,11 @@ async function ensureVercelProject(token, existing = {}) {
   );
 }
 
-async function deploy(checkout, env) {
+async function deploy(checkout, env, project) {
   const token = env.runtime.VERCEL_TOKEN;
-  const project = await ensureVercelProject(token, {
-    projectId: env.runtime.VERCEL_PROJECT_ID,
-    orgId: env.runtime.VERCEL_ORG_ID,
-  });
+  if (!project?.id || project.name === DYAD_VERCEL_PROJECT) {
+    throw new Error("Refusing to deploy Forma into the dyad Vercel project");
+  }
   await mkdir(join(checkout, ".vercel"), { recursive: true });
   await writeFile(
     join(checkout, ".vercel", "project.json"),
@@ -606,6 +618,69 @@ function notePullRequestLinks(pr) {
   }
 }
 
+function assertNonProductionSource(project, config) {
+  if (/prd|prod/i.test(`${project} ${config}`)) {
+    throw new Error("Refusing a production Doppler config");
+  }
+}
+
+async function probeVercelSource(adminToken, project, config) {
+  assertNonProductionSource(project, config);
+  let downloaded;
+  try {
+    downloaded = await doppler(
+      adminToken,
+      "GET",
+      `/v3/configs/config/secrets/download?project=${encodeURIComponent(project)}&config=${encodeURIComponent(config)}&format=json`,
+    );
+  } catch (error) {
+    console.log(
+      `forma_vercel_probe=${project}/${config} download=failed ${redact(error.message)}`,
+    );
+    return null;
+  }
+  for (const value of Object.values(downloaded)) mask(value);
+  const token = String(downloaded.VERCEL_TOKEN ?? "").trim();
+  if (!token) {
+    console.log(`forma_vercel_probe=${project}/${config} token=absent`);
+    return null;
+  }
+  try {
+    const selected = await ensureVercelProject(token, {
+      projectId: downloaded.VERCEL_PROJECT_ID,
+      orgId: downloaded.VERCEL_ORG_ID,
+    });
+    console.log(
+      `forma_vercel_probe=${project}/${config} selected=${selected.name}`,
+    );
+    return { token, project: selected, source: `${project}/${config}` };
+  } catch (error) {
+    console.log(
+      `forma_vercel_probe=${project}/${config} ${redact(error.message)}`,
+    );
+    return null;
+  }
+}
+
+async function resolveVercelProject(adminToken, secrets) {
+  try {
+    const project = await ensureVercelProject(secrets.VERCEL_TOKEN, {
+      projectId: secrets.VERCEL_PROJECT_ID,
+      orgId: secrets.VERCEL_ORG_ID,
+    });
+    return { token: secrets.VERCEL_TOKEN, project, source: "forma/dev" };
+  } catch (error) {
+    console.log(`forma_vercel_forma_dev=${redact(error.message)}`);
+  }
+  for (const [project, config] of VERCEL_TOKEN_SOURCES) {
+    const found = await probeVercelSource(adminToken, project, config);
+    if (found) return found;
+  }
+  throw new Error(
+    "No non-production Doppler config has a Vercel token that can see the Forma project",
+  );
+}
+
 function comment(pr, url) {
   gh([
     "pr",
@@ -638,6 +713,8 @@ export async function runFormaPreview() {
     .sort();
   console.log(`forma_dev_vercel_names=${vercelNames.join(",") || "none"}`);
   noteGithubDeployments();
+  const vercel = await resolveVercelProject(token, secrets);
+  console.log(`forma_vercel_source=${vercel.source}`);
   const pr = process.env.FORMA_PR || ensureWalkthroughPullRequest();
   console.log(`forma_pr=${pr}`);
   notePullRequestLinks(pr);
@@ -649,10 +726,10 @@ export async function runFormaPreview() {
     appUrl: "https://forma-preview.vercel.app",
     secrets,
   });
-  env.runtime.VERCEL_TOKEN = secrets.VERCEL_TOKEN;
-  env.runtime.VERCEL_PROJECT_ID = secrets.VERCEL_PROJECT_ID;
-  env.runtime.VERCEL_ORG_ID = secrets.VERCEL_ORG_ID;
-  const url = await deploy(checkout, env);
+  env.runtime.VERCEL_TOKEN = vercel.token;
+  env.runtime.VERCEL_PROJECT_ID = vercel.project.id;
+  env.runtime.VERCEL_ORG_ID = vercel.project.accountId;
+  const url = await deploy(checkout, env, vercel.project);
   console.log(`forma_url=${url}`);
   comment(pr, url);
 }

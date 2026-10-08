@@ -9,6 +9,7 @@ import {
   formaBranchName,
   previewEnv,
   selectVercelProject,
+  VERCEL_TOKEN_SOURCES,
 } from "./forma-preview.mjs";
 
 test("preview-forma does not share a decision with Dyad preview", () => {
@@ -118,8 +119,14 @@ test("a Forma token uses the one visible project and never the dyad project", ()
     selectVercelProject([
       { id: "prj_dyad", name: "dyad" },
       { id: "prj_studio", name: "openai-agents-api-v0-clone" },
-    ]),
-    null,
+    ]).name,
+    "openai-agents-api-v0-clone",
+  );
+  assert.equal(
+    VERCEL_TOKEN_SOURCES.some(([project, config]) =>
+      /prd|prod/i.test(`${project} ${config}`),
+    ),
+    false,
   );
   assert.equal(
     selectVercelProject([{ id: "prj_studio", name: "studio" }], "prj_studio")
