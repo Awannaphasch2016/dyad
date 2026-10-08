@@ -13,6 +13,9 @@ import {
   patchAuthButton,
   patchAuthContext,
   patchAuthRoutes,
+  patchClerkDocument,
+  patchClerkSecurity,
+  patchGlobalHeader,
   patchLoginModal,
   sharedRoleSource,
   sharedSignInSource,
@@ -364,6 +367,21 @@ export async function provisionPreview(options) {
     await writeFile(
       authButtonPath,
       patchAuthButton(await readFile(authButtonPath, "utf8")),
+    );
+    const headerPath = join(checkout, "src/components/layout/global-header.tsx");
+    await writeFile(
+      headerPath,
+      patchGlobalHeader(await readFile(headerPath, "utf8")),
+    );
+    const documentPath = join(checkout, "index.html");
+    await writeFile(
+      documentPath,
+      patchClerkDocument(await readFile(documentPath, "utf8")),
+    );
+    const securityPath = join(checkout, "worker/config/security.ts");
+    await writeFile(
+      securityPath,
+      patchClerkSecurity(await readFile(securityPath, "utf8")),
     );
     await writeFile(
       join(checkout, "src/components/auth/shared-role.tsx"),

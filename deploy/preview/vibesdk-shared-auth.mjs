@@ -112,16 +112,85 @@ export function patchLoginModal(source) {
   const options =
     "\t\t\t\t<div className={cn('p-6 space-y-4 pt-6')}>\n\t\t\t\t\t{/* GitHub */}";
   const exportAnchor = "export function LoginModal";
+  const reactImport = "import { useState } from 'react';";
   requireAnchor(source, flags, "login flags");
   requireAnchor(source, options, "login options");
   requireAnchor(source, exportAnchor, "login export");
+  requireAnchor(source, reactImport, "login react import");
   return source
-    .replace(exportAnchor, `${sharedClerkHelpers()}\n${exportAnchor}`)
-    .replace(flags, flags.replaceAll("&&", "&& false &&"))
+    .replace(reactImport, "import { useEffect, useState } from 'react';")
+    .replace(exportAnchor, () => `${sharedClerkHelpers()}\n${exportAnchor}`)
+    .replace(
+      flags,
+      `${flags.replaceAll("&&", "&& false &&")}\n\tuseEffect(() => {\n\t\tif (!isOpen) return;\n\t\tvoid startSharedSignIn();\n\t}, [isOpen]);`,
+    )
     .replace(
       options,
       `\t\t\t\t<div className={cn('p-6 space-y-4 pt-6')}>\n\t\t\t\t\t<Button\n\t\t\t\t\t\ttype="button"\n\t\t\t\t\t\tvariant="primary"\n\t\t\t\t\t\tclassName="w-full justify-center"\n\t\t\t\t\t\tonClick={() => {\n\t\t\t\t\t\t\tvoid startSharedSignIn();\n\t\t\t\t\t\t}}\n\t\t\t\t\t>\n\t\t\t\t\t\tSign in\n\t\t\t\t\t</Button>\n\t\t\t\t\t{/* GitHub */}`,
     );
+}
+
+export function patchGlobalHeader(source) {
+  const exportAnchor = "export function GlobalHeader() {";
+  const modalImport = "import { useAuthModal } from '../auth/AuthModalProvider';";
+  const modalHook = "\tconst { showAuthModal } = useAuthModal();";
+  const click = "onClick={() => showAuthModal()}";
+  requireAnchor(source, exportAnchor, "header export");
+  requireAnchor(source, modalImport, "header modal import");
+  requireAnchor(source, modalHook, "header modal hook");
+  requireAnchor(source, click, "header sign-in click");
+  return source
+    .replace(modalImport, "")
+    .replace(modalHook, "")
+    .replace(exportAnchor, () => `${sharedClerkHelpers()}\n${exportAnchor}`)
+    .replace(click, "onClick={() => {\n\t\t\t\t\t\t\t\tvoid startSharedSignIn();\n\t\t\t\t\t\t\t}}");
+}
+
+const CLERK_BROWSER_HOSTS = [
+  "https://*.clerk.accounts.dev",
+  "https://*.accounts.dev",
+  "https://*.clerk.com",
+  "https://challenges.cloudflare.com",
+];
+
+export function patchClerkDocument(source) {
+  const scriptSrc =
+    "script-src 'self' 'unsafe-inline' blob: https://cdnjs.cloudflare.com https://cdn.tailwindcss.com https://esm.sh https://static.cloudflareinsights.com;";
+  requireAnchor(source, scriptSrc, "document script policy");
+  return source.replace(
+    scriptSrc,
+    `script-src 'self' 'unsafe-inline' blob: https://cdnjs.cloudflare.com https://cdn.tailwindcss.com https://esm.sh https://static.cloudflareinsights.com ${CLERK_BROWSER_HOSTS.join(" ")};`,
+  );
+}
+
+export function patchClerkSecurity(source) {
+  const scriptAnchor = `"'strict-dynamic'",`;
+  const connectAnchor = `"https://api.cloudflare.com"`;
+  const frameAnchor = `frameSrc: ["'none'"],`;
+  const imageAnchor = `"https://lh3.googleusercontent.com", // Google avatars`;
+  const workerAnchor = `workerSrc: ["'self'", "blob:"],`;
+  const embedAnchor = `crossOriginEmbedderPolicy: 'require-corp',`;
+  const openerAnchor = `crossOriginOpenerPolicy: 'same-origin',`;
+  for (const [anchor, label] of [
+    [scriptAnchor, "script policy"],
+    [connectAnchor, "connect policy"],
+    [frameAnchor, "frame policy"],
+    [imageAnchor, "image policy"],
+    [workerAnchor, "worker policy"],
+    [embedAnchor, "embedder policy"],
+    [openerAnchor, "opener policy"],
+  ]) {
+    requireAnchor(source, anchor, label);
+  }
+  const hosts = CLERK_BROWSER_HOSTS.map((host) => `"${host}"`).join(", ");
+  return source
+    .replace(scriptAnchor, `${scriptAnchor}\n                ${hosts},`)
+    .replace(connectAnchor, `${connectAnchor},\n        ${hosts}`)
+    .replace(frameAnchor, `frameSrc: ["'self'", ${hosts}],`)
+    .replace(imageAnchor, `${imageAnchor}\n                "https://img.clerk.com",`)
+    .replace(workerAnchor, `workerSrc: ["'self'", "blob:", ${hosts}],`)
+    .replace(embedAnchor, `crossOriginEmbedderPolicy: false,`)
+    .replace(openerAnchor, `crossOriginOpenerPolicy: 'same-origin-allow-popups',`);
 }
 
 export function patchAuthContext(source) {
@@ -132,10 +201,11 @@ export function patchAuthContext(source) {
   return source
     .replace(
       sessionAnchor,
-      `${sharedClerkHelpers()}\n${sessionAnchor.replace(
-        "async function fetchAuthSession(): Promise<CachedAuthSession | null> {",
-        "async function fetchAuthSession(): Promise<CachedAuthSession | null> {\n\tconst sharedToken = await sharedClerkToken();",
-      )}`,
+      () =>
+        `${sharedClerkHelpers()}\n${sessionAnchor.replace(
+          "async function fetchAuthSession(): Promise<CachedAuthSession | null> {",
+          "async function fetchAuthSession(): Promise<CachedAuthSession | null> {\n\tconst sharedToken = await sharedClerkToken();",
+        )}`,
     )
     .replace(
       "\t\tconst response = await apiClient.getProfile(true);\n\n\t\tif (response.success && response.data?.user) {\n\t\t\treturn buildSessionFromProfile(response.data);\n\t\t}\n\n\t\treturn null;",
@@ -190,15 +260,33 @@ export function patchAuthButton(source) {
 }
 
 function sharedClerkHelpers() {
-  return `async function sharedClerkToken(): Promise<string | null> {
+  return `async function sharedClerkPublishableKey(): Promise<string | null> {
+	const keyResponse = await fetch('/api/auth/clerk', { credentials: 'include' });
+	if (!keyResponse.ok) return null;
+	const body = await keyResponse.json();
+	const publishableKey = body.data?.publishableKey;
+	if (typeof publishableKey !== 'string' || !publishableKey.startsWith('pk_test_')) {
+		return null;
+	}
+	return publishableKey;
+}
+
+function sharedClerkPortal(publishableKey: string, back: string): string {
+	const frontendApi = atob(publishableKey.slice('pk_test_'.length)).replace(/\\$$/, '');
+	const portalHost = frontendApi.endsWith('.clerk.accounts.dev')
+		? frontendApi.replace('.clerk.accounts.dev', '.accounts.dev')
+		: frontendApi;
+	const url = new URL(\`https://\${portalHost}/sign-in\`);
+	url.searchParams.set('redirect_url', back);
+	url.searchParams.set('sign_in_force_redirect_url', back);
+	url.searchParams.set('sign_in_fallback_redirect_url', back);
+	return url.toString();
+}
+
+async function sharedClerkToken(): Promise<string | null> {
 	try {
-		const keyResponse = await fetch('/api/clerk', { credentials: 'include' });
-		if (!keyResponse.ok) return null;
-		const body = await keyResponse.json();
-		const publishableKey = body.data?.publishableKey;
-		if (typeof publishableKey !== 'string' || !publishableKey.startsWith('pk_test_')) {
-			return null;
-		}
+		const publishableKey = await sharedClerkPublishableKey();
+		if (!publishableKey) return null;
 		const frontendApi = atob(publishableKey.slice('pk_test_'.length)).replace(/\\$$/, '');
 		const browserWindow = window as Window & {
 			Clerk?: {
@@ -228,14 +316,14 @@ function sharedClerkHelpers() {
 }
 
 async function startSharedSignIn(): Promise<void> {
+	const publishableKey = await sharedClerkPublishableKey();
+	if (!publishableKey) return;
 	const token = await sharedClerkToken();
-	const clerk = (window as Window & { Clerk?: { redirectToSignIn?: (options: { redirectUrl: string }) => Promise<void> } }).Clerk;
-	if (!clerk?.redirectToSignIn) return;
 	if (token) {
 		window.location.reload();
 		return;
 	}
-	await clerk.redirectToSignIn({ redirectUrl: window.location.href });
+	window.location.assign(sharedClerkPortal(publishableKey, window.location.href));
 }`;
 }
 

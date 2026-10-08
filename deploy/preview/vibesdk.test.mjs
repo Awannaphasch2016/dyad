@@ -19,6 +19,9 @@ import {
 import {
   membershipReady,
   patchAuthRoutes,
+  patchClerkDocument,
+  patchClerkSecurity,
+  patchGlobalHeader,
   patchLoginModal,
   sharedSession,
 } from "./vibesdk-shared-auth.mjs";
@@ -429,6 +432,7 @@ test("the shared sign-in keeps one Wewebplus role and hides the email form", () 
   assert.throws(() => patchAuthRoutes("no routes"), /missed auth import/);
   const modal = patchLoginModal(
     [
+      "import { useState } from 'react';",
       "export function LoginModal",
       "\tconst hasEmailAuth = emailAuthEnabled && !!onEmailLogin;",
       "\tconst hasRegistration = emailAuthEnabled && !!onRegister;",
@@ -441,6 +445,46 @@ test("the shared sign-in keeps one Wewebplus role and hides the email form", () 
   );
   assert.match(modal, /Sign in/);
   assert.match(modal, /&& false &&/);
+  assert.match(modal, /fetch\('\/api\/auth\/clerk'/);
+  assert.doesNotMatch(modal, /fetch\('\/api\/clerk'/);
+  assert.match(modal, /sharedClerkPortal/);
+  assert.match(modal, /\.accounts\.dev/);
+  assert.match(modal, /\/sign-in/);
+  assert.match(modal, /replace\(\/\\\$\$\/, ''\)/);
+  assert.match(modal, /void startSharedSignIn\(\)/);
+});
+
+test("sign in leaves for the Clerk account page", () => {
+  const header = patchGlobalHeader(
+    [
+      "import { useAuthModal } from '../auth/AuthModalProvider';",
+      "export function GlobalHeader() {",
+      "\tconst { showAuthModal } = useAuthModal();",
+      "\t\t\t\t\t\t\t\tonClick={() => showAuthModal()}",
+    ].join("\n"),
+  );
+  assert.match(header, /startSharedSignIn/);
+  assert.doesNotMatch(header, /showAuthModal/);
+  const documentPolicy = patchClerkDocument(
+    `<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' blob: https://cdnjs.cloudflare.com https://cdn.tailwindcss.com https://esm.sh https://static.cloudflareinsights.com; style-src 'self';" />`,
+  );
+  assert.match(documentPolicy, /https:\/\/\*\.clerk\.accounts\.dev/);
+  const security = patchClerkSecurity(
+    [
+      `"'strict-dynamic'",`,
+      `"https://api.cloudflare.com"`,
+      `frameSrc: ["'none'"],`,
+      `"https://lh3.googleusercontent.com", // Google avatars`,
+      `workerSrc: ["'self'", "blob:"],`,
+      `crossOriginEmbedderPolicy: 'require-corp',`,
+      `crossOriginOpenerPolicy: 'same-origin',`,
+    ].join("\n"),
+  );
+  assert.match(security, /https:\/\/\*\.clerk\.accounts\.dev/);
+  assert.match(security, /frameSrc: \["'self'"/);
+  assert.match(security, /crossOriginEmbedderPolicy: false/);
+  assert.match(security, /same-origin-allow-popups/);
+  assert.doesNotMatch(security, /frameSrc: \["'none'"\]/);
 });
 
 test("cloudflare credentials use CLOUDFLARE_API_TOKEN", () => {
