@@ -143,7 +143,7 @@ async function fetchOrgMembership(
   const secretKey = process.env.CLERK_SECRET_KEY?.trim();
   if (!secretKey) return null;
   const response = await fetch(
-    `https://api.clerk.com/v1/organizations/${orgId}/memberships?limit=100`,
+    `https://api.clerk.com/v1/organizations/${encodeURIComponent(orgId)}/memberships?user_id=${encodeURIComponent(userId)}`,
     {
       headers: {
         Authorization: `Bearer ${secretKey}`,
@@ -152,7 +152,9 @@ async function fetchOrgMembership(
       },
     },
   );
-  if (!response.ok) return null;
+  if (!response.ok) {
+    throw new DyadError("The membership check failed.", DyadErrorKind.External);
+  }
   const body = (await response.json()) as {
     data?: Array<Record<string, unknown>>;
   };
