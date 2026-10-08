@@ -8,6 +8,7 @@ import {
 } from "./vibesdk-cloudflare.mjs";
 import {
   announceRemoval,
+  cloudflareCreds,
   commandFromEnv,
   decideFromEvent,
   provisionPreview,
@@ -387,6 +388,26 @@ test("an existing preview database is reused", async () => {
   });
   assert.equal(again.databaseId, databaseId);
   assert.deepEqual(posts, ["/accounts/" + accountId + "/d1/database"]);
+});
+
+test("cloudflare credentials use the stored preview token name", () => {
+  const preferred = cloudflareCreds(
+    {
+      CLOUDFLARE_API_TOKEN: "a".repeat(40),
+      CLOUDFLARE_API_TOKEN_: "b".repeat(40),
+      CLOUDFLARE_ACCOUNT_ID: "c".repeat(32),
+      OPENROUTER_API_KEY: `sk-or-${"k".repeat(24)}`,
+    },
+    { openRouter: true },
+  );
+  assert.equal(preferred.tokenName, "CLOUDFLARE_API_TOKEN_");
+  assert.equal(preferred.token, "b".repeat(40));
+  const fallback = cloudflareCreds({
+    CLOUDFLARE_API_TOKEN: "a".repeat(40),
+    CLOUDFLARE_ACCOUNT_ID: "c".repeat(32),
+  });
+  assert.equal(fallback.tokenName, "CLOUDFLARE_API_TOKEN");
+  assert.equal(fallback.token, "a".repeat(40));
 });
 
 test("preview-vibesdk decisions stay on that label", () => {

@@ -69,10 +69,23 @@ export function removalCommentAction({ deleted, existingBody }) {
   return "silent";
 }
 
+function firstReadySecret(env, names) {
+  for (const name of names) {
+    const value = String(env[name] ?? "").trim();
+    if (secretReady(value)) return { name, value };
+  }
+  return { name: names[0], value: "" };
+}
+
 export function cloudflareCreds(env, { openRouter = false } = {}) {
-  const token = String(env.CLOUDFLARE_API_TOKEN ?? "").trim();
-  const accountId = String(env.CLOUDFLARE_ACCOUNT_ID ?? "").trim();
-  if (!secretReady(token)) {
+  const token = firstReadySecret(env, [
+    "CLOUDFLARE_API_TOKEN_",
+    "CLOUDFLARE_API_TOKEN",
+  ]);
+  const accountId = String(
+    env.CLOUDFLARE_ACCOUNT_ID ?? env.CLOUDFLARE_ACCOUNT_ID_ ?? "",
+  ).trim();
+  if (!secretReady(token.value)) {
     throw new Error("CLOUDFLARE_API_TOKEN is not available");
   }
   assertAccountId(accountId);
@@ -81,7 +94,8 @@ export function cloudflareCreds(env, { openRouter = false } = {}) {
     throw new Error("OPENROUTER_API_KEY is not available");
   }
   return {
-    token,
+    token: token.value,
+    tokenName: token.name,
     accountId,
     openRouterKey,
     anthropicKey: String(env.ANTHROPIC_API_KEY ?? "").trim(),
@@ -228,6 +242,7 @@ export async function provisionPreview(options) {
   });
   mask(creds.token);
   mask(creds.openRouterKey);
+  console.log(`cloudflare_token_name=${creds.tokenName}`);
   const request =
     options.request ?? cloudflareClient(creds.token, options.fetchImpl);
   const ensured = await ensurePreviewResources({
@@ -387,6 +402,8 @@ export async function provisionPreview(options) {
 
 export async function deleteFromEnv(pr, options = {}) {
   const creds = cloudflareCreds(options.env ?? process.env);
+  mask(creds.token);
+  console.log(`cloudflare_token_name=${creds.tokenName}`);
   const request =
     options.request ?? cloudflareClient(creds.token, options.fetchImpl);
   return deletePreviewResources({
