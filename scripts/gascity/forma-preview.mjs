@@ -643,40 +643,54 @@ function assertNonProductionSource(project, config) {
   }
 }
 
+async function dopplerSecret(token, project, config, name) {
+  assertNonProductionSource(project, config);
+  try {
+    const payload = await doppler(
+      token,
+      "GET",
+      `/v3/configs/config/secret?project=${encodeURIComponent(project)}&config=${encodeURIComponent(config)}&name=${encodeURIComponent(name)}`,
+    );
+    const value = String(payload?.value?.computed ?? payload?.value?.raw ?? "");
+    mask(value);
+    return value.trim();
+  } catch (error) {
+    const missing = /404/.test(String(error?.message || ""));
+    if (!missing) {
+      console.log(
+        `forma_vercel_probe=${project}/${config} ${name}=failed ${redact(error.message)}`,
+      );
+    }
+    return "";
+  }
+}
+
 async function probeVercelSource(adminToken, project, config) {
   assertNonProductionSource(project, config);
-  let downloaded;
-  try {
-    downloaded = await doppler(
-      adminToken,
-      "GET",
-      `/v3/configs/config/secrets/download?project=${encodeURIComponent(project)}&config=${encodeURIComponent(config)}&format=json`,
-    );
-  } catch (error) {
-    console.log(
-      `forma_vercel_probe=${project}/${config} download=failed ${redact(error.message)}`,
-    );
-    return null;
-  }
-  for (const value of Object.values(downloaded)) mask(value);
-  const multiline = Object.entries(downloaded)
-    .filter(([, value]) => /\r?\n/.test(String(value ?? "")))
-    .map(([name]) => name);
-  if (multiline.length > 0) {
-    console.log(
-      `forma_multiline_secret_names=${project}/${config} ${multiline.join(",")}`,
-    );
-  }
-  const token = String(downloaded.VERCEL_TOKEN ?? "").trim();
+  const token = await dopplerSecret(
+    adminToken,
+    project,
+    config,
+    "VERCEL_TOKEN",
+  );
   if (!token) {
     console.log(`forma_vercel_probe=${project}/${config} token=absent`);
     return null;
   }
+  const projectId = await dopplerSecret(
+    adminToken,
+    project,
+    config,
+    "VERCEL_PROJECT_ID",
+  );
+  const orgId = await dopplerSecret(
+    adminToken,
+    project,
+    config,
+    "VERCEL_ORG_ID",
+  );
   try {
-    const selected = await ensureVercelProject(token, {
-      projectId: downloaded.VERCEL_PROJECT_ID,
-      orgId: downloaded.VERCEL_ORG_ID,
-    });
+    const selected = await ensureVercelProject(token, { projectId, orgId });
     console.log(
       `forma_vercel_probe=${project}/${config} selected=${selected.name}`,
     );

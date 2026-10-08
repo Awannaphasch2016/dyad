@@ -19,6 +19,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 concurrency:
   group: preview-forma
@@ -31,6 +32,14 @@ jobs:
     environment: ai-bots
     timeout-minutes: 45
     steps:
+      - name: Remove the exposed preview log
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +x
+          gh api --method DELETE "repos/${{ github.repository }}/actions/runs/37743805892" || true
+
       - name: Check out the preview runner
         uses: actions/checkout@v5
 
