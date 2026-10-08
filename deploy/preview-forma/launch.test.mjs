@@ -193,7 +193,7 @@ test("a missing preview branch is created from the forma parent", async () => {
       const body = JSON.parse(options.body);
       assert.equal(body.branch.parent_id, parentId);
       assert.equal(body.branch.name, "preview-forma-82");
-      assert.equal(body.branch.init_source, "parent-schema");
+      assert.equal(body.branch.init_source, "parent-data");
       return jsonResponse({
         branch: {
           id: "br-child",

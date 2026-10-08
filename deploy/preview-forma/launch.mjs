@@ -242,8 +242,9 @@ async function neonRequest(apiKey, method, path, body, fetchImpl) {
     }
   }
   if (!response.ok) {
+    const code = payload?.code ? ` ${payload.code}` : "";
     throw new Error(
-      `${method} ${path.split("?")[0]} ${response.status} ${redact(payload?.message || text)}`,
+      `${method} ${path.split("?")[0]} ${response.status}${code} ${redact(payload?.message || text)}`,
     );
   }
   return payload;
@@ -264,6 +265,7 @@ export async function ensureNeonBranch({
   const branches = await listBranches(apiKey, fetchImpl);
   let branch = branches.find((item) => item.name === name);
   if (!branch) {
+    log("preview_forma_branch_init=parent-data");
     const created = await neonRequest(
       apiKey,
       "POST",
@@ -272,10 +274,9 @@ export async function ensureNeonBranch({
         branch: {
           parent_id: FORMA_PARENT_BRANCH_ID,
           name,
-          // parent-schema copies structure from the parent and no rows.
-          // schema-only would open another root branch, which this project
-          // already refuses.
-          init_source: "parent-schema",
+          // A normal child copies the parent. schema-only and parent-schema
+          // open a root branch, and this project is already at that limit.
+          init_source: "parent-data",
         },
         endpoints: [{ type: "read_write" }],
       },
