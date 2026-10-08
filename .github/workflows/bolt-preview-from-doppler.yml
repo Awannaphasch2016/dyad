@@ -1,0 +1,119 @@
+# Deploy the bolt walkthrough branch with Cloudflare credentials read from
+# Doppler bolt/preview in this job. Nothing is copied into bolt.diy secrets.
+
+name: Bolt preview from Doppler
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cursor/bolt-doppler-55d6
+    paths:
+      - .github/workflows/bolt-preview-from-doppler.yml
+      - scripts/doppler/ensure-bolt-project.mjs
+      - scripts/doppler/export-bolt-preview-env.mjs
+      - scripts/doppler/bolt-project.mjs
+      - scripts/doppler/patch-bolt-polyfills.mjs
+      - scripts/doppler/bolt-webcontainer-coep.mjs
+      - scripts/doppler/bolt-hitl.mjs
+      - scripts/doppler/bolt-sign-in.mjs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bolt-preview-from-doppler
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/cursor/bolt-doppler-55d6'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out the export script
+        uses: actions/checkout@v4
+
+      - name: Reference the OpenRouter key on bolt preview
+        env:
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+        run: |
+          set -euo pipefail
+          set +x
+          node scripts/doppler/ensure-bolt-project.mjs
+
+      - name: Read bolt preview from Doppler
+        env:
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+        run: |
+          set -euo pipefail
+          set +x
+          node scripts/doppler/export-bolt-preview-env.mjs
+
+      - name: Confirm development Clerk and seed Wewebplus roles
+        run: |
+          set -euo pipefail
+          set +x
+          node scripts/doppler/bolt-sign-in.mjs
+
+      - name: Check out the bolt walkthrough
+        uses: actions/checkout@v4
+        with:
+          repository: Awannaphasch2016/bolt.diy
+          ref: cursor/website-walkthrough-55d6
+          path: bolt
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: bolt/pnpm-lock.yaml
+
+      - name: Patch the walkthrough build
+        run: node scripts/doppler/patch-bolt-polyfills.mjs bolt/vite.config.ts bolt/app/components/chat/Chat.client.tsx bolt/app/components/chat/ModelSelector.tsx bolt/app/lib/.server/llm/stream-text.ts bolt
+
+      - name: Install bolt
+        working-directory: bolt
+        run: pnpm install --frozen-lockfile
+
+      - name: Build bolt
+        working-directory: bolt
+        run: pnpm run build
+        env:
+          NODE_ENV: production
+
+      - name: Deploy the walkthrough preview
+        working-directory: bolt
+        run: |
+          set -euo pipefail
+          set +x
+          pnpm exec wrangler deploy --name bolt-walkthrough-55d6 | tee /tmp/wrangler-deploy.txt
+          url="$(grep -oE 'https://[A-Za-z0-9._-]+\.workers\.dev' /tmp/wrangler-deploy.txt | head -1 || true)"
+          echo "preview_url=${url:-absent}"
+          {
+            echo "preview_url=${url:-absent}"
+          } >> "$GITHUB_STEP_SUMMARY"
+          test -n "$url"
+
+      - name: Give the Worker the OpenRouter key
+        working-directory: bolt
+        run: |
+          set -euo pipefail
+          set +x
+          printf '%s' "$OPEN_ROUTER_API_KEY" | pnpm exec wrangler secret put OPEN_ROUTER_API_KEY --name bolt-walkthrough-55d6
+          echo "openrouter=configured" >> "$GITHUB_STEP_SUMMARY"
+          for name in WEWEBPLUS_DATABASE_URL CLERK_SECRET_KEY CLERK_PUBLISHABLE_KEY GAS_CITY_HOST_BRIDGE_TOKEN; do
+            value="$(printenv "$name" || true)"
+            if [ -n "$value" ]; then
+              printf '%s' "$value" | pnpm exec wrangler secret put "$name" --name bolt-walkthrough-55d6
+              echo "hitl_${name}=configured" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "hitl_${name}=absent" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
