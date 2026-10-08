@@ -1,6 +1,7 @@
 # Experiment 1 and 4 comparison. Tags start with harness-gha- or harness-.
 # This workflow does not push the live preview tag, the commit tag, or the live context tag.
 # Rebuilds the same commit the classic-token Harness execution is building.
+# Reuse check: this commit stays under .github, so the Docker context is unchanged.
 name: Harness image comparison
 
 concurrency:
