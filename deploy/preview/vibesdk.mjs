@@ -308,6 +308,360 @@ export function patchWorkerExports(source) {
   return next;
 }
 
+export function patchAppCreationLimit(source) {
+  const block = "appCreation: {\n\t\tenabled: true,";
+  if (!source.includes(block)) {
+    throw new Error("app creation limit patch did not match");
+  }
+  const next = source.replace(block, "appCreation: {\n\t\tenabled: false,");
+  if (
+    next.includes(block) ||
+    !next.includes("appCreation: {\n\t\tenabled: false,")
+  ) {
+    throw new Error("app creation limit patch did not apply");
+  }
+  return next;
+}
+
+const STATIC_WEB_EXTENSIONS = new Set([
+  "html",
+  "css",
+  "js",
+  "mjs",
+  "svg",
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "webp",
+  "ico",
+  "woff",
+  "woff2",
+  "ttf",
+]);
+
+export function commitHasAppClass(files) {
+  return Object.entries(files ?? {}).some(([path, content]) => {
+    if (typeof content !== "string") return false;
+    if (!/\.(ts|tsx|js|mjs|jsx)$/.test(path)) return false;
+    return /export class App\b/.test(content);
+  });
+}
+
+export function collectStaticWebAssets(files) {
+  const assets = {};
+  for (const [path, content] of Object.entries(files ?? {})) {
+    if (typeof content !== "string") continue;
+    const parts = path.split("/");
+    if (parts.some((part) => part.startsWith(".") || part === "node_modules")) {
+      continue;
+    }
+    const leaf = parts[parts.length - 1] ?? "";
+    const dot = leaf.lastIndexOf(".");
+    if (dot < 1) continue;
+    const extension = leaf.slice(dot + 1).toLowerCase();
+    if (!STATIC_WEB_EXTENSIONS.has(extension)) continue;
+    assets[path.startsWith("/") ? path : `/${path}`] = content;
+  }
+  return assets;
+}
+
+export function previewProbeDecision(status) {
+  if (
+    status === 401 ||
+    status === 403 ||
+    status === 404 ||
+    status === 500 ||
+    status === 503
+  ) {
+    return "terminal";
+  }
+  if (status >= 200 && status < 300) return "ready";
+  return "retry";
+}
+
+function replaceOnce(source, from, to, label) {
+  const count = source.split(from).length - 1;
+  if (count !== 1) {
+    throw new Error(`${label} patch did not match`);
+  }
+  const next = source.replace(from, to);
+  if (next === source) {
+    throw new Error(`${label} patch did not apply`);
+  }
+  return next;
+}
+
+export function patchStaticSiteDeploy(source) {
+  const helper = `const STATIC_WEB_EXTENSIONS = new Set([
+  "html", "css", "js", "mjs", "svg", "png", "jpg", "jpeg", "gif", "webp", "ico", "woff", "woff2", "ttf",
+])
+
+function commitHasAppClass(files: Record<string, string>): boolean {
+  return Object.entries(files).some(([path, content]) =>
+    /\\.(ts|tsx|js|mjs|jsx)$/.test(path) && /export class App\\b/.test(content),
+  )
+}
+
+function collectStaticWebAssets(files: Record<string, string>): Record<string, string> {
+  const assets: Record<string, string> = {}
+  for (const [path, content] of Object.entries(files)) {
+    const parts = path.split("/")
+    if (parts.some((part) => part.startsWith(".") || part === "node_modules")) continue
+    const leaf = parts[parts.length - 1] ?? ""
+    const dot = leaf.lastIndexOf(".")
+    if (dot < 1) continue
+    const extension = leaf.slice(dot + 1).toLowerCase()
+    if (!STATIC_WEB_EXTENSIONS.has(extension)) continue
+    assets[path.startsWith("/") ? path : \`/\${path}\`] = content
+  }
+  return assets
+}
+
+`;
+  const earlyReturn = `try {
+    if (!commitHasAppClass(files)) {
+      return {
+        branch,
+        commitHash,
+        mainModule: "__vibesdk_static_site__",
+        modules: { "__vibesdk_static_site__.js": "export {}" },
+        assets: collectStaticWebAssets(files),
+        assetConfig: {
+          html_handling: "auto-trailing-slash",
+          not_found_handling: "none",
+        },
+        compatibilityDate: wranglerCfg.compatibilityDate ?? "2025-04-01",
+      }
+    }
+    const assetsDir = wranglerCfg.assets?.directory?.replace(/^\\.?\\//, "").replace(/\\/$/, "")`;
+  let next = replaceOnce(
+    source,
+    "export async function buildBranchDeployment(",
+    `${helper}export async function buildBranchDeployment(`,
+    "static site deploy helper",
+  );
+  next = replaceOnce(
+    next,
+    'try {\n    const assetsDir = wranglerCfg.assets?.directory?.replace(/^\\.?\\//, "").replace(/\\/$/, "")',
+    earlyReturn,
+    "static site deploy return",
+  );
+  if (!next.includes('mainModule: "__vibesdk_static_site__"')) {
+    throw new Error("static site deploy patch did not apply");
+  }
+  return next;
+}
+
+export function patchPreviewServing(source) {
+  let next = replaceOnce(
+    source,
+    "    let appClass: DurableObjectClass\n",
+    `    if (dep.mainModule === "__vibesdk_static_site__") {
+      return new Response("Preview cannot show this page.", { status: 404 })
+    }
+
+    let appClass: DurableObjectClass
+`,
+    "static site preview",
+  );
+  next = replaceOnce(
+    next,
+    `  if (!ct.includes("text/html")) return response
+
+  // Use HTMLRewriter to prefix root-relative src/href/action attributes
+`,
+    `  if (!ct.includes("text/html")) return response
+  if (response.body === null) return response
+
+  // Use HTMLRewriter to prefix root-relative src/href/action attributes
+`,
+    "preview head rewrite",
+  );
+  return next;
+}
+
+export function patchPreviewPane(source) {
+  let next = replaceOnce(
+    source,
+    "const MAX_RETRIES = 10;\nconst REDEPLOY_AFTER_ATTEMPT = 8;\n",
+    "const MAX_RETRIES = 3;\n",
+    "preview retry cap",
+  );
+  next = replaceOnce(
+    next,
+    "Promise<'sandbox' | 'dispatcher' | null>",
+    "Promise<'sandbox' | 'dispatcher' | 'terminal' | null>",
+    "preview probe type",
+  );
+  next = replaceOnce(
+    next,
+    `				if (!response.ok) {
+					console.log('Preview not ready (status:', response.status, ')');
+					return null;
+				}`,
+    `				if (response.status === 401 || response.status === 403 || response.status === 404 || response.status === 500 || response.status === 503) {
+					console.log('Preview cannot be shown (status:', response.status, ')');
+					return 'terminal';
+				}
+
+				if (!response.ok) {
+					console.log('Preview not ready (status:', response.status, ')');
+					return null;
+				}`,
+    "preview terminal status",
+  );
+  next = replaceOnce(
+    next,
+    `			const previewType = await testAvailability(url);
+
+			if (previewType) {`,
+    `			const previewType = await testAvailability(url);
+
+			if (previewType === 'terminal') {
+				setLoadState({
+					status: 'error',
+					attempt: attempt + 1,
+					loadedSrc: null,
+					errorMessage: 'Preview cannot show this snapshot.',
+				});
+				return;
+			}
+
+			if (previewType) {`,
+    "preview terminal state",
+  );
+  next = replaceOnce(
+    next,
+    `				console.log(\`Preview not ready. Retrying in \${Math.ceil(delay / 1000)}s (attempt \${nextAttempt}/\${MAX_RETRIES})\`);
+
+				// Auto-redeploy after 3 failed attempts
+				if (nextAttempt === REDEPLOY_AFTER_ATTEMPT) {
+					requestRedeploy();
+				}
+
+				// Schedule next retry`,
+    `				console.log(\`Preview not ready. Retrying in \${Math.ceil(delay / 1000)}s (attempt \${nextAttempt}/\${MAX_RETRIES})\`);
+
+				// Schedule next retry`,
+    "preview redeploy",
+  );
+  next = replaceOnce(
+    next,
+    "		}, [testAvailability, requestScreenshot, requestRedeploy]);",
+    "		}, [testAvailability, requestScreenshot]);",
+    "preview retry deps",
+  );
+  next = replaceOnce(
+    next,
+    `		/**
+		 * Request automatic redeployment via WebSocket
+		 */
+		const requestRedeploy = useCallback(() => {
+			if (!webSocket || webSocket.readyState !== WebSocket.OPEN) {
+				console.warn('Cannot request redeploy: WebSocket not connected');
+				return;
+			}
+
+			if (hasRequestedRedeployRef.current) {
+				console.log('Redeploy already requested, skipping duplicate request');
+				return;
+			}
+
+			console.log('Requesting automatic preview redeployment');
+
+			try {
+				webSocket.send(JSON.stringify({
+					type: 'preview',
+				}));
+				hasRequestedRedeployRef.current = true;
+			} catch (error) {
+				console.error('Failed to send redeploy request:', error);
+			}
+		}, [webSocket]);
+
+`,
+    "",
+    "preview redeploy callback",
+  );
+  next = replaceOnce(
+    next,
+    `			const delay = getRetryDelay(loadState.attempt - 1);
+			const delaySeconds = Math.ceil(delay / 1000);
+
+			return (`,
+    "			return (",
+    "preview countdown",
+  );
+  next = replaceOnce(
+    next,
+    `						<RefreshCw className="size-8 text-kumo-brand animate-spin mx-auto mb-4" />
+						<h3 className="text-lg font-medium text-text-primary mb-2">
+							Loading Preview
+						</h3>
+						<p className="text-text-primary/70 text-sm mb-4">
+							{loadState.attempt === 0
+								? 'Checking if your deployed preview is ready...'
+								: \`Preview not ready yet. Retrying in \${delaySeconds}s... (attempt \${loadState.attempt}/\${MAX_RETRIES})\`
+							}
+						</p>
+						{loadState.attempt >= REDEPLOY_AFTER_ATTEMPT && (
+							<p className="text-xs text-kumo-brand/70">
+								Auto-redeployment triggered to refresh the preview
+							</p>
+						)}
+						<div className="text-xs text-text-primary/50 mt-2">
+							Preview URLs may take a moment to become available after deployment
+						</div>`,
+    `						<RefreshCw aria-hidden="true" className="size-8 text-kumo-brand animate-spin motion-reduce:animate-none mx-auto mb-4" />
+						<h3 className="text-lg font-medium text-text-primary mb-2">
+							Opening preview
+						</h3>
+						<p className="text-text-primary/70 text-sm mb-4" role="status" aria-live="polite">
+							{loadState.attempt <= 1
+								? 'Opening preview.'
+								: 'The preview is still starting.'
+							}
+						</p>`,
+    "preview opening copy",
+  );
+  next = replaceOnce(
+    next,
+    `					<h3 className="text-lg font-medium text-text-primary mb-2">
+						Preview Not Available
+					</h3>
+					<p className="text-text-primary/70 text-sm mb-6">
+						{loadState.errorMessage || 'The preview failed to load after multiple attempts.'}
+					</p>`,
+    `					<h3 className="text-lg font-medium text-text-primary mb-2">
+						Preview not available
+					</h3>
+					<p className="text-text-primary/70 text-sm mb-6" role="status" aria-live="polite">
+						{loadState.errorMessage || 'Preview cannot show this snapshot.'}
+					</p>`,
+    "preview error copy",
+  );
+  next = replaceOnce(
+    next,
+    `						<p className="text-xs text-text-primary/60">
+							If the issue persists, please describe the problem in chat so I can help diagnose and fix it.
+						</p>
+`,
+    "",
+    "preview chat prompt",
+  );
+  if (
+    next.includes("REDEPLOY_AFTER_ATTEMPT") ||
+    next.includes("Preview not ready yet") ||
+    next.includes("describe the problem in chat") ||
+    !next.includes("return 'terminal'") ||
+    !next.includes("Preview cannot show this snapshot.")
+  ) {
+    throw new Error("preview pane patch did not apply");
+  }
+  return next;
+}
+
 export function previewCommentBody(kind, names) {
   if (names) assertSafePreview(names);
   const marker = PREVIEW_COMMENT_MARKER;

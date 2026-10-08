@@ -17,6 +17,10 @@ import {
   VIBESDK_PREVIEW_LABEL,
   VIBESDK_SHA,
   assertAccountId,
+  patchAppCreationLimit,
+  patchPreviewPane,
+  patchPreviewServing,
+  patchStaticSiteDeploy,
   patchThinkModel,
   patchThinkRouting,
   patchWorkerExports,
@@ -263,6 +267,31 @@ export async function provisionPreview(options) {
       entryPath,
       patchWorkerExports(await readFile(entryPath, "utf8")),
     );
+    const limitsPath = join(checkout, "worker/services/rate-limit/config.ts");
+    await writeFile(
+      limitsPath,
+      patchAppCreationLimit(await readFile(limitsPath, "utf8")),
+    );
+    console.log("app_creation_limit=disabled");
+    const deployEnginePath = join(checkout, "space/src/space/deploy-engine.ts");
+    const spaceObjectPath = join(checkout, "space/src/space/durable-object.ts");
+    const previewPanePath = join(
+      checkout,
+      "src/routes/chat/components/preview-iframe.tsx",
+    );
+    await writeFile(
+      deployEnginePath,
+      patchStaticSiteDeploy(await readFile(deployEnginePath, "utf8")),
+    );
+    await writeFile(
+      spaceObjectPath,
+      patchPreviewServing(await readFile(spaceObjectPath, "utf8")),
+    );
+    await writeFile(
+      previewPanePath,
+      patchPreviewPane(await readFile(previewPanePath, "utf8")),
+    );
+    console.log("static_preview=enabled");
     console.log(`think_provider=openrouter think_model=${THINK_MODEL_ID}`);
     await writeFile(
       join(checkout, configName),
