@@ -653,6 +653,14 @@ def print_step_logs(api_key: str, account: str, execution: str) -> None:
             continue
         print("step", ident, node.get("status"))
         print("step_keys", ",".join(sorted(str(key) for key in node)))
+        params = node.get("stepParameters")
+        if isinstance(params, dict):
+            print("step_param_keys", ",".join(sorted(str(key) for key in params)))
+            identities = params.get("identities")
+            if identities is not None:
+                print("step_identities", scrub(json.dumps(identities))[:800])
+        elif isinstance(params, str):
+            print("step_parameters", scrub(params)[:800])
         key = node.get("logBaseKey")
         if not isinstance(key, str) or not key:
             print("log_key=absent")
@@ -754,7 +762,25 @@ def register_probe() -> int:
         "GET",
         f"https://app.harness.io/pipeline/api/pipelines/v2/{pipeline}{query}",
     )
-    print("saved_pipeline", saved_code, saved.get("status"))
+    print(
+        "saved_pipeline",
+        saved_code,
+        saved.get("status"),
+        scrub(str(saved.get("message") or ""))[:200],
+    )
+    if saved_code != 200:
+        saved_code, saved = harness_request(
+            api_key,
+            "GET",
+            "https://app.harness.io/pipeline/api/pipelines/"
+            f"{pipeline}?accountIdentifier={account}&orgIdentifier=default&projectIdentifier=dyad",
+        )
+        print(
+            "saved_pipeline_v1",
+            saved_code,
+            saved.get("status"),
+            scrub(str(saved.get("message") or ""))[:200],
+        )
     print_saved_identities(saved)
     execute_yaml = (
         "pipeline:\n"
