@@ -447,10 +447,16 @@ async function projectList(token, teamId) {
 }
 
 async function ensureVercelProject(token) {
-  const teams = await vercelApi(token, "GET", "/v2/teams");
+  let teamRows = [];
+  try {
+    const teams = await vercelApi(token, "GET", "/v2/teams");
+    teamRows = teams.teams || [];
+  } catch (error) {
+    console.log(`vercel_teams=${redact(error.message)}`);
+  }
   const scopes = [
     { id: "", slug: "personal" },
-    ...(teams.teams || []).map((team) => ({ id: team.id, slug: team.slug })),
+    ...teamRows.map((team) => ({ id: team.id, slug: team.slug })),
   ];
   for (const scope of scopes) {
     let projects = [];
