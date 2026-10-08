@@ -43,17 +43,106 @@ export function patchChatReady(source) {
     .replace(readyDeps, readyDepsFixed);
 }
 
+export const WALKTHROUGH_MODEL = "anthropic/claude-sonnet-5.5";
+export const WALKTHROUGH_MODEL_LABEL = "Anthropic: Claude Sonnet 5.5";
+export const WALKTHROUGH_PROVIDER = "OpenRouter";
+
+const savedModelState = `    const [model, setModel] = useState(() => {
+      const savedModel = Cookies.get('selectedModel');
+      return savedModel || DEFAULT_MODEL;
+    });
+    const [provider, setProvider] = useState(() => {
+      const savedProvider = Cookies.get('selectedProvider');
+      return (PROVIDER_LIST.find((p) => p.name === savedProvider) || DEFAULT_PROVIDER) as ProviderInfo;
+    });`;
+
+const fixedModelState = `    const [model, setModel] = useState(() => '${WALKTHROUGH_MODEL}');
+    const [provider, setProvider] = useState(
+      () => (PROVIDER_LIST.find((p) => p.name === '${WALKTHROUGH_PROVIDER}') || DEFAULT_PROVIDER) as ProviderInfo,
+    );`;
+
+export function patchWalkthroughModel(source) {
+  if (source.includes(fixedModelState)) return source;
+  if (!source.includes(savedModelState)) {
+    throw new Error("walkthrough model state was not found");
+  }
+  return source.replace(savedModelState, fixedModelState);
+}
+
+const selectorGate = `  if (providerList.length === 0) {
+    return (
+      <div className="mb-2 p-4 rounded-lg border border-bolt-elements-borderColor bg-bolt-elements-prompt-background text-bolt-elements-textPrimary">`;
+const fixedSelector = `  useEffect(() => {
+    const openRouter = providerList.find((item) => item.name === '${WALKTHROUGH_PROVIDER}');
+    if (openRouter && provider?.name !== '${WALKTHROUGH_PROVIDER}') {
+      setProvider?.(openRouter);
+    }
+    if (model !== '${WALKTHROUGH_MODEL}') {
+      setModel?.('${WALKTHROUGH_MODEL}');
+    }
+  }, [model, provider, providerList, setModel, setProvider]);
+
+  return (
+    <div className="flex gap-2 flex-col sm:flex-row" aria-label="Model">
+      <div className="w-full p-2 rounded-lg border border-bolt-elements-borderColor bg-bolt-elements-prompt-background text-bolt-elements-textPrimary">
+        ${WALKTHROUGH_PROVIDER}
+      </div>
+      <div className="w-full min-w-[70%] p-2 rounded-lg border border-bolt-elements-borderColor bg-bolt-elements-prompt-background text-bolt-elements-textPrimary">
+        ${WALKTHROUGH_MODEL_LABEL}
+      </div>
+    </div>
+  );
+
+  if (providerList.length === 0) {
+    return (
+      <div className="mb-2 p-4 rounded-lg border border-bolt-elements-borderColor bg-bolt-elements-prompt-background text-bolt-elements-textPrimary">`;
+
+export function patchModelSelector(source) {
+  if (
+    source.includes(WALKTHROUGH_MODEL_LABEL) &&
+    source.includes('aria-label="Model"')
+  ) {
+    return source;
+  }
+  if (!source.includes(selectorGate)) {
+    throw new Error("model selector gate was not found");
+  }
+  return source.replace(selectorGate, fixedSelector);
+}
+
+const extractedModel = `      const { model, provider } = extractPropertiesFromMessage(message);
+      currentModel = model;
+      currentProvider = provider;`;
+
+const forcedModel = `      const extracted = extractPropertiesFromMessage(message);
+      currentModel = '${WALKTHROUGH_MODEL}';
+      currentProvider = '${WALKTHROUGH_PROVIDER}';
+      logger.info(\`Walkthrough model \${currentProvider}/\${currentModel} overrides \${extracted.provider}/\${extracted.model}\`);`;
+
+export function patchStreamModel(source) {
+  if (source.includes(`currentModel = '${WALKTHROUGH_MODEL}'`)) return source;
+  if (!source.includes(extractedModel)) {
+    throw new Error("stream model assignment was not found");
+  }
+  return source.replace(extractedModel, forcedModel);
+}
+
 const entry = process.argv[1];
 if (entry && import.meta.url === pathToFileURL(entry).href) {
   const viteConfig = process.argv[2];
   const chatClient = process.argv[3];
-  if (!viteConfig || !chatClient) {
+  const modelSelector = process.argv[4];
+  const streamText = process.argv[5];
+  if (!viteConfig || !chatClient || !modelSelector || !streamText) {
     console.log("patch_args=absent");
     process.exit(1);
   }
   for (const [file, patch, label] of [
     [viteConfig, patchBrowserPolyfills, "polyfill_patch"],
     [chatClient, patchChatReady, "ready_patch"],
+    [chatClient, patchWalkthroughModel, "model_state_patch"],
+    [modelSelector, patchModelSelector, "model_selector_patch"],
+    [streamText, patchStreamModel, "stream_model_patch"],
   ]) {
     const source = readFileSync(file, "utf8");
     const patched = patch(source);

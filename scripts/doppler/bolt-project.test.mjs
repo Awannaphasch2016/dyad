@@ -4,6 +4,9 @@ import test from "node:test";
 import {
   patchBrowserPolyfills,
   patchChatReady,
+  patchModelSelector,
+  patchStreamModel,
+  patchWalkthroughModel,
 } from "./patch-bolt-polyfills.mjs";
 import {
   chooseOpenRouterSource,
@@ -133,6 +136,8 @@ test("the preview job reads Doppler and does not store Cloudflare secrets on bol
     deploy,
     /wrangler secret put OPEN_ROUTER_API_KEY --name bolt-walkthrough-55d6/,
   );
+  assert.match(deploy, /ModelSelector\.tsx/);
+  assert.match(deploy, /stream-text\.ts/);
   assert.equal(deploy.includes("secrets.CLOUDFLARE_API_TOKEN"), false);
   assert.equal(deploy.includes("secrets.CLOUDFLARE_ACCOUNT_ID"), false);
   assert.equal(deploy.includes('echo "$OPEN_ROUTER_API_KEY"'), false);
@@ -148,6 +153,55 @@ test("the chat restore effect no longer reads an unbound ready", () => {
   assert.match(patched, /\}, \[initialMessages\]\);/);
   assert.equal(patched.includes("[ready, initialMessages]"), false);
   assert.equal(patchChatReady(patched), patched);
+});
+
+test("the walkthrough chat starts on OpenRouter Sonnet 5.5", () => {
+  const source = [
+    "    const [model, setModel] = useState(() => {",
+    "      const savedModel = Cookies.get('selectedModel');",
+    "      return savedModel || DEFAULT_MODEL;",
+    "    });",
+    "    const [provider, setProvider] = useState(() => {",
+    "      const savedProvider = Cookies.get('selectedProvider');",
+    "      return (PROVIDER_LIST.find((p) => p.name === savedProvider) || DEFAULT_PROVIDER) as ProviderInfo;",
+    "    });",
+  ].join("\n");
+  const patched = patchWalkthroughModel(source);
+  assert.match(patched, /useState\(\(\) => 'anthropic\/claude-sonnet-5\.5'\)/);
+  assert.match(patched, /p\.name === 'OpenRouter'/);
+  assert.equal(patched.includes("Cookies.get('selectedModel')"), false);
+  assert.equal(patchWalkthroughModel(patched), patched);
+});
+
+test("the model selector is a fixed label", () => {
+  const source = [
+    "  if (providerList.length === 0) {",
+    "    return (",
+    '      <div className="mb-2 p-4 rounded-lg border border-bolt-elements-borderColor bg-bolt-elements-prompt-background text-bolt-elements-textPrimary">',
+    "        empty",
+    "      </div>",
+    "    );",
+    "  }",
+  ].join("\n");
+  const patched = patchModelSelector(source);
+  assert.match(patched, /Anthropic: Claude Sonnet 5\.5/);
+  assert.match(patched, /aria-label="Model"/);
+  assert.equal(patched.includes("setIsModelDropdownOpen"), false);
+  assert.equal(patchModelSelector(patched), patched);
+  assert.throws(() => patchModelSelector("no selector here"));
+});
+
+test("the server chat call uses Sonnet 5.5", () => {
+  const source = [
+    "      const { model, provider } = extractPropertiesFromMessage(message);",
+    "      currentModel = model;",
+    "      currentProvider = provider;",
+  ].join("\n");
+  const patched = patchStreamModel(source);
+  assert.match(patched, /currentModel = 'anthropic\/claude-sonnet-5\.5'/);
+  assert.match(patched, /currentProvider = 'OpenRouter'/);
+  assert.equal(patched.includes("currentModel = model;"), false);
+  assert.equal(patchStreamModel(patched), patched);
 });
 
 test("the polyfill patch skips the rolldown runtime", () => {

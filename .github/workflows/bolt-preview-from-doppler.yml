@@ -66,8 +66,8 @@ jobs:
           cache: pnpm
           cache-dependency-path: bolt/pnpm-lock.yaml
 
-      - name: Keep the Buffer shim out of the runtime chunk
-        run: node scripts/doppler/patch-bolt-polyfills.mjs bolt/vite.config.ts bolt/app/components/chat/Chat.client.tsx
+      - name: Patch the walkthrough build
+        run: node scripts/doppler/patch-bolt-polyfills.mjs bolt/vite.config.ts bolt/app/components/chat/Chat.client.tsx bolt/app/components/chat/ModelSelector.tsx bolt/app/lib/.server/llm/stream-text.ts
 
       - name: Install bolt
         working-directory: bolt
