@@ -47,6 +47,24 @@ function digestFrom(response) {
   return response.headers.get("docker-content-digest") || "absent";
 }
 
+export function registryAccess(registryToken) {
+  const payload = String(registryToken ?? "").split(".")[1] ?? "";
+  if (!payload) return "none";
+  try {
+    const json = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    const access = Array.isArray(json.access) ? json.access : [];
+    if (access.length === 0) return "none";
+    return access
+      .map((entry) => {
+        const actions = Array.isArray(entry.actions) ? entry.actions : [];
+        return `${entry.name}:${actions.join("+") || "none"}`;
+      })
+      .join(",");
+  } catch {
+    return "unreadable";
+  }
+}
+
 export async function readImageDigest({ token, fetchImpl, tag = IMAGE_TAG }) {
   const manifestUrl = `https://ghcr.io/v2/awannaphasch2016/forma/manifests/${tag}`;
   const attempts = [];
@@ -84,6 +102,7 @@ export async function readImageDigest({ token, fetchImpl, tag = IMAGE_TAG }) {
       attempts.push(`token_${username}=missing`);
       continue;
     }
+    attempts.push(`access_${username}=${registryAccess(registryBody.token)}`);
     const manifest = await fetchImpl(manifestUrl, {
       headers: {
         Authorization: `Bearer ${registryBody.token}`,
@@ -94,8 +113,36 @@ export async function readImageDigest({ token, fetchImpl, tag = IMAGE_TAG }) {
       return { auth: username, digest: digestFrom(manifest) };
     }
     attempts.push(`manifest_${username}=${manifest.status}`);
+    const tags = await fetchImpl(
+      "https://ghcr.io/v2/awannaphasch2016/forma/tags/list",
+      { headers: { Authorization: `Bearer ${registryBody.token}` } },
+    );
+    attempts.push(`tags_${username}=${tags.status}`);
   }
   throw new Error(`forma_packages=denied ${attempts.join(" ")}`);
+}
+
+export async function describeFormaPackage({ token, fetchImpl }) {
+  const headers = githubHeaders(token);
+  const list = await fetchImpl(
+    "https://api.github.com/repos/Awannaphasch2016/forma/packages?package_type=container",
+    { headers },
+  );
+  if (!list.ok) return `forma_package_list=${list.status}`;
+  const packages = await list.json();
+  if (!Array.isArray(packages)) return "forma_package_list=not_array";
+  const names =
+    packages
+      .map((pkg) => `${pkg.name}:${pkg.visibility || "unknown"}`)
+      .join(",") || "none";
+  const one = await fetchImpl(
+    "https://api.github.com/users/Awannaphasch2016/packages/container/forma",
+    { headers },
+  );
+  if (!one.ok) return `forma_package_list=${names} forma_package=${one.status}`;
+  const body = await one.json();
+  const repository = body.repository?.full_name || "unlinked";
+  return `forma_package_list=${names} forma_package=${body.visibility || "unknown"} repo=${repository}`;
 }
 
 export async function verifyFormaAppAccess({
@@ -132,6 +179,7 @@ export async function verifyFormaAppAccess({
   );
   await expectOk(pulls, "forma_pulls");
   push("forma_pulls=ok");
+  push(await describeFormaPackage({ token, fetchImpl }));
 
   const image = await readImageDigest({ token, fetchImpl });
   push(`forma_packages=ok auth=${image.auth} digest=${image.digest}`);

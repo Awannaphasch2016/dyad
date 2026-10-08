@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { redact, verifyFormaAppAccess } from "./verify-forma-app-access.mjs";
+import {
+  redact,
+  registryAccess,
+  verifyFormaAppAccess,
+} from "./verify-forma-app-access.mjs";
 
 test("the check redacts app tokens and only reports statuses", async () => {
   assert.equal(
@@ -85,6 +89,23 @@ test("a denied manifest reports statuses and not the token", async () => {
     },
   );
   assert.equal(seen.includes("forma_pulls=ok"), true);
+});
+
+test("registry access logs the pull scope and not the token", () => {
+  const payload = Buffer.from(
+    JSON.stringify({
+      access: [
+        {
+          type: "repository",
+          name: "awannaphasch2016/forma",
+          actions: ["pull"],
+        },
+      ],
+    }),
+  ).toString("base64url");
+  const token = `header.${payload}.signature-secret`;
+  assert.equal(registryAccess(token), "awannaphasch2016/forma:pull");
+  assert.equal(registryAccess("not-a-jwt"), "none");
 });
 
 test("the workflow only reads after requesting the four grants", () => {
