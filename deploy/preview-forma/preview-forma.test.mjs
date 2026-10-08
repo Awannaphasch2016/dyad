@@ -11,7 +11,12 @@ import {
   readPinnedImages,
 } from "./compose.mjs";
 import { assertPreviewHost } from "./host.mjs";
-import { decideFromEnv, planDown } from "./run.mjs";
+import {
+  decideFromEnv,
+  planDown,
+  registryTokenUrl,
+  resolveManifest,
+} from "./run.mjs";
 import {
   assertDockerHost,
   assertFormaPreviewTarget,
@@ -136,6 +141,45 @@ test("compose pins published images and rejects a build", () => {
     () => parseCompose("services:\n  forma:\n    - broken\n"),
     /unsupported/,
   );
+});
+
+test("a public image digest is read with a registry pull token", async () => {
+  const digest = `sha256:${"ab".repeat(32)}`;
+  const calls = [];
+  const fetchImpl = async (url, options = {}) => {
+    calls.push({ url, authorization: options.headers?.Authorization || "" });
+    if (url.startsWith("https://ghcr.io/token")) {
+      if (options.headers?.Authorization) {
+        return { ok: false, status: 401, json: async () => ({}) };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ token: "pull-token" }),
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      headers: {
+        get(name) {
+          return name === "docker-content-digest" ? digest : "";
+        },
+      },
+    };
+  };
+  assert.match(
+    registryTokenUrl(formaImage),
+    /repository%3Aawannaphasch2016%2Fforma%3Apull/,
+  );
+  assert.equal(
+    await resolveManifest(formaImage, "github-app-token", fetchImpl),
+    digest,
+  );
+  assert.equal(calls[0].authorization, "Bearer github-app-token");
+  assert.equal(calls[1].authorization, "");
+  assert.equal(calls[2].authorization, "Bearer pull-token");
+  assert.match(calls[2].url, /\/forma\/manifests\/sha-80a8e419/);
 });
 
 test("the committed compose file parses without a package install", async () => {

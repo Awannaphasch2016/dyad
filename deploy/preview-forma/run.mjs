@@ -4,7 +4,7 @@
 import { appendFileSync, readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { commandForFormaPreview } from "./command.mjs";
-import { manifestUrl, readPinnedImages } from "./compose.mjs";
+import { manifestUrl, pinnedImages, readPinnedImages } from "./compose.mjs";
 import { assertPreviewHost } from "./host.mjs";
 import {
   assertDockerHost,
@@ -50,11 +50,41 @@ function writeOutput(result) {
   appendFileSync(path, `command=${result.command}\npr=${result.pr}\n`);
 }
 
-export async function resolveManifest(image, token) {
-  const response = await fetch(manifestUrl(image), {
+export function registryTokenUrl(image) {
+  const [found] = pinnedImages({ services: { check: { image } } });
+  const params = new URLSearchParams({
+    service: "ghcr.io",
+    scope: `repository:awannaphasch2016/${found.repository}:pull`,
+  });
+  return `https://ghcr.io/token?${params}`;
+}
+
+async function registryPullToken(image, githubToken, fetchImpl) {
+  const tokenUrl = registryTokenUrl(image);
+  const request = async (authorization) =>
+    fetchImpl(tokenUrl, {
+      headers: {
+        Accept: "application/json",
+        ...(authorization ? { Authorization: authorization } : {}),
+      },
+    });
+  let response = await request(githubToken ? `Bearer ${githubToken}` : "");
+  if ((response.status === 401 || response.status === 403) && githubToken) {
+    response = await request("");
+  }
+  if (!response.ok) throw new Error(`GHCR denied ${image}`);
+  const body = await response.json().catch(() => ({}));
+  const pullToken = body.token || body.access_token || "";
+  if (!pullToken) throw new Error(`GHCR denied ${image}`);
+  return pullToken;
+}
+
+export async function resolveManifest(image, token, fetchImpl = fetch) {
+  const pullToken = await registryPullToken(image, token, fetchImpl);
+  const response = await fetchImpl(manifestUrl(image), {
     headers: {
       Accept: manifestAccept,
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      Authorization: `Bearer ${pullToken}`,
     },
   });
   if (response.status === 401 || response.status === 403) {
