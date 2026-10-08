@@ -458,7 +458,10 @@ def runtime_claims() -> int:
     if scheme not in {"http", "https", "absent"}:
         scheme = "other"
     print(f"wi_mint_scheme={scheme}")
-    print("hcli=" + ("present" if shutil_which("hcli") else "absent"))
+    hcli = shutil_which("hcli")
+    print("hcli=" + ("present" if hcli else "absent"))
+    if hcli:
+        print_hcli_help(hcli)
     if not handle or not mint.startswith(("http://", "https://")):
         return 0
     code, parsed = http_json(
@@ -484,6 +487,35 @@ def runtime_claims() -> int:
     except (ValueError, json.JSONDecodeError):
         print("mint_claims=unreadable")
     return 0
+
+
+def print_hcli_help(binary: str) -> None:
+    import subprocess
+
+    commands = (
+        [binary, "--help"],
+        [binary, "oidc", "--help"],
+        [binary, "identity", "--help"],
+        [binary, "token", "--help"],
+        [binary, "workload", "--help"],
+    )
+    for args in commands:
+        try:
+            result = subprocess.run(args, text=True, capture_output=True, timeout=15)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            print("hcli_cmd", " ".join(args[1:]), "error", type(error).__name__)
+            continue
+        print("hcli_cmd", " ".join(args[1:]), "exit", result.returncode)
+        text = scrub((result.stdout or "") + "\n" + (result.stderr or ""))
+        shown = 0
+        for line in text.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            print("hcli_help", stripped[:200])
+            shown += 1
+            if shown >= 30:
+                break
 
 
 def shutil_which(name: str) -> str:
@@ -530,6 +562,8 @@ def interesting_log_line(text: str) -> bool:
         "wi_handle=",
         "wi_mint_scheme=",
         "hcli=",
+        "hcli_cmd",
+        "hcli_help",
         "mint_http",
         "mint_error",
         "mint_token=",
