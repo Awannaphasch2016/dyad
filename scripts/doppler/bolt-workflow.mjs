@@ -1,7 +1,13 @@
 // Shared Discovery, Implementation, and Delivery project for the bolt preview.
 // Postgres is the phase. The page polls it. A question answer does not move it.
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { SQL, decideAnswer, sessionToken } from "./bolt-hitl.mjs";
 import { WALKTHROUGH_APP_ID, WALKTHROUGH_CHAT_ID } from "./bolt-sign-in.mjs";
@@ -17,9 +23,9 @@ export const WORKFLOW_SQL = {
   project:
     "select phase, document_html from wewebplus.project_state where app_id = $1",
   messages:
-    "select role, content from wewebplus.messages where chat_id = $1 order by created_at asc",
+    "select id, role, content from wewebplus.messages where chat_id = $1 order by created_at asc",
   insertMessage:
-    "insert into wewebplus.messages (id, chat_id, role, content) values ($1, $2, $3, $4)",
+    "insert into wewebplus.messages (id, chat_id, role, content) values ($1, $2, $3, $4) on conflict (id) do nothing",
   lockPrompt:
     "update wewebplus.project_state set busy = true where app_id = $1 and busy = false and phase = 'discovery' returning app_id",
   unlockPrompt:
@@ -77,6 +83,33 @@ export function deliveryDocument(messages) {
   return `<!doctype html><html><head><meta charset="utf-8"><title>Delivered</title></head><body><h1>Delivered</h1>\n${items}\n</body></html>`;
 }
 
+export function waitingLabel(phase, roleId, questions) {
+  const open = (questions ?? []).some(
+    (question) => isSharedQuestion(question) && question.status === "open",
+  );
+  if (open && roleId !== "developer") return "Waiting on the Developer.";
+  if (phase === "discovery" && roleId === "developer") {
+    return "Waiting on the Project Manager.";
+  }
+  if (phase === "implementation" && roleId === "project-manager") {
+    return "Waiting on the Developer.";
+  }
+  if (phase === "delivery" && roleId === "developer") {
+    return "Waiting on the Project Manager.";
+  }
+  return null;
+}
+
+export function canRecordMessages(phase, roleId, messages) {
+  const userMessage = (messages ?? []).some(
+    (message) => message?.role === "user",
+  );
+  if (phase === "discovery" && roleId !== "project-manager" && userMessage) {
+    return false;
+  }
+  return true;
+}
+
 export function presentSnapshot({
   phase,
   messages,
@@ -100,9 +133,12 @@ export function presentSnapshot({
   return {
     phase,
     messages: (messages ?? []).map((message) => ({
+      id: message.id,
       role: message.role,
       content: message.content,
     })),
+    roleId,
+    waitingLabel: waitingLabel(phase, roleId, questions),
     canSend: canSendPrompt(phase, roleId),
     canTransition: next != null,
     transitionLabel: next ? transitionLabel(phase) : null,
@@ -186,6 +222,7 @@ export async function handleProject(input) {
       phase: row.phase,
       documentHtml: row.document_html ?? null,
       messages: messages.map((item) => ({
+        id: item.id,
         role: item.role,
         content: item.content,
       })),
@@ -216,48 +253,36 @@ export async function handleProject(input) {
   }
 
   const command = String(input.json?.command ?? "");
-  if (command === "prompt") {
+  if (command === "record") {
     const state = await readState();
     if (!state) return unavailable();
-    if (!canSendPrompt(state.phase, roleId)) {
+    const incoming = Array.isArray(input.json?.messages)
+      ? input.json.messages
+      : [];
+    if (!canRecordMessages(state.phase, roleId, incoming)) {
       return {
         status: 403,
         body: { error: "Your role can't send this prompt." },
       };
     }
-    const body = String(input.json?.body ?? "").trim();
-    if (!body) return { status: 400, body: { error: "Prompt is empty." } };
-    const locked = await query(WORKFLOW_SQL.lockPrompt, [WALKTHROUGH_APP_ID]);
-    if (!locked[0]) {
-      return { status: 409, body: { error: "A prompt is already running." } };
+    const stored = incoming.filter((message) => {
+      const role = String(message?.role ?? "");
+      return (
+        String(message?.id ?? "").trim() &&
+        String(message?.content ?? "").trim() &&
+        (role === "user" || role === "assistant" || role === "developer")
+      );
+    });
+    if (stored.length === 0) {
+      return { status: 400, body: { error: "Prompt is empty." } };
     }
-    try {
+    for (const message of stored) {
       await query(WORKFLOW_SQL.insertMessage, [
-        input.createId ?? crypto.randomUUID(),
+        String(message.id),
         WALKTHROUGH_CHAT_ID,
-        "user",
-        body,
+        String(message.role),
+        String(message.content),
       ]);
-      let reply = MODEL_FALLBACK;
-      try {
-        if (typeof input.complete === "function") {
-          const text = await input.complete([
-            ...state.messages,
-            { role: "user", content: body },
-          ]);
-          if (typeof text === "string" && text.trim()) reply = text.trim();
-        }
-      } catch {
-        reply = MODEL_FALLBACK;
-      }
-      await query(WORKFLOW_SQL.insertMessage, [
-        input.createId ? `${input.createId}-reply` : crypto.randomUUID(),
-        WALKTHROUGH_CHAT_ID,
-        "assistant",
-        reply,
-      ]);
-    } finally {
-      await query(WORKFLOW_SQL.unlockPrompt, [WALKTHROUGH_APP_ID]);
     }
     const next = await snapshot();
     if (!next) return unavailable();
@@ -374,17 +399,37 @@ const approvalGate = "        {showApproval && (";
 const approvalGateFixed = "        {false && showApproval && (";
 const approvalHint = "        {showApproval && !canApprove && (";
 const approvalHintFixed = "        {false && showApproval && !canApprove && (";
-const hitlImport = "import { HitlGateList } from './HitlGateList';";
-const sharedImport = "import { SharedProject } from './SharedProject';";
-const hitlTag = "      <HitlGateList phase={phase} />";
-const sharedTag = "      <SharedProject />";
+const hitlImport = "import { HitlGateList } from './HitlGateList';\n";
+const hitlTag = "      <HitlGateList phase={phase} />\n";
+const sharedImport = "import { SharedProject } from './SharedProject';\n";
+const sharedTag = "      <SharedProject />\n";
 const barImport =
   "import type { FactoryPhaseComment } from '~/lib/factoryRun';";
-const hintAnchor =
-  '      <p className="mt-2 text-xs text-bolt-elements-textSecondary">';
+const barSessionImport =
+  "import { useStore } from '@nanostores/react';\nimport { downloadSharedDocument, sharedSnapshot } from '~/lib/hitl/session';";
+const commentState = "  const [comment, setComment] = useState('');";
+const commentStateFixed = `  const [comment, setComment] = useState('');
+  const shared = useStore(sharedSnapshot);`;
+const downloadButton = `        {shared?.canDownload ? (
+          <button
+            type="button"
+            className="rounded-md border border-bolt-elements-borderColor px-2.5 py-1 text-sm"
+            data-testid="shared-download"
+            onClick={() => {
+              void downloadSharedDocument();
+            }}
+          >
+            Download
+          </button>
+        ) : null}
+`;
 
-export function patchSharedProjectBar(source) {
-  let next = source;
+export function patchSharedPhaseBar(source) {
+  let next = source
+    .replaceAll(hitlImport, "")
+    .replaceAll(hitlTag, "")
+    .replaceAll(sharedImport, "")
+    .replaceAll(sharedTag, "");
   if (next.includes(phaseButton)) {
     next = next.replace(phaseButton, "              disabled");
   }
@@ -394,55 +439,172 @@ export function patchSharedProjectBar(source) {
   if (next.includes(approvalHint) && !next.includes(approvalHintFixed)) {
     next = next.replace(approvalHint, approvalHintFixed);
   }
-  if (next.includes(hitlImport)) next = next.replace(hitlImport, sharedImport);
-  if (next.includes(hitlTag)) next = next.replace(hitlTag, sharedTag);
-  if (!next.includes("<SharedProject />")) {
-    if (!next.includes(barImport) || !next.includes(hintAnchor)) {
+  if (!next.includes("sharedSnapshot")) {
+    if (!next.includes(barImport)) {
       throw new Error("factory phase bar was not found");
     }
-    next = next
-      .replace(barImport, `${barImport}\n${sharedImport}`)
-      .replace(hintAnchor, `${sharedTag}\n${hintAnchor}`);
+    next = next.replace(barImport, `${barSessionImport}\n${barImport}`);
+  }
+  if (
+    !next.includes("useStore(sharedSnapshot)") &&
+    next.includes(commentState)
+  ) {
+    next = next.replace(commentState, commentStateFixed);
+  }
+  if (!next.includes('data-testid="shared-download"')) {
+    if (!next.includes(approvalGateFixed)) {
+      throw new Error("factory phase bar was not found");
+    }
+    next = next.replace(
+      approvalGateFixed,
+      `${downloadButton}${approvalGateFixed}`,
+    );
   }
   return next;
 }
 
+const composerImport = "import { classNames } from '~/utils/classNames';";
+const composerImportFixed = `import { sharedSendOpen } from '~/lib/hitl/session';
+import { classNames } from '~/utils/classNames';`;
 const composerKeydown = `          onKeyDown={(event) => {
             if (event.key === 'Enter') {`;
 const composerKeydownFixed = `          onKeyDown={(event) => {
-            if (props.walkthrough) {
+            if (props.walkthrough && !sharedSendOpen()) {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+              }
+
               return;
             }
             if (event.key === 'Enter') {`;
-const composerPlaceholder = `            props.walkthrough
-              ? 'Describe the page'`;
-const composerPlaceholderFixed = `            props.walkthrough
-              ? 'Use the shared project prompt above'`;
-const composerTextarea = `        <textarea
-          ref={props.textareaRef}`;
-const composerTextareaFixed = `        <textarea
-          ref={props.textareaRef}
-          readOnly={Boolean(props.walkthrough)}`;
+const composerSend = `              onClick={(event) => {
+                if (props.isStreaming) {`;
+const composerSendFixed = `              onClick={(event) => {
+                if (props.walkthrough && !sharedSendOpen()) {
+                  event.preventDefault();
+                  return;
+                }
+
+                if (props.isStreaming) {`;
 
 export function patchWalkthroughComposer(source) {
   if (
     !source.includes(composerKeydown) &&
-    !source.includes("if (props.walkthrough)")
+    !source.includes("sharedSendOpen()")
   ) {
     throw new Error("walkthrough composer was not found");
   }
+  if (!source.includes(composerSend) && !source.includes("sharedSendOpen()")) {
+    throw new Error("walkthrough composer was not found");
+  }
   let next = source;
+  if (!next.includes("sharedSendOpen")) {
+    if (!next.includes(composerImport)) {
+      throw new Error("walkthrough composer was not found");
+    }
+    next = next.replace(composerImport, composerImportFixed);
+  }
   if (next.includes(composerKeydown)) {
     next = next.replace(composerKeydown, composerKeydownFixed);
   }
-  if (next.includes(composerPlaceholder)) {
-    next = next.replace(composerPlaceholder, composerPlaceholderFixed);
+  if (next.includes(composerSend)) {
+    next = next.replace(composerSend, composerSendFixed);
   }
-  if (!next.includes("readOnly={Boolean(props.walkthrough)}")) {
-    if (!next.includes(composerTextarea)) {
-      throw new Error("walkthrough composer was not found");
+  return next;
+}
+
+const chatImport = "import { BaseChat } from './BaseChat';";
+const chatImportFixed = `import { BaseChat } from './BaseChat';
+import { recordSharedFinish, useSharedChat } from '~/lib/hitl/session';`;
+const chatFinish = `      onFinish: ({ message }) => {
+        setProgressAnnotations([]);`;
+const chatFinishFixed = `      onFinish: ({ message }) => {
+        setProgressAnnotations([]);
+        recordSharedFinish(message);`;
+const chatReturn = `    return (
+      <BaseChat`;
+const chatReturnFixed = `    useSharedChat({
+      messages,
+      setMessages,
+      isLoading,
+      factoryRun,
+      setFactoryRun,
+      saveFactoryRun,
+      sendMessage,
+      setChatStarted,
+    });
+
+    return (
+      <BaseChat`;
+
+export function patchSharedChat(source) {
+  if (!source.includes("useSharedChat(") && !source.includes(chatReturn)) {
+    throw new Error("walkthrough chat was not found");
+  }
+  let next = source;
+  if (!next.includes("useSharedChat")) {
+    if (!next.includes(chatImport) || !next.includes(chatFinish)) {
+      throw new Error("walkthrough chat was not found");
     }
-    next = next.replace(composerTextarea, composerTextareaFixed);
+    next = next
+      .replace(chatImport, chatImportFixed)
+      .replace(chatFinish, chatFinishFixed)
+      .replace(chatReturn, chatReturnFixed);
+  }
+  return next;
+}
+
+const baseImport = "import ChatAlert from './ChatAlert';";
+const baseImportFixed = `import ChatAlert from './ChatAlert';
+import { SharedGateDialog } from '~/components/factory/SharedGateDialog';`;
+const baseAnchor = `                {incomingProgressAnnotations && <ProgressCompilation data={incomingProgressAnnotations} />}
+                <ChatBox`;
+const baseAnchorFixed = `                {incomingProgressAnnotations && <ProgressCompilation data={incomingProgressAnnotations} />}
+                {walkthrough ? <SharedGateDialog /> : null}
+                <ChatBox`;
+
+export function patchSharedBaseChat(source) {
+  if (!source.includes("SharedGateDialog") && !source.includes(baseAnchor)) {
+    throw new Error("walkthrough chat layout was not found");
+  }
+  let next = source;
+  if (!next.includes("SharedGateDialog")) {
+    if (!next.includes(baseImport)) {
+      throw new Error("walkthrough chat layout was not found");
+    }
+    next = next
+      .replace(baseImport, baseImportFixed)
+      .replace(baseAnchor, baseAnchorFixed);
+  }
+  return next;
+}
+
+const parserImport = "import { workbenchStore } from '~/lib/stores/workbench';";
+const parserImportFixed = `import { sharedReplayIds } from '~/lib/hitl/session';
+import { workbenchStore } from '~/lib/stores/workbench';`;
+const parserClose = `      if (data.action.type !== 'file') {
+        workbenchStore.addAction(data);
+      }`;
+const parserCloseFixed = `      if (data.action.type !== 'file') {
+        if (sharedReplayIds.has(data.messageId)) {
+          return;
+        }
+
+        workbenchStore.addAction(data);
+      }`;
+
+export function patchSharedReplay(source) {
+  if (!source.includes("sharedReplayIds") && !source.includes(parserClose)) {
+    throw new Error("message parser was not found");
+  }
+  let next = source;
+  if (!next.includes("sharedReplayIds")) {
+    if (!next.includes(parserImport)) {
+      throw new Error("message parser was not found");
+    }
+    next = next
+      .replace(parserImport, parserImportFixed)
+      .replace(parserClose, parserCloseFixed);
   }
   return next;
 }
@@ -454,19 +616,16 @@ const APP_ID = ${JSON.stringify(WALKTHROUGH_APP_ID)};
 const CHAT_ID = ${JSON.stringify(WALKTHROUGH_CHAT_ID)};
 const QUESTION_ID = ${JSON.stringify(IMPLEMENTATION_QUESTION_ID)};
 const QUESTION_BODY = ${JSON.stringify(IMPLEMENTATION_QUESTION_BODY)};
-const MODEL = ${JSON.stringify(DISCOVERY_MODEL)};
-const FALLBACK = ${JSON.stringify(MODEL_FALLBACK)};
 const PROJECT_SQL = ${JSON.stringify(WORKFLOW_SQL.project)};
 const MESSAGES_SQL = ${JSON.stringify(WORKFLOW_SQL.messages)};
 const INSERT_MESSAGE_SQL = ${JSON.stringify(WORKFLOW_SQL.insertMessage)};
-const LOCK_PROMPT_SQL = ${JSON.stringify(WORKFLOW_SQL.lockPrompt)};
-const UNLOCK_PROMPT_SQL = ${JSON.stringify(WORKFLOW_SQL.unlockPrompt)};
 const CAS_PHASE_SQL = ${JSON.stringify(WORKFLOW_SQL.casPhase)};
 const QUESTIONS_SQL = ${JSON.stringify(WORKFLOW_SQL.questions)};
 
 type RoleId = 'project-manager' | 'developer';
 type Query = (sql: string, params: unknown[]) => Promise<Record<string, unknown>[]>;
-type Message = { role: string; content: string };
+type Message = { id: string; role: string; content: string };
+type IncomingMessage = { id?: string; role?: string; content?: string };
 type StoredQuestion = {
   id: string;
   orgId: string;
@@ -494,6 +653,21 @@ function transitionLabel(phase: string): string | null {
 
 function canSendPrompt(phase: string, roleId: RoleId): boolean {
   return phase === 'discovery' && roleId === 'project-manager';
+}
+
+function waitingLabel(phase: string, roleId: RoleId, questions: StoredQuestion[]): string | null {
+  const open = questions.some((question) => isSharedQuestion(question) && question.status === 'open');
+  if (open && roleId !== 'developer') return 'Waiting on the Developer.';
+  if (phase === 'discovery' && roleId === 'developer') return 'Waiting on the Project Manager.';
+  if (phase === 'implementation' && roleId === 'project-manager') return 'Waiting on the Developer.';
+  if (phase === 'delivery' && roleId === 'developer') return 'Waiting on the Project Manager.';
+  return null;
+}
+
+function canRecordMessages(phase: string, roleId: RoleId, messages: IncomingMessage[]): boolean {
+  const userMessage = messages.some((message) => message?.role === 'user');
+  if (phase === 'discovery' && roleId !== 'project-manager' && userMessage) return false;
+  return true;
 }
 
 function isSharedQuestion(question: StoredQuestion): boolean {
@@ -525,7 +699,9 @@ function presentSnapshot(state: {
   const next = nextPhase(state.phase, roleId);
   return {
     phase: state.phase,
-    messages: state.messages.map((message) => ({ role: message.role, content: message.content })),
+    messages: state.messages.map((message) => ({ id: message.id, role: message.role, content: message.content })),
+    roleId,
+    waitingLabel: waitingLabel(state.phase, roleId, state.questions),
     canSend: canSendPrompt(state.phase, roleId),
     canTransition: next != null,
     transitionLabel: next ? transitionLabel(state.phase) : null,
@@ -542,45 +718,12 @@ function presentSnapshot(state: {
   };
 }
 
-async function completePrompt(apiKey: string | undefined, messages: Message[]): Promise<string> {
-  const key = apiKey?.trim();
-  if (!key) return FALLBACK;
-  try {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        Authorization: \`Bearer \${key}\`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages: [
-          {
-            role: 'system',
-            content: 'Reply with a short Discovery summary. Include the page name, one sentence, and the page contents.',
-          },
-          ...messages.map((message) => ({
-            role: message.role === 'assistant' ? 'assistant' : 'user',
-            content: message.content,
-          })),
-        ],
-      }),
-    });
-    if (!response.ok) return FALLBACK;
-    const payload = (await response.json()) as { choices?: { message?: { content?: string } }[] };
-    const text = payload.choices?.[0]?.message?.content;
-    if (!text?.trim()) return FALLBACK;
-    return text.trim();
-  } catch {
-    return FALLBACK;
-  }
-}
-
 async function readState(query: Query, orgId: string) {
   const rows = await query(PROJECT_SQL, [APP_ID]);
   const row = rows[0];
   if (!row) return null;
   const messages = (await query(MESSAGES_SQL, [CHAT_ID])).map((item) => ({
+    id: String(item.id),
     role: String(item.role),
     content: String(item.content),
   }));
@@ -657,27 +800,36 @@ export async function handleProjectRequest(input: {
       return { status: 200, body: presentSnapshot(state, roleId) };
     }
     if (input.method !== 'POST') return { status: 404, body: { error: 'Not found' } };
-    const json = (input.json ?? {}) as { command?: string; body?: string; questionId?: string };
+    const json = (input.json ?? {}) as {
+      command?: string;
+      body?: string;
+      questionId?: string;
+      messages?: IncomingMessage[];
+    };
     const command = String(json.command ?? '');
-    if (command === 'prompt') {
+    if (command === 'record') {
       const state = await readState(query, orgId);
       if (!state) return { status: 503, body: { error: 'Project store is unavailable.' } };
-      if (!canSendPrompt(state.phase, roleId)) {
+      const incoming = Array.isArray(json.messages) ? json.messages : [];
+      if (!canRecordMessages(state.phase, roleId, incoming)) {
         return { status: 403, body: { error: "Your role can't send this prompt." } };
       }
-      const prompt = String(json.body ?? '').trim();
-      if (!prompt) return { status: 400, body: { error: 'Prompt is empty.' } };
-      const locked = await query(LOCK_PROMPT_SQL, [APP_ID]);
-      if (!locked[0]) return { status: 409, body: { error: 'A prompt is already running.' } };
-      try {
-        await query(INSERT_MESSAGE_SQL, [crypto.randomUUID(), CHAT_ID, 'user', prompt]);
-        const reply = await completePrompt(env.OPEN_ROUTER_API_KEY, [
-          ...state.messages,
-          { role: 'user', content: prompt },
+      const stored = incoming.filter((message) => {
+        const role = String(message?.role ?? '');
+        return (
+          String(message?.id ?? '').trim().length > 0 &&
+          String(message?.content ?? '').trim().length > 0 &&
+          (role === 'user' || role === 'assistant' || role === 'developer')
+        );
+      });
+      if (stored.length === 0) return { status: 400, body: { error: 'Prompt is empty.' } };
+      for (const message of stored) {
+        await query(INSERT_MESSAGE_SQL, [
+          String(message.id),
+          CHAT_ID,
+          String(message.role),
+          String(message.content),
         ]);
-        await query(INSERT_MESSAGE_SQL, [crypto.randomUUID(), CHAT_ID, 'assistant', reply]);
-      } finally {
-        await query(UNLOCK_PROMPT_SQL, [APP_ID]);
       }
       const next = await readState(query, orgId);
       if (!next) return { status: 503, body: { error: 'Project store is unavailable.' } };
@@ -798,233 +950,387 @@ export async function loader({ request, context }: LoaderFunctionArgs) {
 `;
 }
 
-function sharedProjectSource() {
-  return `import { useEffect, useState } from 'react';
-import { clerkReady, hitlFetch, onClerkSession } from '~/lib/hitl/client';
-
-interface SharedQuestion {
-  id: string;
-  stepId: string;
-  targetRoleId: string;
-  status: string;
-  answeredByName: string | null;
-  body: string | null;
-  canAnswer: boolean;
+function sessionSource() {
+  return [
+    "import { useEffect } from 'react';",
+    "import type { UIEvent } from 'react';",
+    "import { atom } from 'nanostores';",
+    "import type { FactoryPhase } from '~/lib/factoryPhase';",
+    "import type { FactoryRunRecord } from '~/lib/factoryRun';",
+    "import { clerkReady, hitlFetch, onClerkSession } from '~/lib/hitl/client';",
+    "import { createMessage, getMessageText } from '~/lib/persistence/messageMigration';",
+    "import { chatStore } from '~/lib/stores/chat';",
+    "",
+    "export interface SharedQuestion {",
+    "  id: string;",
+    "  stepId: string;",
+    "  targetRoleId: string;",
+    "  status: string;",
+    "  answeredByName: string | null;",
+    "  body: string | null;",
+    "  canAnswer: boolean;",
+    "}",
+    "",
+    "export interface ProjectSnapshot {",
+    "  phase: string;",
+    "  messages: { id: string; role: string; content: string }[];",
+    "  roleId?: string;",
+    "  waitingLabel: string | null;",
+    "  canSend: boolean;",
+    "  canTransition: boolean;",
+    "  transitionLabel: string | null;",
+    "  canDownload: boolean;",
+    "  questions: SharedQuestion[];",
+    "}",
+    "",
+    "type StoredChatMessage = {",
+    "  id?: string;",
+    "  role?: string;",
+    "  content?: unknown;",
+    "  parts?: unknown;",
+    "};",
+    "",
+    "export const sharedSnapshot = atom<ProjectSnapshot | null>(null);",
+    "export const sharedReplayIds = new Set<string>();",
+    "",
+    "const messagesRef: { current: StoredChatMessage[] } = { current: [] };",
+    "const loadingRef = { current: false };",
+    "const factoryRef: { current: FactoryRunRecord } = {",
+    "  current: { phase: 'discovery', approved: [], comments: [] },",
+    "};",
+    "const sendRef: { current: ((event: UIEvent, messageInput?: string) => void) | null } = {",
+    "  current: null,",
+    "};",
+    "",
+    "export function sharedSendOpen(): boolean {",
+    "  return sharedSnapshot.get()?.canSend === true;",
+    "}",
+    "",
+    "function localFactoryPhase(phase: string): FactoryPhase {",
+    "  if (phase === 'implementation') return 'implementation';",
+    "  if (phase === 'delivery' || phase === 'delivered') return 'delivery';",
+    "  return 'discovery';",
+    "}",
+    "",
+    "function approvedPhases(phase: string): FactoryPhase[] {",
+    "  if (phase === 'delivered') return ['discovery', 'implementation', 'delivery'];",
+    "  if (phase === 'delivery') return ['discovery', 'implementation'];",
+    "  if (phase === 'implementation') return ['discovery'];",
+    "  return [];",
+    "}",
+    "",
+    "function samePhases(left: readonly string[], right: readonly string[]): boolean {",
+    "  return left.length === right.length && left.every((item, index) => item === right[index]);",
+    "}",
+    "",
+    "function replayRole(role: string): 'user' | 'assistant' | 'system' {",
+    "  if (role === 'assistant') return 'assistant';",
+    "  if (role === 'system') return 'system';",
+    "  return 'user';",
+    "}",
+    "",
+    "function mergeMessages(",
+    "  next: ProjectSnapshot,",
+    "  setMessages: (messages: any) => void,",
+    "  setChatStarted: (started: boolean) => void,",
+    ") {",
+    "  const local = messagesRef.current;",
+    "  const seen = new Set(local.map((message) => message.id).filter((id): id is string => Boolean(id)));",
+    "  const unseen = next.messages.filter((message) => message.id && !seen.has(message.id));",
+    "  if (unseen.length === 0) return;",
+    "  for (const message of unseen) sharedReplayIds.add(message.id);",
+    "  const merged = [",
+    "    ...local,",
+    "    ...unseen.map((message) =>",
+    "      createMessage({",
+    "        id: message.id,",
+    "        role: replayRole(message.role),",
+    "        text: message.content,",
+    "      }),",
+    "    ),",
+    "  ];",
+    "  messagesRef.current = merged;",
+    "  setChatStarted(true);",
+    "  chatStore.setKey('started', true);",
+    "  setMessages(merged);",
+    "}",
+    "",
+    "function syncPhase(",
+    "  next: ProjectSnapshot,",
+    "  setFactoryRun: (run: FactoryRunRecord) => void,",
+    "  saveFactoryRun: (run: FactoryRunRecord) => Promise<void> | void,",
+    ") {",
+    "  const phase = localFactoryPhase(next.phase);",
+    "  const approved = approvedPhases(next.phase);",
+    "  const current = factoryRef.current;",
+    "  if (current.phase === phase && samePhases(current.approved, approved)) return;",
+    "  const run: FactoryRunRecord = { ...current, phase, approved };",
+    "  factoryRef.current = run;",
+    "  setFactoryRun(run);",
+    "  void saveFactoryRun(run);",
+    "}",
+    "",
+    "export function useSharedChat(input: {",
+    "  messages: StoredChatMessage[];",
+    "  setMessages: (messages: any) => void;",
+    "  isLoading: boolean;",
+    "  factoryRun: FactoryRunRecord;",
+    "  setFactoryRun: (run: FactoryRunRecord) => void;",
+    "  saveFactoryRun: (run: FactoryRunRecord) => Promise<void> | void;",
+    "  sendMessage: (event: UIEvent, messageInput?: string) => void;",
+    "  setChatStarted: (started: boolean) => void;",
+    "}) {",
+    "  messagesRef.current = input.messages;",
+    "  loadingRef.current = input.isLoading;",
+    "  factoryRef.current = input.factoryRun;",
+    "  sendRef.current = input.sendMessage;",
+    "  const setMessages = input.setMessages;",
+    "  const setFactoryRun = input.setFactoryRun;",
+    "  const saveFactoryRun = input.saveFactoryRun;",
+    "  const setChatStarted = input.setChatStarted;",
+    "",
+    "  useEffect(() => {",
+    "    let cancelled = false;",
+    "    const apply = (next: ProjectSnapshot | null) => {",
+    "      if (cancelled || !next?.phase) return;",
+    "      if (!loadingRef.current) mergeMessages(next, setMessages, setChatStarted);",
+    "      syncPhase(next, setFactoryRun, saveFactoryRun);",
+    "    };",
+    "    const stopStore = sharedSnapshot.subscribe(apply);",
+    "    const load = () => {",
+    "      void hitlFetch('/api/project')",
+    "        .then(async (response) => {",
+    "          if (response.status === 401) {",
+    "            sharedSnapshot.set(null);",
+    "            return null;",
+    "          }",
+    "          if (!response.ok) return null;",
+    "          return (await response.json()) as ProjectSnapshot;",
+    "        })",
+    "        .then((next) => {",
+    "          if (!cancelled && next?.phase) sharedSnapshot.set(next);",
+    "        })",
+    "        .catch(() => undefined);",
+    "    };",
+    "    void clerkReady().then((ready) => {",
+    "      if (ready && !cancelled) load();",
+    "    });",
+    "    const stopSession = onClerkSession(() => {",
+    "      if (!cancelled) load();",
+    "    });",
+    "    const timer = window.setInterval(load, 2000);",
+    "    return () => {",
+    "      cancelled = true;",
+    "      stopStore();",
+    "      stopSession();",
+    "      window.clearInterval(timer);",
+    "    };",
+    "  }, [setMessages, setFactoryRun, saveFactoryRun, setChatStarted]);",
+    "}",
+    "",
+    "export function recordSharedFinish(message: StoredChatMessage) {",
+    "  const local = messagesRef.current;",
+    "  const user = [...local].reverse().find((item) => item.role === 'user');",
+    "  const stored: { id: string; role: string; content: string }[] = [];",
+    "  const userText = user ? getMessageText(user) : '';",
+    "  if (user?.id && userText.trim()) {",
+    "    stored.push({ id: user.id, role: 'user', content: userText });",
+    "  }",
+    "  const assistantText = getMessageText(message);",
+    "  if (message.id && assistantText.trim()) {",
+    "    stored.push({ id: message.id, role: 'assistant', content: assistantText });",
+    "  }",
+    "  if (stored.length === 0) return;",
+    "  void hitlFetch('/api/project', {",
+    "    method: 'POST',",
+    "    headers: { 'Content-Type': 'application/json' },",
+    "    body: JSON.stringify({ command: 'record', messages: stored }),",
+    "  }).catch(() => undefined);",
+    "}",
+    "",
+    "export function startBuilderTurn(prompt: string) {",
+    "  const send = sendRef.current;",
+    "  if (!send || !prompt.trim()) return;",
+    "  send({} as UIEvent, prompt);",
+    "}",
+    "",
+    "export async function downloadSharedDocument() {",
+    "  const response = await hitlFetch('/api/project/document');",
+    "  if (!response.ok) return;",
+    "  const blob = await response.blob();",
+    "  const url = URL.createObjectURL(blob);",
+    "  const anchor = document.createElement('a');",
+    "  anchor.href = url;",
+    "  anchor.download = 'factory-document.html';",
+    "  anchor.click();",
+    "  URL.revokeObjectURL(url);",
+    "}",
+    "",
+  ].join("\n");
 }
 
-interface Snapshot {
-  phase: string;
-  messages: { role: string; content: string }[];
-  canSend: boolean;
-  canTransition: boolean;
-  transitionLabel: string | null;
-  canDownload: boolean;
-  questions: SharedQuestion[];
-}
-
-const PHASE_LABEL: Record<string, string> = {
-  discovery: 'Discovery',
-  implementation: 'Implementation',
-  delivery: 'Delivery',
-  delivered: 'Delivered',
-};
-
-export function SharedProject() {
-  const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
-  const [prompt, setPrompt] = useState('');
-  const [pending, setPending] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = () => {
-      void hitlFetch('/api/project')
-        .then(async (response) => {
-          if (!response.ok) return null;
-          return (await response.json()) as Snapshot;
-        })
-        .then((next) => {
-          if (!cancelled && next?.phase) setSnapshot(next);
-        })
-        .catch(() => undefined);
-    };
-    void clerkReady().then((ready) => {
-      if (ready && !cancelled) load();
-    });
-    const stop = onClerkSession(() => {
-      if (!cancelled) load();
-    });
-    const timer = window.setInterval(load, 2000);
-    return () => {
-      cancelled = true;
-      stop();
-      window.clearInterval(timer);
-    };
-  }, []);
-
-  const send = (command: string, extra: Record<string, string> = {}) => {
-    if (pending) return;
-    setPending(true);
-    void hitlFetch('/api/project', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ command, ...extra }),
-    })
-      .then(async (response) => {
-        if (!response.ok) return;
-        const payload = (await response.json()) as { snapshot?: Snapshot };
-        if (payload.snapshot?.phase) setSnapshot(payload.snapshot);
-      })
-      .finally(() => setPending(false));
-  };
-
-  if (!snapshot) {
-    return (
-      <p className="mt-2 text-xs text-bolt-elements-textSecondary" data-testid="shared-project">
-        Sign in to see the shared project.
-      </p>
-    );
-  }
-
-  return (
-    <div className="mt-2 space-y-2" data-testid="shared-project">
-      <p className="text-sm text-bolt-elements-textPrimary" data-testid="shared-project-phase">
-        {PHASE_LABEL[snapshot.phase] ?? snapshot.phase}
-      </p>
-      <div className="space-y-1" data-testid="shared-project-transcript">
-        {snapshot.messages.map((message, index) => (
-          <p key={\`\${message.role}:\${index}\`} className="whitespace-pre-wrap text-sm text-bolt-elements-textPrimary">
-            <span className="text-bolt-elements-textSecondary">{message.role}: </span>
-            {message.content}
-          </p>
-        ))}
-      </div>
-      {snapshot.canSend ? (
-        <form
-          className="flex flex-wrap items-center gap-2"
-          data-testid="shared-project-prompt"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const body = prompt.trim();
-            if (!body) return;
-            setPrompt('');
-            send('prompt', { body });
-          }}
-        >
-          <input
-            aria-label="Discovery prompt"
-            className="h-8 min-w-0 flex-1 rounded-md border border-bolt-elements-borderColor bg-transparent px-2 text-sm"
-            value={prompt}
-            placeholder="Describe the page"
-            onChange={(event) => setPrompt(event.target.value)}
-          />
-          <button type="submit" className="rounded-md bg-accent-500 px-2.5 py-1 text-sm text-white" disabled={pending}>
-            Send
-          </button>
-        </form>
-      ) : (
-        <p className="text-xs text-bolt-elements-textSecondary">You can read this project. Prompts stay with the Project Manager.</p>
-      )}
-      {snapshot.questions.map((question) => (
-        <SharedQuestionCard key={question.id} question={question} pending={pending} onAnswer={(body) => send('answer', { questionId: question.id, body })} />
-      ))}
-      {snapshot.canTransition && snapshot.transitionLabel ? (
-        <button
-          type="button"
-          className="rounded-md bg-accent-500 px-2.5 py-1 text-sm text-white disabled:opacity-60"
-          data-testid="shared-project-transition"
-          disabled={pending}
-          onClick={() => send('transition')}
-        >
-          {snapshot.transitionLabel}
-        </button>
-      ) : null}
-      {snapshot.canDownload ? (
-        <button
-          type="button"
-          className="rounded-md border border-bolt-elements-borderColor px-2.5 py-1 text-sm"
-          data-testid="shared-project-download"
-          onClick={() => {
-            void hitlFetch('/api/project/document')
-              .then(async (response) => {
-                if (!response.ok) return;
-                const blob = await response.blob();
-                const url = URL.createObjectURL(blob);
-                const anchor = document.createElement('a');
-                anchor.href = url;
-                anchor.download = 'factory-document.html';
-                anchor.click();
-                URL.revokeObjectURL(url);
-              });
-          }}
-        >
-          Download
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-function SharedQuestionCard({
-  question,
-  pending,
-  onAnswer,
-}: {
-  question: SharedQuestion;
-  pending: boolean;
-  onAnswer: (body: string) => void;
-}) {
-  const [body, setBody] = useState('');
-  const roleLabel = question.targetRoleId === 'developer' ? 'Developer' : 'Project Manager';
-  return (
-    <div className="rounded-md border border-bolt-elements-borderColor px-2 py-2 text-sm" data-testid={\`shared-question-\${question.id}\`}>
-      <p>
-        Waiting on {roleLabel} for {question.stepId}. Status: {question.status}.
-        {question.status === 'answered' && question.answeredByName ? \` Answered by \${question.answeredByName}.\` : ''}
-      </p>
-      {question.body != null ? <p className="mt-1 whitespace-pre-wrap">{question.body}</p> : null}
-      {question.canAnswer ? (
-        <form
-          className="mt-2 flex flex-wrap items-center gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const answer = body.trim();
-            if (!answer || pending) return;
-            setBody('');
-            onAnswer(answer);
-          }}
-        >
-          <input
-            aria-label={\`Answer \${question.stepId}\`}
-            className="h-8 min-w-0 flex-1 rounded-md border border-bolt-elements-borderColor bg-transparent px-2 text-sm"
-            value={body}
-            onChange={(event) => setBody(event.target.value)}
-          />
-          <button type="submit" className="rounded-md bg-accent-500 px-2.5 py-1 text-sm text-white" disabled={pending}>
-            Submit answer
-          </button>
-        </form>
-      ) : null}
-    </div>
-  );
-}
-`;
+function gateDialogSource() {
+  return [
+    "import { useState } from 'react';",
+    "import { useStore } from '@nanostores/react';",
+    "import { Dialog, DialogDescription, DialogRoot, DialogTitle } from '~/components/ui/Dialog';",
+    "import { continuePrefill, factoryPhaseKickoff, latestFactoryPhaseSummary } from '~/lib/factoryPhase';",
+    "import { hitlFetch } from '~/lib/hitl/client';",
+    "import { sharedSnapshot, startBuilderTurn } from '~/lib/hitl/session';",
+    "import type { ProjectSnapshot } from '~/lib/hitl/session';",
+    "",
+    "function kickoffFor(phase: string, messages: { role: string; content: string }[]): string {",
+    "  if (phase === 'implementation') {",
+    "    return continuePrefill('implementation', latestFactoryPhaseSummary(messages, 'discovery')) ?? '';",
+    "  }",
+    "  if (phase === 'delivery') {",
+    "    return factoryPhaseKickoff('delivery', latestFactoryPhaseSummary(messages, 'implementation')) ?? '';",
+    "  }",
+    "  return '';",
+    "}",
+    "",
+    "export function SharedGateDialog() {",
+    "  const snapshot = useStore(sharedSnapshot);",
+    "  const [answer, setAnswer] = useState('');",
+    "  const [pending, setPending] = useState(false);",
+    "  const open = snapshot?.questions.find((question) => question.status === 'open') ?? null;",
+    "  const answered =",
+    "    snapshot?.phase === 'implementation'",
+    "      ? (snapshot.questions.find((question) => question.status === 'answered') ?? null)",
+    "      : null;",
+    "  if (!snapshot || snapshot.phase === 'delivered') return null;",
+    "  const showTransition = !open && snapshot.canTransition && Boolean(snapshot.transitionLabel);",
+    "  const waiting = !open && !showTransition ? snapshot.waitingLabel : null;",
+    "  if (!open && !showTransition && !waiting && !answered) return null;",
+    "",
+    "  const send = (command: string, extra: Record<string, string> = {}) => {",
+    "    if (pending) return;",
+    "    setPending(true);",
+    "    void hitlFetch('/api/project', {",
+    "      method: 'POST',",
+    "      headers: { 'Content-Type': 'application/json' },",
+    "      body: JSON.stringify({ command, ...extra }),",
+    "    })",
+    "      .then(async (response) => {",
+    "        if (!response.ok) return null;",
+    "        return (await response.json()) as { snapshot?: ProjectSnapshot };",
+    "      })",
+    "      .then((payload) => {",
+    "        const next = payload?.snapshot;",
+    "        if (!next?.phase) return;",
+    "        sharedSnapshot.set(next);",
+    "        if (command !== 'transition') return;",
+    "        const prompt = kickoffFor(next.phase, next.messages);",
+    "        if (prompt) startBuilderTurn(prompt);",
+    "      })",
+    "      .finally(() => setPending(false));",
+    "  };",
+    "",
+    "  const title = open ? 'Implementation review' : showTransition ? (snapshot.transitionLabel ?? 'Shared project') : 'Shared project';",
+    "  const answeredLine = answered",
+    "    ? answered.answeredByName",
+    "      ? 'Answered by ' + answered.answeredByName + '.'",
+    "      : 'Answered.'",
+    "    : null;",
+    "  const description = open",
+    "    ? open.canAnswer",
+    "      ? open.body",
+    "      : snapshot.waitingLabel",
+    "    : answeredLine;",
+    "",
+    "  return (",
+    "    <DialogRoot open>",
+    '      <Dialog showCloseButton={false} className="w-[420px]">',
+    '        <div className="p-6" data-testid="shared-gate">',
+    "          <DialogTitle>{title}</DialogTitle>",
+    '          {description ? <DialogDescription className="mb-4">{description}</DialogDescription> : null}',
+    "          {open?.canAnswer ? (",
+    "            <form",
+    '              className="flex flex-wrap items-center gap-2"',
+    "              onSubmit={(event) => {",
+    "                event.preventDefault();",
+    "                const body = answer.trim();",
+    "                if (!body || pending || !open) return;",
+    "                setAnswer('');",
+    "                send('answer', { questionId: open.id, body });",
+    "              }}",
+    "            >",
+    "              <input",
+    '                aria-label="Implementation answer"',
+    '                className="h-8 min-w-0 flex-1 rounded-md border border-bolt-elements-borderColor bg-transparent px-2 text-sm"',
+    "                value={answer}",
+    "                onChange={(event) => setAnswer(event.target.value)}",
+    "              />",
+    "              <button",
+    '                type="submit"',
+    '                className="rounded-md bg-accent-500 px-2.5 py-1 text-sm text-white disabled:opacity-60"',
+    "                disabled={pending}",
+    "              >",
+    "                Submit answer",
+    "              </button>",
+    "            </form>",
+    "          ) : null}",
+    "          {showTransition ? (",
+    "            <button",
+    '              type="button"',
+    '              className="rounded-md bg-accent-500 px-2.5 py-1 text-sm text-white disabled:opacity-60"',
+    '              data-testid="shared-gate-transition"',
+    "              disabled={pending}",
+    "              onClick={() => send('transition')}",
+    "            >",
+    "              {snapshot.transitionLabel}",
+    "            </button>",
+    "          ) : null}",
+    "          {waiting && description !== waiting ? (",
+    '            <p className="text-sm text-bolt-elements-textSecondary" data-testid="shared-gate-waiting">',
+    "              {waiting}",
+    "            </p>",
+    "          ) : null}",
+    "        </div>",
+    "      </Dialog>",
+    "    </DialogRoot>",
+    "  );",
+    "}",
+    "",
+  ].join("\n");
 }
 
 export function applyBoltWorkflowPatches(boltRoot) {
+  const read = (path) => readFileSync(path, "utf8");
+  const writeIfChanged = (path, next, previous) => {
+    if (next !== previous) writeFileSync(path, next);
+  };
   const barPath = join(boltRoot, "app/components/factory/FactoryPhaseBar.tsx");
-  const bar = readFileSync(barPath, "utf8");
-  const patchedBar = patchSharedProjectBar(bar);
-  if (patchedBar !== bar) writeFileSync(barPath, patchedBar);
-  const chatPath = join(boltRoot, "app/components/chat/ChatBox.tsx");
-  const chat = readFileSync(chatPath, "utf8");
-  const patchedChat = patchWalkthroughComposer(chat);
-  if (patchedChat !== chat) writeFileSync(chatPath, patchedChat);
+  const bar = read(barPath);
+  const patchedBar = patchSharedPhaseBar(bar);
+  writeIfChanged(barPath, patchedBar, bar);
+  const chatBoxPath = join(boltRoot, "app/components/chat/ChatBox.tsx");
+  const chatBox = read(chatBoxPath);
+  const patchedChatBox = patchWalkthroughComposer(chatBox);
+  writeIfChanged(chatBoxPath, patchedChatBox, chatBox);
+  const chatPath = join(boltRoot, "app/components/chat/Chat.client.tsx");
+  const chat = read(chatPath);
+  const patchedChat = patchSharedChat(chat);
+  writeIfChanged(chatPath, patchedChat, chat);
+  const basePath = join(boltRoot, "app/components/chat/BaseChat.tsx");
+  const base = read(basePath);
+  const patchedBase = patchSharedBaseChat(base);
+  writeIfChanged(basePath, patchedBase, base);
+  const parserPath = join(boltRoot, "app/lib/hooks/useMessageParser.ts");
+  const parser = read(parserPath);
+  const patchedParser = patchSharedReplay(parser);
+  writeIfChanged(parserPath, patchedParser, parser);
   mkdirSync(join(boltRoot, "app/lib/hitl"), { recursive: true });
   mkdirSync(join(boltRoot, "app/routes"), { recursive: true });
   mkdirSync(join(boltRoot, "app/components/factory"), { recursive: true });
   writeFileSync(
     join(boltRoot, "app/lib/hitl/workflow.ts"),
     workflowServerSource(),
+  );
+  writeFileSync(join(boltRoot, "app/lib/hitl/session.tsx"), sessionSource());
+  writeFileSync(
+    join(boltRoot, "app/components/factory/SharedGateDialog.tsx"),
+    gateDialogSource(),
   );
   writeFileSync(
     join(boltRoot, "app/routes/api.project.ts"),
@@ -1034,13 +1340,13 @@ export function applyBoltWorkflowPatches(boltRoot) {
     join(boltRoot, "app/routes/api.project.document.ts"),
     documentRouteSource(),
   );
-  writeFileSync(
-    join(boltRoot, "app/components/factory/SharedProject.tsx"),
-    sharedProjectSource(),
-  );
+  for (const stale of ["SharedProject.tsx", "HitlGateList.tsx"]) {
+    const stalePath = join(boltRoot, "app/components/factory", stale);
+    if (existsSync(stalePath)) unlinkSync(stalePath);
+  }
   return [
-    `shared_project_patch=${patchedBar === bar ? "already" : "applied"}`,
-    `shared_composer_patch=${patchedChat === chat ? "already" : "applied"}`,
-    "shared_project_module=written",
+    `shared_gate_patch=${patchedBar === bar ? "already" : "applied"}`,
+    `shared_composer_patch=${patchedChatBox === chatBox ? "already" : "applied"}`,
+    "shared_session_module=written",
   ];
 }

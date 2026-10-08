@@ -9,6 +9,7 @@ on:
     branches:
       - cursor/bolt-doppler-55d6
       - cursor/shared-hitl-workflow-851d
+      - cursor/builder-session-hitl-851d
     paths:
       - .github/workflows/bolt-preview-from-doppler.yml
       - scripts/doppler/ensure-bolt-project.mjs
@@ -29,7 +30,7 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.ref == 'refs/heads/cursor/bolt-doppler-55d6' || github.ref == 'refs/heads/cursor/shared-hitl-workflow-851d'
+    if: github.ref == 'refs/heads/cursor/bolt-doppler-55d6' || github.ref == 'refs/heads/cursor/shared-hitl-workflow-851d' || github.ref == 'refs/heads/cursor/builder-session-hitl-851d'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
