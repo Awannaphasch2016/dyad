@@ -114,6 +114,11 @@ function assertSafeUrl(url, pooled) {
 
 function redact(text) {
   return String(text)
+    .replace(
+      /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----/g,
+      "private-key-redacted",
+    )
+    .replace(/MII[A-Za-z0-9+/=]{16,}/g, "pem-redacted")
     .replace(/postgres(?:ql)?:\/\/\S+/gi, "postgres://redacted")
     .replace(/dp\.(?:st|pt|sa|ct)\.[A-Za-z0-9._-]+/g, "dp.redacted")
     .replace(/\bsk-or-[A-Za-z0-9_-]+/g, "sk-or-redacted")
@@ -122,9 +127,17 @@ function redact(text) {
     .slice(0, 900);
 }
 
+export function secretMaskLines(value) {
+  return String(value ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length >= 8 && !line.includes("\n"));
+}
+
 function mask(value) {
-  const text = String(value ?? "").trim();
-  if (text) console.log(`::add-mask::${text}`);
+  for (const line of secretMaskLines(value)) {
+    process.stdout.write(`::add-mask::${line}\n`);
+  }
 }
 
 async function doppler(token, method, path, body) {
@@ -203,6 +216,12 @@ async function ensureSecrets(token) {
     "/v3/configs/config/secrets/download?project=forma&config=dev&format=json",
   );
   for (const value of Object.values(downloaded)) mask(value);
+  const multiline = Object.entries(downloaded)
+    .filter(([, value]) => /\r?\n/.test(String(value ?? "")))
+    .map(([name]) => name);
+  if (multiline.length > 0) {
+    console.log(`forma_dev_multiline_secret_names=${multiline.join(",")}`);
+  }
   const generated = {};
   for (const name of ["APP_PASSWORD", "AUTH_SECRET", "CRON_SECRET"]) {
     if (!String(downloaded[name] ?? "").trim()) {
@@ -640,6 +659,14 @@ async function probeVercelSource(adminToken, project, config) {
     return null;
   }
   for (const value of Object.values(downloaded)) mask(value);
+  const multiline = Object.entries(downloaded)
+    .filter(([, value]) => /\r?\n/.test(String(value ?? "")))
+    .map(([name]) => name);
+  if (multiline.length > 0) {
+    console.log(
+      `forma_multiline_secret_names=${project}/${config} ${multiline.join(",")}`,
+    );
+  }
   const token = String(downloaded.VERCEL_TOKEN ?? "").trim();
   if (!token) {
     console.log(`forma_vercel_probe=${project}/${config} token=absent`);

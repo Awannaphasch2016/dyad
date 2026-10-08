@@ -9,6 +9,7 @@ import {
   formaBranchName,
   previewEnv,
   selectVercelProject,
+  secretMaskLines,
   VERCEL_TOKEN_SOURCES,
 } from "./forma-preview.mjs";
 
@@ -128,6 +129,19 @@ test("a Forma token uses the one visible project and never the dyad project", ()
     ),
     false,
   );
+  const lines = secretMaskLines(
+    "-----BEGIN PRIVATE KEY-----\nline-one-secret-value\nline-two-secret-value\n-----END PRIVATE KEY-----",
+  );
+  assert.equal(
+    lines.some((line) => line.includes("\n")),
+    false,
+  );
+  assert.deepEqual(lines, [
+    "-----BEGIN PRIVATE KEY-----",
+    "line-one-secret-value",
+    "line-two-secret-value",
+    "-----END PRIVATE KEY-----",
+  ]);
   assert.equal(
     selectVercelProject([{ id: "prj_studio", name: "studio" }], "prj_studio")
       .id,
