@@ -1,5 +1,5 @@
 # Reads the latest dyad_harness_images executions. A push of this file does not rebuild images.
-# Latest check follows image execution ZddHTr__QG62UP1jpsBayQ after GHCR login.
+# Latest check waits for image execution Itvp5dx5TFCXOW4U8zhzXg.
 name: Read Harness image executions
 
 on:
@@ -15,7 +15,7 @@ permissions:
 jobs:
   read:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 180
     steps:
       - name: Read recent image executions
         env:
@@ -23,13 +23,13 @@ jobs:
           HARNESS_ACCOUNT: WKxXBnSFTRaOF64-h90PyQ
         run: |
           python3 << 'PY'
-          import json, os, re, subprocess, zipfile
+          import json, os, re, subprocess, time, zipfile
           from pathlib import Path
           from urllib.parse import quote
 
           api_key = os.environ["HARNESS_API_KEY"]
           account = os.environ["HARNESS_ACCOUNT"]
-          long_token = re.compile(r"[A-Za-z0-9+/=]{40,}")
+          long_token = re.compile(r"ghp_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+|ghs_[A-Za-z0-9_]+|[A-Za-z0-9+/=]{40,}")
 
           def scrub(text):
               return long_token.sub("[redacted]", text or "")
@@ -153,8 +153,22 @@ jobs:
               f"?accountIdentifier={account}&orgIdentifier=default&projectIdentifier=dyad"
               "&pipelineIdentifier=dyad_harness_images&page=0&size=3"
           )
-          code, body = request("POST", summary, {"filterType": "PipelineExecution"})
-          rows = ((body.get("data") or {}).get("content") or []) if isinstance(body.get("data"), dict) else []
+          target = "Itvp5dx5TFCXOW4U8zhzXg"
+          terminal = {"Success", "Failed", "Errored", "Expired", "Aborted"}
+          rows = []
+          code = ""
+          for _ in range(150):
+              code, body = request("POST", summary, {"filterType": "PipelineExecution"})
+              rows = ((body.get("data") or {}).get("content") or []) if isinstance(body.get("data"), dict) else []
+              target_status = "Missing"
+              for row in rows:
+                  if row.get("planExecutionId") == target:
+                      target_status = row.get("status") or "Unknown"
+                      break
+              print("poll", target, code, target_status)
+              if target_status in terminal:
+                  break
+              time.sleep(60)
           print("summary_http", code, "count", len(rows))
           for row in rows:
               execution = row.get("planExecutionId")
@@ -189,15 +203,19 @@ jobs:
                       steps[ident] = node.get("status")
               failure = ""
               log_keys = []
+              log_ids = {"gascity_ghcr_login", "dyad_ghcr_login", "gascity_build", "dyad_build"}
               for node in graph.values():
-                  if not isinstance(node, dict) or node.get("status") not in {"Failed", "Errored"}:
+                  if not isinstance(node, dict):
                       continue
-                  failure = node.get("failureInfo") or node.get("skipInfo") or ""
+                  ident = node.get("identifier")
                   key = node.get("logBaseKey")
-                  if isinstance(key, str):
-                      log_keys.append((node.get("identifier"), key))
+                  failed = node.get("status") in {"Failed", "Errored"}
+                  if failed:
+                      failure = node.get("failureInfo") or node.get("skipInfo") or ""
+                  if isinstance(key, str) and (failed or (execution == target and ident in log_ids)):
+                      log_keys.append((ident, key, failed))
               print("detail", execution, detail_code, json.dumps(steps), scrub(str(failure))[:240])
-              for ident, key in log_keys:
+              for ident, key, failed in log_keys:
                   print("log_key", ident)
                   link = ""
                   for _ in range(12):
@@ -228,8 +246,12 @@ jobs:
                               chunks.append(archive.read(name).decode("utf-8", "replace"))
                   elif log_file.exists():
                       chunks.append(log_file.read_text("utf-8", "replace"))
-                  if str(ident).endswith("_build"):
+                  if str(ident).endswith("_build") or execution == target:
                       lines = []
+                      interesting = []
+                      marker = re.compile(
+                          r"entrypoint=|user=|ports=|env=|healthcheck=|gascity_sha=|decision=|digest=|dyad_sha=|context_hash=|factory_state_status=|health=|ghcr_login=|tag_prefix=|unsupported_br|denied|GLIBC|error|Error"
+                      )
                       for raw_log in chunks:
                           for line in raw_log.splitlines():
                               try:
@@ -237,10 +259,14 @@ jobs:
                               except json.JSONDecodeError:
                                   continue
                               text = str(parsed.get("out") or parsed.get("message") or "")
-                              if not text or "PRIVATE KEY" in text or "BEGIN " in text:
+                              if not text or "PRIVATE KEY" in text or "BEGIN " in text or "ghp_" in text:
                                   continue
-                              lines.append(scrub(text)[:300])
-                      for text in lines[-20:]:
+                              scrubbed = scrub(text)[:300]
+                              lines.append(scrubbed)
+                              if marker.search(text) or text.strip() == "dev":
+                                  interesting.append(scrubbed)
+                      chosen = interesting if interesting else (lines[-15:] if failed else [])
+                      for text in chosen[-40:]:
                           print("log", ident, text)
                       continue
                   shown = 0
