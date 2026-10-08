@@ -44,6 +44,11 @@ test("the GitHub App login self-test does not print a private key", () => {
   );
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /self_test=ok/);
+  assert.match(
+    result.stdout,
+    /permission_format=contents=read,packages=write,token=other/,
+  );
   assert.equal(result.stdout.includes("PRIVATE KEY"), false);
+  assert.equal(result.stdout.includes("ghs_"), false);
   assert.equal(result.stderr.includes("PRIVATE KEY"), false);
 });

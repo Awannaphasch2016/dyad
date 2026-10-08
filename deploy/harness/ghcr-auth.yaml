@@ -1,0 +1,47 @@
+pipeline:
+  name: Dyad GHCR auth probe
+  identifier: dyad_ghcr_auth
+  orgIdentifier: default
+  projectIdentifier: dyad
+  description: Records the GitHub App packages permission and pushes one scratch layer to ghcr.io/awannaphasch2016/dyad:harness-authprobe. Does not build the Gas City or Dyad images.
+  properties:
+    ci:
+      codebase:
+        connectorRef: account.Dyad
+        repoName: Awannaphasch2016/dyad
+        build:
+          type: branch
+          spec:
+            branch: cursor/harness-images-5527
+  stages:
+    - stage:
+        name: GHCR auth
+        identifier: ghcr_auth
+        type: CI
+        spec:
+          cloneCodebase: true
+          platform:
+            os: Linux
+            arch: Amd64
+          runtime:
+            type: Cloud
+            spec: {}
+          execution:
+            steps:
+              - step:
+                  type: Run
+                  name: Probe GHCR push
+                  identifier: ghcr_auth_probe
+                  timeout: 15m
+                  spec:
+                    shell: Bash
+                    envVariables:
+                      GH_APP_KEY: '<+secrets.getValue("account.Dyad_harness1")>'
+                    command: |
+                      set -euo pipefail
+                      umask 077
+                      key_file="${HOME}/.harness-gh-app.pem"
+                      rm -f "${key_file}"
+                      printf '%s' "$GH_APP_KEY" > "${key_file}"
+                      GH_APP_KEY_FILE="${key_file}" python3 scripts/harness/ghcr_app_login.py --auth-probe
+                      rm -f "${key_file}"

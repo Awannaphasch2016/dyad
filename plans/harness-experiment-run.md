@@ -10,7 +10,7 @@ Passing a phase is what allows Harness to take over that workflow. GitHub remain
 | ----------------------------- | ------------------------ | ----------------------------------------------------------------------------------- |
 | 1. Mirror CI                  | 2                        | Pass. GitHub Actions is still the required check.                                   |
 | Logs                          | 14                       | Started, not scored. Does not block phase 2. Must be scored before the set is done. |
-| 2. Mirror image reuse         | 1, 4                     | In progress. GitHub Actions images passed. Harness push is waiting on package write. |
+| 2. Mirror image reuse         | 1, 4                     | In progress. GitHub Actions images passed. The app installation already has packages write. A one-layer push probe is checking the package ACL. |
 | 3. Secrets and isolation      | 5, 6                     | Not run. Required before any preview deploy.                                        |
 | 4. One preview, then a second | 3, 7, 8, 11, 13, then 12 | Not run.                                                                            |
 | 5. Agent trial                | 15                       | Not run.                                                                            |
