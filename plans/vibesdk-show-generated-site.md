@@ -120,18 +120,18 @@ No new route. `GET` and `HEAD` of the existing preview path change as follows:
 
 ### Phase 1: Serve the saved site
 
-- [ ] Add failing fixture tests for the three patches.
-- [ ] Patch deploy so a commit with no `App` class stores its web files in the asset map.
-- [ ] Patch preview serving so a missing `App` class serves that map, or returns 404 when the map is empty.
-- [ ] Patch HTML rewriting so a `HEAD` with no body is returned unchanged, while `GET` HTML is still rewritten.
-- [ ] Wire the patches into the lab deploy script.
+- [x] Add failing fixture tests for the three patches.
+- [x] Patch deploy so a commit with no `App` class stores its web files in the asset map.
+- [x] Patch preview serving so a missing `App` class serves that map, or returns 404 when the map is empty.
+- [x] Patch HTML rewriting so a `HEAD` with no body is returned unchanged, while `GET` HTML is still rewritten.
+- [x] Wire the patches into the lab deploy script.
 
 ### Phase 2: Tell the truth in the pane
 
-- [ ] Open the error state on the first 401, 403, 404, 500, or 503.
-- [ ] Keep a short retry only for a dropped connection, a timeout, or `sandbox-error`.
-- [ ] Remove the attempt counter and the “URLs may take a moment” line from a finished failure.
-- [ ] Keep Try again on the current address.
+- [x] Open the error state on the first 401, 403, 404, 500, or 503.
+- [x] Keep a short retry only for a dropped connection, a timeout, or `sandbox-error`.
+- [x] Remove the attempt counter and the “URLs may take a moment” line from a finished failure.
+- [x] Keep Try again on the current address.
 
 ### Phase 3: Same behavior for a per-PR worker
 

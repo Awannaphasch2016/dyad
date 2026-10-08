@@ -43,6 +43,9 @@ import {
   modelTurnOutcome,
   parseWorkersDevUrl,
   patchAppCreationLimit,
+  patchPreviewPane,
+  patchPreviewServing,
+  patchStaticSiteDeploy,
   patchThinkModel,
   patchThinkRouting,
   patchWorkerExports,
@@ -552,6 +555,25 @@ async function main() {
     patchAppCreationLimit(await readFile(limitsPath, "utf8")),
   );
   console.log("app_creation_limit=disabled");
+  const deployEnginePath = join(checkout, "space/src/space/deploy-engine.ts");
+  const spaceObjectPath = join(checkout, "space/src/space/durable-object.ts");
+  const previewPanePath = join(
+    checkout,
+    "src/routes/chat/components/preview-iframe.tsx",
+  );
+  await writeFile(
+    deployEnginePath,
+    patchStaticSiteDeploy(await readFile(deployEnginePath, "utf8")),
+  );
+  await writeFile(
+    spaceObjectPath,
+    patchPreviewServing(await readFile(spaceObjectPath, "utf8")),
+  );
+  await writeFile(
+    previewPanePath,
+    patchPreviewPane(await readFile(previewPanePath, "utf8")),
+  );
+  console.log("static_preview=enabled");
   const config = labWranglerConfig({ accountId, databaseId, kvId });
   const violations = labConfigViolations(config);
   if (violations.length > 0) {

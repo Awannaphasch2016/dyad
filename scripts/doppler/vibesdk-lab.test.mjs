@@ -24,10 +24,16 @@ import {
   labWebsocketUrl,
   modelTurnOutcome,
   parseWorkersDevUrl,
+  collectStaticWebAssets,
+  commitHasAppClass,
   patchAppCreationLimit,
+  patchPreviewPane,
+  patchPreviewServing,
+  patchStaticSiteDeploy,
   patchThinkModel,
   patchThinkRouting,
   patchWorkerExports,
+  previewProbeDecision,
   promptOutcome,
   providerConfigBody,
   rowsOf,
@@ -221,6 +227,176 @@ test("deploy output and the smoke prompt stay free of secret values", () => {
   );
 });
 
+test("a normal website is stored and a finished preview failure stops", () => {
+  assert.equal(
+    commitHasAppClass({
+      "index.html": "<h1>Bakery</h1>",
+      "src/app.ts": "export class Appliance {}",
+    }),
+    false,
+  );
+  assert.equal(
+    commitHasAppClass({
+      "src/app.ts": "export class App extends DurableObject {}",
+    }),
+    true,
+  );
+  assert.equal(
+    commitHasAppClass({
+      "index.html": "export class App",
+    }),
+    false,
+  );
+  const assets = collectStaticWebAssets({
+    "index.html": "<h1>Bakery</h1>",
+    "styles/site.css": "body{}",
+    "photo.png": "png",
+    ".env": "SECRET=1",
+    ".git/config": "secret",
+    "node_modules/left-pad/index.js": "nope",
+    "wrangler.jsonc": "{}",
+    "src/app.ts": "export const x = 1",
+  });
+  assert.deepEqual(assets, {
+    "/index.html": "<h1>Bakery</h1>",
+    "/styles/site.css": "body{}",
+    "/photo.png": "png",
+  });
+  assert.equal(previewProbeDecision(200), "ready");
+  assert.equal(previewProbeDecision(404), "terminal");
+  assert.equal(previewProbeDecision(503), "terminal");
+  assert.equal(previewProbeDecision(502), "retry");
+
+  const deploy =
+    patchStaticSiteDeploy(`export async function buildBranchDeployment(
+  ctx: DeployContext,
+  branch: string
+): Promise<BranchDeploymentBundle> {
+  try {
+    const assetsDir = wranglerCfg.assets?.directory?.replace(/^\\.?\\//, "").replace(/\\/$/, "")
+    const result = await createWorker({ files, entryPoint: wranglerCfg.main })
+  }
+}
+`);
+  assert.match(deploy, /mainModule: "__vibesdk_static_site__"/);
+  assert.match(deploy, /html_handling: "auto-trailing-slash"/);
+  assert.match(deploy, /not_found_handling: "none"/);
+  assert.match(deploy, /export class App/);
+  assert.match(deploy, /createWorker/);
+  assert.throws(
+    () => patchStaticSiteDeploy("no deploy function"),
+    /did not match/,
+  );
+
+  const serving = patchPreviewServing(`    let appClass: DurableObjectClass
+    try {
+      appClass = this.loadAppClass(dep)
+    } catch (e) {
+      return new Response("Failed to load App class", { status: 500 })
+    }
+  if (!ct.includes("text/html")) return response
+
+  // Use HTMLRewriter to prefix root-relative src/href/action attributes
+  return new HTMLRewriter()
+`);
+  assert.match(serving, /__vibesdk_static_site__/);
+  assert.match(serving, /Preview cannot show this page\./);
+  assert.match(serving, /status: 404/);
+  assert.match(serving, /Failed to load App class/);
+  assert.match(serving, /if \(response\.body === null\) return response/);
+  assert.match(serving, /new HTMLRewriter\(\)/);
+  const rewriterAt = serving.indexOf("new HTMLRewriter()");
+  const nullBodyAt = serving.indexOf("response.body === null");
+  assert.equal(nullBodyAt < rewriterAt, true);
+
+  const pane = patchPreviewPane(`const MAX_RETRIES = 10;
+const REDEPLOY_AFTER_ATTEMPT = 8;
+		const testAvailability = useCallback(async (url: string): Promise<'sandbox' | 'dispatcher' | null> => {
+				if (!response.ok) {
+					console.log('Preview not ready (status:', response.status, ')');
+					return null;
+				}
+			const previewType = await testAvailability(url);
+
+			if (previewType) {
+				console.log(\`Preview not ready. Retrying in \${Math.ceil(delay / 1000)}s (attempt \${nextAttempt}/\${MAX_RETRIES})\`);
+
+				// Auto-redeploy after 3 failed attempts
+				if (nextAttempt === REDEPLOY_AFTER_ATTEMPT) {
+					requestRedeploy();
+				}
+
+				// Schedule next retry
+		}, [testAvailability, requestScreenshot, requestRedeploy]);
+		/**
+		 * Request automatic redeployment via WebSocket
+		 */
+		const requestRedeploy = useCallback(() => {
+			if (!webSocket || webSocket.readyState !== WebSocket.OPEN) {
+				console.warn('Cannot request redeploy: WebSocket not connected');
+				return;
+			}
+
+			if (hasRequestedRedeployRef.current) {
+				console.log('Redeploy already requested, skipping duplicate request');
+				return;
+			}
+
+			console.log('Requesting automatic preview redeployment');
+
+			try {
+				webSocket.send(JSON.stringify({
+					type: 'preview',
+				}));
+				hasRequestedRedeployRef.current = true;
+			} catch (error) {
+				console.error('Failed to send redeploy request:', error);
+			}
+		}, [webSocket]);
+
+			const delay = getRetryDelay(loadState.attempt - 1);
+			const delaySeconds = Math.ceil(delay / 1000);
+
+			return (
+						<RefreshCw className="size-8 text-kumo-brand animate-spin mx-auto mb-4" />
+						<h3 className="text-lg font-medium text-text-primary mb-2">
+							Loading Preview
+						</h3>
+						<p className="text-text-primary/70 text-sm mb-4">
+							{loadState.attempt === 0
+								? 'Checking if your deployed preview is ready...'
+								: \`Preview not ready yet. Retrying in \${delaySeconds}s... (attempt \${loadState.attempt}/\${MAX_RETRIES})\`
+							}
+						</p>
+						{loadState.attempt >= REDEPLOY_AFTER_ATTEMPT && (
+							<p className="text-xs text-kumo-brand/70">
+								Auto-redeployment triggered to refresh the preview
+							</p>
+						)}
+						<div className="text-xs text-text-primary/50 mt-2">
+							Preview URLs may take a moment to become available after deployment
+						</div>
+					<h3 className="text-lg font-medium text-text-primary mb-2">
+						Preview Not Available
+					</h3>
+					<p className="text-text-primary/70 text-sm mb-6">
+						{loadState.errorMessage || 'The preview failed to load after multiple attempts.'}
+					</p>
+						<p className="text-xs text-text-primary/60">
+							If the issue persists, please describe the problem in chat so I can help diagnose and fix it.
+						</p>
+`);
+  assert.match(pane, /return 'terminal'/);
+  assert.match(pane, /Preview cannot show this snapshot\./);
+  assert.match(pane, /Opening preview/);
+  assert.match(pane, /The preview is still starting\./);
+  assert.equal(pane.includes("requestRedeploy"), false);
+  assert.equal(pane.includes("describe the problem in chat"), false);
+  assert.equal(pane.includes("Preview not ready yet"), false);
+  assert.equal(pane.includes("REDEPLOY_AFTER_ATTEMPT"), false);
+  assert.throws(() => patchPreviewPane("untouched"), /did not match/);
+});
+
 test("the deploy script does not copy dyad database urls or production routes", () => {
   assert.equal(deployScript.includes("connection_uri"), false);
   assert.equal(deployScript.includes("WEWEBPLUS_DATABASE_URL"), false);
@@ -234,6 +410,10 @@ test("the deploy script does not copy dyad database urls or production routes", 
   assert.match(deployScript, /patchThinkRouting/);
   assert.match(deployScript, /patchAppCreationLimit/);
   assert.match(deployScript, /app_creation_limit=disabled/);
+  assert.match(deployScript, /patchStaticSiteDeploy/);
+  assert.match(deployScript, /patchPreviewServing/);
+  assert.match(deployScript, /patchPreviewPane/);
+  assert.match(deployScript, /static_preview=enabled/);
   assert.match(deployScript, /model reply absent/);
   assert.match(deployScript, /generate_all/);
   assert.deepEqual(optionalLabSecrets, ["OPENROUTER_API_KEY"]);
