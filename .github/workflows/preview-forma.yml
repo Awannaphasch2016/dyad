@@ -2,6 +2,7 @@ name: Forma preview
 
 # One Vercel preview and one Neon branch for a Forma pull request.
 # Does not print secret values and does not use the Dyad preview database.
+# Push this file again after the Forma Vercel token in Doppler changes.
 
 on:
   workflow_dispatch:
