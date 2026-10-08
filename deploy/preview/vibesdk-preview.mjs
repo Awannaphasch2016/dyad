@@ -6,7 +6,17 @@ import { appendFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { allowPreviewOrigin } from "./clerk-origins.mjs";
 import { commandForPullRequest } from "./transition.mjs";
+import {
+  assertSharedSignIn,
+  patchAuthButton,
+  patchAuthContext,
+  patchAuthRoutes,
+  patchLoginModal,
+  sharedRoleSource,
+  sharedSignInSource,
+} from "./vibesdk-shared-auth.mjs";
 import {
   deletePreviewResources,
   ensurePreviewResources,
@@ -287,6 +297,10 @@ export async function provisionPreview(options) {
       env: toolEnv(creds),
     });
     console.log(`checkout=${VIBESDK_SHA}`);
+    const shared = await assertSharedSignIn(
+      options.env ?? process.env,
+      options.fetchImpl ?? fetch,
+    );
     const modelPath = join(checkout, "worker/agents/think/model-config.ts");
     const routingPath = join(checkout, "worker/agents/core/behaviors/think.ts");
     const entryPath = join(checkout, "worker/index.ts");
@@ -327,6 +341,35 @@ export async function provisionPreview(options) {
       patchPreviewPane(await readFile(previewPanePath, "utf8")),
     );
     console.log("static_preview=enabled");
+    const authRoutesPath = join(checkout, "worker/api/routes/authRoutes.ts");
+    await writeFile(
+      authRoutesPath,
+      patchAuthRoutes(await readFile(authRoutesPath, "utf8")),
+    );
+    await writeFile(
+      join(checkout, "worker/api/controllers/auth/sharedSignIn.ts"),
+      sharedSignInSource(),
+    );
+    const loginModalPath = join(checkout, "src/components/auth/login-modal.tsx");
+    await writeFile(
+      loginModalPath,
+      patchLoginModal(await readFile(loginModalPath, "utf8")),
+    );
+    const authContextPath = join(checkout, "src/contexts/auth-context.tsx");
+    await writeFile(
+      authContextPath,
+      patchAuthContext(await readFile(authContextPath, "utf8")),
+    );
+    const authButtonPath = join(checkout, "src/components/auth/auth-button.tsx");
+    await writeFile(
+      authButtonPath,
+      patchAuthButton(await readFile(authButtonPath, "utf8")),
+    );
+    await writeFile(
+      join(checkout, "src/components/auth/shared-role.tsx"),
+      sharedRoleSource(),
+    );
+    console.log("shared_sign_in=enabled");
     console.log(`think_provider=openrouter think_model=${THINK_MODEL_ID}`);
     await writeFile(
       join(checkout, configName),
@@ -367,6 +410,32 @@ export async function provisionPreview(options) {
       creds.token,
       cloudflareEnv,
     );
+    await putSecret(
+      run,
+      checkout,
+      "CLERK_PUBLISHABLE_KEY",
+      shared.publishable,
+      cloudflareEnv,
+    );
+    await putSecret(
+      run,
+      checkout,
+      "CLERK_SECRET_KEY",
+      shared.secret,
+      cloudflareEnv,
+    );
+    await putSecret(
+      run,
+      checkout,
+      "WEWEBPLUS_DATABASE_URL",
+      shared.databaseUrl,
+      cloudflareEnv,
+    );
+    await allowPreviewOrigin({
+      origin: names.url,
+      secret: shared.secret,
+      fetchImpl: options.fetchImpl ?? fetch,
+    });
     if (secretReady(creds.anthropicKey)) {
       await putSecret(
         run,

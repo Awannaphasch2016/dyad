@@ -17,6 +17,12 @@ import {
   waitForHealth,
 } from "./vibesdk-preview.mjs";
 import {
+  membershipReady,
+  patchAuthRoutes,
+  patchLoginModal,
+  sharedSession,
+} from "./vibesdk-shared-auth.mjs";
+import {
   BUILDER_NOTE,
   LAB_D1_ID,
   PREVIEW_COMMENT_MARKER,
@@ -85,6 +91,7 @@ test("the preview config points Think at OpenRouter and refuses shared resources
   });
   assert.deepEqual(previewConfigViolations(config, names), []);
   assert.equal(config.vars.CUSTOM_DOMAIN, names.host);
+  assert.equal(config.vars.ENABLE_EMAIL_AUTH, "false");
   assert.equal(config.vars.CLOUDFLARE_AI_GATEWAY, undefined);
   assert.equal(config.workers_dev, true);
   const text = JSON.stringify(config);
@@ -388,6 +395,52 @@ test("an existing preview database is reused", async () => {
   });
   assert.equal(again.databaseId, databaseId);
   assert.deepEqual(posts, ["/accounts/" + accountId + "/d1/database"]);
+});
+
+test("the shared sign-in keeps one Wewebplus role and hides the email form", () => {
+  assert.equal(membershipReady("developer:1,project-manager:1"), true);
+  assert.equal(membershipReady("developer:1"), false);
+  assert.deepEqual(
+    sharedSession({
+      userId: "user_1",
+      memberships: [{ role_id: "project-manager", organization: "Wewebplus" }],
+    }),
+    {
+      signedIn: true,
+      organization: "Wewebplus",
+      role: "Project Manager",
+      userId: "user_1",
+    },
+  );
+  assert.equal(
+    sharedSession({
+      userId: "user_1",
+      memberships: [
+        { role_id: "project-manager" },
+        { role_id: "developer" },
+      ],
+    }).role,
+    null,
+  );
+  const routes = patchAuthRoutes(
+    "import { AuthController } from '../controllers/auth/controller';\n    authRouter.post('/register', setAuthLevel(AuthConfig.public), adaptController(AuthController, AuthController.register));\n",
+  );
+  assert.match(routes, /\/api\/auth\/shared|authRouter.post\('\/shared'/);
+  assert.throws(() => patchAuthRoutes("no routes"), /missed auth import/);
+  const modal = patchLoginModal(
+    [
+      "export function LoginModal",
+      "\tconst hasEmailAuth = emailAuthEnabled && !!onEmailLogin;",
+      "\tconst hasRegistration = emailAuthEnabled && !!onRegister;",
+      "\tconst showGitHub = authProviders?.github && hasOAuth;",
+      "\tconst showGoogle = authProviders?.google && hasOAuth;",
+      "\tconst showCloudflare = authProviders?.cloudflare && hasOAuth;",
+      "\t\t\t\t<div className={cn('p-6 space-y-4 pt-6')}>",
+      "\t\t\t\t\t{/* GitHub */}",
+    ].join("\n"),
+  );
+  assert.match(modal, /Sign in/);
+  assert.match(modal, /&& false &&/);
 });
 
 test("cloudflare credentials use CLOUDFLARE_API_TOKEN", () => {

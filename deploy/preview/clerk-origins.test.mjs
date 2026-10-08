@@ -38,3 +38,22 @@ test("a temporary tunnel origin is appended", () => {
 test("a non-preview origin is refused", () => {
   assert.throws(() => originsWith([], "https://example.com"), /pr-<number>/);
 });
+
+test("a Vibe SDK preview host is allowed and the lab host is refused", () => {
+  const next = originsWith(
+    [],
+    "https://vibesdk-pr-68.karant-test-egress-canary.workers.dev",
+  );
+  assert.equal(next.added, true);
+  assert.deepEqual(next.origins, [
+    "https://vibesdk-pr-68.karant-test-egress-canary.workers.dev",
+  ]);
+  assert.throws(
+    () =>
+      originsWith(
+        [],
+        "https://vibesdk-lab.karant-test-egress-canary.workers.dev",
+      ),
+    /refusing lab host/,
+  );
+});

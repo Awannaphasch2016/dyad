@@ -175,7 +175,7 @@ export function previewWranglerConfig({ accountId, databaseId, kvId, names }) {
     vars: {
       TEMPLATES_REPOSITORY: "https://github.com/cloudflare/vibesdk-templates",
       CLOUDFLARE_ACCOUNT_ID: accountId,
-      ENABLE_EMAIL_AUTH: "true",
+      ENABLE_EMAIL_AUTH: "false",
       PLATFORM_CAPABILITIES: {
         features: {
           app: { enabled: true },
