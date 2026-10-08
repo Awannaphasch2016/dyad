@@ -122,27 +122,37 @@ export async function readImageDigest({ token, fetchImpl, tag = IMAGE_TAG }) {
   throw new Error(`forma_packages=denied ${attempts.join(" ")}`);
 }
 
+async function packageSummary(response) {
+  if (!response.ok) return String(response.status);
+  const packages = await response.json();
+  if (!Array.isArray(packages)) return "not_array";
+  return (
+    packages
+      .map((pkg) => `${pkg.name}:${pkg.visibility || "unknown"}`)
+      .join(",") || "none"
+  );
+}
+
 export async function describeFormaPackage({ token, fetchImpl }) {
   const headers = githubHeaders(token);
-  const list = await fetchImpl(
+  const repoList = await fetchImpl(
     "https://api.github.com/repos/Awannaphasch2016/forma/packages?package_type=container",
     { headers },
   );
-  if (!list.ok) return `forma_package_list=${list.status}`;
-  const packages = await list.json();
-  if (!Array.isArray(packages)) return "forma_package_list=not_array";
-  const names =
-    packages
-      .map((pkg) => `${pkg.name}:${pkg.visibility || "unknown"}`)
-      .join(",") || "none";
+  const userList = await fetchImpl(
+    "https://api.github.com/users/Awannaphasch2016/packages?package_type=container",
+    { headers },
+  );
   const one = await fetchImpl(
     "https://api.github.com/users/Awannaphasch2016/packages/container/forma",
     { headers },
   );
-  if (!one.ok) return `forma_package_list=${names} forma_package=${one.status}`;
-  const body = await one.json();
-  const repository = body.repository?.full_name || "unlinked";
-  return `forma_package_list=${names} forma_package=${body.visibility || "unknown"} repo=${repository}`;
+  let detail = String(one.status);
+  if (one.ok) {
+    const body = await one.json();
+    detail = `${body.visibility || "unknown"} repo=${body.repository?.full_name || "unlinked"}`;
+  }
+  return `forma_package_list=${await packageSummary(repoList)} user_packages=${await packageSummary(userList)} forma_package=${detail}`;
 }
 
 export async function verifyFormaAppAccess({
