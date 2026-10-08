@@ -1,7 +1,7 @@
 // Question gates for the bolt preview. The organization comes from the app row.
 // A saved answer does not release the Gas City rig.
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 export const GATE_ROLE = {
@@ -504,12 +504,16 @@ export function applyBoltHitlPatches(boltRoot) {
     join(boltRoot, "app/components/factory/HitlGateList.tsx"),
     hitlGateListSource(),
   );
-  writeFileSync(join(boltRoot, "app/routes/api.hitl.ts"), hitlRouteSource());
+  const routesDir = join(boltRoot, "app/routes");
+  mkdirSync(routesDir, { recursive: true });
+  writeFileSync(join(routesDir, "api.hitl.ts"), hitlRouteSource());
   writeFileSync(
-    join(boltRoot, "app/routes/api.hitl.$id.answers.ts"),
+    join(routesDir, "api.hitl.$id.answers.ts"),
     hitlAnswerRouteSource(),
   );
-  writeFileSync(join(boltRoot, "app/lib/hitl/server.ts"), hitlServerSource());
+  const hitlDir = join(boltRoot, "app/lib/hitl");
+  mkdirSync(hitlDir, { recursive: true });
+  writeFileSync(join(hitlDir, "server.ts"), hitlServerSource());
   return [
     `hitl_bar_patch=${patched === source ? "already" : "applied"}`,
     "hitl_module=written",

@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync, createSign } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import {
   SQL,
+  applyBoltHitlPatches,
   decideAnswer,
   handleHitl,
   neonSqlEndpoint,
@@ -313,6 +316,26 @@ test("the question store address is the database host", () => {
   assert.equal(
     neonSqlEndpoint(env.WEWEBPLUS_DATABASE_URL),
     "https://ep.example.neon.tech/sql",
+  );
+});
+
+test("the patch creates the question module directory", () => {
+  const root = mkdtempSync(join(tmpdir(), "bolt-hitl-"));
+  const bar = join(root, "app/components/factory");
+  mkdirSync(bar, { recursive: true });
+  writeFileSync(
+    join(bar, "FactoryPhaseBar.tsx"),
+    [
+      "import type { FactoryPhaseComment } from '~/lib/factoryRun';",
+      '      <p className="mt-2 text-xs text-bolt-elements-textSecondary">',
+      "        {factoryPhaseHint(phase)}",
+    ].join("\n"),
+  );
+  const lines = applyBoltHitlPatches(root);
+  assert.match(lines.join("\n"), /hitl_module=written/);
+  assert.match(
+    readFileSync(join(root, "app/lib/hitl/server.ts"), "utf8"),
+    /resolved: false/,
   );
 });
 
