@@ -2,7 +2,7 @@
 
 > This is a plan. It does not merge, does not deploy, and does not change Clerk.
 
-The workflow file already exists on `cursor/preview-forma-workflow-5014` (draft PR 77). Merging that file to `main` makes **Run workflow** available. It does not make the `preview-forma` label start a job. A label on `Awannaphasch2016/forma` never reaches a workflow in this repository until Forma itself sends `repository_dispatch`.
+The workflow file already exists on `cursor/preview-forma-workflow-5014` (draft PR 77). This repository is the orchestrator. The preview workflow stays here. Forma does not get a workflow that starts it. Moving a web builder out of this repository waits until the orchestration pattern is stable.
 
 ## Status
 
@@ -24,11 +24,10 @@ The workflow file already exists on `cursor/preview-forma-workflow-5014` (draft 
 
 ### Missing
 
-- A Forma workflow that listens for the label `preview-forma`.
-- A token in that Forma workflow that can `repository_dispatch` this repository.
+- A check inside this repository that lists Forma pull requests and starts `up` or `down` from the `preview-forma` label. GitHub does not deliver a Forma label event into a workflow file here, so this repository asks the Forma API on a schedule.
 - A down path: unlabel and close do not delete the Neon branch, the Vercel deployment, or a running job.
 - Per-pull-request concurrency. The group is one global `preview-forma`.
-- Packages read on the dyad-harness token, so the Dyad job can see the private GHCR manifest.
+- The deploy job's app token does not request packages, so that job cannot read the private GHCR manifest. The installation already grants packages read and write. Forma's Actions log is readable and already contains the digest.
 - Image publish for a pull request SHA other than the walkthrough branch tip.
 - The shared Clerk sign-in. That is a separate plan and is not a preview blocker.
 
@@ -36,7 +35,7 @@ The workflow file already exists on `cursor/preview-forma-workflow-5014` (draft 
 
 Forma is public. Its workflow file, Dockerfile, and Actions log were readable once this plan looked at `Awannaphasch2016/forma` instead of only the Dyad job log.
 
-The Dyad deploy asks GHCR for the manifest with the Forma app token. That token does not have packages permission. GHCR returned 401, and the script logs `forma_image=unavailable`. An anonymous request for the same tag also returns 401, so the package is private even though the Git repository is public. The digest above comes from Forma's own Actions log, not from the Dyad job.
+The installation grants packages read and write, and `forma` is one of the selected repositories. The deploy job creates its own token and asks only for contents, pull requests, and workflows. It never asks for packages, so GHCR returns 401 and the job logs `forma_image=unavailable`. This session's token can read Forma's Actions log and cannot read the package manifest (HTTP 403). The digest above is from that Actions log.
 
 The preview URL is a Vercel upload of the git commit. Nothing runs the container. The image is a published artifact for that one commit.
 
@@ -44,7 +43,7 @@ The preview URL is a Vercel upload of the git commit. Nothing runs the container
 
 | Step                                                            | Expected when the label is the control                                                           | Actual today                                                                                                                                                                                                                                 |
 | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1. Add `preview-forma` to an open Forma pull request            | This repository's `preview-forma` workflow starts                                                | Nothing starts. Label events do not cross repositories. This was not tested by adding the label.                                                                                                                                             |
+| 1. Add `preview-forma` to an open Forma pull request            | This repository's scheduled check sees the label and starts `preview-forma`                      | Nothing starts. No workflow in this repository lists Forma labels yet. This was not tested by adding the label.                                                                                                                              |
 | 2. The correct workflow runs                                    | `preview-forma`                                                                                  | Only `workflow_dispatch` and `repository_dispatch` are implemented. The proof was a temporary push, since removed.                                                                                                                           |
 | 3. The commit's GHCR image is resolved or built                 | Digest logged, or **Publish Forma image** runs for that SHA                                      | One image exists, for `80a8e419…` only. Publish runs on a push to `cursor/forma-preview-walkthrough`. `forma` `main` has a Dockerfile and no workflow. The Dyad job cannot read the private manifest. The public URL does not run the image. |
 | 4. Preview database exists                                      | Neon branch `forma-pr-<number>` under `divine-credit-21002460`, parent `br-round-night-b33xeq5p` | Done for pull request 2. The parent was not printed because the branch already existed. The script refuses any other parent.                                                                                                                 |
@@ -69,30 +68,22 @@ Already satisfied for a manual deploy:
 
 Still to confirm before the label can be the control. If one of these is missing, stop and name it. Do not run a label test that cannot succeed.
 
-1. dyad-harness is installed on **this** repository, not only on `forma`. Forma's `GITHUB_TOKEN` cannot send `repository_dispatch` here. The sender needs an installation token whose repository is `dyad` and whose contents permission can create a dispatch.
-2. Packages: Read is granted on dyad-harness for `forma`, if the Dyad log is required to print the digest. Until then the digest stays in Forma's **Publish Forma image** log. Do not request `packages: write` from the Dyad job. Requesting a permission the installation does not grant fails token creation for the whole job.
-3. The label `preview-forma` exists on `Awannaphasch2016/forma`.
-4. Shared Clerk sign-in is out of this merge. Bolt's plan (`plans/shared-auth-substrate.md` on `cursor/shared-auth-substrate-55d6`, PR 76) says Forma copies the adapter only after Bolt's two-person check passes. That check has not passed. Forma still uses its studio password. `bolt.diy` has no Clerk adapter. Do not copy that sign-in into Forma as part of preview.
+1. The deploy job requests `permission-packages: read` on the app token it creates. The installation already allows it. Request read, not write.
+2. The label `preview-forma` exists on `Awannaphasch2016/forma`.
+3. Shared Clerk sign-in is out of this merge. Bolt's plan (`plans/shared-auth-substrate.md` on `cursor/shared-auth-substrate-55d6`, PR 76) says Forma copies the adapter only after Bolt's two-person check passes. That check has not passed. Forma still uses its studio password. `bolt.diy` has no Clerk adapter. Do not copy that sign-in into Forma as part of preview.
 
 ## Changes required before merging
 
 On `cursor/preview-forma-workflow-5014`, before it merges:
 
-1. Accept `action` on `repository_dispatch`: `up` or `down`. `workflow_dispatch` remains `up`.
+1. On a schedule, and from **Run workflow**, list open Forma pull requests with the app token. A pull request with `preview-forma` runs `up` for its head SHA. A pull request that lost the label, or a closed pull request that had a preview, runs `down`. No workflow file is added to Forma.
 2. Concurrency group `preview-forma-<pr>` with `cancel-in-progress: true`.
 3. `down` deletes Neon branch `forma-pr-<number>` only. Refuse the parent `br-round-night-b33xeq5p`, project `proud-salad-68182047`, and host `ep-young-wave-b3cwe0rz`.
 4. `down` deletes the Vercel preview deployments for that pull request SHA. Leave any deployment whose target includes production.
 5. `down` comments the pull request that the preview was removed. It does not delete the GHCR tag. Images are content-addressed and the next preview of that commit can reuse them.
 6. Before `up` writes the URL, re-read the Forma pull request. If `preview-forma` is gone, do not create a new deployment. This stops an in-flight deploy from recreating resources after an unlabel.
-7. Unit tests for `up`, `down`, a close without the label, and a SHA that does not match the pull request head.
-
-In `Awannaphasch2016/forma`, a second change, merged to `forma` `main` before the label test:
-
-1. `.github/workflows/preview-forma-label.yml`.
-2. Triggers: `pull_request` types `labeled`, `unlabeled`, `synchronize`, `closed`.
-3. Sends `repository_dispatch` type `preview-forma` to `Awannaphasch2016/dyad` with `pr`, `sha`, and `action`.
-4. `labeled` and `synchronize` while the label is present send `up`. `unlabeled` of `preview-forma`, and `closed` while the label is present, send `down`. Any other label is ignored.
-5. The workflow uses the dyad-harness installation token. It does not put a personal token in the repository.
+7. Request `permission-packages: read` when the job creates the Forma app token, then log the GHCR digest.
+8. Unit tests for `up`, `down`, a close without the label, and a SHA that does not match the pull request head.
 
 Image publish stays a recorded artifact. Do not switch the public URL off Vercel in this merge. A later change can make **Publish Forma image** build the labeled SHA. That workflow currently builds only the walkthrough branch tip.
 
@@ -101,10 +92,9 @@ Leave `cursor/forma-pr-preview-5014` unmerged. Its file is why **PR Preview - Fo
 ## Merge strategy
 
 1. Finish the `up`/`down` changes and tests on the Dyad feature branch. Open that as the merge candidate. Do not merge PR 77 as it stands.
-2. Confirm the three prerequisites above. A missing installation or a missing packages grant is a blocker, not a failed run.
-3. Merge the Dyad workflow to `main`. GitHub then lists the workflow under the file's `name:` key, `preview-forma`. **Run workflow** becomes available to people who can dispatch this repository. This agent's token cannot dispatch (HTTP 403) and is not the test.
-4. Merge the Forma label sender to `forma` `main`. A sender that exists only on a feature branch does not hear labels on other pull requests.
-5. Then run the label test. Do not use pull request 2 for the delete test. That Neon branch is the known-good preview.
+2. Confirm the label exists on Forma. Packages read and write is already granted on the installation.
+3. Merge the Dyad workflow to `main`. GitHub then lists the workflow under the file's `name:` key, `preview-forma`. **Run workflow** becomes available to people who can dispatch this repository. The schedule starts only after that merge. This agent's token cannot dispatch (HTTP 403) and is not the test.
+4. Then run the label test. Do not use pull request 2 for the delete test. That Neon branch is the known-good preview.
 
 ## Label test
 
