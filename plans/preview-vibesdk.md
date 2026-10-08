@@ -13,6 +13,12 @@
 - The lab at `https://vibesdk-lab.karant-test-egress-canary.workers.dev` stays up the whole time.
 - Do not add `preview` to pull request 68. Do not use a custom domain. Do not label a second pull request in this proof.
 
+## Live result
+
+The label is on pull request 68. The identify job printed update. Deploy stopped on the first Cloudflare call: `GET /accounts/…/d1/database` returned 401. The job environment has `CLOUDFLARE_API_TOKEN` and does not have `CLOUDFLARE_API_TOKEN_`. No Worker, D1, KV, or R2 was created. The comment says the preview was not updated. The lab health URL still returns 200.
+
+The next push to this branch retries that deploy while the label stays on. Removing the label also calls Cloudflare, so that delete fails the same way until `dyad/preview` has a token Cloudflare accepts. Do not replace it with the lab admin token.
+
 ## Summary
 
 The preview-vibesdk workflow is already implemented and unit-tested on pull request 68. No pull request has the label, so no per-PR Worker exists. This plan turns that workflow on once, on pull request 68, and takes it down again.
@@ -120,14 +126,14 @@ None.
 
 ### Phase 1: Turn the preview on
 
-- [ ] Confirm pull request 68 is open, unlabeled, and has no `<!-- vibesdk-preview -->` comment.
-- [ ] Confirm `GET https://vibesdk-lab.karant-test-egress-canary.workers.dev/api/health` returns 200.
-- [ ] Create the label `preview-vibesdk` if the repository does not have it.
-- [ ] Add `preview-vibesdk` to pull request 68 only.
+- [x] Confirm pull request 68 is open, unlabeled, and has no `<!-- vibesdk-preview -->` comment.
+- [x] Confirm `GET https://vibesdk-lab.karant-test-egress-canary.workers.dev/api/health` returns 200.
+- [x] Create the label `preview-vibesdk` if the repository does not have it.
+- [x] Add `preview-vibesdk` to pull request 68 only.
 
 ### Phase 2: Open it
 
-- [ ] The identify job prints `update`.
+- [x] The identify job prints `update`.
 - [ ] The deploy log contains `checkout=9da158d82c597a0e8f4bf033cdccd1053fb6fb15`, `think_provider=openrouter`, `app_creation_limit=disabled`, `static_preview=enabled`, `migrations=applied`, and `preview_url=https://vibesdk-pr-68.karant-test-egress-canary.workers.dev`.
 - [ ] The pull request comment shows that URL.
 - [ ] `GET` that URL’s `/api/health` returns 200.
