@@ -56,14 +56,14 @@ jobs:
               if result.returncode != 0:
                   print("CURL_FAILED", scrub(result.stderr)[:200])
                   raise SystemExit(1)
-              raw = scrub(out.read_text("utf-8", "replace")) if out.exists() else ""
+              raw = out.read_text("utf-8", "replace") if out.exists() else ""
               out.unlink(missing_ok=True)
               body_file = Path("/tmp/harness-auth.json")
               body_file.unlink(missing_ok=True)
               try:
                   parsed = json.loads(raw) if raw else {}
               except json.JSONDecodeError:
-                  parsed = {"raw": raw[:300]}
+                  parsed = {}
               return result.stdout.strip(), parsed
 
           pat = os.environ.get("GHCR_PUSH_TOKEN", "")
@@ -225,11 +225,13 @@ jobs:
               if not link:
                   continue
               log_file = Path("/tmp/harness-auth-step.log")
-              subprocess.run(
+              log_file.unlink(missing_ok=True)
+              download = subprocess.run(
                   ["curl", "-sS", "--max-time", "60", "-o", str(log_file), link],
                   check=False,
                   capture_output=True,
               )
+              print("log_download", ident, download.returncode, int(log_file.exists()))
               chunks = []
               if log_file.exists() and zipfile.is_zipfile(log_file):
                   with zipfile.ZipFile(log_file) as archive:
