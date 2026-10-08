@@ -157,9 +157,10 @@ test("the header shows sign in before a chat starts", () => {
     join(root, "app/components/factory/HitlGateList.tsx"),
     "utf8",
   );
-  assert.match(list, /hitlFetch/);
+  assert.match(list, /clerkReady/);
   const client = readFileSync(join(root, "app/lib/hitl/client.ts"), "utf8");
   assert.match(client, /Authorization/);
+  assert.match(client, /clerkReady/);
   const signIn = readFileSync(
     join(root, "app/components/header/BoltSignIn.tsx"),
     "utf8",

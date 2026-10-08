@@ -419,7 +419,7 @@ export function patchFactoryPhaseBar(source) {
 
 function hitlGateListSource() {
   return `import { useEffect, useState } from 'react';
-import { hitlFetch } from '~/lib/hitl/client';
+import { clerkReady, hitlFetch, onClerkSession } from '~/lib/hitl/client';
 
 interface HitlView {
   id: string;
@@ -436,20 +436,29 @@ export function HitlGateList({ phase }: { phase: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    void hitlFetch(\`/api/hitl?phase=\${phase}\`)
-      .then(async (response) => {
-        if (!response.ok) return [];
-        const payload = (await response.json()) as { questions?: HitlView[] };
-        return payload.questions ?? [];
-      })
-      .then((next) => {
-        if (!cancelled) setQuestions(next);
-      })
-      .catch(() => {
-        if (!cancelled) setQuestions([]);
-      });
+    const load = () => {
+      void hitlFetch(\`/api/hitl?phase=\${phase}\`)
+        .then(async (response) => {
+          if (!response.ok) return [];
+          const payload = (await response.json()) as { questions?: HitlView[] };
+          return payload.questions ?? [];
+        })
+        .then((next) => {
+          if (!cancelled) setQuestions(next);
+        })
+        .catch(() => {
+          if (!cancelled) setQuestions([]);
+        });
+    };
+    void clerkReady().then(() => {
+      if (!cancelled) load();
+    });
+    const stop = onClerkSession(() => {
+      if (!cancelled) load();
+    });
     return () => {
       cancelled = true;
+      stop();
     };
   }, [phase]);
 
@@ -951,7 +960,43 @@ declare global {
   }
 }
 
+let clerkStart: Promise<boolean> | null = null;
+const sessionListeners = new Set<() => void>();
+let sessionListening = false;
+
+export function clerkReady(): Promise<boolean> {
+  if (!clerkStart) {
+    clerkStart = (async () => {
+      const configResponse = await fetch('/api/clerk');
+      if (!configResponse.ok) return false;
+      const config = (await configResponse.json()) as { publishableKey?: string };
+      const publishableKey = config.publishableKey ?? '';
+      if (!publishableKey.startsWith('pk_test_')) return false;
+      await loadClerk(publishableKey);
+      if (!window.Clerk) return false;
+      await window.Clerk.load();
+      return true;
+    })();
+  }
+  return clerkStart;
+}
+
+export function onClerkSession(callback: () => void): () => void {
+  sessionListeners.add(callback);
+  void clerkReady().then((ready) => {
+    if (!ready || !window.Clerk || sessionListening) return;
+    sessionListening = true;
+    window.Clerk.addListener(() => {
+      for (const listener of sessionListeners) listener();
+    });
+  });
+  return () => {
+    sessionListeners.delete(callback);
+  };
+}
+
 export async function clerkBearer(): Promise<string | null> {
+  await clerkReady();
   const token = await window.Clerk?.session?.getToken();
   return token ?? null;
 }
@@ -962,11 +1007,28 @@ export async function hitlFetch(url: string, init: RequestInit = {}): Promise<Re
   if (token) headers.set('Authorization', \`Bearer \${token}\`);
   return fetch(url, { ...init, headers });
 }
+
+function loadClerk(publishableKey: string): Promise<void> {
+  if (window.Clerk) return Promise.resolve();
+  const encoded = publishableKey.slice('pk_test_'.length);
+  const frontendApi = atob(encoded).replace(/\\$$/, '');
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.async = true;
+    script.crossOrigin = 'anonymous';
+    script.dataset.clerkPublishableKey = publishableKey;
+    script.src = \`https://\${frontendApi}/npm/@clerk/clerk-js@5/dist/clerk.browser.js\`;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('Clerk did not load'));
+    document.head.appendChild(script);
+  });
+}
 `;
 }
 
 function boltSignInSource() {
   return `import { useEffect, useState } from 'react';
+import { clerkReady } from '~/lib/hitl/client';
 
 type SessionView = {
   signedIn: boolean;
@@ -997,31 +1059,21 @@ export function BoltSignIn() {
       const next = (await response.json()) as SessionView;
       if (!cancelled) setView(next);
     };
-    void (async () => {
-      try {
-        const configResponse = await fetch('/api/clerk');
-        if (!configResponse.ok) {
+    void clerkReady()
+      .then(async (ready) => {
+        if (!ready || !window.Clerk) {
           if (!cancelled) setFailed(true);
           return;
         }
-        const config = (await configResponse.json()) as { publishableKey?: string };
-        const publishableKey = config.publishableKey ?? '';
-        if (!publishableKey.startsWith('pk_test_')) {
-          if (!cancelled) setFailed(true);
-          return;
-        }
-        await loadClerk(publishableKey);
-        if (!window.Clerk) throw new Error('Clerk did not load');
-        await window.Clerk.load();
         window.Clerk.addListener(() => {
           void refresh();
         });
         await refresh();
         if (!cancelled) setReady(true);
-      } catch {
+      })
+      .catch(() => {
         if (!cancelled) setFailed(true);
-      }
-    })();
+      });
     return () => {
       cancelled = true;
     };
@@ -1060,22 +1112,6 @@ export function BoltSignIn() {
       {failed ? 'Sign in did not load' : 'Sign in'}
     </button>
   );
-}
-
-function loadClerk(publishableKey: string): Promise<void> {
-  if (window.Clerk) return Promise.resolve();
-  const encoded = publishableKey.slice('pk_test_'.length);
-  const frontendApi = atob(encoded).replace(/\\$$/, '');
-  return new Promise((resolve, reject) => {
-    const script = document.createElement('script');
-    script.async = true;
-    script.crossOrigin = 'anonymous';
-    script.dataset.clerkPublishableKey = publishableKey;
-    script.src = \`https://\${frontendApi}/npm/@clerk/clerk-js@5/dist/clerk.browser.js\`;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error('Clerk did not load'));
-    document.head.appendChild(script);
-  });
 }
 `;
 }
