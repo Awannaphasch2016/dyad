@@ -1,0 +1,31 @@
+# Confirm forma/dev references the development Clerk sign-in.
+# Prints names and key kinds only.
+name: Forma sign-in config
+
+on:
+  push:
+    branches:
+      - cursor/forma-shared-auth-5014
+    paths:
+      - scripts/gascity/forma-clerk-config.mjs
+      - .github/workflows/forma-clerk-config.yml
+
+permissions:
+  contents: read
+
+jobs:
+  confirm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Confirm Forma development sign-in names
+        env:
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+        run: |
+          set -euo pipefail
+          set +x
+          node scripts/gascity/forma-clerk-config.mjs
