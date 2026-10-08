@@ -1,0 +1,208 @@
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+import { commandForFormaPreview } from "./command.mjs";
+import { manifestUrl, pinnedImages } from "./compose.mjs";
+import { decideFromEnv, planDown } from "./run.mjs";
+import {
+  assertDockerHost,
+  assertFormaPreviewTarget,
+  formaPreviewBranchName,
+} from "./target.mjs";
+
+const sha = "80a8e419f6285378b4dfada336ea8213f3089bab";
+const formaImage = `ghcr.io/awannaphasch2016/forma:sha-${sha}`;
+
+test("preview-forma ignores the Dyad preview label and unlabeled closes", () => {
+  assert.equal(
+    commandForFormaPreview({
+      action: "labeled",
+      label: "preview-forma",
+      labels: ["preview-forma"],
+    }),
+    "update",
+  );
+  assert.equal(
+    commandForFormaPreview({
+      action: "synchronize",
+      labels: ["preview-forma"],
+    }),
+    "update",
+  );
+  assert.equal(
+    commandForFormaPreview({
+      action: "unlabeled",
+      label: "preview-forma",
+      labels: [],
+    }),
+    "destroy",
+  );
+  assert.equal(
+    commandForFormaPreview({
+      action: "closed",
+      labels: ["preview-forma"],
+      closed: true,
+    }),
+    "destroy",
+  );
+  assert.equal(
+    commandForFormaPreview({
+      action: "closed",
+      labels: ["preview"],
+      closed: true,
+    }),
+    "skip",
+  );
+  assert.equal(
+    commandForFormaPreview({
+      action: "synchronize",
+      labels: ["preview"],
+    }),
+    "skip",
+  );
+  assert.equal(
+    commandForFormaPreview({
+      action: "labeled",
+      label: "preview",
+      labels: ["preview"],
+    }),
+    "skip",
+  );
+  assert.equal(
+    commandForFormaPreview({
+      action: "labeled",
+      label: "preview-forma",
+      labels: ["preview-forma"],
+      closed: true,
+    }),
+    "skip",
+  );
+});
+
+test("a dispatch in this repository updates one numeric pull request", () => {
+  assert.deepEqual(decideFromEnv({ EVENT: "workflow_dispatch", PR: "81" }), {
+    command: "update",
+    pr: "81",
+  });
+  assert.throws(
+    () => decideFromEnv({ EVENT: "workflow_dispatch", PR: "" }),
+    /digits/,
+  );
+});
+
+test("compose pins published images and rejects a build", () => {
+  const images = pinnedImages({
+    services: {
+      forma: { image: formaImage },
+      worker: {
+        image: `ghcr.io/awannaphasch2016/forma@sha256:${"ab".repeat(32)}`,
+      },
+    },
+  });
+  assert.equal(images.length, 2);
+  assert.equal(images[0].repository, "forma");
+  assert.match(manifestUrl(formaImage), /\/forma\/manifests\/sha-80a8e419/);
+  assert.throws(
+    () =>
+      pinnedImages({
+        services: { forma: { image: formaImage, build: "." } },
+      }),
+    /must not build/,
+  );
+  assert.throws(
+    () =>
+      pinnedImages({
+        services: {
+          forma: { image: "ghcr.io/awannaphasch2016/forma:latest" },
+        },
+      }),
+    /must pin/,
+  );
+  const committed = readFileSync(
+    new URL("./compose.yml", import.meta.url),
+    "utf8",
+  );
+  assert.match(committed, new RegExp(sha));
+  assert.equal(committed.includes("build:"), false);
+});
+
+test("cleanup names only this pull request and refuses the known hosts", () => {
+  assert.equal(formaPreviewBranchName(81), "preview-forma-81");
+  assert.throws(() => formaPreviewBranchName("2-extra"), /digits/);
+  assert.equal(
+    assertFormaPreviewTarget({
+      projectId: "divine-credit-21002460",
+      parentId: "br-round-night-b33xeq5p",
+      branchName: "preview-forma-81",
+    }).branchName,
+    "preview-forma-81",
+  );
+  assert.throws(
+    () =>
+      assertFormaPreviewTarget({
+        projectId: "proud-salad-68182047",
+        parentId: "br-round-night-b33xeq5p",
+        branchName: "preview-forma-81",
+      }),
+    /Refusing/,
+  );
+  assert.throws(
+    () =>
+      assertFormaPreviewTarget({
+        projectId: "divine-credit-21002460",
+        parentId: "br-round-night-b33xeq5p",
+        branchName: "forma-pr-2",
+      }),
+    /Refusing/,
+  );
+  assert.throws(
+    () => assertDockerHost("wewebplus-ci.example"),
+    /Dyad preview host/,
+  );
+  assert.throws(() => assertDockerHost(""), /not set/);
+  assert.deepEqual(planDown({ PR: "81", PREVIEW_FORMA_DOCKER_HOST: "" }), {
+    action: "skip",
+    projectId: "divine-credit-21002460",
+    parentId: "br-round-night-b33xeq5p",
+    branchName: "preview-forma-81",
+  });
+});
+
+test("the workflow stops before Doppler, Neon, and Docker", () => {
+  const workflow = readFileSync(
+    new URL("../../.github/workflows/preview-forma.yml", import.meta.url),
+    "utf8",
+  );
+  assert.match(workflow, /name: preview-forma/);
+  assert.match(workflow, /pull_request:/);
+  assert.match(workflow, /permission-packages: read/);
+  assert.equal(workflow.includes("permission-packages: write"), false);
+  assert.equal(workflow.includes("wewebplus-ci"), false);
+  assert.equal(workflow.includes("docker compose"), false);
+  assert.equal(workflow.includes("DOPPLER"), false);
+  const skipped = spawnSync(
+    process.execPath,
+    ["deploy/preview-forma/run.mjs", "check"],
+    {
+      cwd: fileURLToPath(new URL("../..", import.meta.url)),
+      env: { ...process.env, GH_TOKEN: "", PREVIEW_FORMA_DOCKER_HOST: "" },
+      encoding: "utf8",
+    },
+  );
+  assert.equal(skipped.status, 1);
+  assert.match(skipped.stdout, /preview_forma_image=forma/);
+  assert.match(skipped.stdout, /PREVIEW_FORMA_DOCKER_HOST is not set/);
+  const down = spawnSync(
+    process.execPath,
+    ["deploy/preview-forma/run.mjs", "down"],
+    {
+      cwd: fileURLToPath(new URL("../..", import.meta.url)),
+      env: { ...process.env, PR: "81", PREVIEW_FORMA_DOCKER_HOST: "" },
+      encoding: "utf8",
+    },
+  );
+  assert.equal(down.status, 0);
+  assert.match(down.stdout, /preview_forma_down=skipped host=absent/);
+});
