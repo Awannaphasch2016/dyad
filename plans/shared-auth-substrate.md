@@ -24,6 +24,110 @@ The signed-in context is user, organization, and role. The role sits on the memb
 
 This plan does not add a Durable Object or a new workflow engine. One answer is one database update. A Durable Object per project can wait until two live tabs need a single coordinator. A Durable Object per user is the wrong boundary, because the question belongs to the role.
 
+## Revised shape
+
+These five diagrams are the adapter this plan will build. The sign-in cookie is only a session. The question row holds the wait. Gas City’s closer stays outside the page.
+
+### Context
+
+```mermaid
+flowchart LR
+  PM["Project Manager<br/>anakwannaphaschaiyong@gmail.com"]
+  Dev["Developer<br/>awannaphasch2016@fau.edu"]
+  Bolt[Bolt walkthrough]
+  Clerk[Clerk session and membership]
+  DB[(Question and role rows)]
+  Chat[(This browser's chat)]
+  Gas[Gas City closer]
+  PM --> Bolt
+  Dev --> Bolt
+  Bolt --> Clerk
+  Bolt --> DB
+  Bolt --> Chat
+  DB --> Gas
+```
+
+### Container
+
+```mermaid
+flowchart TB
+  Browser[Browser page]
+  Chat[(IndexedDB chat)]
+  Worker[Preview Worker]
+  Clerk[Clerk]
+  DB[(Postgres questions and roles)]
+  Gas[Existing Gas City closer]
+  Browser --> Chat
+  Browser -->|session cookie| Worker
+  Worker -->|still a member?| Clerk
+  Worker -->|role and question| DB
+  Gas -->|reads the answered row later| DB
+```
+
+### Component
+
+```mermaid
+flowchart TB
+  SignIn[Sign-in control]
+  Cookie[Session cookie]
+  List[Question list]
+  Member{Clerk membership still exists?}
+  Role[Gate role row]
+  Question[Question row]
+  SignIn --> Cookie
+  Cookie --> List
+  List --> Member
+  Member -->|yes| Role
+  Role --> Question
+  Member -->|removed| Deny[Deny]
+```
+
+### Class
+
+```mermaid
+classDiagram
+  class Session {
+    userId
+    orgId
+  }
+  class Membership {
+    userId
+    orgId
+    roleId
+  }
+  class Question {
+    questionId
+    orgId
+    targetRole
+    status
+  }
+  class HitlRoute
+  HitlRoute --> Session
+  HitlRoute --> Membership
+  HitlRoute --> Question
+```
+
+### Sequence
+
+```mermaid
+sequenceDiagram
+  actor Person
+  participant Page
+  participant Worker
+  participant Clerk
+  participant Postgres
+  participant Closer
+  Person->>Page: Sign in
+  Page->>Clerk: Development session
+  Page->>Worker: POST answer with cookie and question id
+  Worker->>Clerk: Session valid and still a member?
+  Worker->>Postgres: Role matches question, save answer
+  Worker-->>Page: resolved false
+  Person->>Page: Close the tab
+  Note over Postgres: Question stays answered
+  Note over Closer: Not called by the page
+```
+
 ## What Bolt does today
 
 Bolt has no sign-in page. The walkthrough at `https://bolt-walkthrough-55d6.karant-test-egress-canary.workers.dev` opens straight into chat. Chat history stays in that browser’s IndexedDB.
@@ -59,6 +163,8 @@ Before the page uses the key, confirm the preview publishable key starts with `p
 The two Development user ids go into `wewebplus.memberships` on the preview database. The same Google and FAU Microsoft accounts can sign into Production later and will receive different user ids. Those Production ids are not part of this check.
 
 ## Check
+
+`scripts/doppler/list-auth-directory.mjs` lists Clerk users and `wewebplus` memberships. It does not change Clerk or the database.
 
 Use Chrome on a computer. Open the walkthrough URL.
 
