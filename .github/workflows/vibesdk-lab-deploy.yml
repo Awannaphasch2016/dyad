@@ -5,6 +5,9 @@ name: VibeSDK lab deploy
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - cursor/vibesdk-doppler-project-fd29
 
 permissions:
   contents: read
