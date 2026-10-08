@@ -119,6 +119,14 @@ def self_test():
     if "ghs_" in formatted:
         sys.stderr.write("self_test_permission_leaked\n")
         raise SystemExit(1)
+    if (
+        token_kind("") != "empty"
+        or token_kind("ghp_" + ("a" * 36)) != "classic"
+        or token_kind("github_pat_example") != "fine_grained"
+    ):
+        sys.stderr.write("self_test_token_kind_failed\n")
+        raise SystemExit(1)
+    sys.stdout.write("token_kind=ok\n")
     sys.stdout.write(f"permission_format={formatted}\n")
     encoded = base64.b64encode(generated.stdout.encode("utf-8")).decode("ascii")
     decoded = pem_from_text(encoded)
@@ -282,17 +290,32 @@ def load_pem():
 def scrub_secret(text, secret):
     if secret and secret in text:
         text = text.replace(secret, "[redacted]")
+    text = re.sub(r"ghp_[A-Za-z0-9]+", "[redacted]", text)
     text = re.sub(r"ghs_[A-Za-z0-9_]+", "[redacted]", text)
     text = re.sub(r"github_pat_[A-Za-z0-9_]+", "[redacted]", text)
     text = re.sub(r"[A-Za-z0-9+/=]{40,}", "[redacted]", text)
     return text
 
 
-def docker_login(token):
+def token_kind(token):
+    if not token:
+        return "empty"
+    if token.startswith("ghp_"):
+        return "classic"
+    if token.startswith("github_pat_"):
+        return "fine_grained"
+    if token.startswith("<+"):
+        return "expression"
+    return "other"
+
+
+def docker_login(token, username="x-access-token"):
     if not token or len(token) < 20 or "PRIVATE KEY" in token:
         return False
+    if username not in {"x-access-token", "Awannaphasch2016"}:
+        return False
     result = subprocess.run(
-        ["docker", "login", "ghcr.io", "-u", "x-access-token", "--password-stdin"],
+        ["docker", "login", "ghcr.io", "-u", username, "--password-stdin"],
         input=token.encode("utf-8"),
         capture_output=True,
     )
@@ -362,11 +385,11 @@ def delete_probe_tag(token):
     emit(f"probe_tag_delete={deleted}")
 
 
-def push_scratch(token):
-    if not docker_login(token):
+def push_scratch(token, login_label="app_key", username="x-access-token"):
+    if not docker_login(token, username):
         emit("push_probe=login_failed")
         return
-    emit("ghcr_login=app_key")
+    emit(f"ghcr_login={login_label}")
     work = tempfile.mkdtemp()
     tag = "ghcr.io/awannaphasch2016/dyad:harness-authprobe"
     try:
@@ -481,7 +504,23 @@ def auth_probe():
     push_scratch(chosen)
 
 
+def pat_probe():
+    token = os.environ.get("GHCR_PUSH_TOKEN", "").strip()
+    kind = token_kind(token)
+    emit(f"push_token_kind={kind} token_len={len(token)}")
+    if kind not in {"classic", "fine_grained", "other"} or len(token) < 20:
+        emit("push_probe=no_pat")
+        return
+    push_scratch(token, login_label="pat", username="Awannaphasch2016")
+
+
 def login_from_available_credentials():
+    pat = os.environ.get("GHCR_PUSH_TOKEN", "").strip()
+    if token_kind(pat) in {"classic", "fine_grained", "other"} and len(pat) >= 20:
+        if docker_login(pat, "Awannaphasch2016"):
+            sys.stderr.write("ghcr_login=pat\n")
+            return
+        raise SystemExit(1)
     if docker_login(installation_token(load_pem())):
         sys.stderr.write("ghcr_login=app_key\n")
         return
@@ -497,6 +536,9 @@ def main():
         return
     if len(sys.argv) > 1 and sys.argv[1] == "--auth-probe":
         auth_probe()
+        return
+    if len(sys.argv) > 1 and sys.argv[1] == "--pat-probe":
+        pat_probe()
         return
     sys.stdout.write(installation_token(load_pem()))
 

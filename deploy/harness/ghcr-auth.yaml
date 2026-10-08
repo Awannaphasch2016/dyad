@@ -3,7 +3,7 @@ pipeline:
   identifier: dyad_ghcr_auth
   orgIdentifier: default
   projectIdentifier: dyad
-  description: Records the GitHub App packages permission and pushes one scratch layer to ghcr.io/awannaphasch2016/dyad:harness-authprobe. Does not build the Gas City or Dyad images.
+  description: Pushes one scratch layer with the classic GHCR token to ghcr.io/awannaphasch2016/dyad:harness-authprobe. Does not build the Gas City or Dyad images.
   properties:
     ci:
       codebase:
@@ -36,12 +36,7 @@ pipeline:
                   spec:
                     shell: Bash
                     envVariables:
-                      GH_APP_KEY: '<+secrets.getValue("account.Dyad_harness1")>'
+                      GHCR_PUSH_TOKEN: '<+secrets.getValue("account.ghcr_push_token")>'
                     command: |
                       set -euo pipefail
-                      umask 077
-                      key_file="${HOME}/.harness-gh-app.pem"
-                      rm -f "${key_file}"
-                      printf '%s' "$GH_APP_KEY" > "${key_file}"
-                      GH_APP_KEY_FILE="${key_file}" python3 scripts/harness/ghcr_app_login.py --auth-probe
-                      rm -f "${key_file}"
+                      python3 scripts/harness/ghcr_app_login.py --pat-probe

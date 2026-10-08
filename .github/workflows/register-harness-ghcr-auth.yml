@@ -24,6 +24,7 @@ jobs:
         env:
           HARNESS_API_KEY: ${{ secrets.HARNESS_API_KEY }}
           HARNESS_ACCOUNT: WKxXBnSFTRaOF64-h90PyQ
+          GHCR_PUSH_TOKEN: ${{ secrets.GHCR_PUSH_TOKEN }}
         run: |
           python3 << 'PY'
           import json, os, re, subprocess, time, zipfile
@@ -33,7 +34,7 @@ jobs:
           api_key = os.environ["HARNESS_API_KEY"]
           account = os.environ["HARNESS_ACCOUNT"]
           pipeline = "dyad_ghcr_auth"
-          long_token = re.compile(r"[A-Za-z0-9+/=]{40,}|ghs_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+")
+          long_token = re.compile(r"ghp_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+|ghs_[A-Za-z0-9_]+|[A-Za-z0-9+/=]{40,}")
 
           def scrub(text):
               return long_token.sub("[redacted]", text or "")
@@ -55,12 +56,60 @@ jobs:
               if result.returncode != 0:
                   print("CURL_FAILED", scrub(result.stderr)[:200])
                   raise SystemExit(1)
-              raw = out.read_text("utf-8", "replace") if out.exists() else ""
+              raw = scrub(out.read_text("utf-8", "replace")) if out.exists() else ""
+              out.unlink(missing_ok=True)
+              body_file = Path("/tmp/harness-auth.json")
+              body_file.unlink(missing_ok=True)
               try:
                   parsed = json.loads(raw) if raw else {}
               except json.JSONDecodeError:
-                  parsed = {"raw": scrub(raw)[:300]}
+                  parsed = {"raw": raw[:300]}
               return result.stdout.strip(), parsed
+
+          pat = os.environ.get("GHCR_PUSH_TOKEN", "")
+          if pat.startswith("ghp_"):
+              pat_kind = "classic"
+          elif pat.startswith("github_pat_"):
+              pat_kind = "fine_grained"
+          elif pat:
+              pat_kind = "other"
+          else:
+              pat_kind = "empty"
+          print("push_token_kind", pat_kind, "token_len", len(pat))
+          if pat_kind == "empty" or len(pat) < 20:
+              raise SystemExit(1)
+          secret_id = "ghcr_push_token"
+          secret_payload = {
+              "secret": {
+                  "type": "SecretText",
+                  "name": "ghcr-push-token",
+                  "identifier": secret_id,
+                  "description": "Classic token used only to push harness- image tags.",
+                  "spec": {
+                      "secretManagerIdentifier": "harnessSecretManager",
+                      "valueType": "Inline",
+                      "value": pat,
+                  },
+              }
+          }
+          account_query = f"?accountIdentifier={account}"
+          code, body = request(
+              "POST",
+              f"https://app.harness.io/ng/api/v2/secrets{account_query}",
+              payload=secret_payload,
+          )
+          print("create_text_secret", code, body.get("status"))
+          if code not in {"200", "201"}:
+              code, body = request(
+                  "PUT",
+                  f"https://app.harness.io/ng/api/v2/secrets/{secret_id}{account_query}",
+                  payload=secret_payload,
+              )
+              print("update_text_secret", code, body.get("status"))
+              if code not in {"200", "201"}:
+                  raise SystemExit(1)
+          del pat
+          del secret_payload
 
           query = f"?accountIdentifier={account}&orgIdentifier=default&projectIdentifier=dyad"
           code, body = request(
@@ -198,7 +247,7 @@ jobs:
                       if not text or "PRIVATE KEY" in text or "BEGIN " in text:
                           continue
                       if not re.search(
-                          r"installation_http|installation_repos|token_explicit|token_default|package_http|push_probe|push_token|probe_tag_delete|missing_app_key|ghcr_login|docker_login|openssl_sign",
+                          r"installation_http|installation_repos|token_explicit|token_default|package_http|push_probe|push_token|probe_tag_delete|missing_app_key|ghcr_login|docker_login|openssl_sign|push_token_kind|token_len",
                           text,
                       ):
                           continue
