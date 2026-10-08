@@ -27,8 +27,18 @@ export const boltPreviewSecretNames = [
   OPEN_ROUTER_API_KEY,
 ];
 
+export const boltHitlSecretNames = [
+  "WEWEBPLUS_DATABASE_URL",
+  "CLERK_SECRET_KEY",
+  "CLERK_PUBLISHABLE_KEY",
+  "GAS_CITY_HOST_BRIDGE_TOKEN",
+];
+
 export function githubEnvAssignment(name, value) {
-  if (!boltPreviewSecretNames.includes(name)) {
+  if (
+    !boltPreviewSecretNames.includes(name) &&
+    !boltHitlSecretNames.includes(name)
+  ) {
     throw new Error(`refusing to export ${name}`);
   }
   const text = String(value ?? "");

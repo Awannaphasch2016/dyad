@@ -5,6 +5,7 @@ import { appendFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import {
   BOLT_PROJECT_NAME,
+  boltHitlSecretNames,
   boltPreviewSecretNames,
   githubEnvAssignment,
   redact,
@@ -56,6 +57,14 @@ async function exportBoltPreviewEnv() {
     const state = referenceResolved(value);
     console.log(`${name}=${state}`);
     if (state !== "yes") process.exit(1);
+    console.log(`::add-mask::${value}`);
+    appendFileSync(envFile, githubEnvAssignment(name, value));
+  }
+  for (const name of boltHitlSecretNames) {
+    const value = preview[name];
+    const state = referenceResolved(value);
+    console.log(`hitl_${name}=${state}`);
+    if (state !== "yes") continue;
     console.log(`::add-mask::${value}`);
     appendFileSync(envFile, githubEnvAssignment(name, value));
     preview[name] = undefined;

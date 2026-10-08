@@ -15,6 +15,7 @@ on:
       - scripts/doppler/bolt-project.mjs
       - scripts/doppler/patch-bolt-polyfills.mjs
       - scripts/doppler/bolt-webcontainer-coep.mjs
+      - scripts/doppler/bolt-hitl.mjs
 
 permissions:
   contents: read
@@ -100,3 +101,12 @@ jobs:
           set +x
           printf '%s' "$OPEN_ROUTER_API_KEY" | pnpm exec wrangler secret put OPEN_ROUTER_API_KEY --name bolt-walkthrough-55d6
           echo "openrouter=configured" >> "$GITHUB_STEP_SUMMARY"
+          for name in WEWEBPLUS_DATABASE_URL CLERK_SECRET_KEY CLERK_PUBLISHABLE_KEY GAS_CITY_HOST_BRIDGE_TOKEN; do
+            value="$(printenv "$name" || true)"
+            if [ -n "$value" ]; then
+              printf '%s' "$value" | pnpm exec wrangler secret put "$name" --name bolt-walkthrough-55d6
+              echo "hitl_${name}=configured" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "hitl_${name}=absent" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done

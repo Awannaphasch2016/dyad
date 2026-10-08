@@ -4,6 +4,7 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import { applyBoltHitlPatches } from "./bolt-hitl.mjs";
 import { applyWebContainerCoepPatches } from "./bolt-webcontainer-coep.mjs";
 
 const transformStart = "transform(code: string, id: string) {";
@@ -191,6 +192,9 @@ if (entry && import.meta.url === pathToFileURL(entry).href) {
     }
   }
   for (const line of applyWebContainerCoepPatches(boltRoot)) {
+    console.log(line);
+  }
+  for (const line of applyBoltHitlPatches(boltRoot)) {
     console.log(line);
   }
 }

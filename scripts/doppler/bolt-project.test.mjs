@@ -328,7 +328,15 @@ test("github env export accepts Cloudflare names and the OpenRouter key", () => 
     openRouter,
     /^OPEN_ROUTER_API_KEY<<BOLT_OPEN_ROUTER_API_KEY_EOF/,
   );
-  assert.throws(() => githubEnvAssignment("WEWEBPLUS_DATABASE_URL", "x"));
+  const database = githubEnvAssignment(
+    "WEWEBPLUS_DATABASE_URL",
+    "postgres://db.example/neondb",
+  );
+  assert.match(
+    database,
+    /^WEWEBPLUS_DATABASE_URL<<BOLT_WEWEBPLUS_DATABASE_URL_EOF/,
+  );
+  assert.throws(() => githubEnvAssignment("WEWEBPLUS_DATABASE_PASSWORD", "x"));
   assert.throws(() => githubEnvAssignment("OPENROUTER_API_KEY", "x"));
   assert.throws(() => githubEnvAssignment("CLOUDFLARE_API_TOKEN", ""));
 });

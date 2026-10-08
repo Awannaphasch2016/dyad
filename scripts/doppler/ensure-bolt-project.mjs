@@ -7,6 +7,7 @@ import {
   VIBESDK_DEV_CONFIG,
   VIBESDK_PROJECT_NAME,
   OPEN_ROUTER_API_KEY,
+  boltHitlSecretNames,
   chooseOpenRouterSource,
   cloudflareReferencePlan,
   cloudflareSecrets,
@@ -322,6 +323,40 @@ async function ensureBoltProject() {
   });
   console.log(`reference=${openRouterPlan.secrets[OPEN_ROUTER_API_KEY]}`);
 
+  const hitlSearch = [
+    ["dyad", "preview"],
+    ["dyad", "dev"],
+    ["forma", "preview"],
+    ["forma", "dev"],
+  ];
+  for (const name of boltHitlSecretNames) {
+    let source = null;
+    for (const [project, config] of hitlSearch) {
+      if (!projects.includes(project)) continue;
+      const names = await namedSecrets(token, project, config);
+      if (names?.includes(name)) {
+        source = { project, config, name };
+        break;
+      }
+    }
+    if (!source) {
+      console.log(`hitl_absent=${name}`);
+      continue;
+    }
+    const reference = await directReference(
+      token,
+      source.project,
+      source.config,
+      source.name,
+    );
+    await doppler(token, "POST", "/v3/configs/config/secrets", {
+      project: BOLT_PROJECT_NAME,
+      config: "dev",
+      secrets: { [name]: reference },
+    });
+    console.log(`hitl_reference=${reference}`);
+  }
+
   configs = await listConfigs(token, BOLT_PROJECT_NAME);
   for (const line of configReport(configs)) console.log(line);
 
@@ -352,6 +387,7 @@ async function ensureBoltProject() {
   const productionNames = [
     ...cloudflareSecrets.map((wanted) => wanted.dest),
     OPEN_ROUTER_API_KEY,
+    ...boltHitlSecretNames,
   ].filter((name) => referenceResolved(production[name]) !== "absent");
   for (const name of Object.keys(production)) production[name] = undefined;
   if (productionNames.length > 0) {
