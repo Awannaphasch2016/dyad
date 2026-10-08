@@ -113,30 +113,30 @@ No new Wewebplus tables. No second membership seed. The preview's D1 `users` and
 
 ### Phase 1: Confirm the substrate is already there
 
-- [ ] `dyad` / `preview` still has `CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`, and the publishable key is `pk_test_`. Print only `test` or `live`.
-- [ ] The Wewebplus preview database already has one Project Manager row and one Developer row from the Bolt seed. Do not insert another pair.
-- [ ] The preview identity can read those values the same way the current preview reads `dyad` / `preview`. Do not copy the keys into `vibesdk` / `dev`.
+- [x] `dyad` / `preview` still has `CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`, and the publishable key is `pk_test_`. Print only `test` or `live`.
+- [x] The Wewebplus preview database already has one Project Manager row and one Developer row from the Bolt seed. Do not insert another pair.
+- [x] The preview identity can read those values the same way the current preview reads `dyad` / `preview`. Do not copy the keys into `vibesdk` / `dev`.
 
 ### Phase 2: Teach the preview to use that session
 
-- [ ] Patch the pinned page so Sign in replaces the email form.
-- [ ] Verify the Clerk session the way Bolt does, and decide the role the way Forma does.
+- [x] Patch the pinned page so Sign in replaces the email form.
+- [x] Verify the Clerk session the way Bolt does, and decide the role the way Forma does.
 - [ ] Save a new app under the Clerk user id. A person with no role gets the signed-out refusal.
-- [ ] After deploy, add `https://vibesdk-pr-68.karant-test-egress-canary.workers.dev` to the Development Clerk allowed origins. Do not add the lab host.
+- [x] After deploy, add `https://vibesdk-pr-68.karant-test-egress-canary.workers.dev` to the Development Clerk allowed origins. Do not add the lab host.
 
 ### Phase 3: Check it in the browser
 
-- [ ] Signed out, `GET /api/health` is 200 and the email form is gone.
+- [x] Signed out, `GET /api/health` is 200 and the email form is gone.
 - [ ] The Google account sees Wewebplus and Project Manager.
 - [ ] The Microsoft account sees Wewebplus and Developer.
 - [ ] An app created by one account is absent from the other account's list.
 - [ ] Reload keeps the session. Sign out returns to Sign in.
-- [ ] `GET https://vibesdk-lab.karant-test-egress-canary.workers.dev/api/health` stays 200, and the lab still uses its own sign-in.
+- [x] `GET https://vibesdk-lab.karant-test-egress-canary.workers.dev/api/health` stays 200, and the lab still uses its own sign-in.
 
 ## Testing Strategy
 
-- [ ] Unit-test the workers.dev origin allowlist, including a refusal of the lab host, next to `deploy/preview/clerk-origins.test.mjs`.
-- [ ] Unit-test the session decision with the existing Forma cases: one role, zero roles, two roles, and a `pk_live_` key.
+- [x] Unit-test the workers.dev origin allowlist, including a refusal of the lab host, next to `deploy/preview/clerk-origins.test.mjs`.
+- [x] Unit-test the session decision with the existing Forma cases: one role, zero roles, two roles, and a `pk_live_` key.
 - [ ] The live check is the browser list in Phase 3. It needs the two accounts, so it cannot be a headless stand-in.
 
 ## Risks & Mitigations
@@ -150,7 +150,19 @@ No new Wewebplus tables. No second membership seed. The preview's D1 `users` and
 
 ## Open Questions
 
-- The two browser sessions in Phase 3 need the Google and Microsoft accounts. The rest of the plan can land before that check.
+- The two browser sessions in Phase 3 need the Google and Microsoft accounts. The rest of the plan has landed on pull request 68. Those four checks are still open: Project Manager, Developer, private app lists, and reload plus sign out.
+
+## Landed
+
+Pull request 68 (`cursor/preview-backend-plan-fd29`, `7958979f`) serves the shared sign-in at `https://vibesdk-pr-68.karant-test-egress-canary.workers.dev`.
+
+- Deploy logged `clerk_publishable=test`, `clerk_secret=test`, and `membership_roles=developer:1,project-manager:1`. No membership row was inserted. The Clerk keys were not written into `vibesdk` / `dev`.
+- `GET /api/health` is 200. `GET /api/auth/session` is `{ "signedIn": false, "organization": null, "role": null }`. `GET /api/auth/clerk` returns a `pk_test_` key.
+- The signed-out page shows Sign in and does not show an email and password form. The prompt is still on the page.
+- Clerk allowed origins include that preview host (21 origins). The lab host was not added.
+- `GET https://vibesdk-lab.karant-test-egress-canary.workers.dev/api/health` is still 200. The lab worker was not patched.
+- `node --test deploy/preview/vibesdk.test.mjs deploy/preview/clerk-origins.test.mjs` — 23 passing, including the workers.dev allowlist and the one-role session decision.
+- A new app under the Clerk user id is implemented in the exchange (`users.id` is the Clerk `sub`) and is not yet proven by creating an app. That proof is the two signed-in browsers.
 
 ## Decision Log
 
