@@ -3,7 +3,7 @@
 
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -85,7 +85,7 @@ function redact(text) {
     .replace(/dp\.(?:st|pt|sa|ct)\.[A-Za-z0-9._-]+/g, "dp.redacted")
     .replace(/\bsk-or-[A-Za-z0-9_-]+/g, "sk-or-redacted")
     .replace(/\bsk-[A-Za-z0-9_-]{8,}/g, "sk-redacted")
-    .slice(0, 400);
+    .slice(0, 900);
 }
 
 function mask(value) {
@@ -413,17 +413,57 @@ async function migrate(directUrl) {
   return checkout;
 }
 
+async function vercelApi(token, method, path, body) {
+  const response = await fetch(`https://api.vercel.com${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  const text = await response.text();
+  let payload = {};
+  if (text) {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      payload = { message: text };
+    }
+  }
+  if (!response.ok) {
+    throw new Error(
+      `${method} ${path.split("?")[0]} ${response.status} ${redact(payload?.error?.message || payload?.message || text)}`,
+    );
+  }
+  return payload;
+}
+
+async function ensureVercelProject(token) {
+  const listed = await vercelApi(token, "GET", "/v9/projects?search=forma");
+  const existing = (listed.projects || []).find(
+    (item) => item.name === "forma",
+  );
+  const project =
+    existing ||
+    (await vercelApi(token, "POST", "/v10/projects", {
+      name: "forma",
+      framework: "nextjs",
+    }));
+  console.log(`vercel_project=${project.id ? "ready" : "missing"}`);
+  return project;
+}
+
 async function deploy(checkout, env) {
   const token = env.runtime.VERCEL_TOKEN;
-  const args = [
-    "deploy",
-    checkout,
-    "--yes",
-    "--token",
-    token,
-    "--name",
-    "forma",
-  ];
+  const project = await ensureVercelProject(token);
+  await mkdir(join(checkout, ".vercel"), { recursive: true });
+  await writeFile(
+    join(checkout, ".vercel", "project.json"),
+    `${JSON.stringify({ orgId: project.accountId, projectId: project.id })}\n`,
+  );
+  const args = ["deploy", "--yes", "--token", token];
   for (const [key, value] of Object.entries(env.runtime)) {
     if (!value || key === "VERCEL_TOKEN") continue;
     args.push("--env", `${key}=${value}`);
@@ -432,13 +472,21 @@ async function deploy(checkout, env) {
     if (!value) continue;
     args.push("--build-env", `${key}=${value}`);
   }
-  const output = run("vercel", args);
+  const output = run("vercel", args, {
+    cwd: checkout,
+    env: {
+      CI: "1",
+      VERCEL_ORG_ID: project.accountId,
+      VERCEL_PROJECT_ID: project.id,
+    },
+  });
   const url = output
     .split("\n")
     .map((line) => line.trim())
-    .find((line) => /^https:\/\/[a-z0-9.-]+\.vercel\.app$/.test(line));
-  if (!url) throw new Error("Vercel did not return a preview URL");
-  return url;
+    .find((line) => /^https:\/\/[a-z0-9.-]+\.vercel\.app/.test(line));
+  if (!url)
+    throw new Error(`Vercel did not return a preview URL ${redact(output)}`);
+  return url.split(" ")[0];
 }
 
 function comment(pr, url) {
