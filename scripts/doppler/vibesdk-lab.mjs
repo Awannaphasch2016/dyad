@@ -293,6 +293,21 @@ export function patchThinkRouting(source) {
   return next;
 }
 
+export function patchAppCreationLimit(source) {
+  const block = "appCreation: {\n\t\tenabled: true,";
+  if (!source.includes(block)) {
+    throw new Error("app creation limit patch did not match");
+  }
+  const next = source.replace(block, "appCreation: {\n\t\tenabled: false,");
+  if (
+    next.includes(block) ||
+    !next.includes("appCreation: {\n\t\tenabled: false,")
+  ) {
+    throw new Error("app creation limit patch did not apply");
+  }
+  return next;
+}
+
 export function patchWorkerExports(source) {
   const line =
     "export { UserAppSandboxService } from './services/sandbox/sandboxSdkClient';";

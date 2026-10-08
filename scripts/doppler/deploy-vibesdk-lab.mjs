@@ -42,6 +42,7 @@ import {
   labWebsocketUrl,
   modelTurnOutcome,
   parseWorkersDevUrl,
+  patchAppCreationLimit,
   patchThinkModel,
   patchThinkRouting,
   patchWorkerExports,
@@ -530,6 +531,7 @@ async function main() {
   const modelPath = join(checkout, "worker/agents/think/model-config.ts");
   const routingPath = join(checkout, "worker/agents/core/behaviors/think.ts");
   const entryPath = join(checkout, "worker/index.ts");
+  const limitsPath = join(checkout, "worker/services/rate-limit/config.ts");
   await writeFile(
     modelPath,
     patchThinkModel(await readFile(modelPath, "utf8")),
@@ -545,6 +547,11 @@ async function main() {
     entryPath,
     patchWorkerExports(await readFile(entryPath, "utf8")),
   );
+  await writeFile(
+    limitsPath,
+    patchAppCreationLimit(await readFile(limitsPath, "utf8")),
+  );
+  console.log("app_creation_limit=disabled");
   const config = labWranglerConfig({ accountId, databaseId, kvId });
   const violations = labConfigViolations(config);
   if (violations.length > 0) {

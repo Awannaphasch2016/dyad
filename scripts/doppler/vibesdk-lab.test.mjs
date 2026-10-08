@@ -24,6 +24,7 @@ import {
   labWebsocketUrl,
   modelTurnOutcome,
   parseWorkersDevUrl,
+  patchAppCreationLimit,
   patchThinkModel,
   patchThinkRouting,
   patchWorkerExports,
@@ -141,6 +142,21 @@ test("the checkout patches leave Gemini and the sandbox export behind", () => {
   const worker = patchWorkerExports(entry);
   assert.equal(worker.includes("UserAppSandboxService"), false);
   assert.match(worker, /CodeGeneratorAgent/);
+  const limits = patchAppCreationLimit(`appCreation: {
+		enabled: true,
+		store: RateLimitStore.DURABLE_OBJECT,
+		limit: 3,
+		dailyLimit: 3,
+		period: 24 * 60 * 60, // 24 hours
+	},
+	llmCalls: {
+		enabled: true,`);
+  assert.match(limits, /appCreation: \{\n\t\tenabled: false,/);
+  assert.match(limits, /llmCalls: \{\n\t\tenabled: true,/);
+  assert.throws(
+    () => patchAppCreationLimit("appCreation: { enabled: true }"),
+    /did not match/,
+  );
 });
 
 test("deploy output and the smoke prompt stay free of secret values", () => {
@@ -216,6 +232,8 @@ test("the deploy script does not copy dyad database urls or production routes", 
   assert.equal(deployScript.includes("GEMINI_API_KEY"), false);
   assert.match(deployScript, /OPENROUTER_API_KEY is not available/);
   assert.match(deployScript, /patchThinkRouting/);
+  assert.match(deployScript, /patchAppCreationLimit/);
+  assert.match(deployScript, /app_creation_limit=disabled/);
   assert.match(deployScript, /model reply absent/);
   assert.match(deployScript, /generate_all/);
   assert.deepEqual(optionalLabSecrets, ["OPENROUTER_API_KEY"]);
