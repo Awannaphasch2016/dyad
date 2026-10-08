@@ -8,6 +8,7 @@ import {
   assertFormaTarget,
   formaBranchName,
   previewEnv,
+  selectVercelProject,
 } from "./forma-preview.mjs";
 
 test("preview-forma does not share a decision with Dyad preview", () => {
@@ -100,4 +101,44 @@ test("a Forma preview branch stays inside the Forma Neon project", () => {
   assert.equal(env.build.DATABASE_URL.includes("-pooler"), false);
   assert.equal(env.runtime.OPENAI_API_KEY, undefined);
   assert.equal(env.runtime.OPENROUTER_API_KEY, "sk-or-example");
+});
+
+test("a Forma token uses the one visible project and never the dyad project", () => {
+  assert.equal(
+    selectVercelProject([{ id: "prj_forma", name: "forma" }]).name,
+    "forma",
+  );
+  assert.equal(
+    selectVercelProject([
+      { id: "prj_studio", name: "openai-agents-api-v0-clone" },
+    ]).name,
+    "openai-agents-api-v0-clone",
+  );
+  assert.equal(
+    selectVercelProject([
+      { id: "prj_dyad", name: "dyad" },
+      { id: "prj_studio", name: "openai-agents-api-v0-clone" },
+    ]),
+    null,
+  );
+  assert.equal(
+    selectVercelProject([{ id: "prj_studio", name: "studio" }], "prj_studio")
+      .id,
+    "prj_studio",
+  );
+  assert.throws(
+    () => selectVercelProject([{ id: "prj_dyad", name: "dyad" }]),
+    /only sees the dyad project/,
+  );
+  assert.throws(
+    () => selectVercelProject([{ id: "prj_dyad", name: "dyad" }], "prj_dyad"),
+    /Refusing to deploy/,
+  );
+  assert.equal(
+    selectVercelProject([
+      { id: "prj_a", name: "alpha" },
+      { id: "prj_b", name: "beta" },
+    ]),
+    null,
+  );
 });

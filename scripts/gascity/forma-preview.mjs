@@ -28,6 +28,27 @@ const OPENAI_NAMES = [
   "OPENAI_WEBHOOK_SECRET",
 ];
 
+const DYAD_VERCEL_PROJECT = "dyad";
+
+export function selectVercelProject(projects, projectId = "") {
+  const list = Array.isArray(projects) ? projects : [];
+  if (projectId) {
+    const match = list.find((item) => item.id === projectId);
+    if (match?.name === DYAD_VERCEL_PROJECT) {
+      throw new Error("Refusing to deploy Forma into the dyad Vercel project");
+    }
+    if (match) return match;
+  }
+  const named = list.find((item) => item.name === "forma");
+  if (named) return named;
+  const others = list.filter((item) => item.name !== DYAD_VERCEL_PROJECT);
+  if (list.length === 1 && others.length === 1) return others[0];
+  if (list.length > 0 && others.length === 0) {
+    throw new Error("Vercel token only sees the dyad project");
+  }
+  return null;
+}
+
 export function formaBranchName(pr) {
   if (!/^[0-9]+$/.test(String(pr))) {
     throw new Error("Pull request number must be digits");
@@ -457,9 +478,17 @@ async function ensureVercelProject(token, existing = {}) {
         "GET",
         `/v9/projects/${encodeURIComponent(existing.projectId)}${query}`,
       );
-      console.log("vercel_project=existing");
+      if (project?.name === DYAD_VERCEL_PROJECT) {
+        throw new Error(
+          "Refusing to deploy Forma into the dyad Vercel project",
+        );
+      }
+      console.log(`vercel_project=existing name=${project?.name || "unknown"}`);
       return project;
     } catch (error) {
+      if (String(error?.message || "").includes("Refusing to deploy")) {
+        throw error;
+      }
       console.log(
         `vercel_project=existing_unreadable ${redact(error.message)}`,
       );
@@ -476,6 +505,7 @@ async function ensureVercelProject(token, existing = {}) {
     { id: "", slug: "personal" },
     ...teamRows.map((team) => ({ id: team.id, slug: team.slug })),
   ];
+  const visible = [];
   for (const scope of scopes) {
     let projects = [];
     try {
@@ -486,27 +516,18 @@ async function ensureVercelProject(token, existing = {}) {
     }
     const names = projects.map((item) => item.name).join(",") || "none";
     console.log(`vercel_scope=${scope.slug} projects=${names}`);
-    const existing = projects.find((item) => item.name === "forma");
-    if (existing) return existing;
+    visible.push(...projects);
   }
-  for (const scope of scopes) {
-    if (!scope.id) continue;
-    try {
-      const created = await vercelApi(
-        token,
-        "POST",
-        `/v10/projects?teamId=${encodeURIComponent(scope.id)}`,
-        { name: "forma", framework: "nextjs" },
-      );
-      console.log(`vercel_project=created scope=${scope.slug}`);
-      return created;
-    } catch (error) {
-      console.log(
-        `vercel_project=refused scope=${scope.slug} ${redact(error.message)}`,
-      );
-    }
+  const selected = selectVercelProject(visible, existing.projectId);
+  if (selected) {
+    console.log(`vercel_project=selected name=${selected.name}`);
+    return selected;
   }
-  throw new Error("Vercel token cannot create the forma project");
+  const names =
+    [...new Set(visible.map((item) => item.name))].join(",") || "none";
+  throw new Error(
+    `Vercel token cannot see the Forma project (visible=${names})`,
+  );
 }
 
 async function deploy(checkout, env) {
@@ -546,6 +567,45 @@ async function deploy(checkout, env) {
   return url.split(" ")[0];
 }
 
+function noteGithubDeployments() {
+  try {
+    const deployments = JSON.parse(
+      gh(["api", `repos/${FORMA_REPOSITORY}/deployments?per_page=10`]),
+    );
+    const deploymentUrls = (Array.isArray(deployments) ? deployments : [])
+      .map((item) => item?.payload?.web_url || item?.environment || "")
+      .filter(Boolean);
+    console.log(
+      `forma_github_deployments=${deploymentUrls.join(",") || "none"}`,
+    );
+  } catch (error) {
+    console.log(
+      `forma_github_deployments=unavailable ${redact(error.message)}`,
+    );
+  }
+}
+
+function notePullRequestLinks(pr) {
+  try {
+    const comments = JSON.parse(
+      gh([
+        "api",
+        `repos/${FORMA_REPOSITORY}/issues/${pr}/comments?per_page=20`,
+      ]),
+    );
+    const urls = new Set();
+    for (const item of Array.isArray(comments) ? comments : []) {
+      const found = String(item?.body || "").match(
+        /https:\/\/[a-z0-9.-]+\.vercel\.app[^\s)]*/gi,
+      );
+      for (const url of found || []) urls.add(url.replace(/[.,>]+$/, ""));
+    }
+    console.log(`forma_pr_vercel_urls=${[...urls].join(",") || "none"}`);
+  } catch (error) {
+    console.log(`forma_pr_vercel_urls=unavailable ${redact(error.message)}`);
+  }
+}
+
 function comment(pr, url) {
   gh([
     "pr",
@@ -577,15 +637,10 @@ export async function runFormaPreview() {
     .filter((name) => name.startsWith("VERCEL_"))
     .sort();
   console.log(`forma_dev_vercel_names=${vercelNames.join(",") || "none"}`);
-  const deployments = JSON.parse(
-    gh(["api", `repos/${FORMA_REPOSITORY}/deployments?per_page=10`]),
-  );
-  const deploymentUrls = deployments
-    .map((item) => item?.payload?.web_url || item?.environment || "")
-    .filter(Boolean);
-  console.log(`forma_github_deployments=${deploymentUrls.join(",") || "none"}`);
+  noteGithubDeployments();
   const pr = process.env.FORMA_PR || ensureWalkthroughPullRequest();
   console.log(`forma_pr=${pr}`);
+  notePullRequestLinks(pr);
   const branch = await ensureNeonBranch(secrets.NEON_API_KEY, pr);
   const checkout = await migrate(branch.direct);
   const env = previewEnv({
