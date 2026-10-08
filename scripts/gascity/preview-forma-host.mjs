@@ -167,6 +167,38 @@ export function withServiceLinkedRole(document, accountId) {
   return doc;
 }
 
+const hostActions = [
+  "ec2:DescribeAccountAttributes",
+  "ec2:DescribeAvailabilityZones",
+  "ec2:DescribeInternetGateways",
+  "elasticloadbalancing:AddTags",
+  "elasticloadbalancing:DescribeAccountLimits",
+  "elasticloadbalancing:DescribeLoadBalancerAttributes",
+  "elasticloadbalancing:DescribeTags",
+  "elasticloadbalancing:ModifyLoadBalancerAttributes",
+  "elasticloadbalancing:SetSecurityGroups",
+];
+
+export function withHostActions(document) {
+  const statement = document?.Statement?.find(
+    (item) => item.Sid === "PreviewFormaCompute",
+  );
+  if (!statement) throw new Error("Policy is missing PreviewFormaCompute");
+  const current = new Set(
+    Array.isArray(statement.Action) ? statement.Action : [statement.Action],
+  );
+  const missing = hostActions.filter((action) => !current.has(action));
+  if (missing.length === 0) return document;
+  const doc = structuredClone(document);
+  const next = doc.Statement.find((item) => item.Sid === "PreviewFormaCompute");
+  next.Action = [...current, ...missing];
+  return doc;
+}
+
+export function hostPolicy(document, accountId) {
+  return withHostActions(withServiceLinkedRole(document, accountId));
+}
+
 export async function allowServiceLinkedRoles({ run, accountId }) {
   const policyArn = `arn:aws:iam::${accountId}:policy/preview-forma-fargate`;
   const policy = JSON.parse(
@@ -195,7 +227,7 @@ export async function allowServiceLinkedRoles({ run, accountId }) {
   const raw = version.PolicyVersion.Document;
   const document =
     typeof raw === "string" ? JSON.parse(decodeURIComponent(raw)) : raw;
-  const next = withServiceLinkedRole(document, accountId);
+  const next = hostPolicy(document, accountId);
   if (next === document) return { updated: false, policyArn };
   await run([
     "iam",

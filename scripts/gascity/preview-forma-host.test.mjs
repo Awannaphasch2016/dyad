@@ -333,6 +333,10 @@ test("service role permission keeps the existing policy statements", async () =>
     if (args[1] === "create-policy-version") {
       const document = JSON.parse(args[args.indexOf("--policy-document") + 1]);
       assert.equal(document.Statement[0].Sid, "PreviewFormaCompute");
+      assert.equal(
+        document.Statement[0].Action.includes("ec2:DescribeAccountAttributes"),
+        true,
+      );
       assert.equal(document.Statement[1].Sid, "PreviewFormaServiceRoles");
       assert.equal(document.Statement[1].Action, "iam:CreateServiceLinkedRole");
       return "";
