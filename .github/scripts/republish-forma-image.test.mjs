@@ -101,15 +101,11 @@ test("package visibility request is public and hides the token", async () => {
   assert.equal(JSON.stringify(result).includes("ghs_secret"), false);
 });
 
-test("the dyad workflow can update the Forma workflow and package", () => {
-  const workflow = readFileSync(
-    new URL("../workflows/republish-forma-image.yml", import.meta.url),
-    "utf8",
+test("the one-shot republish workflow is not on the branch", () => {
+  assert.throws(() =>
+    readFileSync(
+      new URL("../workflows/republish-forma-image.yml", import.meta.url),
+      "utf8",
+    ),
   );
-  assert.equal(workflow.includes("repositories: forma"), true);
-  assert.equal(workflow.includes("permission-contents: write"), true);
-  assert.equal(workflow.includes("permission-workflows: write"), true);
-  assert.equal(workflow.includes("permission-packages: write"), true);
-  assert.equal(workflow.includes("permission-actions:"), false);
-  assert.equal(workflow.includes("DOPPLER"), false);
 });

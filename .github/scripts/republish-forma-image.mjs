@@ -1,7 +1,10 @@
 #!/usr/bin/env node
-// Point the Forma image workflow at the repository owner, then let that
-// push publish the image. Logging in as dyad-harness[bot] stored a manifest
-// and left the account package list empty. Does not print credentials.
+// The owner-login publish created the private package
+// https://github.com/users/Awannaphasch2016/packages/container/package/forma
+// Image: ghcr.io/awannaphasch2016/forma@sha256:a8e2efa11d993bfc7b21b6a9705280a32510069add8b634685ef5b6eeb8f5a74
+// PATCH visibility=public returned 404 for the Forma Actions token and for
+// this app token. The account owner sets Public in Package settings.
+// Do not put this script back on a workflow. Does not print credentials.
 
 import { writeSync } from "node:fs";
 import { pathToFileURL } from "node:url";
