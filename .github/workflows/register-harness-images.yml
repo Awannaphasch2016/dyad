@@ -1,5 +1,5 @@
 # Create the image pipeline, then update it if it already exists, then start it.
-# Reuse check: this commit stays under .github, so the Docker context is unchanged.
+# Digest check: the Dockerfile comment changes the Docker context.
 name: Register Harness image pipeline
 
 on:
