@@ -1,0 +1,50 @@
+# Push the shared sign-in commit to Awannaphasch2016/forma.
+# The app token is not printed.
+name: Publish Forma sign-in
+
+on:
+  push:
+    branches:
+      - cursor/forma-shared-auth-5014
+    paths:
+      - deploy/forma/shared-sign-in.patch
+      - .github/workflows/forma-shared-sign-in.yml
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Create a Forma app token
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.DYAD_GITHUB_APP_ID || '5221649' }}
+          private-key: ${{ secrets.DYAD_GITHUB_APP_PEM_KEY }}
+          owner: Awannaphasch2016
+          repositories: forma
+          permission-contents: write
+
+      - name: Push the sign-in commit
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          set +x
+          git -c credential.helper= clone --depth 1 --branch cursor/forma-preview-walkthrough https://github.com/Awannaphasch2016/forma.git forma-sign-in
+          cd forma-sign-in
+          git config user.name "Cursor Agent"
+          git config user.email "cursoragent@cursor.com"
+          git checkout -b cursor/forma-shared-auth-5014
+          git am --keep-cr ../deploy/forma/shared-sign-in.patch
+          askpass="$(mktemp)"
+          printf '%s\n' '#!/bin/sh' 'case "$1" in' '*Username*) printf "%s" "x-access-token";;' '*) printf "%s" "$GH_TOKEN";;' 'esac' > "$askpass"
+          chmod 700 "$askpass"
+          GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 git -c credential.helper= push origin HEAD:cursor/forma-shared-auth-5014
+          rm -f "$askpass"
+          echo "forma_sign_in_sha=$(git rev-parse HEAD)"
