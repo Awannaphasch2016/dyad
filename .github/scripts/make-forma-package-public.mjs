@@ -33,30 +33,54 @@ jobs:
           set -euo pipefail
           set +x
           node --input-type=module <<'NODE'
-          const endpoints = [
-            "/users/${owner}/packages/container/forma",
-            "/user/packages/container/forma",
+          const headers = {
+            Authorization: "Bearer " + process.env.GH_TOKEN,
+            Accept: "application/vnd.github+json",
+            "Content-Type": "application/json",
+            "User-Agent": "dyad-preview-forma",
+            "X-GitHub-Api-Version": "2022-11-28",
+          };
+          const lists = [
+            "/user/packages?package_type=container&per_page=100",
+            "/users/${owner}/packages?package_type=container&per_page=100",
+            "/repos/${owner}/${repo}/packages?package_type=container&per_page=100",
+          ];
+          const found = [];
+          for (const path of lists) {
+            const response = await fetch("https://api.github.com" + path, { headers });
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok) {
+              console.log("forma_package_list " + response.status + " " + (body.message || ""));
+              continue;
+            }
+            const packages = Array.isArray(body) ? body : [];
+            console.log(
+              "forma_package_list " +
+                (packages.map((pkg) => pkg.name + ":" + (pkg.visibility || "unknown")).join(",") || "none"),
+            );
+            for (const pkg of packages) found.push(pkg);
+          }
+          const targets = [
+            ...found.filter((pkg) => String(pkg.name || "").toLowerCase().includes("forma")),
+            { url: "https://api.github.com/users/${owner}/packages/container/forma" },
+            { url: "https://api.github.com/user/packages/container/forma" },
           ];
           let published = false;
-          for (const path of endpoints) {
-            const response = await fetch("https://api.github.com" + path, {
+          for (const pkg of targets) {
+            if (!pkg.url) continue;
+            const response = await fetch(pkg.url, {
               method: "PATCH",
-              headers: {
-                Authorization: "Bearer " + process.env.GH_TOKEN,
-                Accept: "application/vnd.github+json",
-                "Content-Type": "application/json",
-                "User-Agent": "dyad-preview-forma",
-                "X-GitHub-Api-Version": "2022-11-28",
-              },
+              headers,
               body: JSON.stringify({ visibility: "public" }),
             });
-            let visibility = "";
-            if (response.ok) {
-              const body = await response.json().catch(() => ({}));
-              visibility = body.visibility || "";
-            }
-            console.log("forma_package_api " + path + " " + response.status + (visibility ? " " + visibility : ""));
-            if (visibility === "public") published = true;
+            const body = await response.json().catch(() => ({}));
+            console.log(
+              "forma_package_api " +
+                response.status +
+                " " +
+                (body.visibility || body.message || ""),
+            );
+            if (body.visibility === "public") published = true;
           }
           if (!published) process.exit(1);
           NODE
@@ -192,7 +216,7 @@ export async function makeFormaPackagePublic({
   fetchImpl = fetch,
   log = console.log,
   pause = delay,
-  attempts = 18,
+  attempts = 4,
 }) {
   const direct = await setPackagePublic({ token, fetchImpl });
   log(`forma_package_api ${direct.attempts.join(" ")}`);
