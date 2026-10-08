@@ -108,7 +108,7 @@ The workflow does not run `gc`, does not call cook or sling, and does not SSH to
 
 Nothing, until the workflow file exists and the first run stops because AWS refused the login.
 
-GitHub Actions cannot create the ECS service until this AWS account has a role that trusts this repository. That role is created once, in AWS, not in Doppler and not as a Cloudflare token. You do not paste a key into the repo. When the run needs it, the message will name the role and the single trust line:
+GitHub Actions cannot create the ECS service until this AWS account has a role that trusts this repository. That role is created once, in AWS, not in Doppler and not as a Cloudflare token. You do not paste a key into the repo. The workflow reads the role ARN from the secret `AWS_PREVIEW_FORMULA_ROLE_ARN`. When that secret is missing, the run stops and prints the trust line:
 
 `repo:Awannaphasch2016/dyad:ref:refs/heads/cursor/formula-config-ui-55d6`
 

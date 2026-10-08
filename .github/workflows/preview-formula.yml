@@ -1,0 +1,226 @@
+# Keep the formula pages up on ECS. The service stays at one task.
+name: Preview formula
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cursor/formula-config-ui-55d6
+
+permissions:
+  contents: read
+
+concurrency:
+  group: preview-formula-ecs
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Decide whether this commit is already published
+        id: inspect
+        env:
+          OWNER: ${{ github.repository_owner }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          owner="$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]')"
+          image="ghcr.io/${owner}/dyad:sha-${SHA}"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          if docker buildx imagetools inspect "$image" >/dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "Already published: $image"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            echo "Not published yet: $image"
+          fi
+
+      - name: Free runner disk before the image build
+        if: steps.inspect.outputs.published != 'true'
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          df -h /
+
+      - name: Build and push
+        id: build
+        if: steps.inspect.outputs.published != 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.gascity
+          push: true
+          provenance: false
+          sbom: false
+          tags: ${{ steps.inspect.outputs.image }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+  deploy:
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+      pull-requests: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve the published digest
+        id: digest
+        env:
+          OWNER: ${{ github.repository_owner }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          owner="$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]')"
+          tag="ghcr.io/${owner}/dyad:sha-${SHA}"
+          digest="$(docker buildx imagetools inspect "$tag" | awk 'tolower($1) == "digest:" { print $2; exit }')"
+          image="ghcr.io/${owner}/dyad@${digest}"
+          if [[ ! "$image" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]]; then
+            echo "Could not resolve a digest for ${tag}" >&2
+            exit 1
+          fi
+          echo "image=${image}" >> "$GITHUB_OUTPUT"
+          echo "Resolved ${image}"
+
+      - name: Find the open pull request
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          number="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$HEAD" --state open --json number --jq '.[0].number')"
+          if [[ ! "$number" =~ ^[0-9]+$ ]]; then
+            echo "No open pull request for ${HEAD}" >&2
+            exit 1
+          fi
+          echo "number=${number}" >> "$GITHUB_OUTPUT"
+          echo "Pull request ${number}"
+
+      - name: Attach the Neon preview branch
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          PR: ${{ steps.pr.outputs.number }}
+        run: node deploy/preview/controller.mjs attach --pr "$PR" --out /tmp/preview-runtime.sh
+
+      - name: Require the AWS role
+        env:
+          AWS_PREVIEW_FORMULA_ROLE_ARN: ${{ secrets.AWS_PREVIEW_FORMULA_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$AWS_PREVIEW_FORMULA_ROLE_ARN" =~ ^arn:aws:iam::[0-9]{12}:role/[A-Za-z0-9+=,.@_-]+$ ]]; then
+            echo "AWS refused the login because AWS_PREVIEW_FORMULA_ROLE_ARN is not set." >&2
+            echo "Create a role once that trusts repo:Awannaphasch2016/dyad:ref:refs/heads/cursor/formula-config-ui-55d6" >&2
+            echo "Then set the secret AWS_PREVIEW_FORMULA_ROLE_ARN to that role ARN." >&2
+            exit 1
+          fi
+          echo "AWS role is set"
+
+      - name: Assume the AWS role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_PREVIEW_FORMULA_ROLE_ARN }}
+          aws-region: ap-southeast-1
+          role-session-name: preview-formula
+
+      - name: Free runner disk before the image copy
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          df -h /
+
+      - name: Copy the digest to ECR
+        id: ecr
+        env:
+          GHCR: ${{ steps.digest.outputs.image }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          line="$(node deploy/preview/formula_ecs.mjs ensure-repository)"
+          repository="${line#repository=}"
+          if [[ ! "$repository" =~ ^[0-9]{12}\.dkr\.ecr\.ap-southeast-1\.amazonaws\.com/dyad-formula-preview$ ]]; then
+            echo "ECR repository was not in ap-southeast-1" >&2
+            exit 1
+          fi
+          registry="${repository%%/*}"
+          aws ecr get-login-password --region ap-southeast-1 | docker login --username AWS --password-stdin "$registry"
+          docker pull "$GHCR"
+          docker tag "$GHCR" "$repository:sha-${SHA}"
+          docker push "$repository:sha-${SHA}"
+          digest="$(aws ecr describe-images --repository-name dyad-formula-preview --image-ids "imageTag=sha-${SHA}" --query 'imageDetails[0].imageDigest' --output text)"
+          image="${repository}@${digest}"
+          if [[ ! "$image" =~ ^[0-9]{12}\.dkr\.ecr\.ap-southeast-1\.amazonaws\.com/dyad-formula-preview@sha256:[0-9a-f]{64}$ ]]; then
+            echo "ECR digest was not recorded" >&2
+            exit 1
+          fi
+          echo "image=${image}" >> "$GITHUB_OUTPUT"
+
+      - name: Update the formula service
+        id: sync
+        env:
+          IMAGE: ${{ steps.ecr.outputs.image }}
+        run: |
+          set -euo pipefail
+          line="$(node deploy/preview/formula_ecs.mjs sync --image "$IMAGE" --runtime /tmp/preview-runtime.sh)"
+          if [[ ! "$line" =~ ^url=http://[A-Za-z0-9.-]+\.ap-southeast-1\.elb\.amazonaws\.com$ ]]; then
+            echo "Formula preview did not return an ap-southeast-1 load balancer URL" >&2
+            exit 1
+          fi
+          echo "url=${line#url=}" >> "$GITHUB_OUTPUT"
+          echo "$line"
+
+      - name: Check the formula pages
+        env:
+          URL: ${{ steps.sync.outputs.url }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$URL" =~ ^http://[A-Za-z0-9.-]+\.ap-southeast-1\.elb\.amazonaws\.com$ ]]; then
+            echo "Refusing to request an unexpected preview URL" >&2
+            exit 1
+          fi
+          for path in /formulas/discovery /formulas/implementation /formulas/delivery; do
+            ok=0
+            for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+              code="$(curl -sS -o /tmp/formula-body -w '%{http_code}' --max-time 20 "${URL}${path}" || true)"
+              echo "http ${code} ${path}"
+              if [[ "$code" == "200" ]] && grep -q 'data-dyad-browser-bridge' /tmp/formula-body; then
+                ok=1
+                break
+              fi
+              sleep 10
+            done
+            test "$ok" = "1"
+            echo "${URL}${path}"
+          done

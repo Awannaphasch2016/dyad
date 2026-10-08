@@ -28,6 +28,7 @@ import {
 import { FirstPromptCreationRegistry } from "@/ipc/services/first_prompt_creation_service";
 import {
   BROWSER_BRIDGE_SOCKET_PATH,
+  bridgeHostFromEnv,
   browserBridgeClientScript,
   browserBridgeInvokeArgs,
   dispatchBrowserInvoke,
@@ -467,5 +468,28 @@ describe("browser bridge", () => {
     const cleanup = vi.fn(async () => {});
     await registry.complete("create-1", cleanup);
     expect(cleanup).not.toHaveBeenCalled();
+  });
+});
+
+describe("browser bridge host", () => {
+  it("stays on loopback unless the formula task asks for every interface", () => {
+    expect(bridgeHostFromEnv(undefined)).toBe("127.0.0.1");
+    expect(bridgeHostFromEnv("")).toBe("127.0.0.1");
+    expect(bridgeHostFromEnv("0.0.0.0")).toBe("0.0.0.0");
+    expect(bridgeHostFromEnv("127.0.0.1")).toBe("127.0.0.1");
+    expect(bridgeHostFromEnv("10.0.0.8")).toBe("127.0.0.1");
+    expect(bridgeHostFromEnv("localhost")).toBe("127.0.0.1");
+  });
+
+  it("binds the host passed to the bridge", async () => {
+    const rendererDir = await mkdtemp(path.join(tmpdir(), "dyad-bridge-host-"));
+    closers.push(() => rm(rendererDir, { recursive: true, force: true }));
+    const bridge = await startBrowserBridge({
+      rendererDir,
+      port: 0,
+      host: "0.0.0.0",
+    });
+    closers.push(() => bridge.close());
+    expect(bridge.host).toBe("0.0.0.0");
   });
 });
