@@ -52,6 +52,12 @@ jobs:
           echo "===== migrate.ts ====="
           gh api "repos/Awannaphasch2016/forma/contents/scripts/migrate.ts?ref=main" --jq .content | base64 -d
           echo
+          echo "===== database-url.ts ====="
+          gh api "repos/Awannaphasch2016/forma/contents/lib/database-url.ts?ref=main" --jq .content | base64 -d
+          echo
+          echo "===== schema head ====="
+          gh api "repos/Awannaphasch2016/forma/contents/db/schema.sql?ref=main" --jq .content | base64 -d | head -n 40
+          echo
           echo "===== env example keys ====="
           gh api "repos/Awannaphasch2016/forma/contents/.env.example?ref=main" --jq .content \
             | base64 -d \
