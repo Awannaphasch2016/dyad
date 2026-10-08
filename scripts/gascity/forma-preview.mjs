@@ -227,6 +227,9 @@ function redact(text) {
     .replace(/dp\.(?:st|pt|sa|ct)\.[A-Za-z0-9._-]+/g, "dp.redacted")
     .replace(/\bsk-or-[A-Za-z0-9_-]+/g, "sk-or-redacted")
     .replace(/\bsk-[A-Za-z0-9_-]{8,}/g, "sk-redacted")
+    .replace(/\bghs_[A-Za-z0-9_]+/g, "ghs_redacted")
+    .replace(/\bgithub_pat_[A-Za-z0-9_]+/g, "github_pat_redacted")
+    .replace(/x-access-token:[^@\s]+/g, "x-access-token:redacted")
     .replace(/\bvcp_[A-Za-z0-9_-]+/g, "vcp_redacted")
     .slice(0, 900);
 }
@@ -575,36 +578,85 @@ export async function applyOpenRouterOverlay(
   return files;
 }
 
-function publishOpenRouterCommit(checkout, files) {
-  run("git", [
-    "-C",
-    checkout,
-    "config",
-    "user.email",
-    "5221649+dyad-harness[bot]@users.noreply.github.com",
-  ]);
-  run("git", ["-C", checkout, "config", "user.name", "dyad-harness[bot]"]);
-  run("git", ["-C", checkout, "add", "--", ...files]);
-  const status = run("git", [
-    "-C",
-    checkout,
-    "status",
-    "--porcelain",
-    "--",
-    ...files,
-  ]);
-  if (!status.trim()) {
+async function publishOpenRouterCommit(checkout, files) {
+  // git push has no credential for the private Forma repo. The app token can
+  // write the commit through the Git Data API instead.
+  const head = JSON.parse(
+    gh([
+      "api",
+      `repos/${FORMA_REPOSITORY}/git/ref/heads/${WALKTHROUGH_BRANCH}`,
+    ]),
+  );
+  const parent = head.object.sha;
+  const parentCommit = JSON.parse(
+    gh(["api", `repos/${FORMA_REPOSITORY}/git/commits/${parent}`]),
+  );
+  const tree = [];
+  for (const file of files) {
+    const content = await readFile(join(checkout, file));
+    const blob = JSON.parse(
+      gh(
+        [
+          "api",
+          "--method",
+          "POST",
+          `repos/${FORMA_REPOSITORY}/git/blobs`,
+          "--input",
+          "-",
+        ],
+        JSON.stringify({
+          content: content.toString("base64"),
+          encoding: "base64",
+        }),
+      ),
+    );
+    tree.push({ path: file, mode: "100644", type: "blob", sha: blob.sha });
+  }
+  const created = JSON.parse(
+    gh(
+      [
+        "api",
+        "--method",
+        "POST",
+        `repos/${FORMA_REPOSITORY}/git/trees`,
+        "--input",
+        "-",
+      ],
+      JSON.stringify({ base_tree: parentCommit.tree.sha, tree }),
+    ),
+  );
+  if (created.sha === parentCommit.tree.sha) {
     console.log("forma_openrouter=present");
     return;
   }
-  run("git", [
-    "-C",
-    checkout,
-    "commit",
-    "-m",
-    "Build previews with the OpenRouter key.",
-  ]);
-  run("git", ["-C", checkout, "push", "origin", `HEAD:${WALKTHROUGH_BRANCH}`]);
+  const commit = JSON.parse(
+    gh(
+      [
+        "api",
+        "--method",
+        "POST",
+        `repos/${FORMA_REPOSITORY}/git/commits`,
+        "--input",
+        "-",
+      ],
+      JSON.stringify({
+        message: "Build previews with the OpenRouter key.",
+        tree: created.sha,
+        parents: [parent],
+      }),
+    ),
+  );
+  gh(
+    [
+      "api",
+      "--method",
+      "PATCH",
+      `repos/${FORMA_REPOSITORY}/git/refs/heads/${WALKTHROUGH_BRANCH}`,
+      "--input",
+      "-",
+    ],
+    JSON.stringify({ sha: commit.sha }),
+  );
   console.log("forma_openrouter=committed");
 }
 
@@ -622,7 +674,7 @@ async function migrate(directUrl) {
     WALKTHROUGH_BRANCH,
   ]);
   const files = await applyOpenRouterOverlay(checkout);
-  publishOpenRouterCommit(checkout, files);
+  await publishOpenRouterCommit(checkout, files);
   run("corepack", ["enable"], { cwd: checkout });
   run("pnpm", ["install", "--frozen-lockfile"], { cwd: checkout });
   const envFile = join(checkout, ".env.local");
