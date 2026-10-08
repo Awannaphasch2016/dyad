@@ -79,8 +79,8 @@ function firstReadySecret(env, names) {
 
 export function cloudflareCreds(env, { openRouter = false } = {}) {
   const token = firstReadySecret(env, [
-    "CLOUDFLARE_API_TOKEN_",
     "CLOUDFLARE_API_TOKEN",
+    "CLOUDFLARE_API_TOKEN_",
   ]);
   const accountId = String(
     env.CLOUDFLARE_ACCOUNT_ID ?? env.CLOUDFLARE_ACCOUNT_ID_ ?? "",

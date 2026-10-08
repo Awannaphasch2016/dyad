@@ -390,7 +390,7 @@ test("an existing preview database is reused", async () => {
   assert.deepEqual(posts, ["/accounts/" + accountId + "/d1/database"]);
 });
 
-test("cloudflare credentials use the stored preview token name", () => {
+test("cloudflare credentials use CLOUDFLARE_API_TOKEN", () => {
   const preferred = cloudflareCreds(
     {
       CLOUDFLARE_API_TOKEN: "a".repeat(40),
@@ -400,14 +400,14 @@ test("cloudflare credentials use the stored preview token name", () => {
     },
     { openRouter: true },
   );
-  assert.equal(preferred.tokenName, "CLOUDFLARE_API_TOKEN_");
-  assert.equal(preferred.token, "b".repeat(40));
+  assert.equal(preferred.tokenName, "CLOUDFLARE_API_TOKEN");
+  assert.equal(preferred.token, "a".repeat(40));
   const fallback = cloudflareCreds({
-    CLOUDFLARE_API_TOKEN: "a".repeat(40),
+    CLOUDFLARE_API_TOKEN_: "b".repeat(40),
     CLOUDFLARE_ACCOUNT_ID: "c".repeat(32),
   });
-  assert.equal(fallback.tokenName, "CLOUDFLARE_API_TOKEN");
-  assert.equal(fallback.token, "a".repeat(40));
+  assert.equal(fallback.tokenName, "CLOUDFLARE_API_TOKEN_");
+  assert.equal(fallback.token, "b".repeat(40));
 });
 
 test("preview-vibesdk decisions stay on that label", () => {
@@ -518,6 +518,10 @@ test("the Vibe SDK workflow stays off the Dyad devbox", () => {
   assert.match(workflow, /vibesdk-preview-pr-/);
   assert.match(workflow, /doppler-project: dyad/);
   assert.match(workflow, /doppler-config: preview/);
+  assert.match(workflow, /doppler-project: vibesdk/);
+  assert.match(workflow, /doppler-config: dev/);
+  assert.equal(workflow.includes("doppler-project: bolt"), false);
+  assert.equal(workflow.includes("doppler-project: forma"), false);
   assert.equal(workflow.includes("preview-devbox-wewebplus-ci"), false);
   assert.equal(workflow.includes("Wewebplus-ci"), false);
   assert.equal(workflow.includes("controller.mjs"), false);

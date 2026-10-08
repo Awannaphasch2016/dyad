@@ -88,9 +88,35 @@ jobs:
           doppler-config: preview
           inject-env-vars: true
 
+      - name: Remember the preview account id
+        run: |
+          set -euo pipefail
+          id="${CLOUDFLARE_ACCOUNT_ID:-}"
+          if [[ ! "$id" =~ ^[0-9a-fA-F]{32}$ ]]; then
+            echo "preview_account_id=absent"
+            exit 1
+          fi
+          echo "::add-mask::$id"
+          {
+            echo "PREVIEW_CLOUDFLARE_ACCOUNT_ID<<EOF"
+            echo "$id"
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+          echo "preview_account_id=saved"
+
+      - name: Fetch vibesdk dev secrets
+        uses: dopplerhq/secrets-fetch-action@v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          doppler-project: vibesdk
+          doppler-config: dev
+          inject-env-vars: true
+
       - name: Deploy the Vibe SDK preview
         env:
           PR: ${{ github.event.pull_request.number }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ env.PREVIEW_CLOUDFLARE_ACCOUNT_ID }}
         run: node deploy/preview/vibesdk-preview.mjs up --pr "$PR"
 
       - name: Comment the preview URL
@@ -139,10 +165,36 @@ jobs:
           doppler-config: preview
           inject-env-vars: true
 
+      - name: Remember the preview account id
+        run: |
+          set -euo pipefail
+          id="${CLOUDFLARE_ACCOUNT_ID:-}"
+          if [[ ! "$id" =~ ^[0-9a-fA-F]{32}$ ]]; then
+            echo "preview_account_id=absent"
+            exit 1
+          fi
+          echo "::add-mask::$id"
+          {
+            echo "PREVIEW_CLOUDFLARE_ACCOUNT_ID<<EOF"
+            echo "$id"
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+          echo "preview_account_id=saved"
+
+      - name: Fetch vibesdk dev secrets
+        uses: dopplerhq/secrets-fetch-action@v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          doppler-project: vibesdk
+          doppler-config: dev
+          inject-env-vars: true
+
       - name: Delete the Vibe SDK preview
         id: delete
         env:
           PR: ${{ github.event.inputs.pr || github.event.pull_request.number }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ env.PREVIEW_CLOUDFLARE_ACCOUNT_ID }}
         run: node deploy/preview/vibesdk-preview.mjs down --pr "$PR"
 
       - name: Comment that the preview was removed
