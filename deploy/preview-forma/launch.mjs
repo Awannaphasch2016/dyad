@@ -272,7 +272,10 @@ export async function ensureNeonBranch({
         branch: {
           parent_id: FORMA_PARENT_BRANCH_ID,
           name,
-          init_source: "schema-only",
+          // parent-schema copies structure from the parent and no rows.
+          // schema-only would open another root branch, which this project
+          // already refuses.
+          init_source: "parent-schema",
         },
         endpoints: [{ type: "read_write" }],
       },
