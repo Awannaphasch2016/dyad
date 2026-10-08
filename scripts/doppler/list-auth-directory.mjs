@@ -25,6 +25,7 @@ async function dopplerDownload(token, project, config) {
     { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } },
   );
   const text = await response.text();
+  if (response.status === 404) return null;
   if (!response.ok) {
     throw new Error(`doppler ${project}/${config} ${response.status} ${redact(text).slice(0, 180)}`);
   }
@@ -160,6 +161,10 @@ async function main() {
   const seen = new Map();
   for (const [project, config] of CONFIGS) {
     const secrets = await dopplerDownload(token, project, config);
+    if (!secrets) {
+      console.log(`config=${project}/${config} status=absent`);
+      continue;
+    }
     const kind = keyKind(secrets.CLERK_SECRET_KEY);
     const db = String(secrets.WEWEBPLUS_DATABASE_URL ?? "").trim() ? "present" : "absent";
     console.log(`config=${project}/${config} clerk=${kind} database=${db}`);
