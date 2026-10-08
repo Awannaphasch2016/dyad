@@ -1,0 +1,44 @@
+name: Republish Forma image
+
+# One shot. Empty commit on the Forma image branch so its publish
+# workflow runs again. Do not merge.
+
+on:
+  push:
+    branches:
+      - cursor/republish-forma-image-5014
+    paths:
+      - .github/workflows/republish-forma-image.yml
+      - .github/scripts/republish-forma-image.mjs
+      - .github/scripts/republish-forma-image.test.mjs
+
+permissions:
+  contents: read
+
+jobs:
+  republish:
+    if: github.ref == 'refs/heads/cursor/republish-forma-image-5014'
+    runs-on: ubuntu-latest
+    environment: ai-bots
+    timeout-minutes: 10
+    steps:
+      - name: Check out the republish script
+        uses: actions/checkout@v5
+
+      - name: Create the app token
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.DYAD_GITHUB_APP_ID || '5221649' }}
+          private-key: ${{ secrets.DYAD_GITHUB_APP_PEM_KEY }}
+          owner: Awannaphasch2016
+          repositories: forma
+          permission-contents: write
+
+      - name: Commit the same Forma tree again
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          set +x
+          node .github/scripts/republish-forma-image.mjs
