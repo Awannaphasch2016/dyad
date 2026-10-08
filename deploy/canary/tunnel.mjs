@@ -117,6 +117,7 @@ export async function ensureCanaryTunnel({
     zoneId,
     canaryAppsDnsRecord(tunnel.id),
   );
+  await ensureCanaryCertificate(fetchImpl, apiToken, zoneId);
   return {
     hostname: canaryHostname,
     tunnelId: tunnel.id,
@@ -152,6 +153,46 @@ export function canaryDnsRecord(tunnelId) {
 
 export function canaryAppsDnsRecord(tunnelId) {
   return tunnelCname(canaryAppsHostname, tunnelId);
+}
+
+export function canaryCertificateOrder() {
+  return {
+    type: "advanced",
+    hosts: [apexHostname, canaryAppsHostname],
+    certificate_authority: "lets_encrypt",
+    validation_method: "txt",
+    validity_days: 90,
+  };
+}
+
+async function ensureCanaryCertificate(fetchImpl, token, zoneId) {
+  const packs = await cloudflare(
+    fetchImpl,
+    token,
+    `/zones/${zoneId}/ssl/certificate_packs?status=all`,
+  );
+  const covered = Array.isArray(packs)
+    ? packs.find(
+        (pack) =>
+          Array.isArray(pack.hosts) &&
+          pack.hosts.includes(canaryAppsHostname) &&
+          pack.status !== "deleted" &&
+          pack.status !== "expired",
+      )
+    : undefined;
+  if (covered) return covered;
+  const order = canaryCertificateOrder();
+  if (!order.hosts.includes(canaryAppsHostname)) {
+    throw new Error(
+      "Refusing to order a certificate without the preview names",
+    );
+  }
+  return cloudflare(
+    fetchImpl,
+    token,
+    `/zones/${zoneId}/ssl/certificate_packs/order`,
+    { method: "POST", body: JSON.stringify(order) },
+  );
 }
 
 async function upsertCanaryDns(fetchImpl, token, zoneId, record) {

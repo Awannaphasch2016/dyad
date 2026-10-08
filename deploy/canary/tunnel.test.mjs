@@ -4,6 +4,7 @@ import {
   assertCanaryDnsName,
   assertCanaryHostname,
   canaryAppsDnsRecord,
+  canaryCertificateOrder,
   canaryDnsRecord,
   canaryIngress,
   ensureCanaryTunnel,
@@ -72,6 +73,23 @@ test("the canary tunnel writes only the pre hostname", async () => {
       calls.push(`dns ${body.name}`);
       return json({ success: true, result: { id: "record" } });
     }
+    if (
+      path.includes("/ssl/certificate_packs") &&
+      (init.method || "GET") === "GET"
+    ) {
+      return json({ success: true, result: [] });
+    }
+    if (
+      path.endsWith("/ssl/certificate_packs/order") &&
+      init.method === "POST"
+    ) {
+      const body = JSON.parse(init.body);
+      calls.push(`cert ${body.hosts.join(",")}`);
+      return json({
+        success: true,
+        result: { id: "pack", status: "pending_validation" },
+      });
+    }
     throw new Error(`unexpected ${url}`);
   };
   const result = await ensureCanaryTunnel({
@@ -91,6 +109,10 @@ test("the canary tunnel writes only the pre hostname", async () => {
       "dns pre.anakwannaphaschaiyong.com",
       "dns *.apps.pre.anakwannaphaschaiyong.com",
     ],
+  );
+  assert.deepEqual(
+    calls.filter((call) => call.startsWith("cert ")),
+    ["cert anakwannaphaschaiyong.com,*.apps.pre.anakwannaphaschaiyong.com"],
   );
   assert.equal(
     calls.some((call) => call.includes("anakwannaphaschaiyong.com/dns")),
@@ -118,4 +140,10 @@ test("the apex cannot be the canary record", () => {
     () => assertCanaryDnsName("www.anakwannaphaschaiyong.com"),
     /apex/,
   );
+  const order = canaryCertificateOrder();
+  assert.equal(
+    order.hosts.includes("*.apps.pre.anakwannaphaschaiyong.com"),
+    true,
+  );
+  assert.equal(order.hosts.includes("www.anakwannaphaschaiyong.com"), false);
 });
