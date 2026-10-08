@@ -194,18 +194,26 @@ test("the recorded host is the Fargate load balancer and the task stays stopped"
   );
 });
 
-test("the workflow checks the host and does not start a task", () => {
+test("the workflow starts one task on the recorded host", () => {
   const workflow = readFileSync(
     new URL("../../.github/workflows/preview-forma.yml", import.meta.url),
     "utf8",
   );
+  const launch = readFileSync(new URL("./launch.mjs", import.meta.url), "utf8");
   assert.match(workflow, /name: preview-forma/);
   assert.match(workflow, /pull_request:/);
   assert.match(workflow, /permission-packages: read/);
+  assert.match(workflow, /launch\.mjs up/);
+  assert.match(workflow, /launch\.mjs down/);
+  assert.match(workflow, /set \+x/);
+  assert.match(workflow, /DOPPLER_ADMIN_TOKEN/);
+  assert.match(launch, /project=forma&config=dev/);
+  assert.match(launch, /project=aws&config=dev/);
   assert.equal(workflow.includes("permission-packages: write"), false);
   assert.equal(workflow.includes("wewebplus-ci"), false);
   assert.equal(workflow.includes("docker compose"), false);
-  assert.equal(workflow.includes("DOPPLER"), false);
+  assert.equal(workflow.includes("dyad/prd"), false);
+  assert.equal(launch.includes("dyad/prd"), false);
   const skipped = spawnSync(
     process.execPath,
     ["deploy/preview-forma/run.mjs", "check"],

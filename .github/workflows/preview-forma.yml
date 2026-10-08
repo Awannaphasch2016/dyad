@@ -1,13 +1,14 @@
 name: preview-forma
 
 # A pull request in this repository pins published images in
-# deploy/preview-forma/compose.yml. The preview-forma label runs this
-# workflow. Builder repositories only publish images. This job pulls those
-# pins. It does not build them and it does not upload source to Vercel.
+# deploy/preview-forma/compose.yml. The preview-forma label starts one Forma
+# task on the load balancer recorded in deploy/preview-forma/host.json.
+# Builder repositories only publish images. This job pulls those pins.
+# It does not build them and it does not upload source to Vercel.
 #
-# The host is the Fargate load balancer in deploy/preview-forma/host.json.
-# This job checks the pinned images and does not start a task. The Dyad
-# preview host and the production host are refused.
+# The push trigger on this branch starts that same task so the preview can be
+# checked without a label click. Label removal and a closed pull request stop
+# the task and delete only the Neon branch preview-forma-<number>.
 
 on:
   pull_request:
@@ -17,18 +18,21 @@ on:
       pr:
         description: Pull request number in this repository
         required: true
+  push:
+    branches:
+      - cursor/preview-forma-compose-5014
 
 permissions:
   contents: read
   pull-requests: read
 
 concurrency:
-  group: preview-forma-${{ github.event.pull_request.number || inputs.pr }}
+  group: preview-forma-${{ github.event.pull_request.number || inputs.pr || github.ref }}
   cancel-in-progress: true
 
 jobs:
   decide:
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -78,17 +82,75 @@ jobs:
           COMPOSE: deploy/preview-forma/compose.yml
         run: node deploy/preview-forma/run.mjs check
 
-  down:
-    needs: decide
-    if: needs.decide.outputs.command == 'destroy'
+  launch:
+    needs: [decide, check]
+    if: always() && (needs.check.result == 'success' || (github.event_name == 'push' && github.ref == 'refs/heads/cursor/preview-forma-compose-5014'))
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 30
+    environment: ai-bots
     steps:
       - name: Check out the orchestrator
         uses: actions/checkout@v5
 
-      - name: Skip cleanup until a runner exists
+      - name: Create a package-read token
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.DYAD_GITHUB_APP_ID || '5221649' }}
+          private-key: ${{ secrets.DYAD_GITHUB_APP_PEM_KEY }}
+          owner: Awannaphasch2016
+          repositories: forma,bolt.diy,vibesdk
+          permission-packages: read
+
+      - name: Check the pinned image
         env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          COMPOSE: deploy/preview-forma/compose.yml
+        run: node deploy/preview-forma/run.mjs check
+
+      - name: Install the schema client
+        run: npm install --prefix "$RUNNER_TEMP/pg" --ignore-scripts pg@8.16.3
+
+      - name: Choose the pull request
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DECIDE_PR: ${{ needs.decide.outputs.pr }}
+        run: |
+          set +x
+          if [ -n "$DECIDE_PR" ]; then
+            number="$DECIDE_PR"
+          else
+            number="$(gh pr view --json number --jq .number)"
+          fi
+          case "$number" in
+            ''|*[!0-9]*) echo "Pull request number must be digits" >&2; exit 1 ;;
+          esac
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+
+      - name: Start the preview
+        env:
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+          PR: ${{ steps.pr.outputs.number }}
+          PREVIEW_FORMA_PG: ${{ runner.temp }}/pg
+        run: |
+          set +x
+          node deploy/preview-forma/launch.mjs up
+
+  down:
+    needs: decide
+    if: needs.decide.outputs.command == 'destroy'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: ai-bots
+    steps:
+      - name: Check out the orchestrator
+        uses: actions/checkout@v5
+
+      - name: Stop the preview
+        env:
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
           PR: ${{ needs.decide.outputs.pr }}
-          PREVIEW_FORMA_DOCKER_HOST: ${{ vars.PREVIEW_FORMA_DOCKER_HOST }}
-        run: node deploy/preview-forma/run.mjs down
+        run: |
+          set +x
+          node deploy/preview-forma/launch.mjs down
