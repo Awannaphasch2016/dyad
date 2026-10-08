@@ -189,6 +189,50 @@ export function withDeploymentHostOriginTest(source) {
   return source.replace(marker, `${addition}${marker}`);
 }
 
+export function clerkPreviewSecrets(secrets) {
+  const publishable = String(secrets?.CLERK_PUBLISHABLE_KEY ?? "").trim();
+  const secret = String(secrets?.CLERK_SECRET_KEY ?? "").trim();
+  const databaseUrl = String(secrets?.WEWEBPLUS_DATABASE_URL ?? "").trim();
+  if (!publishable.startsWith("pk_test_") || publishable.includes("pk_live_")) {
+    throw new Error(
+      "Refusing a Clerk publishable key that is not a development key",
+    );
+  }
+  if (!secret.startsWith("sk_test_") || secret.includes("sk_live_")) {
+    throw new Error(
+      "Refusing a Clerk secret key that is not a development key",
+    );
+  }
+  if (!databaseUrl.startsWith("postgres")) {
+    throw new Error("Membership database URL is missing");
+  }
+  for (const marker of REFUSED) {
+    if (databaseUrl.includes(marker)) {
+      throw new Error("Refusing a production membership database");
+    }
+  }
+  return {
+    CLERK_PUBLISHABLE_KEY: publishable,
+    CLERK_SECRET_KEY: secret,
+    WEWEBPLUS_DATABASE_URL: databaseUrl,
+  };
+}
+
+export function originsWithPreview(existing, origin) {
+  if (!/^https:\/\/[a-z0-9-]+\.vercel\.app$/.test(String(origin ?? ""))) {
+    throw new Error(
+      "Refusing a Clerk origin that is not a Vercel preview host",
+    );
+  }
+  const origins = [];
+  for (const item of existing ?? []) {
+    if (typeof item !== "string" || item.length === 0) continue;
+    if (!origins.includes(item)) origins.push(item);
+  }
+  if (origins.includes(origin)) return { origins, added: false };
+  return { origins: [...origins, origin], added: true };
+}
+
 export function previewEnv({ pooledUrl, directUrl, secrets }) {
   assertSafeUrl(pooledUrl, true);
   assertSafeUrl(directUrl, false);
@@ -197,6 +241,7 @@ export function previewEnv({ pooledUrl, directUrl, secrets }) {
     AUTH_SECRET: secrets.AUTH_SECRET,
     CRON_SECRET: secrets.CRON_SECRET,
     OPENROUTER_API_KEY: secrets.OPENROUTER_API_KEY,
+    ...clerkPreviewSecrets(secrets),
   };
   for (const name of OPENAI_NAMES) {
     if (shared[name]) throw new Error(`Refusing to upload ${name}`);
@@ -796,7 +841,59 @@ async function probeStatus(url) {
   throw new Error(failure);
 }
 
+async function allowPreviewOrigin(secret, origin) {
+  if (!String(secret ?? "").startsWith("sk_test_")) {
+    throw new Error("Refusing to update Clerk without a development secret");
+  }
+  const headers = {
+    Authorization: `Bearer ${secret}`,
+    "Content-Type": "application/json",
+  };
+  const current = await fetch("https://api.clerk.com/v1/instance", { headers });
+  if (!current.ok) {
+    throw new Error(`Clerk read failed: ${current.status}`);
+  }
+  const body = await current.json();
+  const next = originsWithPreview(body.allowed_origins, origin);
+  if (!next.added) {
+    console.log("forma_clerk_origin=already");
+    return;
+  }
+  const updated = await fetch("https://api.clerk.com/v1/instance", {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify({ allowed_origins: next.origins }),
+  });
+  if (updated.status !== 200 && updated.status !== 204) {
+    throw new Error(`Clerk update failed: ${updated.status}`);
+  }
+  console.log("forma_clerk_origin=added");
+}
+
 async function probeSignIn(url) {
+  const clerk = await fetch(`${url}/api/clerk`);
+  if (clerk.status === 200) {
+    const body = await clerk.json().catch(() => ({}));
+    const key = String(body.publishableKey ?? "");
+    if (!key.startsWith("pk_test_") || key.includes("pk_live_")) {
+      throw new Error("Clerk publishable key is not a development key");
+    }
+    console.log("forma_clerk=test");
+    const auth = await fetch(`${url}/api/auth`);
+    const session = await auth.json().catch(() => ({}));
+    console.log(
+      `forma_auth_probe=${auth.status} signedIn=${session.signedIn === true}`,
+    );
+    if (auth.status !== 200 || session.signedIn !== false) {
+      throw new Error("Signed-out studio did not refuse the session");
+    }
+    const projects = await fetch(`${url}/api/projects`);
+    console.log(`forma_projects_probe=${projects.status}`);
+    if (projects.status !== 401) {
+      throw new Error("Signed-out studio did not refuse the project list");
+    }
+    return;
+  }
   const response = await fetch(`${url}/api/auth`, {
     method: "POST",
     headers: {
@@ -1380,6 +1477,7 @@ export async function runFormaPreview() {
   env.runtime.VERCEL_PROJECT_ID = vercel.project.id;
   env.runtime.VERCEL_ORG_ID = vercel.project.accountId;
   const url = await deploy(prepared.checkout, env, vercel.project);
+  await allowPreviewOrigin(secrets.CLERK_SECRET_KEY, new URL(url).origin);
   await probeSignIn(url);
   await probeStatus(url);
   await noteFormaImage(prepared.sha);

@@ -16,6 +16,8 @@ import {
   formaPreviewComment,
   includeDeploymentFile,
   resolveFormaPreviewTarget,
+  clerkPreviewSecrets,
+  originsWithPreview,
   previewEnv,
   previewVariablePayload,
   requestedFormaSha,
@@ -110,6 +112,10 @@ test("a Forma preview branch stays inside the Forma Neon project", () => {
       AUTH_SECRET: "auth",
       CRON_SECRET: "cron",
       OPENAI_API_KEY: "sk-example",
+      CLERK_PUBLISHABLE_KEY: "pk_test_example",
+      CLERK_SECRET_KEY: "sk_test_example",
+      WEWEBPLUS_DATABASE_URL:
+        "postgresql://role:secret@ep-example.neon.tech/neondb",
     },
   });
   assert.equal(env.runtime.DATABASE_URL.includes("-pooler"), true);
@@ -117,6 +123,40 @@ test("a Forma preview branch stays inside the Forma Neon project", () => {
   assert.equal(env.runtime.APP_URL, undefined);
   assert.equal(env.runtime.OPENAI_API_KEY, undefined);
   assert.equal(env.runtime.OPENROUTER_API_KEY, "sk-or-example");
+  assert.equal(env.runtime.CLERK_PUBLISHABLE_KEY, "pk_test_example");
+  assert.equal(env.build.CLERK_SECRET_KEY, "sk_test_example");
+  assert.throws(
+    () =>
+      clerkPreviewSecrets({
+        CLERK_PUBLISHABLE_KEY: "pk_live_example",
+        CLERK_SECRET_KEY: "sk_test_example",
+        WEWEBPLUS_DATABASE_URL: "postgresql://role:secret@ep-example/neondb",
+      }),
+    /development key/,
+  );
+  assert.throws(
+    () =>
+      clerkPreviewSecrets({
+        CLERK_PUBLISHABLE_KEY: "pk_test_example",
+        CLERK_SECRET_KEY: "sk_test_example",
+        WEWEBPLUS_DATABASE_URL:
+          "postgresql://role:secret@ep-young-wave-b3cwe0rz.neon.tech/neondb",
+      }),
+    /production membership database/,
+  );
+  const origin = originsWithPreview(
+    ["https://bolt.example"],
+    "https://forma-preview.vercel.app",
+  );
+  assert.equal(origin.added, true);
+  assert.deepEqual(originsWithPreview(origin.origins, origin.origins[1]), {
+    origins: origin.origins,
+    added: false,
+  });
+  assert.throws(
+    () => originsWithPreview([], "https://forma.example.com"),
+    /Vercel preview host/,
+  );
   const updated = withDeploymentHostOrigin(
     'export function sameOrigin(request: Request) {\n  const expected = process.env.APP_URL || new URL(request.url).origin;\n  if (request.headers.get("origin") !== expected)\n    throw new HttpError(403, "Request origin is not allowed.");\n}\n',
   );
