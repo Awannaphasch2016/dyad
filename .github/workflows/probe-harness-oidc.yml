@@ -1,0 +1,28 @@
+# Ask a Harness execution for its own OIDC token and print allowlisted claims.
+# The public custom-token API returns RESOURCE_NOT_FOUND. This probe does not
+# create a Doppler identity and does not put the API key in the pipeline.
+name: Probe Harness OIDC claims
+
+on:
+  push:
+    branches:
+      - cursor/harness-doppler-5527
+    paths:
+      - .github/workflows/probe-harness-oidc.yml
+      - scripts/harness/doppler_oidc.py
+      - deploy/harness/oidc-probe.yaml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Run the OIDC claim probe
+        env:
+          HARNESS_API_KEY: ${{ secrets.HARNESS_API_KEY }}
+        run: python3 scripts/harness/doppler_oidc.py register-probe
