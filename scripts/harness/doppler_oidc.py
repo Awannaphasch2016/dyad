@@ -493,11 +493,10 @@ def print_hcli_help(binary: str) -> None:
     import subprocess
 
     commands = (
-        [binary, "--help"],
-        [binary, "oidc", "--help"],
-        [binary, "identity", "--help"],
-        [binary, "token", "--help"],
-        [binary, "workload", "--help"],
+        [binary, "identity", "token", "--help"],
+        [binary, "identity", "token"],
+        [binary, "identity", "token", "--name", "doppler"],
+        [binary, "identity", "token", "doppler"],
     )
     for args in commands:
         try:
@@ -506,7 +505,16 @@ def print_hcli_help(binary: str) -> None:
             print("hcli_cmd", " ".join(args[1:]), "error", type(error).__name__)
             continue
         print("hcli_cmd", " ".join(args[1:]), "exit", result.returncode)
-        text = scrub((result.stdout or "") + "\n" + (result.stderr or ""))
+        combined = (result.stdout or "") + "\n" + (result.stderr or "")
+        minted = find_jwt(result.stdout.strip()) or find_jwt(combined)
+        if minted:
+            print("hcli_token=present")
+            try:
+                print("\n".join(claim_lines(decode_payload(minted))))
+            except (ValueError, json.JSONDecodeError):
+                print("hcli_claims=unreadable")
+            continue
+        text = scrub(combined)
         shown = 0
         for line in text.splitlines():
             stripped = line.strip()
@@ -564,6 +572,8 @@ def interesting_log_line(text: str) -> bool:
         "hcli=",
         "hcli_cmd",
         "hcli_help",
+        "hcli_token=",
+        "hcli_claims=",
         "mint_http",
         "mint_error",
         "mint_token=",
