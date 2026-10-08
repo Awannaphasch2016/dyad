@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
+  publishFormaPackage,
   publishWorkflow,
   redact,
   republishFormaImage,
@@ -85,7 +86,22 @@ test("republish leaves an owner-login workflow unchanged", async () => {
   assert.equal(calls.includes("PUT"), false);
 });
 
-test("the dyad workflow asks Forma for contents and workflows write", () => {
+test("package visibility request is public and hides the token", async () => {
+  let body = "";
+  const fetchImpl = async (url, options = {}) => {
+    body = options.body;
+    return { status: 404 };
+  };
+  const result = await publishFormaPackage({
+    token: "ghs_secret",
+    fetchImpl,
+  });
+  assert.equal(result.status, 404);
+  assert.equal(JSON.parse(body).visibility, "public");
+  assert.equal(JSON.stringify(result).includes("ghs_secret"), false);
+});
+
+test("the dyad workflow can update the Forma workflow and package", () => {
   const workflow = readFileSync(
     new URL("../workflows/republish-forma-image.yml", import.meta.url),
     "utf8",
@@ -93,7 +109,7 @@ test("the dyad workflow asks Forma for contents and workflows write", () => {
   assert.equal(workflow.includes("repositories: forma"), true);
   assert.equal(workflow.includes("permission-contents: write"), true);
   assert.equal(workflow.includes("permission-workflows: write"), true);
+  assert.equal(workflow.includes("permission-packages: write"), true);
   assert.equal(workflow.includes("permission-actions:"), false);
-  assert.equal(workflow.includes("permission-packages:"), false);
   assert.equal(workflow.includes("DOPPLER"), false);
 });

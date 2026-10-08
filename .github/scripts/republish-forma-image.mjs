@@ -178,6 +178,18 @@ export async function republishFormaImage({ token, fetchImpl = fetch }) {
   return { updated: true, sha };
 }
 
+export async function publishFormaPackage({ token, fetchImpl = fetch }) {
+  const response = await fetchImpl(
+    `https://api.github.com/users/${owner}/packages/container/forma`,
+    {
+      method: "PATCH",
+      headers: headers(token, { "Content-Type": "application/json" }),
+      body: JSON.stringify({ visibility: "public" }),
+    },
+  );
+  return { status: response.status };
+}
+
 const entry = process.argv[1];
 if (entry && import.meta.url === pathToFileURL(entry).href) {
   const token = process.env.GH_TOKEN ?? "";
@@ -187,9 +199,11 @@ if (entry && import.meta.url === pathToFileURL(entry).href) {
     process.exit(1);
   }
   republishFormaImage({ token })
-    .then(({ updated, sha }) => {
+    .then(async ({ updated, sha }) => {
       log(`forma_publish_workflow=${updated ? "updated" : "unchanged"}`);
       if (sha) log(`forma_publish_commit=${sha}`);
+      const patched = await publishFormaPackage({ token });
+      log(`forma_package_patch=${patched.status}`);
     })
     .catch((error) => {
       log(redact(error?.message || String(error)));
