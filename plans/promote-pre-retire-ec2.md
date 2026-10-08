@@ -5,7 +5,7 @@
 
 ## Summary
 
-Production becomes the two containers that are already running on `wewebplus-ecs`. The apex name starts opening that same task. `gascity-server` is stopped only after the apex, the preview, and GasCity still work while that instance is out of the path. The instance is terminated only after it has stayed stopped through one more successful session.
+Production becomes the two containers that are already running on `wewebplus-ecs`. The apex name starts opening that same task. The promotion is complete only when two Wewebplus users have shown that a human-in-the-loop question belongs to one of them. `gascity-server` is stopped only after that proof, the apex, and the preview still work while that instance is out of the path. The instance is terminated only after it has stayed stopped through one more successful session.
 
 ## What is already true
 
@@ -30,13 +30,14 @@ After promotion there is still one Dyad process. Host networking cannot run a se
 - Let the apex hostname serve the existing Dyad task.
 - Keep the preview iframe working when the parent page is the apex.
 - Add the apex origin to Clerk.
+- Prove multi-tenant human-in-the-loop with the two existing Wewebplus accounts before the apex is treated as production and before EC2 is stopped.
 - Prove GasCity, networking, sqlite, Neon, and deploys do not use `gascity-server`.
 - Stop that instance, then terminate it only after the stopped host is shown to be unused.
 - Disable the workflow that can roll `gascity-server` again.
 
 ### Out of scope
 
-- Multi-tenant HITL. Project Manager and Developer assignment stays a later change.
+- A third user, a second organization, or assignment rules beyond one question for one of these two accounts.
 - A second ECS cluster, Fargate, EKS, or EFS.
 - Importing EC2 sqlite or `/opt/gascity/projects` onto the canary volumes.
 - Rewriting `WEWEBPLUS_DATABASE_URL` in Doppler `dyad/canary` or `dyad/prd`.
@@ -48,10 +49,11 @@ After promotion there is still one Dyad process. Host networking cannot run a se
 1. The operator opens `https://pre.anakwannaphaschaiyong.com` and confirms the current app still previews. This is the rollback target until the apex works.
 2. A deploy of the apex-host change goes out through the existing canary workflow. Pre keeps working. The apex still has no DNS record.
 3. Clerk accepts the apex origin. The tunnel gains an apex ingress rule. DNS for the apex is created in one step.
-4. The operator opens `https://anakwannaphaschaiyong.com`, signs in, and runs the same app through Implementation. The preview shows the page and accepts a click.
-5. `gascity-server` is still running during that check. Its nginx page is not the Dyad page.
-6. The operator stops `gascity-server`. Pre and the apex are checked again. GasCity's call is still `http://dyad:32100` on the ECS task.
-7. The instance stays stopped. Terminate is a separate later action, after a snapshot of its root volume.
+4. On pre, in two browser sessions, the Project Manager and the Developer each see only their own question. The other account cannot read or answer it, including by calling the API directly.
+5. The operator opens `https://anakwannaphaschaiyong.com` and repeats that two-session check on the apex. The preview still accepts a click.
+6. `gascity-server` is still running during that check. Its nginx page is not the Dyad page.
+7. The operator stops `gascity-server`. Pre, the apex, and one cross-account refusal are checked again. GasCity's call is still `http://dyad:32100` on the ECS task.
+8. The instance stays stopped. Terminate is a separate later action, after a snapshot of its root volume.
 
 No new screen is added. Visitors of the apex see the same Dyad window pre already shows.
 
@@ -83,6 +85,20 @@ The bridge currently rejects every `*.anakwannaphaschaiyong.com` host except `pr
 - `.github/workflows/gascity-rollout.yml` — remove the push trigger and `workflow_dispatch` after the stop succeeds, so a later button press cannot start `weaver-plus` again.
 
 The iframe address for a preview port is already `https://p<port>.anakwannaphaschaiyong.com/`. That host stays. Only the allowed parent page changes.
+
+### Two-user human-in-the-loop gate
+
+One account walking Discovery → Implementation → Delivery does not prove this. The product proof is two people in one organization.
+
+- Organization: Wewebplus, `org_3JuOz4PCITqmueMeKYhcFUXAEIH`.
+- Project Manager: `user_3Jo9AXjywP5QJtRbqTWJTn5sdxN`.
+- Developer: `user_3K58joknYZ90Fts4yQC6yq4Enay`.
+
+Both already belong to that organization. A question is assigned to one of those roles. The matching account can read the body and submit the answer. The other account, in a separate browser session, does not receive the body and cannot submit the answer. A direct API request authenticated as the other account gets the same refusal.
+
+`presentQuestion` and `decideAnswer` in `src/control_plane/hitl_rules.ts` already hide the body and return `forbidden` when the caller's role does not match. The unit tests use stand-in user ids. The promotion adds a test that uses these two user ids on the list and answer handlers, so a role mix-up between the real accounts fails in CI. The live check uses the two accounts the operator already has, one session each, on pre and again on the apex.
+
+EC2 is not stopped until both the automated test and the two live sessions have passed.
 
 ### Data
 
@@ -116,24 +132,32 @@ The image still ships through `.github/workflows/canary-verify.yml` on `cursor/e
 - [ ] Create the apex DNS record to that tunnel. Do not create a record for `www`.
 - [ ] Confirm `https://anakwannaphaschaiyong.com` returns the Dyad page and `https://pre.anakwannaphaschaiyong.com` still does.
 
-### 4. Prove the promoted path
+### 4. Prove two-user human-in-the-loop on pre
+
+- [ ] Add a handler test with the Project Manager and Developer user ids above. A Project Manager question returns its body only to the Project Manager. The Developer session receives no body. The Developer's answer call is refused. The reverse holds for a Developer question.
+- [ ] On `https://pre.anakwannaphaschaiyong.com`, sign in as each account in its own browser session.
+- [ ] Create one question assigned to the Project Manager and one assigned to the Developer.
+- [ ] Each account answers only its own question. The other account cannot read that body or submit that answer, including with a direct API request from that session.
+- [ ] Leave `gascity-server` running. This gate is about the two accounts, not the old host.
+
+### 5. Prove the promoted path
 
 - [ ] Sign in on the apex and open the app that already previews on pre.
 - [ ] The Implementation preview renders that page and accepts a click.
-- [ ] One Discovery → Implementation → Delivery pass completes on the apex.
+- [ ] Repeat the two-session question check on `https://anakwannaphaschaiyong.com` with the same two accounts.
 - [ ] The supervisor is the `gascity` container with `WEAVER_BASE_URL=http://dyad:32100`. Nothing in the task listens on 8787.
 - [ ] From outside the VPC, connections to ports 32100, 6080, and 8373 on `wewebplus-ecs` fail.
 - [ ] `gascity-server` is still running, and its port 80 page is still the nginx welcome page.
 
-### 5. Show that EC2 is unused, then stop it
+### 6. Show that EC2 is unused, then stop it
 
 - [ ] Record that the apex DNS target is the canary tunnel, the ECS service runs on `i-023d741ed3a1b3b25`, and no task definition or tunnel ingress names `i-0817f3778a5c9e1e2`.
 - [ ] Snapshot the EC2 root volume `vol-020a3f0726876b135`.
 - [ ] Stop `i-0817f3778a5c9e1e2`. Do not terminate it.
-- [ ] Repeat the apex page check, the pre page check, and one preview click. All three succeed while the instance is stopped.
+- [ ] Repeat the apex page check, the preview click, and one cross-account refusal with the two Wewebplus sessions. All three succeed while the instance is stopped.
 - [ ] Disable `.github/workflows/gascity-rollout.yml`.
 
-### 6. Terminate later
+### 7. Terminate later
 
 - [ ] After one more successful apex session on a later day, terminate `i-0817f3778a5c9e1e2`.
 - [ ] Keep the volume snapshot until that session has been accepted.
@@ -156,13 +180,16 @@ The image still ships through `.github/workflows/canary-verify.yml` on `cursor/e
 | Stopping EC2 deletes the only copy of an old app | Snapshot `vol-020a3f0726876b135` first. This plan does not copy that disk onto the working volumes. |
 | Vercel still writes Neon | Remove `WEWEBPLUS_DATABASE_URL` from project `dyad` before the DNS write. |
 | Two tasks fight for host ports and sqlite | `desiredCount` stays 1. |
+| Promotion is accepted with one signed-in user | EC2 stays up until both Wewebplus accounts have passed the question check on the apex. |
 
 ## Verification list
 
 1. Pre still opens the Dyad page after the apex-host code is deployed.
-2. The apex opens that same page, and the Implementation preview can be clicked.
-3. Discovery → Implementation → Delivery completes once on the apex.
-4. GasCity in the running task calls `http://dyad:32100`.
-5. Ports 32100, 6080, and 8373 on the ECS host do not accept from the public internet.
-6. With `gascity-server` stopped, steps 2 and 3 still succeed.
-7. The EC2 instance is stopped, not terminated, until a later session repeats step 2.
+2. On pre, the Project Manager and the Developer each answer only their own question. The other account cannot read or answer it, including through a direct API request.
+3. The automated test covers those two user ids on the list and answer handlers.
+4. The apex opens the same page, and the Implementation preview can be clicked.
+5. The same two-account question check passes on the apex.
+6. GasCity in the running task calls `http://dyad:32100`.
+7. Ports 32100, 6080, and 8373 on the ECS host do not accept from the public internet.
+8. With `gascity-server` stopped, steps 4 and 5 still succeed.
+9. The EC2 instance is stopped, not terminated, until a later session repeats step 4.
