@@ -440,19 +440,49 @@ async function vercelApi(token, method, path, body) {
   return payload;
 }
 
+async function projectList(token, teamId) {
+  const query = teamId ? `?teamId=${encodeURIComponent(teamId)}` : "";
+  const listed = await vercelApi(token, "GET", `/v9/projects${query}`);
+  return listed.projects || [];
+}
+
 async function ensureVercelProject(token) {
-  const listed = await vercelApi(token, "GET", "/v9/projects?search=forma");
-  const existing = (listed.projects || []).find(
-    (item) => item.name === "forma",
-  );
-  const project =
-    existing ||
-    (await vercelApi(token, "POST", "/v10/projects", {
-      name: "forma",
-      framework: "nextjs",
-    }));
-  console.log(`vercel_project=${project.id ? "ready" : "missing"}`);
-  return project;
+  const teams = await vercelApi(token, "GET", "/v2/teams");
+  const scopes = [
+    { id: "", slug: "personal" },
+    ...(teams.teams || []).map((team) => ({ id: team.id, slug: team.slug })),
+  ];
+  for (const scope of scopes) {
+    let projects = [];
+    try {
+      projects = await projectList(token, scope.id);
+    } catch {
+      console.log(`vercel_scope=${scope.slug} list=failed`);
+      continue;
+    }
+    const names = projects.map((item) => item.name).join(",") || "none";
+    console.log(`vercel_scope=${scope.slug} projects=${names}`);
+    const existing = projects.find((item) => item.name === "forma");
+    if (existing) return existing;
+  }
+  for (const scope of scopes) {
+    if (!scope.id) continue;
+    try {
+      const created = await vercelApi(
+        token,
+        "POST",
+        `/v10/projects?teamId=${encodeURIComponent(scope.id)}`,
+        { name: "forma", framework: "nextjs" },
+      );
+      console.log(`vercel_project=created scope=${scope.slug}`);
+      return created;
+    } catch (error) {
+      console.log(
+        `vercel_project=refused scope=${scope.slug} ${redact(error.message)}`,
+      );
+    }
+  }
+  throw new Error("Vercel token cannot create the forma project");
 }
 
 async function deploy(checkout, env) {
