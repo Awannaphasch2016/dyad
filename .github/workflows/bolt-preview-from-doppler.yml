@@ -14,6 +14,7 @@ on:
       - scripts/doppler/export-bolt-preview-env.mjs
       - scripts/doppler/bolt-project.mjs
       - scripts/doppler/patch-bolt-polyfills.mjs
+      - scripts/doppler/bolt-webcontainer-coep.mjs
 
 permissions:
   contents: read
@@ -67,7 +68,7 @@ jobs:
           cache-dependency-path: bolt/pnpm-lock.yaml
 
       - name: Patch the walkthrough build
-        run: node scripts/doppler/patch-bolt-polyfills.mjs bolt/vite.config.ts bolt/app/components/chat/Chat.client.tsx bolt/app/components/chat/ModelSelector.tsx bolt/app/lib/.server/llm/stream-text.ts
+        run: node scripts/doppler/patch-bolt-polyfills.mjs bolt/vite.config.ts bolt/app/components/chat/Chat.client.tsx bolt/app/components/chat/ModelSelector.tsx bolt/app/lib/.server/llm/stream-text.ts bolt
 
       - name: Install bolt
         working-directory: bolt

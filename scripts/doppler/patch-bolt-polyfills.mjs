@@ -4,6 +4,7 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import { applyWebContainerCoepPatches } from "./bolt-webcontainer-coep.mjs";
 
 const transformStart = "transform(code: string, id: string) {";
 const skip = `transform(code: string, id: string) {
@@ -161,7 +162,14 @@ if (entry && import.meta.url === pathToFileURL(entry).href) {
   const chatClient = process.argv[3];
   const modelSelector = process.argv[4];
   const streamText = process.argv[5];
-  if (!viteConfig || !chatClient || !modelSelector || !streamText) {
+  const boltRoot = process.argv[6];
+  if (
+    !viteConfig ||
+    !chatClient ||
+    !modelSelector ||
+    !streamText ||
+    !boltRoot
+  ) {
     console.log("patch_args=absent");
     process.exit(1);
   }
@@ -181,5 +189,8 @@ if (entry && import.meta.url === pathToFileURL(entry).href) {
       writeFileSync(file, patched);
       console.log(`${label}=applied`);
     }
+  }
+  for (const line of applyWebContainerCoepPatches(boltRoot)) {
+    console.log(line);
   }
 }

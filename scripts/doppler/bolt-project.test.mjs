@@ -10,6 +10,17 @@ import {
   patchWalkthroughModel,
 } from "./patch-bolt-polyfills.mjs";
 import {
+  WEBCONTAINER_COEP,
+  coepTypeScriptSource,
+  patchActionFailure,
+  patchEmbedderPolicy,
+  patchFileActionError,
+  patchPreviewBootError,
+  patchWebContainerBoot,
+  webContainerBootFailureMessage,
+  withWebContainerBootTimeout,
+} from "./bolt-webcontainer-coep.mjs";
+import {
   chooseOpenRouterSource,
   cloudflareReferencePlan,
   configReport,
@@ -138,7 +149,8 @@ test("the preview job reads Doppler and does not store Cloudflare secrets on bol
     /wrangler secret put OPEN_ROUTER_API_KEY --name bolt-walkthrough-55d6/,
   );
   assert.match(deploy, /ModelSelector\.tsx/);
-  assert.match(deploy, /stream-text\.ts/);
+  assert.match(deploy, /stream-text\.ts bolt/);
+  assert.match(deploy, /bolt-webcontainer-coep\.mjs/);
   assert.equal(deploy.includes("secrets.CLOUDFLARE_API_TOKEN"), false);
   assert.equal(deploy.includes("secrets.CLOUDFLARE_ACCOUNT_ID"), false);
   assert.equal(deploy.includes('echo "$OPEN_ROUTER_API_KEY"'), false);
@@ -171,6 +183,80 @@ test("implementation opens the preview and discovery closes it", () => {
   assert.match(patched, /showWorkbench\.set\(false\)/);
   assert.equal(patched.includes("if (!walkthroughPreviewVisible"), false);
   assert.equal(patchImplementationPreview(patched), patched);
+});
+
+test("a boot that never starts rejects with the expected header", async () => {
+  const pending = new Promise(() => {});
+  await assert.rejects(withWebContainerBootTimeout(pending, 20), (error) => {
+    assert.match(error.message, /Cross-Origin-Embedder-Policy: credentialless/);
+    assert.equal(error.message, webContainerBootFailureMessage());
+    return true;
+  });
+});
+
+test("a boot rejection keeps the runtime message and the expected header", async () => {
+  const rejected = Promise.reject(new Error("SharedArrayBuffer is missing"));
+  await assert.rejects(withWebContainerBootTimeout(rejected, 1000), (error) => {
+    assert.match(error.message, /credentialless/);
+    assert.match(error.message, /SharedArrayBuffer is missing/);
+    return true;
+  });
+});
+
+test("the page header and the boot call share credentialless", () => {
+  const header = patchEmbedderPolicy(
+    [
+      "import { ServerRouter, type EntryContext, type RouterContextProvider } from 'react-router';",
+      "  responseHeaders.set('Cross-Origin-Embedder-Policy', 'require-corp');",
+    ].join("\n"),
+  );
+  const boot = patchWebContainerBoot(
+    [
+      "import { cleanStackTrace } from '~/utils/stacktrace';",
+      "        return WebContainer.boot({",
+      "          coep: 'credentialless',",
+      "          workdirName: WORK_DIR_NAME,",
+      "          forwardPreviewErrors: true, // Enable error forwarding from iframes",
+      "        });",
+    ].join("\n"),
+  );
+  assert.equal(WEBCONTAINER_COEP, "credentialless");
+  assert.match(header, /WEBCONTAINER_COEP/);
+  assert.equal(header.includes("'require-corp'"), false);
+  assert.match(boot, /coep: WEBCONTAINER_COEP/);
+  assert.match(boot, /withWebContainerBootTimeout/);
+  assert.match(coepTypeScriptSource(), /WEBCONTAINER_COEP = 'credentialless'/);
+  assert.equal(patchEmbedderPolicy(header), header);
+  assert.equal(patchWebContainerBoot(boot), boot);
+});
+
+test("a failed file write shows the boot message", () => {
+  const source = [
+    "      this.#updateAction(actionId, { status: 'failed', error: 'Action failed' });",
+    "      logger.error(`[${action.type}]:Action failed\\n\\n`, error);",
+    "                    >",
+    "                      {action.filePath}",
+    "                    </code>",
+    "                  </div>",
+  ].join("\n");
+  const patched = patchFileActionError(patchActionFailure(source));
+  assert.match(patched, /error instanceof Error \? error.message/);
+  assert.match(patched, /status === 'failed' && action.error/);
+  assert.equal(patched.includes("error: 'Action failed'"), false);
+});
+
+test("the empty preview shows the boot message after rejection", () => {
+  const source = [
+    "import { workbenchStore } from '~/lib/stores/workbench';",
+    "  const [activePreviewIndex, setActivePreviewIndex] = useState(0);",
+    '            <div className="flex w-full h-full justify-center items-center bg-bolt-elements-background-depth-1 text-bolt-elements-textPrimary">',
+    "              No preview available",
+    "            </div>",
+  ].join("\n");
+  const patched = patchPreviewBootError(source);
+  assert.match(patched, /webcontainer.catch/);
+  assert.match(patched, /bootError \?\? 'No preview available'/);
+  assert.equal(patchPreviewBootError(patched), patched);
 });
 
 test("the walkthrough chat starts on OpenRouter Sonnet 5.5", () => {
