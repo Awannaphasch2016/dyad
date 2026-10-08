@@ -16,6 +16,7 @@ on:
       - scripts/doppler/patch-bolt-polyfills.mjs
       - scripts/doppler/bolt-webcontainer-coep.mjs
       - scripts/doppler/bolt-hitl.mjs
+      - scripts/doppler/bolt-sign-in.mjs
 
 permissions:
   contents: read
@@ -48,6 +49,12 @@ jobs:
           set -euo pipefail
           set +x
           node scripts/doppler/export-bolt-preview-env.mjs
+
+      - name: Confirm development Clerk and seed Wewebplus roles
+        run: |
+          set -euo pipefail
+          set +x
+          node scripts/doppler/bolt-sign-in.mjs
 
       - name: Check out the bolt walkthrough
         uses: actions/checkout@v4

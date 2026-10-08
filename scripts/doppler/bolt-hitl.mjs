@@ -222,7 +222,11 @@ export async function handleHitl(input) {
   }
   const knownRole = (roleId) =>
     roleId === "project-manager" || roleId === "developer" ? roleId : null;
+  const activeOrgs = input.clerkOrgIds
+    ? new Set((await input.clerkOrgIds(userId)).map(String))
+    : null;
   const callerFor = async (orgId) => {
+    if (activeOrgs && !activeOrgs.has(String(orgId))) return null;
     const rows = await query(SQL.membership, [userId, orgId]);
     if (!rows[0]) return null;
     return {
@@ -306,6 +310,64 @@ export async function handleHitl(input) {
   return { status: 404, body: { error: "Not found" } };
 }
 
+export function clerkPublishable(env) {
+  const key = String(env?.CLERK_PUBLISHABLE_KEY ?? "").trim();
+  if (!key.startsWith("pk_test_")) {
+    return { status: 404, body: { error: "Sign in is not available." } };
+  }
+  return { status: 200, body: { publishableKey: key } };
+}
+
+export async function handleSession(input) {
+  const env = input.env ?? {};
+  const machine = String(env.GAS_CITY_HOST_BRIDGE_TOKEN ?? "").trim();
+  const token = sessionToken(input.authorization, input.cookie, machine);
+  if (!token || !input.verifySession) {
+    return { status: 200, body: { signedIn: false } };
+  }
+  let userId = "";
+  try {
+    userId = (await input.verifySession(token)).userId;
+  } catch {
+    return { status: 200, body: { signedIn: false } };
+  }
+  const databaseUrl = String(env.WEWEBPLUS_DATABASE_URL ?? "").trim();
+  if (!databaseUrl || typeof input.query !== "function") {
+    return {
+      status: 200,
+      body: { signedIn: true, organization: null, role: null },
+    };
+  }
+  const activeOrgs = input.clerkOrgIds
+    ? new Set((await input.clerkOrgIds(userId)).map(String))
+    : null;
+  const memberships = await input.query(SQL.memberships, [userId]);
+  const usable = memberships.filter((row) => {
+    if (row.role_id !== "project-manager" && row.role_id !== "developer") {
+      return false;
+    }
+    if (activeOrgs && !activeOrgs.has(String(row.org_id))) return false;
+    return true;
+  });
+  if (usable.length !== 1) {
+    return {
+      status: 200,
+      body: { signedIn: true, organization: null, role: null },
+    };
+  }
+  const row = usable[0];
+  const orgId = String(row.org_id);
+  const names = input.orgNames ? await input.orgNames([orgId]) : {};
+  return {
+    status: 200,
+    body: {
+      signedIn: true,
+      organization: names[orgId] ?? null,
+      role: row.role_id === "project-manager" ? "Project Manager" : "Developer",
+    },
+  };
+}
+
 export function neonSqlEndpoint(databaseUrl) {
   const parsed = new URL(databaseUrl);
   if (parsed.protocol !== "postgresql:" && parsed.protocol !== "postgres:") {
@@ -324,6 +386,27 @@ const barAnchorFixed = `      <HitlGateList phase={phase} />
       <p className="mt-2 text-xs text-bolt-elements-textSecondary">
         {factoryPhaseHint(phase)}`;
 
+const headerImport = "import { classNames } from '~/utils/classNames';";
+const headerAnchor = `      )}
+    </header>`;
+const headerAnchorFixed = `      )}
+      {!chat.started ? <span className="flex-1" /> : null}
+      <BoltSignIn />
+    </header>`;
+
+export function patchBoltHeader(source) {
+  if (source.includes("<BoltSignIn />")) return source;
+  if (!source.includes(headerImport) || !source.includes(headerAnchor)) {
+    throw new Error("bolt header was not found");
+  }
+  return source
+    .replace(
+      headerImport,
+      `${headerImport}\nimport { BoltSignIn } from './BoltSignIn';`,
+    )
+    .replace(headerAnchor, headerAnchorFixed);
+}
+
 export function patchFactoryPhaseBar(source) {
   if (source.includes("<HitlGateList phase={phase} />")) return source;
   if (!source.includes(barImport) || !source.includes(barAnchor)) {
@@ -336,6 +419,7 @@ export function patchFactoryPhaseBar(source) {
 
 function hitlGateListSource() {
   return `import { useEffect, useState } from 'react';
+import { hitlFetch } from '~/lib/hitl/client';
 
 interface HitlView {
   id: string;
@@ -352,7 +436,7 @@ export function HitlGateList({ phase }: { phase: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    void fetch(\`/api/hitl?phase=\${phase}\`)
+    void hitlFetch(\`/api/hitl?phase=\${phase}\`)
       .then(async (response) => {
         if (!response.ok) return [];
         const payload = (await response.json()) as { questions?: HitlView[] };
@@ -411,12 +495,12 @@ function HitlGateRow({
             const answer = body.trim();
             if (!answer || pending) return;
             setPending(true);
-            void fetch(\`/api/hitl/\${question.id}/answers\`, {
+            void hitlFetch(\`/api/hitl/\${question.id}/answers\`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ body: answer }),
             })
-              .then(() => fetch(\`/api/hitl?phase=\${phase}\`))
+              .then(() => hitlFetch(\`/api/hitl?phase=\${phase}\`))
               .then(async (response) => {
                 if (!response.ok) return;
                 const payload = (await response.json()) as { questions?: HitlView[] };
@@ -514,9 +598,26 @@ export function applyBoltHitlPatches(boltRoot) {
   const hitlDir = join(boltRoot, "app/lib/hitl");
   mkdirSync(hitlDir, { recursive: true });
   writeFileSync(join(hitlDir, "server.ts"), hitlServerSource());
+  writeFileSync(join(hitlDir, "client.ts"), hitlClientSource());
+  const headerDir = join(boltRoot, "app/components/header");
+  mkdirSync(headerDir, { recursive: true });
+  writeFileSync(join(headerDir, "BoltSignIn.tsx"), boltSignInSource());
+  writeFileSync(join(routesDir, "api.clerk.ts"), clerkRouteSource());
+  writeFileSync(join(routesDir, "api.session.ts"), sessionRouteSource());
+  const headerPath = join(headerDir, "Header.tsx");
+  let signIn = "absent";
+  try {
+    const header = readFileSync(headerPath, "utf8");
+    const patchedHeader = patchBoltHeader(header);
+    if (patchedHeader !== header) writeFileSync(headerPath, patchedHeader);
+    signIn = patchedHeader === header ? "already" : "applied";
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
   return [
     `hitl_bar_patch=${patched === source ? "already" : "applied"}`,
     "hitl_module=written",
+    `sign_in_patch=${signIn}`,
   ];
 }
 
@@ -537,6 +638,16 @@ type Env = {
   CLERK_SECRET_KEY?: string;
   CLERK_PUBLISHABLE_KEY?: string;
 };
+
+function gateEnv(value: unknown): Env {
+  const record = (value ?? {}) as Record<string, string | undefined>;
+  return {
+    WEWEBPLUS_DATABASE_URL: record.WEWEBPLUS_DATABASE_URL,
+    GAS_CITY_HOST_BRIDGE_TOKEN: record.GAS_CITY_HOST_BRIDGE_TOKEN,
+    CLERK_SECRET_KEY: record.CLERK_SECRET_KEY,
+    CLERK_PUBLISHABLE_KEY: record.CLERK_PUBLISHABLE_KEY,
+  };
+}
 
 type QueryRow = Record<string, unknown>;
 
@@ -582,8 +693,8 @@ function present(question: QueryRow, roleId: string | null, orgId: string) {
 async function clerkUser(env: Env, token: string) {
   const secret = env.CLERK_SECRET_KEY?.trim();
   const publishable = env.CLERK_PUBLISHABLE_KEY?.trim();
-  if (!secret || !publishable) throw new Error('Sign in to continue.');
-  const encoded = publishable.replace(/^pk_(test|live)_/, '');
+  if (!secret || !publishable?.startsWith('pk_test_')) throw new Error('Sign in to continue.');
+  const encoded = publishable.slice('pk_test_'.length);
   const frontendApi = atob(encoded).replace(/\\$$/, '');
   const jwksResponse = await fetch(\`https://\${frontendApi}/.well-known/jwks.json\`);
   if (!jwksResponse.ok) throw new Error('Sign in to continue.');
@@ -616,6 +727,91 @@ async function clerkUser(env: Env, token: string) {
   return { userId: payload.sub, displayName };
 }
 
+async function clerkOrganizationIds(env: Env, userId: string): Promise<Set<string>> {
+  const secret = env.CLERK_SECRET_KEY?.trim();
+  if (!secret) throw new Error('Sign in to continue.');
+  const response = await fetch(
+    \`https://api.clerk.com/v1/users/\${encodeURIComponent(userId)}/organization_memberships?limit=100\`,
+    { headers: { Authorization: \`Bearer \${secret}\` } },
+  );
+  if (!response.ok) throw new Error('Sign in to continue.');
+  const payload = (await response.json()) as {
+    data?: { organization?: { id?: string } }[];
+  };
+  const ids = new Set<string>();
+  for (const row of payload.data ?? []) {
+    if (row.organization?.id) ids.add(row.organization.id);
+  }
+  return ids;
+}
+
+async function organizationName(env: Env, orgId: string): Promise<string | null> {
+  const secret = env.CLERK_SECRET_KEY?.trim();
+  if (!secret) return null;
+  const response = await fetch(\`https://api.clerk.com/v1/organizations/\${encodeURIComponent(orgId)}\`, {
+    headers: { Authorization: \`Bearer \${secret}\` },
+  });
+  if (!response.ok) return null;
+  const org = (await response.json()) as { name?: string };
+  return org.name ?? null;
+}
+
+function sessionToken(authorization: string | null, cookie: string | null, machine: string) {
+  const bearer = authorization?.startsWith('Bearer ') ? authorization.slice('Bearer '.length).trim() : '';
+  if (bearer && bearer !== machine) return bearer;
+  const cookieMatch = /(?:^|;\\s*)__session=([^;]+)/.exec(cookie ?? '');
+  return cookieMatch ? decodeURIComponent(cookieMatch[1]) : '';
+}
+
+export function clerkPublishableResponse(value: unknown) {
+  const env = gateEnv(value);
+  const key = env.CLERK_PUBLISHABLE_KEY?.trim() ?? '';
+  if (!key.startsWith('pk_test_')) {
+    return { status: 404, body: { error: 'Sign in is not available.' } };
+  }
+  return { status: 200, body: { publishableKey: key } };
+}
+
+export async function handleSessionRequest(input: {
+  authorization: string | null;
+  cookie: string | null;
+  env: unknown;
+}) {
+  const env = gateEnv(input.env);
+  const databaseUrl = env.WEWEBPLUS_DATABASE_URL?.trim() ?? '';
+  const machine = env.GAS_CITY_HOST_BRIDGE_TOKEN?.trim() ?? '';
+  const token = sessionToken(input.authorization, input.cookie, machine);
+  if (!token) return { status: 200, body: { signedIn: false } };
+  try {
+    const user = await clerkUser(env, token);
+    if (!databaseUrl) {
+      return { status: 200, body: { signedIn: true, organization: null, role: null } };
+    }
+    const active = await clerkOrganizationIds(env, user.userId);
+    const memberships = await neonQuery(
+      databaseUrl,
+      'select org_id, role_id from wewebplus.memberships where user_id = $1',
+      [user.userId],
+    );
+    const usable = memberships.filter((row) => {
+      const role = row.role_id;
+      if (role !== 'project-manager' && role !== 'developer') return false;
+      return active.has(String(row.org_id));
+    });
+    if (usable.length !== 1) {
+      return { status: 200, body: { signedIn: true, organization: null, role: null } };
+    }
+    const orgId = String(usable[0].org_id);
+    const role = usable[0].role_id === 'project-manager' ? 'Project Manager' : 'Developer';
+    return {
+      status: 200,
+      body: { signedIn: true, organization: await organizationName(env, orgId), role },
+    };
+  } catch {
+    return { status: 200, body: { signedIn: false } };
+  }
+}
+
 export async function handleHitlRequest(input: {
   method: string;
   phase: string;
@@ -624,12 +820,13 @@ export async function handleHitlRequest(input: {
   authorization: string | null;
   cookie: string | null;
   json?: unknown;
-  env: Env;
+  env: unknown;
 }) {
-  const databaseUrl = input.env.WEWEBPLUS_DATABASE_URL?.trim() ?? '';
+  const env = gateEnv(input.env);
+  const databaseUrl = env.WEWEBPLUS_DATABASE_URL?.trim() ?? '';
   if (!databaseUrl) return { status: 503, body: { error: 'Question store is unavailable.' } };
   const query = (sql: string, params: unknown[]) => neonQuery(databaseUrl, sql, params);
-  const machine = input.env.GAS_CITY_HOST_BRIDGE_TOKEN?.trim() ?? '';
+  const machine = env.GAS_CITY_HOST_BRIDGE_TOKEN?.trim() ?? '';
   try {
     if (input.method === 'POST' && !input.questionId) {
       if (!machine || input.authorization !== \`Bearer \${machine}\`) {
@@ -666,11 +863,10 @@ export async function handleHitlRequest(input: {
         body: { id: question.id, status: question.status, stepId: question.step_id, targetRoleId: question.target_role_id },
       };
     }
-    const bearer = input.authorization?.startsWith('Bearer ') ? input.authorization.slice('Bearer '.length).trim() : '';
-    const cookieMatch = /(?:^|;\\s*)__session=([^;]+)/.exec(input.cookie ?? '');
-    const token = bearer && bearer !== machine ? bearer : cookieMatch ? decodeURIComponent(cookieMatch[1]) : '';
+    const token = sessionToken(input.authorization, input.cookie, machine);
     if (!token) return { status: 401, body: { error: 'Sign in to continue.' } };
-    const user = await clerkUser(input.env, token);
+    const user = await clerkUser(env, token);
+    const activeOrgs = await clerkOrganizationIds(env, user.userId);
     if (input.method === 'GET') {
       if (!PHASES.includes(input.phase)) return { status: 404, body: { error: 'Not found' } };
       const memberships = await query(
@@ -679,6 +875,7 @@ export async function handleHitlRequest(input: {
       );
       const questions = [];
       for (const membership of memberships) {
+        if (!activeOrgs.has(String(membership.org_id))) continue;
         const roleId = membership.role_id === 'project-manager' || membership.role_id === 'developer' ? String(membership.role_id) : null;
         const rows = await query(
           'select id, org_id, step_id, target_role_id, status, body, answered_by_name from wewebplus.questions where org_id = $1 and phase = $2 order by created_at asc',
@@ -697,7 +894,7 @@ export async function handleHitlRequest(input: {
         [input.questionId],
       );
       const question = rows[0];
-      if (!question) return { status: 404, body: { error: 'Not found' } };
+      if (!question || !activeOrgs.has(String(question.org_id))) return { status: 404, body: { error: 'Not found' } };
       const memberships = await query(
         'select role_id from wewebplus.memberships where user_id = $1 and org_id = $2',
         [user.userId, question.org_id],
@@ -731,6 +928,180 @@ export async function handleHitlRequest(input: {
   } catch {
     return { status: 503, body: { error: 'Question store is unavailable.' } };
   }
+}
+`;
+}
+
+function hitlClientSource() {
+  return `type ClerkSession = {
+  getToken: () => Promise<string | null>;
+};
+
+type ClerkGlobal = {
+  load: () => Promise<void>;
+  redirectToSignIn: (options?: { redirectUrl?: string }) => Promise<unknown> | unknown;
+  signOut: (options?: { redirectUrl?: string }) => Promise<unknown> | unknown;
+  session?: ClerkSession | null;
+  addListener: (callback: () => void) => void;
+};
+
+declare global {
+  interface Window {
+    Clerk?: ClerkGlobal;
+  }
+}
+
+export async function clerkBearer(): Promise<string | null> {
+  const token = await window.Clerk?.session?.getToken();
+  return token ?? null;
+}
+
+export async function hitlFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers);
+  const token = await clerkBearer();
+  if (token) headers.set('Authorization', \`Bearer \${token}\`);
+  return fetch(url, { ...init, headers });
+}
+`;
+}
+
+function boltSignInSource() {
+  return `import { useEffect, useState } from 'react';
+
+type SessionView = {
+  signedIn: boolean;
+  organization?: string | null;
+  role?: string | null;
+};
+
+export function BoltSignIn() {
+  const [view, setView] = useState<SessionView>({ signedIn: false });
+  const [ready, setReady] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      const token = await window.Clerk?.session?.getToken();
+      if (!token) {
+        if (!cancelled) setView({ signedIn: false });
+        return;
+      }
+      const response = await fetch('/api/session', {
+        headers: { Authorization: \`Bearer \${token}\` },
+      });
+      if (!response.ok) {
+        if (!cancelled) setView({ signedIn: true, organization: null, role: null });
+        return;
+      }
+      const next = (await response.json()) as SessionView;
+      if (!cancelled) setView(next);
+    };
+    void (async () => {
+      try {
+        const configResponse = await fetch('/api/clerk');
+        if (!configResponse.ok) {
+          if (!cancelled) setFailed(true);
+          return;
+        }
+        const config = (await configResponse.json()) as { publishableKey?: string };
+        const publishableKey = config.publishableKey ?? '';
+        if (!publishableKey.startsWith('pk_test_')) {
+          if (!cancelled) setFailed(true);
+          return;
+        }
+        await loadClerk(publishableKey);
+        if (!window.Clerk) throw new Error('Clerk did not load');
+        await window.Clerk.load();
+        window.Clerk.addListener(() => {
+          void refresh();
+        });
+        await refresh();
+        if (!cancelled) setReady(true);
+      } catch {
+        if (!cancelled) setFailed(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (view.signedIn) {
+    const label = [view.organization, view.role].filter(Boolean).join(' · ');
+    return (
+      <div className="ml-auto flex items-center gap-2 text-sm text-bolt-elements-textPrimary" data-testid="bolt-account">
+        {label ? <span>{label}</span> : null}
+        <button
+          type="button"
+          className="rounded-md border border-bolt-elements-borderColor px-2.5 py-1 text-sm"
+          onClick={() => {
+            void Promise.resolve(window.Clerk?.signOut({ redirectUrl: window.location.href })).then(() => {
+              window.location.reload();
+            });
+          }}
+        >
+          Sign out
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className="ml-auto rounded-md bg-accent-500 px-2.5 py-1 text-sm text-white disabled:opacity-60"
+      data-testid="bolt-sign-in"
+      disabled={!ready || failed}
+      onClick={() => {
+        void window.Clerk?.redirectToSignIn({ redirectUrl: window.location.href });
+      }}
+    >
+      {failed ? 'Sign in did not load' : 'Sign in'}
+    </button>
+  );
+}
+
+function loadClerk(publishableKey: string): Promise<void> {
+  if (window.Clerk) return Promise.resolve();
+  const encoded = publishableKey.slice('pk_test_'.length);
+  const frontendApi = atob(encoded).replace(/\\$$/, '');
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.async = true;
+    script.crossOrigin = 'anonymous';
+    script.dataset.clerkPublishableKey = publishableKey;
+    script.src = \`https://\${frontendApi}/npm/@clerk/clerk-js@5/dist/clerk.browser.js\`;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('Clerk did not load'));
+    document.head.appendChild(script);
+  });
+}
+`;
+}
+
+function clerkRouteSource() {
+  return `import type { LoaderFunctionArgs } from 'react-router';
+import { clerkPublishableResponse } from '~/lib/hitl/server';
+
+export async function loader({ context }: LoaderFunctionArgs) {
+  const result = clerkPublishableResponse(context.cloudflare?.env ?? process.env);
+  return Response.json(result.body, { status: result.status });
+}
+`;
+}
+
+function sessionRouteSource() {
+  return `import type { LoaderFunctionArgs } from 'react-router';
+import { handleSessionRequest } from '~/lib/hitl/server';
+
+export async function loader({ request, context }: LoaderFunctionArgs) {
+  const result = await handleSessionRequest({
+    authorization: request.headers.get('authorization'),
+    cookie: request.headers.get('cookie'),
+    env: context.cloudflare?.env ?? process.env,
+  });
+  return Response.json(result.body, { status: result.status });
 }
 `;
 }
