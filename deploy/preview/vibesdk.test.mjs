@@ -447,9 +447,8 @@ test("the shared sign-in keeps one Wewebplus role and hides the email form", () 
   assert.match(modal, /&& false &&/);
   assert.match(modal, /fetch\('\/api\/auth\/clerk'/);
   assert.doesNotMatch(modal, /fetch\('\/api\/clerk'/);
-  assert.match(modal, /sharedClerkPortal/);
-  assert.match(modal, /\.accounts\.dev/);
-  assert.match(modal, /\/sign-in/);
+  assert.match(modal, /redirectToSignIn/);
+  assert.doesNotMatch(modal, /location\.assign/);
   assert.match(modal, /replace\(\/\\\$\$\/, ''\)/);
   assert.match(modal, /void startSharedSignIn\(\)/);
 });

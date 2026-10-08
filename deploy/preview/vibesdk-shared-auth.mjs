@@ -271,18 +271,6 @@ function sharedClerkHelpers() {
 	return publishableKey;
 }
 
-function sharedClerkPortal(publishableKey: string, back: string): string {
-	const frontendApi = atob(publishableKey.slice('pk_test_'.length)).replace(/\\$$/, '');
-	const portalHost = frontendApi.endsWith('.clerk.accounts.dev')
-		? frontendApi.replace('.clerk.accounts.dev', '.accounts.dev')
-		: frontendApi;
-	const url = new URL(\`https://\${portalHost}/sign-in\`);
-	url.searchParams.set('redirect_url', back);
-	url.searchParams.set('sign_in_force_redirect_url', back);
-	url.searchParams.set('sign_in_fallback_redirect_url', back);
-	return url.toString();
-}
-
 async function sharedClerkToken(): Promise<string | null> {
 	try {
 		const publishableKey = await sharedClerkPublishableKey();
@@ -323,7 +311,22 @@ async function startSharedSignIn(): Promise<void> {
 		window.location.reload();
 		return;
 	}
-	window.location.assign(sharedClerkPortal(publishableKey, window.location.href));
+	const clerk = (window as Window & {
+		Clerk?: {
+			redirectToSignIn?: (options: {
+				redirectUrl: string;
+				signInForceRedirectUrl: string;
+				signInFallbackRedirectUrl: string;
+			}) => Promise<unknown>;
+		};
+	}).Clerk;
+	const back = window.location.href;
+	if (!clerk?.redirectToSignIn) return;
+	await clerk.redirectToSignIn({
+		redirectUrl: back,
+		signInForceRedirectUrl: back,
+		signInFallbackRedirectUrl: back,
+	});
 }`;
 }
 
