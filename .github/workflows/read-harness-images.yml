@@ -1,5 +1,5 @@
 # Reads the latest dyad_harness_images executions. A push of this file does not rebuild images.
-# Latest check waits for image execution 68SGCs9LTcOjVj2lPwKw3A.
+# Latest check waits for image execution C_buWv6gQT2Z01OhbGkUQA.
 name: Read Harness image executions
 
 on:
@@ -153,7 +153,7 @@ jobs:
               f"?accountIdentifier={account}&orgIdentifier=default&projectIdentifier=dyad"
               "&pipelineIdentifier=dyad_harness_images&page=0&size=3"
           )
-          target = "68SGCs9LTcOjVj2lPwKw3A"
+          target = "C_buWv6gQT2Z01OhbGkUQA"
           terminal = {"Success", "Failed", "Errored", "Expired", "Aborted"}
           rows = []
           code = ""
