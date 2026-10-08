@@ -104,14 +104,15 @@ Steps:
 
 The workflow does not run `gc`, does not call cook or sling, and does not SSH to the production host.
 
-## One account step before the first green run
+## What you do
 
-This repository has no ECS cluster and no GitHub-to-AWS role. The first run needs a role, created once, that this workflow can assume:
+Nothing, until the workflow file exists and the first run stops because AWS refused the login.
 
-- Trust: GitHub OIDC for `repo:Awannaphasch2016/dyad:ref:refs/heads/cursor/formula-config-ui-55d6`.
-- Permissions: ECR for the formula-preview repository, ECS for this cluster and service, the load balancer and target group, the task security group, and the Secrets Manager entries this workflow writes. CloudWatch Logs for the task. PassRole on the task execution role.
+GitHub Actions cannot create the ECS service until this AWS account has a role that trusts this repository. That role is created once, in AWS, not in Doppler and not as a Cloudflare token. You do not paste a key into the repo. When the run needs it, the message will name the role and the single trust line:
 
-The workflow does not fall back to a long-lived key in the YAML, and it does not ask for `CLOUDFLARE_API_TOKEN` or `CLOUDFLARE_ZONE_ID`. If the role is missing, the job stops at the assume step.
+`repo:Awannaphasch2016/dyad:ref:refs/heads/cursor/formula-config-ui-55d6`
+
+The role only needs to update this formula service: its ECR repository, the load balancer, the task security group, and the Secrets Manager entries the workflow writes.
 
 ## Out of scope
 
