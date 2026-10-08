@@ -95,11 +95,9 @@ The pages do not call cook, sling, bead create, or bead close.
 
 ## Where the pages are deployed
 
-The pages ship inside the existing `dyad` service (`Dockerfile.gascity`, `compose.preview.yml`). `preview-image.yml` builds or reuses that image and `preview-up.sh` starts it. `preview-wake.yml` only starts containers that are already there.
+The pages ship inside the existing `dyad` image (`Dockerfile.gascity`). That image does not contain `gc`. Nothing in the preview path cooks or slings. `gascity-rollout.yml` is the production EC2 host and is not how these pages are deployed.
 
-The preview URL is `https://pr-<n>.anakwannaphaschaiyong.com`. The preview image does not contain `gc`. The preview workflow does not cook or sling. `gascity-rollout.yml` is not how these pages are deployed.
-
-`preview-image.yml` publishes this branch the same way it publishes `cursor/preview-bridge-proof-9e7a`: the `dyad` image only. That workflow does not cook or sling.
+The address to open is the ECS load balancer printed by `preview-formula.yml`. That workflow is specified in `plans/preview-formula-ecs.md`. `preview-image.yml` can still publish the same image to the DevBox. The DevBox is not the formula preview to keep open.
 
 ## What "working" means
 
