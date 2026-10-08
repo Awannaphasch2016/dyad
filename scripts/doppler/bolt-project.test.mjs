@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   patchBrowserPolyfills,
   patchChatReady,
+  patchImplementationPreview,
   patchModelSelector,
   patchStreamModel,
   patchWalkthroughModel,
@@ -153,6 +154,23 @@ test("the chat restore effect no longer reads an unbound ready", () => {
   assert.match(patched, /\}, \[initialMessages\]\);/);
   assert.equal(patched.includes("[ready, initialMessages]"), false);
   assert.equal(patchChatReady(patched), patched);
+});
+
+test("implementation opens the preview and discovery closes it", () => {
+  const source = [
+    "  walkthroughPreviewVisible,",
+    "} from '~/lib/factoryPhase';",
+    "      if (!walkthroughPreviewVisible(factoryRun.phase)) {",
+    "        workbenchStore.showWorkbench.set(false);",
+    "      }",
+  ].join("\n");
+  const patched = patchImplementationPreview(source);
+  assert.match(patched, /previewOpenForPhase/);
+  assert.match(patched, /showWorkbench\.set\(true\)/);
+  assert.match(patched, /currentView\.set\('preview'\)/);
+  assert.match(patched, /showWorkbench\.set\(false\)/);
+  assert.equal(patched.includes("if (!walkthroughPreviewVisible"), false);
+  assert.equal(patchImplementationPreview(patched), patched);
 });
 
 test("the walkthrough chat starts on OpenRouter Sonnet 5.5", () => {

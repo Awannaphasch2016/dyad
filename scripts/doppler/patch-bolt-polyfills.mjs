@@ -31,6 +31,34 @@ const readyCallFixed =
 const readyDeps = "}, [ready, initialMessages]);";
 const readyDepsFixed = "}, [initialMessages]);";
 
+const previewImport = `  walkthroughPreviewVisible,
+} from '~/lib/factoryPhase';`;
+const previewImportFixed = `  previewOpenForPhase,
+  walkthroughPreviewVisible,
+} from '~/lib/factoryPhase';`;
+
+const previewEffect = `      if (!walkthroughPreviewVisible(factoryRun.phase)) {
+        workbenchStore.showWorkbench.set(false);
+      }`;
+const previewEffectFixed = `      if (walkthroughPreviewVisible(factoryRun.phase)) {
+        workbenchStore.showWorkbench.set(true);
+        if (previewOpenForPhase(factoryRun.phase)) {
+          workbenchStore.currentView.set('preview');
+        }
+      } else {
+        workbenchStore.showWorkbench.set(false);
+      }`;
+
+export function patchImplementationPreview(source) {
+  if (source.includes(previewEffectFixed)) return source;
+  if (!source.includes(previewImport) || !source.includes(previewEffect)) {
+    throw new Error("implementation preview effect was not found");
+  }
+  return source
+    .replace(previewImport, previewImportFixed)
+    .replace(previewEffect, previewEffectFixed);
+}
+
 export function patchChatReady(source) {
   if (source.includes(readyCallFixed) && !source.includes(readyCall)) {
     return source;
@@ -140,6 +168,7 @@ if (entry && import.meta.url === pathToFileURL(entry).href) {
   for (const [file, patch, label] of [
     [viteConfig, patchBrowserPolyfills, "polyfill_patch"],
     [chatClient, patchChatReady, "ready_patch"],
+    [chatClient, patchImplementationPreview, "preview_patch"],
     [chatClient, patchWalkthroughModel, "model_state_patch"],
     [modelSelector, patchModelSelector, "model_selector_patch"],
     [streamText, patchStreamModel, "stream_model_patch"],
