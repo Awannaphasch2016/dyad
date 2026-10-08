@@ -219,4 +219,5 @@ test("the OpenRouter overlay is what the preview deploys", async () => {
   );
   assert.equal(studio.includes(".env.local"), false);
   assert.match(studio, /provider === "openrouter"/);
+  assert.match(studio, /OpenRouter × Vercel Sandbox/);
 });
