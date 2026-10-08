@@ -1,41 +1,41 @@
-name: PR Preview - Forma
+name: preview-forma
 
-# Deploy one Forma commit to the Vercel preview. The image publish runs in
-# the Forma repository. This job does not copy the editor and does not run
-# the container.
+# Deploy one Forma commit to the Vercel preview. The workflow lives in this
+# repository. A label on Awannaphasch2016/forma does not start it.
 
 on:
   workflow_dispatch:
     inputs:
       sha:
-        description: Full Forma commit SHA. Empty uses the walkthrough branch tip.
+        description: Full Forma commit SHA. Must match the pull request head when both are set.
+        required: false
+      pr:
+        description: Forma pull request number
         required: false
       environment:
         description: Environment name. Only preview is implemented.
         required: false
         default: preview
-      pr:
-        description: Forma pull request number
-        required: false
+  repository_dispatch:
+    types: [preview-forma]
   push:
     branches:
-      - cursor/forma-pr-preview-5014
+      - cursor/preview-forma-workflow-5014
     paths:
-      - .github/workflows/pr-preview-forma.yml
+      - .github/workflows/preview-forma.yml
       - scripts/gascity/forma-preview.mjs
       - scripts/gascity/forma-preview.test.mjs
-      - deploy/forma/**
 
 permissions:
   contents: read
 
 concurrency:
-  group: pr-preview-forma
+  group: preview-forma
   cancel-in-progress: false
 
 jobs:
   deploy:
-    if: github.ref == 'refs/heads/cursor/forma-pr-preview-5014'
+    if: github.ref == 'refs/heads/cursor/preview-forma-workflow-5014' || github.event_name == 'workflow_dispatch' || github.event_name == 'repository_dispatch'
     runs-on: ubuntu-latest
     environment: ai-bots
     timeout-minutes: 45
@@ -71,9 +71,9 @@ jobs:
         env:
           DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
           GH_TOKEN: ${{ steps.app.outputs.token }}
-          FORMA_PR: ${{ inputs.pr }}
-          FORMA_SHA: ${{ inputs.sha }}
-          FORMA_ENVIRONMENT: ${{ inputs.environment || 'preview' }}
+          FORMA_PR: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.pr || inputs.pr }}
+          FORMA_SHA: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.sha || inputs.sha }}
+          FORMA_ENVIRONMENT: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.environment || inputs.environment || 'preview' }}
         run: |
           set -euo pipefail
           set +x

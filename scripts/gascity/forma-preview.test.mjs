@@ -15,6 +15,7 @@ import {
   formaImageTag,
   formaPreviewComment,
   includeDeploymentFile,
+  resolveFormaPreviewTarget,
   previewEnv,
   previewVariablePayload,
   requestedFormaSha,
@@ -219,6 +220,31 @@ test("the preview deploys a Forma commit instead of copying the editor", async (
   const run = source.slice(runStart);
   assert.equal(run.includes("publishSignInFix"), false);
   assert.equal(run.includes("applyOpenRouterOverlay"), false);
+  assert.equal(run.includes("ensureWalkthroughPullRequest"), false);
+  const head = "b".repeat(40);
+  assert.deepEqual(resolveFormaPreviewTarget({ pr: "2", headSha: head }), {
+    pr: "2",
+    sha: head,
+    comment: true,
+  });
+  assert.deepEqual(resolveFormaPreviewTarget({ sha: head }), {
+    pr: "",
+    sha: head,
+    comment: false,
+  });
+  assert.throws(
+    () => resolveFormaPreviewTarget({}),
+    /commit SHA or pull request number is required/,
+  );
+  assert.throws(
+    () =>
+      resolveFormaPreviewTarget({
+        pr: "2",
+        sha: "c".repeat(40),
+        headSha: head,
+      }),
+    /does not match the pull request head/,
+  );
   assert.equal(assertPreviewEnvironment(""), "preview");
   assert.equal(assertPreviewEnvironment("preview"), "preview");
   assert.throws(
@@ -267,13 +293,15 @@ test("the preview deploys a Forma commit instead of copying the editor", async (
   assert.equal(workflow.includes("OPENROUTER"), false);
   assert.equal(workflow.includes("DATABASE_URL"), false);
   const preview = await readFile(
-    new URL("../../.github/workflows/pr-preview-forma.yml", import.meta.url),
+    new URL("../../.github/workflows/preview-forma.yml", import.meta.url),
     "utf8",
   );
-  assert.match(preview, /name: PR Preview - Forma/);
-  assert.match(preview, /cursor\/forma-pr-preview-5014/);
+  assert.match(preview, /name: preview-forma/);
+  assert.match(preview, /repository_dispatch/);
+  assert.match(preview, /types: \[preview-forma\]/);
   assert.match(preview, /FORMA_SHA/);
   assert.match(preview, /FORMA_ENVIRONMENT/);
+  assert.equal(preview.includes("pull_request:"), false);
   assert.equal(preview.includes("packages: write"), false);
   assert.match(preview, /permission-workflows: write/);
 });

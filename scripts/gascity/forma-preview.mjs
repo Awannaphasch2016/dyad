@@ -245,6 +245,32 @@ export function formaPreviewComment(url, sha) {
   return `Forma preview: ${url}\n\nCommit: ${sha}\n\nImage: ${formaImageTag(sha)}`;
 }
 
+export function resolveFormaPreviewTarget({
+  sha = "",
+  pr = "",
+  headSha = "",
+} = {}) {
+  const pull = String(pr ?? "").trim();
+  const requested = requestedFormaSha(sha);
+  if (pull && !/^[0-9]+$/.test(pull)) {
+    throw new Error("Pull request number must be digits");
+  }
+  if (!pull && !requested) {
+    throw new Error("A Forma commit SHA or pull request number is required");
+  }
+  if (pull) {
+    const head = requestedFormaSha(headSha);
+    if (!head) {
+      throw new Error("Forma pull request head SHA must be 40 hex characters");
+    }
+    if (requested && requested !== head) {
+      throw new Error("Forma commit SHA does not match the pull request head");
+    }
+    return { pr: pull, sha: head, comment: true };
+  }
+  return { pr: "", sha: requested, comment: false };
+}
+
 export function dockerignoreWithSecretsExcluded(current) {
   const required = [".env", ".env.*", ".git", "node_modules", ".next"];
   const lines = String(current ?? "")
@@ -498,119 +524,6 @@ async function ensureNeonBranch(apiKey, pr) {
 
 function gh(args, input) {
   return run("gh", args, { input });
-}
-
-function openPull(head) {
-  const listed = JSON.parse(
-    gh([
-      "api",
-      `repos/${FORMA_REPOSITORY}/pulls?head=Awannaphasch2016:${encodeURIComponent(head)}&state=open`,
-    ]),
-  );
-  const found = listed.find((pull) => pull.head?.ref === head);
-  if (found?.number) return String(found.number);
-  const pull = JSON.parse(
-    gh(
-      [
-        "api",
-        "--method",
-        "POST",
-        `repos/${FORMA_REPOSITORY}/pulls`,
-        "--input",
-        "-",
-      ],
-      JSON.stringify({
-        title: "Preview Forma",
-        head,
-        base: "main",
-        body: "Preview this Forma commit on its own Neon branch.",
-      }),
-    ),
-  );
-  return String(pull.number);
-}
-
-function ensureWalkthroughPullRequest() {
-  const ref = spawnSync(
-    "gh",
-    ["api", `repos/${FORMA_REPOSITORY}/git/ref/heads/${WALKTHROUGH_BRANCH}`],
-    { encoding: "utf8", env: process.env },
-  );
-  if (ref.status === 0) return openPull(WALKTHROUGH_BRANCH);
-  const main = JSON.parse(
-    gh(["api", `repos/${FORMA_REPOSITORY}/git/ref/heads/main`]),
-  );
-  main.sha = main.object.sha;
-  const note =
-    "This pull request is the Forma preview walkthrough.\nThe site is the Vercel preview commented below.\n";
-  const blob = JSON.parse(
-    gh(
-      [
-        "api",
-        "--method",
-        "POST",
-        `repos/${FORMA_REPOSITORY}/git/blobs`,
-        "--input",
-        "-",
-      ],
-      JSON.stringify({ content: note, encoding: "utf-8" }),
-    ),
-  );
-  const tree = JSON.parse(
-    gh(
-      [
-        "api",
-        "--method",
-        "POST",
-        `repos/${FORMA_REPOSITORY}/git/trees`,
-        "--input",
-        "-",
-      ],
-      JSON.stringify({
-        base_tree: main.sha,
-        tree: [
-          {
-            path: "docs/preview-walkthrough.md",
-            mode: "100644",
-            type: "blob",
-            sha: blob.sha,
-          },
-        ],
-      }),
-    ),
-  );
-  const commit = JSON.parse(
-    gh(
-      [
-        "api",
-        "--method",
-        "POST",
-        `repos/${FORMA_REPOSITORY}/git/commits`,
-        "--input",
-        "-",
-      ],
-      JSON.stringify({
-        message: "Add the Forma preview walkthrough note.",
-        tree: tree.sha,
-        parents: [main.sha],
-      }),
-    ),
-  );
-  gh(
-    [
-      "api",
-      "--method",
-      "POST",
-      `repos/${FORMA_REPOSITORY}/git/refs`,
-      "--input",
-      "-",
-    ],
-    JSON.stringify({
-      ref: `refs/heads/${WALKTHROUGH_BRANCH}`,
-      sha: commit.sha,
-    }),
-  );
-  return openPull(WALKTHROUGH_BRANCH);
 }
 
 export function openRouterOverlayRoot() {
@@ -1387,11 +1300,52 @@ function comment(pr, url, sha) {
   ]);
 }
 
+function pullRequestHeadSha(pr) {
+  const pull = JSON.parse(gh(["api", `repos/${FORMA_REPOSITORY}/pulls/${pr}`]));
+  const sha = requestedFormaSha(pull.head?.sha || "");
+  if (!sha) {
+    throw new Error("Forma pull request head SHA must be 40 hex characters");
+  }
+  return sha;
+}
+
+function openPullRequestNumberForSha(sha) {
+  const listed = JSON.parse(
+    gh(["api", `repos/${FORMA_REPOSITORY}/pulls?state=open&per_page=30`]),
+  );
+  const matches = (Array.isArray(listed) ? listed : []).filter(
+    (pull) => String(pull.head?.sha || "") === sha,
+  );
+  if (matches.length !== 1) return "";
+  return String(matches[0].number);
+}
+
+function resolveRequestedPreview() {
+  const requestedSha = requestedFormaSha(process.env.FORMA_SHA);
+  const requestedPr = String(process.env.FORMA_PR ?? "").trim();
+  const headSha = requestedPr ? pullRequestHeadSha(requestedPr) : "";
+  const target = resolveFormaPreviewTarget({
+    sha: requestedSha,
+    pr: requestedPr,
+    headSha,
+  });
+  if (target.pr) return target;
+  const found = openPullRequestNumberForSha(target.sha);
+  if (!found) {
+    throw new Error("Pull request number is required for the Neon branch");
+  }
+  return { pr: found, sha: target.sha, comment: false };
+}
+
 export async function runFormaPreview() {
   const environment = assertPreviewEnvironment(
     process.env.FORMA_ENVIRONMENT ?? "",
   );
   console.log(`forma_environment=${environment}`);
+  const target = resolveRequestedPreview();
+  console.log(`forma_pr=${target.pr}`);
+  console.log(`forma_requested_sha=${target.sha}`);
+  process.env.FORMA_SHA = target.sha;
   const token = process.env.DOPPLER_ADMIN_TOKEN ?? "";
   if (!token) {
     console.log("DOPPLER_ADMIN_TOKEN=absent");
@@ -1413,8 +1367,7 @@ export async function runFormaPreview() {
   noteGithubDeployments();
   const vercel = await resolveVercelProject(token, secrets);
   console.log(`forma_vercel_source=${vercel.source}`);
-  const pr = process.env.FORMA_PR || ensureWalkthroughPullRequest();
-  console.log(`forma_pr=${pr}`);
+  const pr = target.pr;
   notePullRequestLinks(pr);
   const branch = await ensureNeonBranch(secrets.NEON_API_KEY, pr);
   const prepared = await migrate(branch.direct);
@@ -1431,7 +1384,8 @@ export async function runFormaPreview() {
   await probeStatus(url);
   await noteFormaImage(prepared.sha);
   console.log(`forma_url=${url}`);
-  comment(pr, url, prepared.sha);
+  if (target.comment) comment(pr, url, prepared.sha);
+  else console.log("forma_comment=skipped");
 }
 
 const entry = process.argv[1];
