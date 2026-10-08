@@ -5,9 +5,12 @@ import test from "node:test";
 import {
   DEST_CONFIG,
   DEST_PROJECT,
+  DYAD_PROJECT,
   SECRET_NAME,
   SOURCE_PROJECT,
   openRouterShape,
+  planOpenRouterCopy,
+  referenceBody,
   selectOpenRouterSecret,
   uploadBody,
 } from "./forma-openrouter-doppler.mjs";
@@ -60,6 +63,49 @@ test("only a resolved OpenRouter key is selected", () => {
   );
   assert.equal(unresolved.status, "unresolved");
   assert.equal(openRouterShape(""), "absent");
+});
+
+test("a missing vibesdk key uses the dyad preview reference", () => {
+  const planned = planOpenRouterCopy({
+    vibesdkNamesByConfig: { dev: ["CLOUDFLARE_API_TOKEN"] },
+    vibesdkValuesByConfig: {},
+    dyadNamesByConfig: {
+      preview: ["OPENROUTER_API_KEY"],
+      prd: ["OPENROUTER_API_KEY"],
+    },
+    dyadValuesByConfig: {
+      preview: { OPENROUTER_API_KEY: "sk-or-example" },
+      prd: { OPENROUTER_API_KEY: "sk-or-production" },
+    },
+  });
+  assert.equal(planned.status, "ready");
+  assert.equal(planned.sourceProject, "vibesdk");
+  assert.equal(planned.sourceConfig, "dev");
+  assert.equal(planned.upstream.project, DYAD_PROJECT);
+  assert.equal(planned.upstream.config, "preview");
+  assert.equal(
+    planned.upstream.reference,
+    "${dyad.preview.OPENROUTER_API_KEY}",
+  );
+  assert.equal(planned.upstream.reference.includes("prd"), false);
+  const body = referenceBody("vibesdk", "dev", planned.upstream.reference);
+  assert.deepEqual(Object.keys(body.secrets), ["OPENROUTER_API_KEY"]);
+  assert.throws(
+    () => referenceBody("vibesdk", "prd", planned.upstream.reference),
+    /Refusing a production config/,
+  );
+});
+
+test("an OpenAI-shaped vibesdk value is not replaced from dyad", () => {
+  const planned = planOpenRouterCopy({
+    vibesdkNamesByConfig: { dev: ["OPENROUTER_API_KEY"] },
+    vibesdkValuesByConfig: { dev: { OPENROUTER_API_KEY: "sk-openai-example" } },
+    dyadNamesByConfig: { preview: ["OPENROUTER_API_KEY"] },
+    dyadValuesByConfig: { preview: { OPENROUTER_API_KEY: "sk-or-example" } },
+  });
+  assert.equal(planned.status, "openai");
+  assert.equal(planned.secrets, null);
+  assert.equal(planned.upstream, null);
 });
 
 test("upload refuses every OpenAI name", () => {

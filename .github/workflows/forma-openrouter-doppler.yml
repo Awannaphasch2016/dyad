@@ -1,6 +1,8 @@
 name: Forma OpenRouter Doppler
 
 # Copy OPENROUTER_API_KEY from vibesdk into forma/dev.
+# When vibesdk does not store that name, point vibesdk/dev at the
+# non-production Dyad config the lab already uses, then copy the resolved key.
 # Does not print the value and does not read a production config.
 
 on:

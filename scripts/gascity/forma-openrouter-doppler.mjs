@@ -8,7 +8,15 @@ export const SOURCE_PROJECT = "vibesdk";
 export const DEST_PROJECT = "forma";
 export const DEST_CONFIG = "dev";
 export const SECRET_NAME = "OPENROUTER_API_KEY";
-export const SOURCE_CONFIG_ORDER = ["dev", "preview", "stg", "canary"];
+export const DYAD_PROJECT = "dyad";
+export const SOURCE_CONFIG_ORDER = [
+  "dev",
+  "dev_personal",
+  "preview",
+  "stg",
+  "canary",
+];
+export const DYAD_CONFIG_ORDER = ["dev", "preview", "stg", "canary"];
 
 const OPENAI_NAMES = [
   "OPENAI_API_KEY",
@@ -34,8 +42,12 @@ export function openRouterShape(value) {
   return "other";
 }
 
-export function selectOpenRouterSecret(namesByConfig, valuesByConfig) {
-  for (const config of SOURCE_CONFIG_ORDER) {
+export function selectOpenRouterSecret(
+  namesByConfig,
+  valuesByConfig,
+  order = SOURCE_CONFIG_ORDER,
+) {
+  for (const config of order) {
     const names = namesByConfig?.[config] ?? [];
     if (!names.includes(SECRET_NAME)) continue;
     const shape = openRouterShape(valuesByConfig?.[config]?.[SECRET_NAME]);
@@ -63,6 +75,87 @@ export function uploadBody(secrets) {
     project: DEST_PROJECT,
     config: DEST_CONFIG,
     secrets,
+  };
+}
+
+export function referenceString(project, config, name = SECRET_NAME) {
+  if (project === "prd" || config === "prd") {
+    throw new Error("Refusing a production reference");
+  }
+  return `\${${project}.${config}.${name}}`;
+}
+
+export function referenceBody(project, config, reference) {
+  if (project === "prd" || config === "prd") {
+    throw new Error("Refusing a production config");
+  }
+  if (
+    typeof reference !== "string" ||
+    !reference.startsWith("${") ||
+    reference.includes(".prd.")
+  ) {
+    throw new Error("Refusing a reference outside a non-production config");
+  }
+  return {
+    project,
+    config,
+    secrets: { [SECRET_NAME]: reference },
+  };
+}
+
+export function planOpenRouterCopy({
+  vibesdkNamesByConfig,
+  vibesdkValuesByConfig,
+  dyadNamesByConfig,
+  dyadValuesByConfig,
+}) {
+  const fromVibesdk = selectOpenRouterSecret(
+    vibesdkNamesByConfig,
+    vibesdkValuesByConfig,
+    SOURCE_CONFIG_ORDER,
+  );
+  if (fromVibesdk.status === "ready") {
+    return {
+      status: "ready",
+      sourceProject: SOURCE_PROJECT,
+      sourceConfig: fromVibesdk.config,
+      upstream: null,
+      secrets: fromVibesdk.secrets,
+    };
+  }
+  if (fromVibesdk.status !== "absent") {
+    return {
+      status: fromVibesdk.status,
+      sourceProject: SOURCE_PROJECT,
+      sourceConfig: fromVibesdk.config,
+      upstream: null,
+      secrets: null,
+    };
+  }
+  const fromDyad = selectOpenRouterSecret(
+    dyadNamesByConfig,
+    dyadValuesByConfig,
+    DYAD_CONFIG_ORDER,
+  );
+  if (fromDyad.status !== "ready") {
+    return {
+      status: fromDyad.status,
+      sourceProject: DYAD_PROJECT,
+      sourceConfig: fromDyad.config,
+      upstream: null,
+      secrets: null,
+    };
+  }
+  return {
+    status: "ready",
+    sourceProject: SOURCE_PROJECT,
+    sourceConfig: DEST_CONFIG,
+    upstream: {
+      project: DYAD_PROJECT,
+      config: fromDyad.config,
+      reference: referenceString(DYAD_PROJECT, fromDyad.config),
+    },
+    secrets: fromDyad.secrets,
   };
 }
 
@@ -102,8 +195,13 @@ async function doppler(token, method, path, body) {
   return payload;
 }
 
-async function configNames(token, project) {
-  const payload = await doppler(
+function mask(value) {
+  const text = String(value ?? "").trim();
+  if (text) console.log(`::add-mask::${text}`);
+}
+
+async function configNames(request, token, project) {
+  const payload = await request(
     token,
     "GET",
     `/v3/configs?project=${encodeURIComponent(project)}&page=1&per_page=100`,
@@ -113,8 +211,8 @@ async function configNames(token, project) {
     .filter(Boolean);
 }
 
-async function namesFor(token, project, config) {
-  const payload = await doppler(
+async function namesFor(request, token, project, config) {
+  const payload = await request(
     token,
     "GET",
     `/v3/configs/config/secrets?project=${encodeURIComponent(project)}&config=${encodeURIComponent(config)}`,
@@ -122,12 +220,41 @@ async function namesFor(token, project, config) {
   return secretNames(payload).sort();
 }
 
-async function download(token, project, config) {
-  return doppler(
+async function downloadName(request, token, project, config) {
+  const downloaded = await request(
     token,
     "GET",
     `/v3/configs/config/secrets/download?project=${encodeURIComponent(project)}&config=${encodeURIComponent(config)}&format=json`,
   );
+  const value = downloaded?.[SECRET_NAME];
+  mask(value);
+  return { [SECRET_NAME]: value };
+}
+
+async function collect(request, token, project, order, configs) {
+  const namesByConfig = {};
+  const valuesByConfig = {};
+  for (const config of order) {
+    if (!configs.includes(config)) {
+      console.log(`${project}_${config}=absent`);
+      continue;
+    }
+    const names = await namesFor(request, token, project, config);
+    namesByConfig[config] = names;
+    const present = names.includes(SECRET_NAME);
+    console.log(
+      `${project}_${config}_openrouter=${present ? "present" : "absent"}`,
+    );
+    if (present) {
+      valuesByConfig[config] = await downloadName(
+        request,
+        token,
+        project,
+        config,
+      );
+    }
+  }
+  return { namesByConfig, valuesByConfig };
 }
 
 export async function organizeFormaOpenRouter({
@@ -141,42 +268,79 @@ export async function organizeFormaOpenRouter({
   }
   console.log("DOPPLER_ADMIN_TOKEN=present");
 
-  const configs = await configNames(token, SOURCE_PROJECT);
+  const configs = await configNames(request, token, SOURCE_PROJECT);
   console.log(`vibesdk_configs=${configs.join(",") || "none"}`);
-  const namesByConfig = {};
-  const valuesByConfig = {};
-  for (const config of SOURCE_CONFIG_ORDER) {
-    if (!configs.includes(config)) {
-      console.log(`vibesdk_${config}=absent`);
-      continue;
-    }
-    const names = await namesFor(token, SOURCE_PROJECT, config);
-    namesByConfig[config] = names;
-    console.log(
-      `vibesdk_${config}_openrouter=${names.includes(SECRET_NAME) ? "present" : "absent"}`,
-    );
-    if (names.includes(SECRET_NAME)) {
-      const downloaded = await download(token, SOURCE_PROJECT, config);
-      valuesByConfig[config] = { [SECRET_NAME]: downloaded[SECRET_NAME] };
-    }
-  }
+  const vibesdk = await collect(
+    request,
+    token,
+    SOURCE_PROJECT,
+    SOURCE_CONFIG_ORDER,
+    configs,
+  );
   if (configs.includes("prd")) {
-    const prdNames = await namesFor(token, SOURCE_PROJECT, "prd");
+    const prdNames = await namesFor(request, token, SOURCE_PROJECT, "prd");
     console.log(
       `vibesdk_prd_openrouter=${prdNames.includes(SECRET_NAME) ? "refused" : "absent"}`,
     );
   }
 
-  const selected = selectOpenRouterSecret(namesByConfig, valuesByConfig);
-  console.log(
-    `openrouter_source=${selected.status}${selected.config ? ` config=${selected.config}` : ""}`,
+  let dyad = { namesByConfig: {}, valuesByConfig: {} };
+  const vibesdkReady = selectOpenRouterSecret(
+    vibesdk.namesByConfig,
+    vibesdk.valuesByConfig,
   );
-  if (selected.status !== "ready") {
+  if (vibesdkReady.status === "absent") {
+    const dyadConfigs = await configNames(request, token, DYAD_PROJECT);
+    console.log(`dyad_configs=${dyadConfigs.join(",") || "none"}`);
+    dyad = await collect(
+      request,
+      token,
+      DYAD_PROJECT,
+      DYAD_CONFIG_ORDER,
+      dyadConfigs,
+    );
+    if (dyadConfigs.includes("prd")) {
+      console.log("dyad_prd=refused");
+    }
+  }
+
+  const selected = planOpenRouterCopy({
+    vibesdkNamesByConfig: vibesdk.namesByConfig,
+    vibesdkValuesByConfig: vibesdk.valuesByConfig,
+    dyadNamesByConfig: dyad.namesByConfig,
+    dyadValuesByConfig: dyad.valuesByConfig,
+  });
+  if (selected.upstream) {
+    console.log(
+      `openrouter_upstream=${selected.upstream.project} ${selected.upstream.config}`,
+    );
+    await request(
+      token,
+      "POST",
+      "/v3/configs/config/secrets",
+      referenceBody(SOURCE_PROJECT, DEST_CONFIG, selected.upstream.reference),
+    );
+    console.log("vibesdk_dev_openrouter=referenced");
+    const resolved = await downloadName(
+      request,
+      token,
+      SOURCE_PROJECT,
+      DEST_CONFIG,
+    );
+    selected.secrets = resolved;
+  }
+  const sourceShape = openRouterShape(selected.secrets?.[SECRET_NAME]);
+  const sourceStatus =
+    selected.status === "ready" ? sourceShape : selected.status;
+  console.log(
+    `openrouter_source=${sourceStatus === "openrouter" ? "ready" : sourceStatus}${selected.sourceConfig ? ` config=${selected.sourceConfig}` : ""}`,
+  );
+  if (selected.status !== "ready" || sourceShape !== "openrouter") {
     process.exitCode = 1;
     return;
   }
 
-  const formaConfigs = await configNames(token, DEST_PROJECT);
+  const formaConfigs = await configNames(request, token, DEST_PROJECT);
   if (!formaConfigs.includes(DEST_CONFIG)) {
     console.log("forma_dev=absent");
     process.exitCode = 1;
@@ -190,12 +354,19 @@ export async function organizeFormaOpenRouter({
   );
   console.log("forma_dev_openrouter=uploaded");
 
-  const forma = await download(token, DEST_PROJECT, DEST_CONFIG);
-  const shape = openRouterShape(forma[SECRET_NAME]);
+  const formaDownloaded = await request(
+    token,
+    "GET",
+    `/v3/configs/config/secrets/download?project=${encodeURIComponent(DEST_PROJECT)}&config=${encodeURIComponent(DEST_CONFIG)}&format=json`,
+  );
+  mask(formaDownloaded?.[SECRET_NAME]);
+  const shape = openRouterShape(formaDownloaded?.[SECRET_NAME]);
   console.log(`forma_dev_openrouter_shape=${shape}`);
   for (const name of OPENAI_NAMES) {
+    const value = formaDownloaded?.[name];
+    mask(value);
     console.log(
-      `forma_dev_${name}=${typeof forma[name] === "string" && forma[name] ? "present" : "absent"}`,
+      `forma_dev_${name}=${typeof value === "string" && value ? "present" : "absent"}`,
     );
   }
   if (shape !== "openrouter") {
