@@ -113,7 +113,7 @@ export async function verifySessionJwt(token, jwks) {
   return { userId: payload.sub };
 }
 
-function sessionToken(authorization, cookie, machineToken) {
+export function sessionToken(authorization, cookie, machineToken) {
   const bearer = String(authorization ?? "");
   if (bearer.startsWith("Bearer ")) {
     const token = bearer.slice("Bearer ".length).trim();
@@ -646,21 +646,23 @@ type Env = {
   GAS_CITY_HOST_BRIDGE_TOKEN?: string;
   CLERK_SECRET_KEY?: string;
   CLERK_PUBLISHABLE_KEY?: string;
+  OPEN_ROUTER_API_KEY?: string;
 };
 
-function gateEnv(value: unknown): Env {
+export function gateEnv(value: unknown): Env {
   const record = (value ?? {}) as Record<string, string | undefined>;
   return {
     WEWEBPLUS_DATABASE_URL: record.WEWEBPLUS_DATABASE_URL,
     GAS_CITY_HOST_BRIDGE_TOKEN: record.GAS_CITY_HOST_BRIDGE_TOKEN,
     CLERK_SECRET_KEY: record.CLERK_SECRET_KEY,
     CLERK_PUBLISHABLE_KEY: record.CLERK_PUBLISHABLE_KEY,
+    OPEN_ROUTER_API_KEY: record.OPEN_ROUTER_API_KEY,
   };
 }
 
 type QueryRow = Record<string, unknown>;
 
-async function neonQuery(databaseUrl: string, query: string, params: unknown[]): Promise<QueryRow[]> {
+export async function neonQuery(databaseUrl: string, query: string, params: unknown[]): Promise<QueryRow[]> {
   const endpoint = new URL(databaseUrl);
   const response = await fetch(\`https://\${endpoint.host}/sql\`, {
     method: 'POST',
@@ -699,7 +701,7 @@ function present(question: QueryRow, roleId: string | null, orgId: string) {
   };
 }
 
-async function clerkUser(env: Env, token: string) {
+export async function clerkUser(env: Env, token: string) {
   const secret = env.CLERK_SECRET_KEY?.trim();
   const publishable = env.CLERK_PUBLISHABLE_KEY?.trim();
   if (!secret || !publishable?.startsWith('pk_test_')) throw new Error('Sign in to continue.');
@@ -736,7 +738,7 @@ async function clerkUser(env: Env, token: string) {
   return { userId: payload.sub, displayName };
 }
 
-async function clerkOrganizationIds(env: Env, userId: string): Promise<Set<string>> {
+export async function clerkOrganizationIds(env: Env, userId: string): Promise<Set<string>> {
   const secret = env.CLERK_SECRET_KEY?.trim();
   if (!secret) throw new Error('Sign in to continue.');
   const response = await fetch(
@@ -765,7 +767,7 @@ async function organizationName(env: Env, orgId: string): Promise<string | null>
   return org.name ?? null;
 }
 
-function sessionToken(authorization: string | null, cookie: string | null, machine: string) {
+export function sessionToken(authorization: string | null, cookie: string | null, machine: string) {
   const bearer = authorization?.startsWith('Bearer ') ? authorization.slice('Bearer '.length).trim() : '';
   if (bearer && bearer !== machine) return bearer;
   const cookieMatch = /(?:^|;\\s*)__session=([^;]+)/.exec(cookie ?? '');
