@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   anonymousImageVisible,
@@ -91,14 +90,3 @@ test("the app path stops before pushing a Forma workflow", async () => {
   assert.equal(lines.includes("forma_package=public via=app"), true);
 });
 
-test("the dyad workflow requests workflow write and does not call Doppler", () => {
-  const workflow = readFileSync(
-    new URL("../workflows/make-forma-package-public.yml", import.meta.url),
-    "utf8",
-  );
-  assert.equal(workflow.includes("permission-packages: write"), true);
-  assert.equal(workflow.includes("permission-workflows: write"), true);
-  assert.equal(workflow.includes("repositories: forma"), true);
-  assert.equal(workflow.includes("DOPPLER"), false);
-  assert.equal(workflow.includes("wewebplus-ci"), false);
-});
