@@ -51,11 +51,10 @@ jobs:
         with:
           node-version: 24
 
-      - name: Install Vercel and pnpm
+      - name: Install pnpm
         run: |
           set -euo pipefail
           set +x
-          npm install -g vercel@41.7.8
           corepack enable
           corepack prepare pnpm@10.34.5 --activate
 

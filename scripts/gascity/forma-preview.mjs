@@ -2,8 +2,8 @@
 // Prints names, hosts, and the preview URL. Does not print secret values.
 
 import { spawnSync } from "node:child_process";
-import { randomBytes } from "node:crypto";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { createHash, randomBytes } from "node:crypto";
+import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -59,6 +59,47 @@ export function selectVercelProject(projects, projectId = "") {
     throw new Error("Vercel token only sees the dyad project");
   }
   return null;
+}
+
+export function includeDeploymentFile(relative) {
+  const parts = String(relative).split(/[/\\]/).filter(Boolean);
+  if (
+    parts.some(
+      (part) =>
+        part === "node_modules" ||
+        part === ".git" ||
+        part === ".next" ||
+        part === ".vercel",
+    )
+  ) {
+    return false;
+  }
+  const base = parts[parts.length - 1] || "";
+  if (base === ".env" || base.startsWith(".env.")) return false;
+  return true;
+}
+
+export function previewVariablePayload(key, value) {
+  if (OPENAI_NAMES.includes(key)) throw new Error(`Refusing to upload ${key}`);
+  if (!value) throw new Error(`Refusing an empty ${key}`);
+  return { key, value, type: "encrypted", target: ["preview"] };
+}
+
+export function sourceDeploymentBody(project, files) {
+  if (!project?.id || project.name === DYAD_VERCEL_PROJECT) {
+    throw new Error("Refusing to deploy Forma into the dyad Vercel project");
+  }
+  return {
+    name: project.name,
+    project: project.id,
+    files,
+    projectSettings: {
+      framework: "nextjs",
+      installCommand: "pnpm install --frozen-lockfile",
+      buildCommand: "pnpm vercel-build",
+      nodeVersion: "24.x",
+    },
+  };
 }
 
 export function formaBranchName(pr) {
@@ -562,40 +603,177 @@ async function ensureVercelProject(token, existing = {}) {
   );
 }
 
+function teamIdFromProject(project) {
+  const teamId = String(project?.accountId || "");
+  return teamId.startsWith("team_") ? teamId : "";
+}
+
+function teamQuery(project) {
+  const teamId = teamIdFromProject(project);
+  return teamId ? `?teamId=${encodeURIComponent(teamId)}` : "";
+}
+
+async function deploymentFiles(root) {
+  const files = [];
+  async function walk(dir) {
+    const entries = await readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const full = join(dir, entry.name);
+      const relative = full.slice(root.length + 1).replaceAll("\\", "/");
+      if (!includeDeploymentFile(relative)) continue;
+      if (entry.isDirectory()) await walk(full);
+      else if (entry.isFile()) files.push({ full, relative });
+    }
+  }
+  await walk(root);
+  return files;
+}
+
+async function uploadDeploymentFile(token, project, bytes) {
+  const sha = createHash("sha1").update(bytes).digest("hex");
+  const response = await fetch(
+    `https://api.vercel.com/v2/files${teamQuery(project)}`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/octet-stream",
+        "x-vercel-digest": sha,
+      },
+      body: bytes,
+    },
+  );
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`POST /v2/files ${response.status} ${redact(text)}`);
+  }
+  return { sha, size: bytes.length };
+}
+
+async function upsertPreviewEnv(token, project, values) {
+  for (const key of [
+    "DATABASE_URL",
+    "APP_PASSWORD",
+    "AUTH_SECRET",
+    "CRON_SECRET",
+  ]) {
+    if (!values[key]) throw new Error(`Refusing an empty ${key}`);
+  }
+  const query = teamQuery(project);
+  const listed = await vercelApi(
+    token,
+    "GET",
+    `/v9/projects/${encodeURIComponent(project.id)}/env${query}`,
+  );
+  const envs = listed.envs || [];
+  for (const [key, value] of Object.entries(values)) {
+    if (!value || key.startsWith("VERCEL_")) continue;
+    const payload = previewVariablePayload(key, value);
+    const existing = envs.find(
+      (item) =>
+        item.key === key &&
+        Array.isArray(item.target) &&
+        item.target.length === 1 &&
+        item.target[0] === "preview" &&
+        !item.gitBranch,
+    );
+    if (existing?.id) {
+      await vercelApi(
+        token,
+        "PATCH",
+        `/v9/projects/${encodeURIComponent(project.id)}/env/${encodeURIComponent(existing.id)}${query}`,
+        { value: payload.value, type: "encrypted", target: ["preview"] },
+      );
+      console.log(`forma_env=updated ${key}`);
+      continue;
+    }
+    await vercelApi(
+      token,
+      "POST",
+      `/v10/projects/${encodeURIComponent(project.id)}/env${query}`,
+      payload,
+    );
+    console.log(`forma_env=created ${key}`);
+  }
+}
+
+async function logDeploymentError(token, project, id) {
+  try {
+    const events = await vercelApi(
+      token,
+      "GET",
+      `/v3/deployments/${encodeURIComponent(id)}/events${teamQuery(project)}`,
+    );
+    const lines = (Array.isArray(events) ? events : [])
+      .map((item) => item?.text || item?.payload?.text || "")
+      .filter(Boolean)
+      .slice(-12);
+    console.log(`forma_deploy_error=${redact(lines.join(" | "))}`);
+  } catch (error) {
+    console.log(`forma_deploy_error=unavailable ${redact(error.message)}`);
+  }
+}
+
+async function waitForDeployment(token, project, deployment) {
+  const id = deployment.id;
+  if (!id) throw new Error("Vercel did not return a deployment id");
+  let host = deployment.url || "";
+  for (let attempt = 0; attempt < 90; attempt += 1) {
+    const current = await vercelApi(
+      token,
+      "GET",
+      `/v13/deployments/${encodeURIComponent(id)}${teamQuery(project)}`,
+    );
+    host = current.url || host;
+    const state = current.readyState || "";
+    if (attempt % 6 === 0) console.log(`forma_deploy=${state || "unknown"}`);
+    if (state === "READY") return host;
+    if (state === "ERROR" || state === "CANCELED") {
+      await logDeploymentError(token, project, id);
+      throw new Error(`Vercel deployment ${state}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10000));
+  }
+  throw new Error("Vercel deployment did not become ready");
+}
+
 async function deploy(checkout, env, project) {
   const token = env.runtime.VERCEL_TOKEN;
-  if (!project?.id || project.name === DYAD_VERCEL_PROJECT) {
-    throw new Error("Refusing to deploy Forma into the dyad Vercel project");
+  const values = {
+    ...env.runtime,
+    DATABASE_URL: env.build.DATABASE_URL,
+  };
+  await upsertPreviewEnv(token, project, values);
+  const paths = await deploymentFiles(checkout);
+  console.log(`forma_upload_files=${paths.length}`);
+  const uploaded = [];
+  for (let index = 0; index < paths.length; index += 8) {
+    const batch = paths.slice(index, index + 8);
+    const done = await Promise.all(
+      batch.map(async (item) => {
+        const bytes = await readFile(item.full);
+        const file = await uploadDeploymentFile(token, project, bytes);
+        return { file: item.relative, sha: file.sha, size: file.size };
+      }),
+    );
+    uploaded.push(...done);
   }
-  await mkdir(join(checkout, ".vercel"), { recursive: true });
-  await writeFile(
-    join(checkout, ".vercel", "project.json"),
-    `${JSON.stringify({ orgId: project.accountId, projectId: project.id })}\n`,
-  );
-  const args = ["deploy", "--yes", "--token", token];
-  for (const [key, value] of Object.entries(env.runtime)) {
-    if (!value || key.startsWith("VERCEL_")) continue;
-    args.push("--env", `${key}=${value}`);
-  }
-  for (const [key, value] of Object.entries(env.build)) {
-    if (!value) continue;
-    args.push("--build-env", `${key}=${value}`);
-  }
-  const output = run("vercel", args, {
-    cwd: checkout,
-    env: {
-      CI: "1",
-      VERCEL_ORG_ID: project.accountId,
-      VERCEL_PROJECT_ID: project.id,
-    },
+  const params = new URLSearchParams({
+    forceNew: "1",
+    skipAutoDetectionConfirmation: "1",
   });
-  const url = output
-    .split("\n")
-    .map((line) => line.trim())
-    .find((line) => /^https:\/\/[a-z0-9.-]+\.vercel\.app/.test(line));
-  if (!url)
-    throw new Error(`Vercel did not return a preview URL ${redact(output)}`);
-  return url.split(" ")[0];
+  const teamId = teamIdFromProject(project);
+  if (teamId) params.set("teamId", teamId);
+  const created = await vercelApi(
+    token,
+    "POST",
+    `/v13/deployments?${params}`,
+    sourceDeploymentBody(project, uploaded),
+  );
+  console.log("forma_deploy=created");
+  const host = await waitForDeployment(token, project, created);
+  if (!host) throw new Error("Vercel did not return a preview URL");
+  return host.startsWith("https://") ? host : `https://${host}`;
 }
 
 function noteGithubDeployments() {

@@ -7,9 +7,12 @@ import {
   FORMA_PARENT_BRANCH_ID,
   assertFormaTarget,
   formaBranchName,
+  includeDeploymentFile,
   previewEnv,
+  previewVariablePayload,
   selectVercelProject,
   secretMaskLines,
+  sourceDeploymentBody,
   VERCEL_TOKEN_SOURCES,
 } from "./forma-preview.mjs";
 
@@ -161,5 +164,23 @@ test("a Forma token uses the one visible project and never the dyad project", ()
       { id: "prj_b", name: "beta" },
     ]),
     null,
+  );
+  assert.equal(includeDeploymentFile("app/page.tsx"), true);
+  assert.equal(includeDeploymentFile("node_modules/next/package.json"), false);
+  assert.equal(includeDeploymentFile(".env.local"), false);
+  const variable = previewVariablePayload("APP_PASSWORD", "pw");
+  assert.deepEqual(variable.target, ["preview"]);
+  assert.throws(
+    () => previewVariablePayload("OPENAI_API_KEY", "sk-example"),
+    /Refusing/,
+  );
+  const body = sourceDeploymentBody({ id: "prj_forma", name: "forma" }, [
+    { file: "package.json", sha: "abc", size: 2 },
+  ]);
+  assert.equal(body.target, undefined);
+  assert.equal(body.project, "prj_forma");
+  assert.throws(
+    () => sourceDeploymentBody({ id: "prj_dyad", name: "dyad" }, []),
+    /Refusing to deploy/,
   );
 });
