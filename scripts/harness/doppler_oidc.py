@@ -722,6 +722,48 @@ def print_step_logs(api_key: str, account: str, execution: str) -> None:
         print("log_matches", shown)
 
 
+def print_feature_flags(api_key: str) -> None:
+    urls = (
+        "https://app.harness.io/ng/api/feature-flags?accountIdentifier=" + ACCOUNT,
+        "https://app.harness.io/gateway/ng/api/feature-flags?accountIdentifier=" + ACCOUNT,
+    )
+    for url in urls:
+        code, parsed = harness_request(api_key, "GET", url)
+        print(
+            "feature_flags_http",
+            code,
+            parsed.get("status"),
+            scrub(str(parsed.get("message") or ""))[:180],
+        )
+        data = parsed.get("data")
+        flags = data if isinstance(data, list) else []
+        if isinstance(data, dict):
+            for key in ("featureFlags", "flags", "featureFlagList"):
+                if isinstance(data.get(key), list):
+                    flags = data[key]
+                    break
+        print("feature_flag_count", len(flags))
+        shown = 0
+        for flag in flags:
+            if isinstance(flag, str):
+                name = flag
+                enabled = "yes"
+            elif isinstance(flag, dict):
+                name = str(flag.get("name") or flag.get("featureName") or flag.get("identifier") or "")
+                enabled_value = flag.get("enabled")
+                enabled = "yes" if enabled_value is True else "no" if enabled_value is False else "unknown"
+            else:
+                continue
+            lowered = name.lower()
+            if not any(word in lowered for word in ("oidc", "identity", "workload")):
+                continue
+            print(f"feature_flag name={name} enabled={enabled}")
+            shown += 1
+        print("feature_flag_matches", shown)
+        if code == 200:
+            return
+
+
 def register_probe() -> int:
     import time
     from pathlib import Path
@@ -732,6 +774,7 @@ def register_probe() -> int:
         return 1
     account = ACCOUNT
     pipeline = "dyad_oidc_probe"
+    print_feature_flags(api_key)
     yaml_text = Path("deploy/harness/oidc-probe.yaml").read_text("utf-8")
     query = f"?accountIdentifier={account}&orgIdentifier=default&projectIdentifier=dyad"
     code, body = harness_request(
