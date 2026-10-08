@@ -124,11 +124,67 @@ export function assertFormaTarget(projectId, parentId) {
   }
 }
 
-export function previewEnv({ pooledUrl, directUrl, appUrl, secrets }) {
+export function withDeploymentHostOrigin(source) {
+  const replacement = `export function sameOrigin(request: Request) {
+  const origin = request.headers.get("origin");
+  if (!origin) throw new HttpError(403, "Request origin is not allowed.");
+  let originHost = "";
+  try {
+    originHost = new URL(origin).host;
+  } catch {
+    throw new HttpError(403, "Request origin is not allowed.");
+  }
+  const requestHost = new URL(request.url).host;
+  const headerHost = request.headers.get("host")?.split(",")[0]?.trim();
+  if (originHost === requestHost || (headerHost && originHost === headerHost)) {
+    return;
+  }
+  const appUrl = process.env.APP_URL;
+  if (appUrl && origin === new URL(appUrl).origin) return;
+  throw new HttpError(403, "Request origin is not allowed.");
+}`;
+  if (source.includes("originHost === requestHost")) return source;
+  const pattern =
+    /export function sameOrigin\(request: Request\) \{\n {2}const expected = process\.env\.APP_URL[\s\S]*?\n\}/;
+  if (!pattern.test(source)) {
+    throw new Error("Forma sameOrigin function was not found");
+  }
+  return source.replace(pattern, replacement);
+}
+
+export function withDeploymentHostOriginTest(source) {
+  const addition = `  it("allows the deployment host when APP_URL names another origin", () => {
+    vi.stubEnv("APP_URL", "https://forma-preview.vercel.app");
+    expect(() =>
+      sameOrigin(
+        new Request("https://forma-abc.vercel.app/api/auth", {
+          headers: { origin: "https://forma-abc.vercel.app" },
+        }),
+      ),
+    ).not.toThrow();
+    expect(() =>
+      sameOrigin(
+        new Request("https://forma-abc.vercel.app/api/auth", {
+          headers: { origin: "https://evil.example" },
+        }),
+      ),
+    ).toThrow();
+    vi.unstubAllEnvs();
+  });
+`;
+  if (source.includes("allows the deployment host")) return source;
+  const marker =
+    '  it("routes only executor connection and failure lifecycle webhooks"';
+  if (!source.includes(marker)) {
+    throw new Error("Forma origin test anchor was not found");
+  }
+  return source.replace(marker, `${addition}${marker}`);
+}
+
+export function previewEnv({ pooledUrl, directUrl, secrets }) {
   assertSafeUrl(pooledUrl, true);
   assertSafeUrl(directUrl, false);
   const shared = {
-    APP_URL: appUrl,
     APP_PASSWORD: secrets.APP_PASSWORD,
     AUTH_SECRET: secrets.AUTH_SECRET,
     CRON_SECRET: secrets.CRON_SECRET,
@@ -507,6 +563,88 @@ async function migrate(directUrl) {
   return checkout;
 }
 
+function formaContentPath(path) {
+  return path.split("/").map(encodeURIComponent).join("/");
+}
+
+function readFormaFile(path) {
+  const payload = JSON.parse(
+    gh([
+      "api",
+      `repos/${FORMA_REPOSITORY}/contents/${formaContentPath(path)}?ref=${encodeURIComponent(WALKTHROUGH_BRANCH)}`,
+    ]),
+  );
+  return {
+    sha: payload.sha,
+    text: Buffer.from(payload.content || "", "base64").toString("utf8"),
+  };
+}
+
+function writeFormaFile(path, content, sha, message) {
+  gh(
+    [
+      "api",
+      "--method",
+      "PUT",
+      `repos/${FORMA_REPOSITORY}/contents/${formaContentPath(path)}`,
+      "--input",
+      "-",
+    ],
+    JSON.stringify({
+      message,
+      content: Buffer.from(content).toString("base64"),
+      branch: WALKTHROUGH_BRANCH,
+      sha,
+    }),
+  );
+}
+
+function publishSignInFix() {
+  const http = readFormaFile("lib/http.ts");
+  const test = readFormaFile("tests/core.test.ts");
+  const nextHttp = withDeploymentHostOrigin(http.text);
+  const nextTest = withDeploymentHostOriginTest(test.text);
+  if (nextHttp === http.text && nextTest === test.text) {
+    console.log("forma_signin=present");
+    return;
+  }
+  if (nextHttp !== http.text) {
+    writeFormaFile(
+      "lib/http.ts",
+      nextHttp,
+      http.sha,
+      "Allow the preview host to open the workspace.",
+    );
+  }
+  if (nextTest !== test.text) {
+    writeFormaFile(
+      "tests/core.test.ts",
+      nextTest,
+      test.sha,
+      "Cover the preview host sign-in check.",
+    );
+  }
+  console.log("forma_signin=committed");
+}
+
+async function probeSignIn(url) {
+  const response = await fetch(`${url}/api/auth`, {
+    method: "POST",
+    headers: {
+      origin: url,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ password: "invalid" }),
+  });
+  const text = await response.text();
+  console.log(`forma_auth_probe=${response.status}`);
+  if (response.status !== 401) {
+    throw new Error(
+      `Sign-in origin check failed ${response.status} ${redact(text)}`,
+    );
+  }
+}
+
 async function vercelApi(token, method, path, body) {
   const response = await fetch(`https://api.vercel.com${path}`, {
     method,
@@ -697,6 +835,30 @@ async function upsertPreviewEnv(token, project, values) {
   }
 }
 
+async function deletePreviewAppUrl(token, project) {
+  const query = teamQuery(project);
+  const listed = await vercelApi(
+    token,
+    "GET",
+    `/v9/projects/${encodeURIComponent(project.id)}/env${query}`,
+  );
+  const matches = (listed.envs || []).filter((item) => item.key === "APP_URL");
+  for (const item of matches) {
+    const targets = item.target || [];
+    if (targets.includes("production")) {
+      console.log("forma_env=kept APP_URL production");
+      continue;
+    }
+    if (!(targets.length === 1 && targets[0] === "preview")) continue;
+    await vercelApi(
+      token,
+      "DELETE",
+      `/v9/projects/${encodeURIComponent(project.id)}/env/${encodeURIComponent(item.id)}${query}`,
+    );
+    console.log("forma_env=deleted APP_URL");
+  }
+}
+
 async function logDeploymentError(token, project, id) {
   try {
     const events = await vercelApi(
@@ -767,6 +929,8 @@ async function deploy(checkout, env, project) {
     ...env.runtime,
     DATABASE_URL: env.build.DATABASE_URL,
   };
+  delete values.APP_URL;
+  await deletePreviewAppUrl(token, project);
   await upsertPreviewEnv(token, project, values);
   const paths = await deploymentFiles(checkout);
   console.log(`forma_upload_files=${paths.length}`);
@@ -961,18 +1125,19 @@ export async function runFormaPreview() {
   const pr = process.env.FORMA_PR || ensureWalkthroughPullRequest();
   console.log(`forma_pr=${pr}`);
   notePullRequestLinks(pr);
+  publishSignInFix();
   const branch = await ensureNeonBranch(secrets.NEON_API_KEY, pr);
   const checkout = await migrate(branch.direct);
   const env = previewEnv({
     pooledUrl: branch.pooled,
     directUrl: branch.direct,
-    appUrl: "https://forma-preview.vercel.app",
     secrets,
   });
   env.runtime.VERCEL_TOKEN = vercel.token;
   env.runtime.VERCEL_PROJECT_ID = vercel.project.id;
   env.runtime.VERCEL_ORG_ID = vercel.project.accountId;
   const url = await deploy(checkout, env, vercel.project);
+  await probeSignIn(url);
   console.log(`forma_url=${url}`);
   comment(pr, url);
 }

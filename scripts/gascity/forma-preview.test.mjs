@@ -10,6 +10,8 @@ import {
   includeDeploymentFile,
   previewEnv,
   previewVariablePayload,
+  withDeploymentHostOrigin,
+  withDeploymentHostOriginTest,
   selectVercelProject,
   secretMaskLines,
   sourceDeploymentBody,
@@ -93,7 +95,6 @@ test("a Forma preview branch stays inside the Forma Neon project", () => {
   const env = previewEnv({
     pooledUrl: "postgresql://role:secret@ep-example-pooler.neon.tech/neondb",
     directUrl: "postgresql://role:secret@ep-example.neon.tech/neondb",
-    appUrl: "https://forma-example.vercel.app",
     secrets: {
       OPENROUTER_API_KEY: "sk-or-example",
       APP_PASSWORD: "pw",
@@ -104,8 +105,18 @@ test("a Forma preview branch stays inside the Forma Neon project", () => {
   });
   assert.equal(env.runtime.DATABASE_URL.includes("-pooler"), true);
   assert.equal(env.build.DATABASE_URL.includes("-pooler"), false);
+  assert.equal(env.runtime.APP_URL, undefined);
   assert.equal(env.runtime.OPENAI_API_KEY, undefined);
   assert.equal(env.runtime.OPENROUTER_API_KEY, "sk-or-example");
+  const updated = withDeploymentHostOrigin(
+    'export function sameOrigin(request: Request) {\n  const expected = process.env.APP_URL || new URL(request.url).origin;\n  if (request.headers.get("origin") !== expected)\n    throw new HttpError(403, "Request origin is not allowed.");\n}\n',
+  );
+  assert.equal(updated.includes("originHost === requestHost"), true);
+  assert.equal(withDeploymentHostOrigin(updated), updated);
+  const tested = withDeploymentHostOriginTest(
+    '  it("routes only executor connection and failure lifecycle webhooks", () => {\n',
+  );
+  assert.equal(tested.includes("allows the deployment host"), true);
 });
 
 test("a Forma token uses the one visible project and never the dyad project", () => {
