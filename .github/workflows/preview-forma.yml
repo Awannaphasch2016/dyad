@@ -1,0 +1,69 @@
+name: Forma preview
+
+# One Vercel preview and one Neon branch for a Forma pull request.
+# Does not print secret values and does not use the Dyad preview database.
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Forma pull request number
+        required: false
+  push:
+    branches:
+      - cursor/forma-preview-per-pr-5014
+    paths:
+      - .github/workflows/preview-forma.yml
+      - scripts/gascity/forma-preview.mjs
+      - scripts/gascity/forma-preview.test.mjs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: preview-forma
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/cursor/forma-preview-per-pr-5014'
+    runs-on: ubuntu-latest
+    environment: ai-bots
+    timeout-minutes: 45
+    steps:
+      - name: Check out the preview runner
+        uses: actions/checkout@v5
+
+      - name: Create a Forma app token
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.DYAD_GITHUB_APP_ID || '5221649' }}
+          private-key: ${{ secrets.DYAD_GITHUB_APP_PEM_KEY }}
+          owner: Awannaphasch2016
+          repositories: forma
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Use Node 24
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: Install Vercel and pnpm
+        run: |
+          set -euo pipefail
+          set +x
+          npm install -g vercel@41.7.8
+          corepack enable
+          corepack prepare pnpm@10.34.5 --activate
+
+      - name: Deploy the Forma preview
+        env:
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          FORMA_PR: ${{ inputs.pr }}
+        run: |
+          set -euo pipefail
+          set +x
+          node scripts/gascity/forma-preview.mjs
