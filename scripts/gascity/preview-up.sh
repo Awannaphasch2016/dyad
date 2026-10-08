@@ -143,4 +143,28 @@ echo "Preview project ${project} is up"
 echo "City volume pr-${pr}-city is empty; this image does not run gc"
 if [[ "$tunnel" -eq 1 ]]; then
   echo "https://pr-${pr}.anakwannaphaschaiyong.com"
+elif [[ "${PREVIEW_QUICK_TUNNEL:-1}" == "1" ]]; then
+  quick="preview-${pr}-quick"
+  docker rm -f "$quick" >/dev/null 2>&1 || true
+  docker run -d --name "$quick" \
+    --network "container:${project}-dyad-1" \
+    cloudflare/cloudflared:2026.9.3 \
+    tunnel --no-autoupdate --url http://127.0.0.1:8373
+  quick_url=""
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    quick_url="$(
+      docker logs "$quick" 2>&1 |
+        grep -oE 'https://[-a-z0-9]+\.trycloudflare\.com' |
+        head -n 1 || true
+    )"
+    if [[ -n "$quick_url" ]]; then
+      break
+    fi
+    sleep 1
+  done
+  if [[ -n "$quick_url" ]]; then
+    echo "Temporary preview: ${quick_url}"
+  else
+    echo "Temporary preview was not ready" >&2
+  fi
 fi

@@ -215,6 +215,7 @@ exit 0
         PREVIEW_STATE_DIR: state,
         PREVIEW_PRODUCTION_MARKER: join(root, "missing-production"),
         PREVIEW_SKIP_TUNNEL: "1",
+        PREVIEW_QUICK_TUNNEL: "0",
         DOCKER_LOG: join(root, "docker.log"),
         NODE_LOG: join(root, "node.log"),
         CLOUDFLARE_API_TOKEN: "",
@@ -262,6 +263,13 @@ exit 0
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("preview-up can print a temporary hostname without the named tunnel", () => {
+  const script = readFileSync(new URL("./preview-up.sh", import.meta.url), "utf8");
+  assert.match(script, /PREVIEW_QUICK_TUNNEL/);
+  assert.match(script, /trycloudflare/);
+  assert.equal(script.includes('echo "$CLOUDFLARE_API_TOKEN"'), false);
 });
 
 test("preview image workflow updates the shared Devbox after publish", () => {
