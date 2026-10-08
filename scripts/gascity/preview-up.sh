@@ -95,7 +95,29 @@ do
   upsert_env "$key"
 done
 
-if [[ "${PREVIEW_SKIP_TUNNEL:-}" != "1" ]]; then
+# Accept either stored name. preview-tunnel.mjs reads the underscore forms.
+if [[ -z "${CLOUDFLARE_API_TOKEN_:-}" && -n "${CLOUDFLARE_API_TOKEN:-}" ]]; then
+  export CLOUDFLARE_API_TOKEN_="$CLOUDFLARE_API_TOKEN"
+fi
+if [[ -z "${CLOUDFLARE_ZONE_ID_:-}" && -n "${CLOUDFLARE_ZONE_ID:-}" ]]; then
+  export CLOUDFLARE_ZONE_ID_="$CLOUDFLARE_ZONE_ID"
+fi
+if [[ -z "${CLOUDFLARE_ACCOUNT_ID:-}" && -n "${CLOUDFLARE_ACCOUNT_ID_:-}" ]]; then
+  export CLOUDFLARE_ACCOUNT_ID="$CLOUDFLARE_ACCOUNT_ID_"
+fi
+tunnel_ready=1
+for cloudflare_name in CLOUDFLARE_API_TOKEN_ CLOUDFLARE_ZONE_ID_ CLOUDFLARE_ACCOUNT_ID; do
+  if [[ -n "${!cloudflare_name:-}" ]]; then
+    echo "${cloudflare_name}: present"
+  else
+    echo "${cloudflare_name}: absent"
+    tunnel_ready=0
+  fi
+done
+
+# PREVIEW_SKIP_TUNNEL skips creation only when the names are missing.
+# A new preview has no saved token, so the names still create pr-<n>.
+if [[ "${PREVIEW_SKIP_TUNNEL:-}" != "1" || "$tunnel_ready" == "1" ]]; then
   if ! command -v node >/dev/null 2>&1; then
     echo "node 18+ is required to create the Cloudflare tunnel" >&2
     exit 2
