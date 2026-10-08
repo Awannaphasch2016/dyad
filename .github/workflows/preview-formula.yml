@@ -15,6 +15,23 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  role:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require the AWS role
+        env:
+          AWS_PREVIEW_FORMULA_ROLE_ARN: ${{ secrets.AWS_PREVIEW_FORMULA_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$AWS_PREVIEW_FORMULA_ROLE_ARN" =~ ^arn:aws:iam::[0-9]{12}:role/[A-Za-z0-9+=,.@_-]+$ ]]; then
+            echo "AWS refused the login because AWS_PREVIEW_FORMULA_ROLE_ARN is not set." >&2
+            echo "Create a role once that trusts repo:Awannaphasch2016/dyad:ref:refs/heads/cursor/formula-config-ui-55d6" >&2
+            echo "Then set the secret AWS_PREVIEW_FORMULA_ROLE_ARN to that role ARN." >&2
+            exit 1
+          fi
+          echo "AWS role is set"
+
   publish:
     runs-on: ubuntu-latest
     timeout-minutes: 180
@@ -76,7 +93,9 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
 
   deploy:
-    needs: publish
+    needs:
+      - publish
+      - role
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
