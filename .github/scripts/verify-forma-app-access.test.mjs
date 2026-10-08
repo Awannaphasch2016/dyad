@@ -43,7 +43,10 @@ test("the check redacts app tokens and only reports statuses", async () => {
   assert.equal(lines.includes("repo forma=ok private=false"), true);
   assert.equal(lines.includes("forma_contents=ok bytes=12"), true);
   assert.equal(lines.includes("forma_pulls=ok"), true);
-  assert.equal(lines.includes("forma_packages=ok digest=sha256:abc"), true);
+  assert.equal(
+    lines.includes("forma_packages=ok auth=bearer digest=sha256:abc"),
+    true,
+  );
   assert.equal(JSON.stringify(lines).includes("ghs_secret"), false);
   assert.equal(JSON.stringify(lines).includes("registry-secret"), false);
   assert.equal(
@@ -52,14 +55,15 @@ test("the check redacts app tokens and only reports statuses", async () => {
   );
 });
 
-test("a denied manifest reports the status and not the token", async () => {
+test("a denied manifest reports statuses and not the token", async () => {
+  const seen = [];
   const fetchImpl = async (url) => {
-    if (String(url).includes("ghcr.io/token")) {
-      return {
-        ok: false,
-        status: 403,
-        json: async () => ({ token: "ghs_secret" }),
-      };
+    const href = String(url);
+    if (href.includes("/v2/")) {
+      return { ok: false, status: 401, headers: { get: () => null } };
+    }
+    if (href.includes("ghcr.io/token")) {
+      return { ok: false, status: 403, json: async () => ({}) };
     }
     return {
       ok: true,
@@ -68,9 +72,19 @@ test("a denied manifest reports the status and not the token", async () => {
     };
   };
   await assert.rejects(
-    () => verifyFormaAppAccess({ token: "ghs_secret", fetchImpl }),
-    /forma_packages_token 403/,
+    () =>
+      verifyFormaAppAccess({
+        token: "ghs_secret",
+        fetchImpl,
+        log: (line) => seen.push(line),
+      }),
+    (error) => {
+      assert.match(error.message, /forma_packages=denied bearer=401 basic=401/);
+      assert.equal(error.message.includes("ghs_secret"), false);
+      return true;
+    },
   );
+  assert.equal(seen.includes("forma_pulls=ok"), true);
 });
 
 test("the workflow only reads after requesting the four grants", () => {
