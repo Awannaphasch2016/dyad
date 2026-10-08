@@ -10,9 +10,14 @@ const region = "ap-southeast-1";
 export function redact(text) {
   return String(text ?? "")
     .replace(/AKIA[0-9A-Z]{16}/g, "AKIA_REDACTED")
+    .replace(/ASIA[0-9A-Z]{16}/g, "ASIA_REDACTED")
     .replace(
       /aws_secret_access_key[=:]\s*\S+/gi,
       "aws_secret_access_key=redacted",
+    )
+    .replace(
+      /"(SecretAccessKey|SessionToken|AccessKeyId)"\s*:\s*"[^"]*"/g,
+      '"$1":"redacted"',
     )
     .replace(/dp\.st\.[A-Za-z0-9]+/g, "dp.st.redacted");
 }
@@ -192,6 +197,147 @@ export function applyFargatePolicy(caller, run, env = {}) {
   return arn;
 }
 
+export function isPolicyCountQuota(error) {
+  const message = String(error?.message ?? "");
+  return (
+    message.includes("LimitExceeded") && message.includes("PoliciesPerUser")
+  );
+}
+
+export function deployRoleArn(accountId) {
+  return `arn:aws:iam::${accountId}:role/preview-forma-deploy`;
+}
+
+export function listUserAccess(caller, run, env = {}) {
+  const managed = JSON.parse(
+    run(
+      ["iam", "list-attached-user-policies", "--user-name", caller.name],
+      env,
+    ),
+  );
+  const inline = JSON.parse(
+    run(["iam", "list-user-policies", "--user-name", caller.name], env),
+  );
+  return {
+    managed: (managed.AttachedPolicies ?? []).map(
+      (policy) => policy.PolicyName,
+    ),
+    inline: inline.PolicyNames ?? [],
+  };
+}
+
+export function ensureDeployRole(caller, policyArn, run, env = {}) {
+  const roleName = "preview-forma-deploy";
+  const trust = JSON.stringify({
+    Version: "2012-10-17",
+    Statement: [
+      {
+        Effect: "Allow",
+        Principal: {
+          AWS: `arn:aws:iam::${caller.accountId}:user/${caller.name}`,
+        },
+        Action: "sts:AssumeRole",
+      },
+    ],
+  });
+  try {
+    run(
+      [
+        "iam",
+        "create-role",
+        "--role-name",
+        roleName,
+        "--assume-role-policy-document",
+        trust,
+        "--description",
+        "preview-forma Fargate deploy",
+      ],
+      env,
+    );
+  } catch (error) {
+    if (!String(error.message).includes("EntityAlreadyExists")) throw error;
+  }
+  run(
+    [
+      "iam",
+      "update-assume-role-policy",
+      "--role-name",
+      roleName,
+      "--policy-document",
+      trust,
+    ],
+    env,
+  );
+  run(
+    [
+      "iam",
+      "attach-role-policy",
+      "--role-name",
+      roleName,
+      "--policy-arn",
+      policyArn,
+    ],
+    env,
+  );
+  return deployRoleArn(caller.accountId);
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function proveAssumeRole(roleArn, run, env = {}, pause = delay) {
+  let lastError;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const assumed = String(
+        run(
+          [
+            "sts",
+            "assume-role",
+            "--role-arn",
+            roleArn,
+            "--role-session-name",
+            "preview-forma",
+            "--duration-seconds",
+            "900",
+            "--query",
+            "AssumedRoleUser.Arn",
+            "--output",
+            "text",
+          ],
+          env,
+        ),
+      ).trim();
+      if (!assumed.startsWith("arn:aws:sts::")) {
+        throw new Error("AssumeRole did not return an assumed-role ARN");
+      }
+      return assumed;
+    } catch (error) {
+      lastError = error;
+      if (attempt < 3) await pause(5000);
+    }
+  }
+  throw lastError;
+}
+
+export async function grantPreviewFormaAccess(
+  caller,
+  run,
+  env = {},
+  pause = delay,
+) {
+  try {
+    return { arn: applyFargatePolicy(caller, run, env) };
+  } catch (error) {
+    if (!isPolicyCountQuota(error) || caller.kind !== "user") throw error;
+    const arn = managedPolicyArn(caller.accountId);
+    const roleArn = ensureDeployRole(caller, arn, run, env);
+    const assumed = await proveAssumeRole(roleArn, run, env, pause);
+    return { arn, roleArn, assumed };
+  }
+}
+
 export function callerFromArn(arn) {
   const user = /^arn:aws:iam::([0-9]{12}):user\/(.+)$/.exec(arn);
   if (user) return { accountId: user[1], kind: "user", name: user[2] };
@@ -218,8 +364,26 @@ export async function attachPreviewFormaPolicy({ token, run = aws }) {
   const caller = callerFromArn(identity.Arn);
   console.log(`preview_forma_iam_account=${caller.accountId}`);
   console.log(`preview_forma_iam_caller=${identity.Arn}`);
-  const arn = applyFargatePolicy(caller, run, env);
-  console.log(`preview_forma_iam_policy=attached ${arn}`);
+  if (caller.kind === "user") {
+    try {
+      const access = listUserAccess(caller, run, env);
+      console.log(
+        `preview_forma_iam_managed=${access.managed.join(",") || "none"}`,
+      );
+      console.log(
+        `preview_forma_iam_inline=${access.inline.join(",") || "none"}`,
+      );
+    } catch (error) {
+      console.log(
+        `preview_forma_iam_policies=list_failed ${redact(error?.message)}`,
+      );
+    }
+  }
+  const granted = await grantPreviewFormaAccess(caller, run, env);
+  console.log(`preview_forma_iam_policy=attached ${granted.arn}`);
+  if (granted.roleArn) {
+    console.log(`preview_forma_iam_role=${granted.roleArn}`);
+  }
   return caller;
 }
 
