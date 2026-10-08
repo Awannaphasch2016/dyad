@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { callerFromArn, fargatePolicy, redact } from "./preview-forma-iam.mjs";
+import {
+  applyFargatePolicy,
+  callerFromArn,
+  fargatePolicy,
+  managedPolicyArn,
+  redact,
+} from "./preview-forma-iam.mjs";
 
 test("the Fargate policy stays in Singapore and on preview-forma roles", () => {
   const policy = fargatePolicy("123456789012");
@@ -34,5 +40,60 @@ test("caller parsing and redaction hide the key material", () => {
   assert.equal(
     redact("key AKIAIOSFODNN7EXAMPLE leaked").includes("AKIAIOSFODNN7EXAMPLE"),
     false,
+  );
+});
+
+test("attach uses a customer managed policy, not an inline user policy", () => {
+  const calls = [];
+  const run = (args) => {
+    calls.push(args);
+    return "{}";
+  };
+  const caller = { accountId: "123456789012", kind: "user", name: "anak" };
+  const arn = applyFargatePolicy(caller, run);
+  assert.equal(arn, managedPolicyArn(caller.accountId));
+  assert.equal(
+    calls.some((args) => args.includes("put-user-policy")),
+    false,
+  );
+  assert.deepEqual(calls[0].slice(0, 4), [
+    "iam",
+    "create-policy",
+    "--policy-name",
+    "preview-forma-fargate",
+  ]);
+  assert.equal(calls[0].at(-1).includes("iam:CreateUser"), false);
+  assert.equal(calls[1][1], "attach-user-policy");
+  assert.equal(calls[1].at(-1), arn);
+});
+
+test("an existing managed policy gets a new default version", () => {
+  const calls = [];
+  const run = (args) => {
+    calls.push(args);
+    if (args[1] === "create-policy") {
+      throw new Error("aws iam 254 EntityAlreadyExists");
+    }
+    return "{}";
+  };
+  applyFargatePolicy(
+    { accountId: "123456789012", kind: "role", name: "preview-admin" },
+    run,
+  );
+  assert.equal(calls[1][1], "create-policy-version");
+  assert.equal(calls[1].includes("--set-as-default"), true);
+  assert.equal(calls[2][1], "attach-role-policy");
+});
+
+test("access denied is not treated as an existing policy", () => {
+  assert.throws(
+    () =>
+      applyFargatePolicy(
+        { accountId: "123456789012", kind: "user", name: "anak" },
+        () => {
+          throw new Error("aws iam 254 AccessDenied");
+        },
+      ),
+    /AccessDenied/,
   );
 });

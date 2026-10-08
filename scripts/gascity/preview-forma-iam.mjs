@@ -130,6 +130,68 @@ async function downloadAwsDev(token) {
   return response.json();
 }
 
+export function managedPolicyArn(accountId) {
+  return `arn:aws:iam::${accountId}:policy/preview-forma-fargate`;
+}
+
+export function applyFargatePolicy(caller, run, env = {}) {
+  const document = JSON.stringify(fargatePolicy(caller.accountId));
+  const arn = managedPolicyArn(caller.accountId);
+  try {
+    run(
+      [
+        "iam",
+        "create-policy",
+        "--policy-name",
+        "preview-forma-fargate",
+        "--policy-document",
+        document,
+      ],
+      env,
+    );
+  } catch (error) {
+    if (!String(error.message).includes("EntityAlreadyExists")) throw error;
+    run(
+      [
+        "iam",
+        "create-policy-version",
+        "--policy-arn",
+        arn,
+        "--set-as-default",
+        "--policy-document",
+        document,
+      ],
+      env,
+    );
+  }
+  if (caller.kind === "user") {
+    run(
+      [
+        "iam",
+        "attach-user-policy",
+        "--user-name",
+        caller.name,
+        "--policy-arn",
+        arn,
+      ],
+      env,
+    );
+  } else {
+    run(
+      [
+        "iam",
+        "attach-role-policy",
+        "--role-name",
+        caller.name,
+        "--policy-arn",
+        arn,
+      ],
+      env,
+    );
+  }
+  return arn;
+}
+
 export function callerFromArn(arn) {
   const user = /^arn:aws:iam::([0-9]{12}):user\/(.+)$/.exec(arn);
   if (user) return { accountId: user[1], kind: "user", name: user[2] };
@@ -156,37 +218,8 @@ export async function attachPreviewFormaPolicy({ token, run = aws }) {
   const caller = callerFromArn(identity.Arn);
   console.log(`preview_forma_iam_account=${caller.accountId}`);
   console.log(`preview_forma_iam_caller=${identity.Arn}`);
-  const document = JSON.stringify(fargatePolicy(caller.accountId));
-  if (caller.kind === "user") {
-    run(
-      [
-        "iam",
-        "put-user-policy",
-        "--user-name",
-        caller.name,
-        "--policy-name",
-        "preview-forma-fargate",
-        "--policy-document",
-        document,
-      ],
-      env,
-    );
-  } else {
-    run(
-      [
-        "iam",
-        "put-role-policy",
-        "--role-name",
-        caller.name,
-        "--policy-name",
-        "preview-forma-fargate",
-        "--policy-document",
-        document,
-      ],
-      env,
-    );
-  }
-  console.log("preview_forma_iam_policy=attached preview-forma-fargate");
+  const arn = applyFargatePolicy(caller, run, env);
+  console.log(`preview_forma_iam_policy=attached ${arn}`);
   return caller;
 }
 
