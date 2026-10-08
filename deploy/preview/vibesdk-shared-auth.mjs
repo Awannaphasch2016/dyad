@@ -96,6 +96,8 @@ export function patchAuthRoutes(source) {
         "    authRouter.get('/clerk', setAuthLevel(AuthConfig.public), adaptController(SharedSignInController, SharedSignInController.clerk));",
         "    authRouter.get('/session', setAuthLevel(AuthConfig.public), adaptController(SharedSignInController, SharedSignInController.session));",
         "    authRouter.post('/shared', setAuthLevel(AuthConfig.public), adaptController(SharedSignInController, SharedSignInController.shared));",
+        "    authRouter.get('/shared/last', setAuthLevel(AuthConfig.public), adaptController(SharedSignInController, SharedSignInController.last));",
+        "    authRouter.get('/shared/miss', setAuthLevel(AuthConfig.public), adaptController(SharedSignInController, SharedSignInController.miss));",
         routeAnchor,
       ].join("\n"),
     );
@@ -204,7 +206,7 @@ export function patchAuthContext(source) {
       () =>
         `${sharedClerkHelpers()}\n${sessionAnchor.replace(
           "async function fetchAuthSession(): Promise<CachedAuthSession | null> {",
-          "async function fetchAuthSession(): Promise<CachedAuthSession | null> {\n\tconst sharedToken = await sharedClerkToken();",
+          "async function fetchAuthSession(): Promise<CachedAuthSession | null> {\n\tconst sharedToken = await sharedClerkToken();\n\tif (sessionStorage.getItem('vibesdk-shared-pending')) {\n\t\tsessionStorage.removeItem('vibesdk-shared-pending');\n\t\tif (!sharedToken) void fetch('/api/auth/shared/miss', { credentials: 'include' });\n\t}",
         )}`,
     )
     .replace(
@@ -322,6 +324,7 @@ async function startSharedSignIn(): Promise<void> {
 	}).Clerk;
 	const back = window.location.href;
 	if (!clerk?.redirectToSignIn) return;
+	sessionStorage.setItem('vibesdk-shared-pending', '1');
 	await clerk.redirectToSignIn({
 		redirectUrl: back,
 		signInForceRedirectUrl: back,
@@ -358,6 +361,30 @@ import {
 
 type GateRow = { org_id?: string; role_id?: string; organization?: string | null };
 
+const LAST_REFUSAL_KEY = 'shared-sign-in:last';
+
+class SignInRefusal extends Error {
+	constructor(readonly code: string) {
+		super('Sign in to continue.');
+	}
+}
+
+async function recordAttempt(env: Env, code: string): Promise<void> {
+	try {
+		await env.VibecoderStore.put(
+			LAST_REFUSAL_KEY,
+			JSON.stringify({ code, at: new Date().toISOString() }),
+			{ expirationTtl: 86400 },
+		);
+	} catch {
+		// The attempt record is diagnostic only.
+	}
+}
+
+function refusalCode(error: unknown): string {
+	return error instanceof SignInRefusal ? error.code : 'unexpected';
+}
+
 function binding(env: Env, name: string): string {
 	return String((env as unknown as Record<string, unknown>)[name] ?? '').trim();
 }
@@ -375,21 +402,21 @@ async function clerkIdentity(env: Env, token: string): Promise<{ userId: string;
 	const secret = binding(env, 'CLERK_SECRET_KEY');
 	const publishable = binding(env, 'CLERK_PUBLISHABLE_KEY');
 	if (!secret.startsWith('sk_test_') || !publishable.startsWith('pk_test_')) {
-		throw new Error('Sign in is not available.');
+		throw new SignInRefusal('clerk-keys');
 	}
 	const frontendApi = atob(publishable.slice('pk_test_'.length)).replace(/\\$$/, '');
 	const jwksResponse = await fetch(\`https://\${frontendApi}/.well-known/jwks.json\`);
-	if (!jwksResponse.ok) throw new Error('Sign in to continue.');
+	if (!jwksResponse.ok) throw new SignInRefusal('jwks');
 	const jwks = (await jwksResponse.json()) as { keys: (JsonWebKey & { kid?: string })[] };
 	const [headerPart, payloadPart, signaturePart] = token.split('.');
-	if (!headerPart || !payloadPart || !signaturePart) throw new Error('Sign in to continue.');
+	if (!headerPart || !payloadPart || !signaturePart) throw new SignInRefusal('token-shape');
 	const decode = (value: string) => {
 		const padded = value.replace(/-/g, '+').replace(/_/g, '/');
 		return atob(padded.padEnd(Math.ceil(padded.length / 4) * 4, '='));
 	};
 	const header = JSON.parse(decode(headerPart)) as { kid?: string };
 	const jwk = jwks.keys.find((key) => key.kid === header.kid);
-	if (!jwk) throw new Error('Sign in to continue.');
+	if (!jwk) throw new SignInRefusal('token-key');
 	const key = await crypto.subtle.importKey(
 		'jwk',
 		jwk,
@@ -404,16 +431,16 @@ async function clerkIdentity(env: Env, token: string): Promise<{ userId: string;
 		signature,
 		new TextEncoder().encode(\`\${headerPart}.\${payloadPart}\`),
 	);
-	if (!signed) throw new Error('Sign in to continue.');
+	if (!signed) throw new SignInRefusal('token-signature');
 	const payload = JSON.parse(decode(payloadPart)) as { sub?: string; exp?: number };
 	if (typeof payload.exp === 'number' && payload.exp * 1000 <= Date.now()) {
-		throw new Error('Sign in to continue.');
+		throw new SignInRefusal('token-expired');
 	}
-	if (!payload.sub) throw new Error('Sign in to continue.');
+	if (!payload.sub) throw new SignInRefusal('token-subject');
 	const userResponse = await fetch(\`https://api.clerk.com/v1/users/\${encodeURIComponent(payload.sub)}\`, {
 		headers: { Authorization: \`Bearer \${secret}\` },
 	});
-	if (!userResponse.ok) throw new Error('Sign in to continue.');
+	if (!userResponse.ok) throw new SignInRefusal(\`clerk-user-\${userResponse.status}\`);
 	const user = (await userResponse.json()) as {
 		first_name?: string | null;
 		last_name?: string | null;
@@ -423,7 +450,7 @@ async function clerkIdentity(env: Env, token: string): Promise<{ userId: string;
 	const email =
 		user.email_addresses?.find((item) => item.id === user.primary_email_address_id)
 			?.email_address ?? user.email_addresses?.[0]?.email_address;
-	if (!email) throw new Error('Sign in to continue.');
+	if (!email) throw new SignInRefusal('clerk-email');
 	const name = [user.first_name, user.last_name].filter(Boolean).join(' ').trim();
 	return { userId: payload.sub, email: email.toLowerCase(), name: name || email.split('@')[0] };
 }
@@ -440,7 +467,7 @@ async function neonQuery(databaseUrl: string, query: string, params: string[]): 
 		},
 		body: JSON.stringify({ query, params }),
 	});
-	if (!response.ok) throw new Error('Sign in to continue.');
+	if (!response.ok) throw new SignInRefusal(\`membership-query-\${response.status}\`);
 	const payload = (await response.json()) as {
 		fields?: { name: string }[];
 		rows?: unknown[];
@@ -456,9 +483,16 @@ async function neonQuery(databaseUrl: string, query: string, params: string[]): 
 	});
 }
 
-async function gateFor(env: Env, userId: string) {
+async function gateFor(env: Env, userId: string): Promise<{
+	signedIn: true;
+	organization: string | null;
+	role: string | null;
+	refusal: string | null;
+}> {
 	const databaseUrl = binding(env, 'WEWEBPLUS_DATABASE_URL');
-	if (!databaseUrl) return { signedIn: true, organization: null, role: null };
+	if (!databaseUrl) {
+		return { signedIn: true, organization: null, role: null, refusal: 'membership-store' };
+	}
 	const memberships = await neonQuery(
 		databaseUrl,
 		'select org_id, role_id from wewebplus.memberships where user_id = $1',
@@ -467,10 +501,18 @@ async function gateFor(env: Env, userId: string) {
 	const usable = memberships.filter(
 		(row) => row.role_id === 'project-manager' || row.role_id === 'developer',
 	);
-	if (usable.length !== 1) return { signedIn: true, organization: null, role: null };
+	if (usable.length !== 1) {
+		return {
+			signedIn: true,
+			organization: null,
+			role: null,
+			refusal: \`gate-roles-\${usable.length}\`,
+		};
+	}
 	const orgId = String(usable[0].org_id ?? '');
 	const secret = binding(env, 'CLERK_SECRET_KEY');
 	let organization: string | null = null;
+	let refusal: string | null = orgId ? null : 'organization-id';
 	if (secret && orgId) {
 		const response = await fetch(\`https://api.clerk.com/v1/organizations/\${encodeURIComponent(orgId)}\`, {
 			headers: { Authorization: \`Bearer \${secret}\` },
@@ -478,12 +520,16 @@ async function gateFor(env: Env, userId: string) {
 		if (response.ok) {
 			const org = (await response.json()) as { name?: string };
 			organization = org.name ?? null;
+			if (!organization) refusal = 'organization-name';
+		} else {
+			refusal = \`organization-\${response.status}\`;
 		}
 	}
 	return {
 		signedIn: true,
 		organization,
 		role: usable[0].role_id === 'project-manager' ? 'Project Manager' : 'Developer',
+		refusal,
 	};
 }
 
@@ -507,21 +553,37 @@ export class SharedSignInController extends BaseController {
 			if (!gate.role) {
 				return Response.json({ signedIn: true, organization: null, role: null });
 			}
-			return Response.json(gate);
+			return Response.json({
+				signedIn: true,
+				organization: gate.organization,
+				role: gate.role,
+			});
 		} catch {
 			return Response.json({ signedIn: false, organization: null, role: null });
 		}
 	}
 
+	static async miss(_request: Request, env: Env): Promise<Response> {
+		await recordAttempt(env, 'browser-no-clerk-token');
+		return Response.json({ recorded: true });
+	}
+
+	static async last(_request: Request, env: Env): Promise<Response> {
+		const stored = await env.VibecoderStore.get(LAST_REFUSAL_KEY);
+		return Response.json(stored ? JSON.parse(stored) : { code: null, at: null });
+	}
+
 	static async shared(request: Request, env: Env): Promise<Response> {
 		const token = sessionToken(request.headers.get('Authorization'), request.headers.get('Cookie'));
 		if (!token) {
+			await recordAttempt(env, 'no-token');
 			return SharedSignInController.createErrorResponse('Sign in to continue.', 401);
 		}
 		try {
 			const identity = await clerkIdentity(env, token);
 			const gate = await gateFor(env, identity.userId);
 			if (!gate.role || !gate.organization) {
+				await recordAttempt(env, gate.refusal ?? 'gate');
 				return SharedSignInController.createErrorResponse('Sign in to continue.', 403);
 			}
 			const database = createDatabaseService(env).db;
@@ -537,19 +599,24 @@ export class SharedSignInController extends BaseController {
 					.where(eq(schema.users.email, identity.email))
 					.get();
 				if (byEmail) {
+					await recordAttempt(env, 'email-taken');
 					return SharedSignInController.createErrorResponse('Sign in to continue.', 403);
 				}
 				const now = new Date();
-				await database.insert(schema.users).values({
-					id: identity.userId,
-					email: identity.email,
-					displayName: identity.name,
-					emailVerified: true,
-					provider: 'email',
-					providerId: identity.userId,
-					createdAt: now,
-					updatedAt: now,
-				});
+				try {
+					await database.insert(schema.users).values({
+						id: identity.userId,
+						email: identity.email,
+						displayName: identity.name,
+						emailVerified: true,
+						provider: 'email',
+						providerId: identity.userId,
+						createdAt: now,
+						updatedAt: now,
+					});
+				} catch {
+					throw new SignInRefusal('user-insert');
+				}
 				user = await database
 					.select()
 					.from(schema.users)
@@ -557,10 +624,16 @@ export class SharedSignInController extends BaseController {
 					.get();
 			}
 			if (!user) {
+				await recordAttempt(env, 'user-row');
 				return SharedSignInController.createErrorResponse('Sign in to continue.', 403);
 			}
 			const sessionService = new SessionService(env);
-			const created = await sessionService.createSession(identity.userId, request);
+			let created: Awaited<ReturnType<SessionService['createSession']>>;
+			try {
+				created = await sessionService.createSession(identity.userId, request);
+			} catch {
+				throw new SignInRefusal('session-create');
+			}
 			const response = SharedSignInController.createSuccessResponse({
 				...formatAuthResponse(mapUserResponse(user), created.session.sessionId, created.session.expiresAt),
 				organization: gate.organization,
@@ -570,8 +643,10 @@ export class SharedSignInController extends BaseController {
 				accessToken: created.accessToken,
 				accessTokenExpiry: SessionService.config.sessionTTL,
 			});
+			await recordAttempt(env, 'ok');
 			return response;
-		} catch {
+		} catch (error) {
+			await recordAttempt(env, refusalCode(error));
 			return SharedSignInController.createErrorResponse('Sign in to continue.', 401);
 		}
 	}
