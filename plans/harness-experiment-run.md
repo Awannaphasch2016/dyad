@@ -11,7 +11,7 @@ Passing a phase is what allows Harness to take over that workflow. GitHub remain
 | 1. Mirror CI                  | 2                        | Pass. GitHub Actions is still the required check.                                   |
 | Logs                          | 14                       | Started, not scored. Does not block phase 2. Must be scored before the set is done. |
 | 2. Mirror image reuse         | 1, 4                     | Pass. Same config and health check, then reuse, then a new digest after the Dockerfile comment. |
-| 3. Secrets and isolation      | 5, 6                     | Not run. Required before any preview deploy.                                        |
+| 3. Secrets and isolation      | 5, 6                     | Blocked. The custom token API returns 404, and a saved step identity is not delivered to the runner. No Doppler identity was created. |
 | 4. One preview, then a second | 3, 7, 8, 11, 13, then 12 | Not run.                                                                            |
 | 5. Agent trial                | 15                       | Not run.                                                                            |
 | 6. Rollback on a copy         | 10                       | Not run.                                                                            |
@@ -39,7 +39,7 @@ These do not block phase 2.
 
 ## Phase 2. Images
 
-Experiments 1 and 4. This is the next run.
+Experiments 1 and 4. Passed.
 
 1. Add one Harness pipeline with two stages. Stage A checks out `Awannaphasch2016/gascity` and runs the same `go build`, `Dockerfile.base`, and `Dockerfile.agent` build as `.github/workflows/gascity-image.yml`. Stage B checks out this repo and runs `docker build` on `Dockerfile.gascity`.
 2. Push only these tags: `ghcr.io/awannaphasch2016/gascity-base:harness-<sha>`, `ghcr.io/awannaphasch2016/gascity:harness-<sha>`, `ghcr.io/awannaphasch2016/dyad:harness-<sha>`, and `ghcr.io/awannaphasch2016/dyad:harness-ctx-<hash>`. Do not push `:preview`, `:sha-<commit>`, or `dyad:ctx-<hash>`. Do not push to ECR. Do not SSH.
@@ -58,6 +58,8 @@ Experiments 5 and 6. Start only after phase 2 passes. No preview deploy before t
 4. Show that preview cannot read canary or production, canary cannot read production, and production cannot read preview. The canary pipeline must refuse to start when its database host equals the production host.
 5. The log may show `db_endpoint=`. It must not show `postgres://` or a Doppler token. Harness secret manager must not contain `WEWEBPLUS_DATABASE_URL`, a Clerk secret, or a Cloudflare token after the run.
 6. A cross-environment read stops the migration. After the login test succeeds, tell the user they may delete `DOPPLER_ADMIN_TOKEN`.
+
+Phase 3 is stopped. Do not create the four identities until a Harness execution can mint a token. The check is `hcli identity token --name preview` printing allowlisted claims, or `HARNESS_WI_HANDLE` being present. The public custom-token API is not that path: it returns `RESOURCE_NOT_FOUND`. Preview deploy stays waiting.
 
 ## Phase 4. One preview, then a second
 
