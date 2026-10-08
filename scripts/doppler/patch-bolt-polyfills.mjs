@@ -24,19 +24,44 @@ export function patchBrowserPolyfills(source) {
   return source.replace(transformStart, skip);
 }
 
+const readyCall =
+  "factoryRunToRestore(ready, chatId.get(), restoredChatId.current, chatMetadata.get());";
+const readyCallFixed =
+  "factoryRunToRestore(true, chatId.get(), restoredChatId.current, chatMetadata.get());";
+const readyDeps = "}, [ready, initialMessages]);";
+const readyDepsFixed = "}, [initialMessages]);";
+
+export function patchChatReady(source) {
+  if (source.includes(readyCallFixed) && !source.includes(readyCall)) {
+    return source;
+  }
+  if (!source.includes(readyCall) || !source.includes(readyDeps)) {
+    throw new Error("walkthrough restore effect was not found");
+  }
+  return source
+    .replace(readyCall, readyCallFixed)
+    .replace(readyDeps, readyDepsFixed);
+}
+
 const entry = process.argv[1];
 if (entry && import.meta.url === pathToFileURL(entry).href) {
-  const file = process.argv[2];
-  if (!file) {
-    console.log("vite_config=absent");
+  const viteConfig = process.argv[2];
+  const chatClient = process.argv[3];
+  if (!viteConfig || !chatClient) {
+    console.log("patch_args=absent");
     process.exit(1);
   }
-  const source = readFileSync(file, "utf8");
-  const patched = patchBrowserPolyfills(source);
-  if (patched === source) {
-    console.log("polyfill_patch=already");
-  } else {
-    writeFileSync(file, patched);
-    console.log("polyfill_patch=applied");
+  for (const [file, patch, label] of [
+    [viteConfig, patchBrowserPolyfills, "polyfill_patch"],
+    [chatClient, patchChatReady, "ready_patch"],
+  ]) {
+    const source = readFileSync(file, "utf8");
+    const patched = patch(source);
+    if (patched === source) {
+      console.log(`${label}=already`);
+    } else {
+      writeFileSync(file, patched);
+      console.log(`${label}=applied`);
+    }
   }
 }

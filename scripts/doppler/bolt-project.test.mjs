@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { patchBrowserPolyfills } from "./patch-bolt-polyfills.mjs";
+import {
+  patchBrowserPolyfills,
+  patchChatReady,
+} from "./patch-bolt-polyfills.mjs";
 import {
   cloudflareReferencePlan,
   configReport,
@@ -124,6 +127,18 @@ test("the preview job reads Doppler and does not store Cloudflare secrets on bol
   assert.match(deploy, /export-bolt-preview-env\.mjs/);
   assert.equal(deploy.includes("secrets.CLOUDFLARE_API_TOKEN"), false);
   assert.equal(deploy.includes("secrets.CLOUDFLARE_ACCOUNT_ID"), false);
+});
+
+test("the chat restore effect no longer reads an unbound ready", () => {
+  const source = [
+    "factoryRunToRestore(ready, chatId.get(), restoredChatId.current, chatMetadata.get());",
+    "}, [ready, initialMessages]);",
+  ].join("\n");
+  const patched = patchChatReady(source);
+  assert.match(patched, /factoryRunToRestore\(true,/);
+  assert.match(patched, /\}, \[initialMessages\]\);/);
+  assert.equal(patched.includes("[ready, initialMessages]"), false);
+  assert.equal(patchChatReady(patched), patched);
 });
 
 test("the polyfill patch skips the rolldown runtime", () => {
