@@ -302,6 +302,8 @@ test("the preview deploys a Forma commit instead of copying the editor", async (
   assert.match(preview, /FORMA_SHA/);
   assert.match(preview, /FORMA_ENVIRONMENT/);
   assert.equal(preview.includes("pull_request:"), false);
+  assert.equal(preview.includes("push:"), false);
   assert.equal(preview.includes("packages: write"), false);
+  assert.equal(preview.includes("'2'"), false);
   assert.match(preview, /permission-workflows: write/);
 });

@@ -18,13 +18,6 @@ on:
         default: preview
   repository_dispatch:
     types: [preview-forma]
-  push:
-    branches:
-      - cursor/preview-forma-workflow-5014
-    paths:
-      - .github/workflows/preview-forma.yml
-      - scripts/gascity/forma-preview.mjs
-      - scripts/gascity/forma-preview.test.mjs
 
 permissions:
   contents: read
@@ -35,7 +28,7 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.ref == 'refs/heads/cursor/preview-forma-workflow-5014' || github.event_name == 'workflow_dispatch' || github.event_name == 'repository_dispatch'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'repository_dispatch'
     runs-on: ubuntu-latest
     environment: ai-bots
     timeout-minutes: 45
@@ -71,7 +64,7 @@ jobs:
         env:
           DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
           GH_TOKEN: ${{ steps.app.outputs.token }}
-          FORMA_PR: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.pr || inputs.pr || (github.event_name == 'push' && '2' || '') }}
+          FORMA_PR: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.pr || inputs.pr }}
           FORMA_SHA: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.sha || inputs.sha }}
           FORMA_ENVIRONMENT: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.environment || inputs.environment || 'preview' }}
         run: |
