@@ -1,67 +1,100 @@
-# Forma on the shared sign-in
+# Integrate Forma with the shared sign-in
 
-Bolt already uses the shared sign-in. Forma does not. This plan is the Forma copy of that adapter. It does not deploy, and it does not change Clerk production.
+> This is a plan. It does not change the Forma application, does not deploy, and does not change the Clerk production instance.
 
-## What was read
+Bolt is the first builder on the shared sign-in. Forma still asks for a workspace password. This plan is the copy Forma makes of Bolt's adapter.
 
-- [PR 76](https://github.com/Awannaphasch2016/dyad/pull/76), `plans/shared-auth-substrate.md` on `cursor/shared-auth-substrate-55d6`. Bolt is the first adapter. The plan says DYAD, Forma, and Vibe SDK stay unchanged until that adapter passes.
-- [PR 78](https://github.com/Awannaphasch2016/dyad/pull/78), `plans/shared-hitl-workflow.md` and `scripts/doppler/bolt-hitl.mjs` on `cursor/shared-hitl-workflow-851d`. This is the Bolt implementation. The pull request says DYAD, Forma, and Vibe SDK are not in that change.
-- `Awannaphasch2016/forma` `lib/auth.ts` and `app/api/auth/route.ts` on `main` and `cursor/forma-preview-walkthrough`.
+## Verify
 
-## Status
+A line is done only when the observable result is true.
 
-|                       | Bolt                                                                  | Forma                                   |
-| --------------------- | --------------------------------------------------------------------- | --------------------------------------- |
-| Sign-in               | Clerk Development session on the walkthrough                          | Workspace password `APP_PASSWORD`       |
-| Cookie                | Clerk session cookie                                                  | `studio_session`, HMAC of `AUTH_SECRET` |
-| Identity              | Clerk user id                                                         | One derived `demo-owner`                |
-| Organization and role | Wewebplus, Project Manager or Developer, from `wewebplus.memberships` | None                                    |
-| Shared project        | One Postgres project, polled by both browsers                         | Not present                             |
+- [ ] `forma` / `dev` has `CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, and `WEWEBPLUS_DATABASE_URL`. The publishable key is a `pk_test_` key. The values are not printed.
+- [ ] The Forma page has a Sign in control. The workspace password field is gone.
+- [ ] Signed out, the studio does not open.
+- [ ] `anakwannaphaschaiyong@gmail.com` with Google sees Wewebplus and Project Manager.
+- [ ] `awannaphasch2016@fau.edu` with Microsoft sees Wewebplus and Developer.
+- [ ] Reload keeps the session. Sign out returns to the Sign in control.
+- [ ] A project created by one account is not listed for the other account.
+- [ ] `GET /api/status` still reports OpenRouter. A `pk_live_` key is not sent to the browser.
 
-The walkthrough is https://bolt-walkthrough-55d6.karant-test-egress-canary.workers.dev. PR 78 describes the two-browser check. Its text says that check is not claimed finished until someone walks through it. The session code is in the branch.
+## Already true
 
-Forma has no Clerk file. `GET /api/auth` returns `{ authenticated: true }` when the password cookie verifies. `components/studio.tsx` still says "Enter your workspace password."
+- [PR 76](https://github.com/Awannaphasch2016/dyad/pull/76) defines the substrate. Clerk answers who is signed in. `wewebplus.memberships` answers the gate role. The question row holds a wait. Bolt does the work. The question row remains after the tab closes.
+- [PR 78](https://github.com/Awannaphasch2016/dyad/pull/78) puts that adapter on the Bolt walkthrough at https://bolt-walkthrough-55d6.karant-test-egress-canary.workers.dev. The session route returns `{ signedIn, organization, role }`. A removed Clerk membership is denied even when the role row remains. Exactly one gate role opens the workspace.
+- Bolt reads `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`, and `WEWEBPLUS_DATABASE_URL`. It allows one fixed walkthrough origin on the Development Clerk instance. It refuses a live key.
+- Forma `lib/auth.ts` signs `studio_session` with `AUTH_SECRET`. The owner is `HMAC(AUTH_SECRET, "demo-owner")`. `POST /api/auth` checks `APP_PASSWORD`. `components/studio.tsx` says "Enter your workspace password."
+- These Forma routes already call `ownerId()` and will follow the new session without a second role check: `app/api/projects/route.ts`, `app/api/projects/[id]/route.ts`, `app/api/projects/[id]/events/route.ts`, and `lib/job-route.ts`.
+- `GET /api/cron` stays on `CRON_SECRET`. It is not a user session.
+- `scripts/gascity/forma-sign-in.mjs` in this branch is the role decision: one Project Manager or Developer membership returns that role; zero or two do not.
 
-## What Forma copies
+## What this plan changes
 
-The sign-in adapter from PR 76, with the session shape Bolt already returns:
+Forma takes Bolt's sign-in. It does not take Bolt's Discovery, Implementation, and Delivery phase bar.
 
-- The same Development Clerk application. A `pk_live_` or `sk_live_` key stops the work.
-- The same two people: `anakwannaphaschaiyong@gmail.com` (Google, Project Manager) and `awannaphasch2016@fau.edu` (Microsoft, Developer).
-- The same `wewebplus.memberships` rows. A removed Clerk membership denies access even if the role row remains.
-- One organization, so there is no organization picker.
-- `formaSession` in `scripts/gascity/forma-sign-in.mjs` is the decision the Forma route will call. Zero or two gate roles leave the person signed in with no workspace. One role returns `Wewebplus` and `Project Manager` or `Developer`. The owner id is the Clerk user id.
+| Job                        | Forma after this plan                                                                                  |
+| -------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Who is signed in           | Clerk Development session. The browser loads Clerk from `GET /api/clerk` and sends the session token.  |
+| May this person act        | The Clerk organization membership still exists, and `wewebplus.memberships` has exactly one gate role. |
+| What the studio stores     | Forma's own Neon database. `projects.owner_id` becomes the Clerk user id.                              |
+| Who generates              | OpenRouter, as the current preview already does.                                                       |
+| What survives a closed tab | The Clerk session and the project rows.                                                                |
 
-Forma keeps its own Neon database for studio projects. That database is not a second definition of the roles.
+The two people and the organization stay the ones Bolt already uses. There is no organization picker and no second role table.
 
-## In scope
+## Prerequisites
 
-1. Confirm `forma` / `dev` has `CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` as references to the Development instance, the same names Bolt reads. The names recorded for that config earlier are the OpenRouter key, `APP_PASSWORD`, `AUTH_SECRET`, `CRON_SECRET`, Neon, and Vercel. Clerk was not in that list. Do not deploy until the names are present, and do not print the values.
-2. Replace the password form in `components/studio.tsx` with the Clerk sign-in control.
-3. Change `app/api/auth/route.ts` so `GET` returns the session above, and `POST` no longer accepts `APP_PASSWORD`.
-4. Change `lib/auth.ts` so `ownerId()` is the Clerk user id from `formaOwnerId`. Routes that already call `ownerId()` then require that session.
-5. Show `Wewebplus · Project Manager` or `Wewebplus · Developer` on the studio page.
-6. Keep `APP_URL` unset. Do not copy the OpenRouter key into any `OPENAI_*` name.
+Do these before changing the Forma page. Stop if a live key appears.
 
-## Out of scope
+1. Confirm the three names above exist on Doppler `forma` / `dev`. The names recorded there earlier were the OpenRouter key, `APP_PASSWORD`, `AUTH_SECRET`, `CRON_SECRET`, Neon, and Vercel. Clerk was not in that list. Use the same Development values Bolt already references. Do not copy them into `bolt` / `prd` or `dyad` / `prd`.
+2. Confirm both Wewebplus membership rows already exist from the Bolt seed. This plan does not create a second pair of users.
+3. Each Forma preview host is a new `https://forma-….vercel.app` origin. After the URL exists, add that origin to the Development Clerk instance `allowed_origins`, the same update Bolt makes for its one walkthrough origin. Do not add a production origin.
 
-- Bolt's Discovery, Implementation, and Delivery phase machine inside the Forma studio. That is the shared project in PR 78. Forma does not grow that phase bar in this copy.
-- Vibe SDK.
-- `bolt` / `prd`, `dyad` / `prd`, and the production Clerk instance.
-- Merging the preview-forma workflow. That is a separate branch.
+## Changes
+
+### Forma repository
+
+Commit these on a Forma branch. The preview deploys that commit. This repository does not patch them in at deploy time.
+
+- `app/api/clerk/route.ts` returns the publishable key only when `clerkPublishable` accepts it.
+- `lib/auth.ts` verifies the Clerk session token from `Authorization: Bearer` or the `__session` cookie, using the same checks as Bolt's `clerkUser`: `pk_test_` only, JWKS signature, expiry, and `sub`. `ownerId()` returns `formaOwnerId` of that session. The HMAC `studio_session` cookie is no longer written.
+- `app/api/auth/route.ts` `GET` returns `{ signedIn, organization, role }`. `POST` no longer reads `APP_PASSWORD`.
+- `components/studio.tsx` replaces the password field with the Sign in control Bolt uses: load Clerk, redirect to Clerk sign-in, show `Wewebplus · Project Manager` or `Wewebplus · Developer`, and sign out.
+- `lib/config.ts` stops treating a missing `APP_PASSWORD` as a broken studio. `GET /api/status` must still be able to report OpenRouter.
+- Tests that post a workspace password assert the Clerk session instead.
+
+`ownerId()` is the only gate those project and job routes need. A signed-in person with no role receives the same refusal as a signed-out person: no project list and no job.
+
+Projects already stored under the `demo-owner` hash stay in the database and do not appear for either Clerk user. They are not rewritten.
+
+### This repository
+
+`scripts/gascity/forma-sign-in.mjs` stays the tested decision. The Forma route calls that decision after it has loaded the Clerk user and the membership rows.
+
+The preview runner is a later change, on the preview-forma branch. It uploads `CLERK_SECRET_KEY` and `CLERK_PUBLISHABLE_KEY` to the Vercel preview target only, then adds the new deployment origin to the Development Clerk instance. This plan does not merge that workflow and does not run it.
 
 ## Check
 
-On a Forma preview, in Chrome:
+Use Chrome on the Forma preview URL.
 
-- Signed out: the studio does not open, and a wrong password is not the sign-in path.
-- Normal window, Google `anakwannaphaschaiyong@gmail.com`: the page shows Wewebplus and Project Manager.
-- Private window, Microsoft `awannaphasch2016@fau.edu`: the page shows Wewebplus and Developer.
-- Reload keeps the session. Sign out returns to the sign-in control.
-- A `pk_live_` key is not served to the page.
+1. Signed out, the password field is absent and the studio does not list projects.
+2. The normal window signs in with Google as `anakwannaphaschaiyong@gmail.com`. The header shows Wewebplus and Project Manager.
+3. A private window signs in with Microsoft as `awannaphasch2016@fau.edu`. The header shows Wewebplus and Developer.
+4. The Project Manager creates a project. The Developer does not see it. The Developer creates a different project. The Project Manager does not see it.
+5. Reload either window. The session and that account's project remain.
+6. Sign out. The studio asks for Sign in again.
+7. `GET /api/status` is `{"configured":true,"provider":"openrouter"}`.
+
+## Out of scope
+
+- Bolt's shared phase, transcript, and delivery document. Forma does not grow that workflow in this copy.
+- Vibe SDK.
+- `bolt` / `prd`, `dyad` / `prd`, and the production Clerk instance.
+- Merging `preview-forma` to `main`, deleting the Neon branch, or setting `APP_URL`.
+- Copying `OPENROUTER_API_KEY` into any `OPENAI_*` name.
 
 ## Decision log
 
-- Forma was left out of PR 76 and PR 78 on purpose. Bolt's adapter now exists, so Forma is the next copy.
-- The password cookie is retired for this preview. It is not kept beside Clerk.
-- The session function lives in this repository first so the role rule is tested before the Forma page changes.
+- The substrate to copy is the Clerk session and the Wewebplus role. The Bolt phase machine is a later shared project, and Forma does not need it to sign in.
+- The password cookie is removed. Keeping it beside Clerk would leave a second owner id.
+- The role decision is already tested in this repository. The JWT check and the page live in Forma, because the preview deploys the Forma commit.
+- A new Vercel host is allowed on the Development Clerk instance after each preview deploy. A stable hostname is not required first.
