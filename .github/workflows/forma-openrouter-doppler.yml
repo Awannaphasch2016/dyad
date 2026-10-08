@@ -1,0 +1,40 @@
+name: Forma OpenRouter Doppler
+
+# Copy OPENROUTER_API_KEY from vibesdk into forma/dev.
+# When vibesdk does not store that name, point vibesdk/dev at the
+# non-production Dyad config the lab already uses, then copy the resolved key.
+# Does not print the value and does not read a production config.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cursor/forma-openrouter-doppler-5014
+    paths:
+      - .github/workflows/forma-openrouter-doppler.yml
+      - scripts/gascity/forma-openrouter-doppler.mjs
+      - scripts/gascity/forma-openrouter-doppler.test.mjs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: forma-openrouter-doppler
+  cancel-in-progress: false
+
+jobs:
+  organize:
+    if: github.ref == 'refs/heads/cursor/forma-openrouter-doppler-5014'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the organizer
+        uses: actions/checkout@v5
+
+      - name: Copy the OpenRouter key into forma dev
+        env:
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+        run: |
+          set -euo pipefail
+          set +x
+          node scripts/gascity/forma-openrouter-doppler.mjs
