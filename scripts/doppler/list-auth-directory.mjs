@@ -92,22 +92,26 @@ async function reportClerk(secret) {
     const emails = (user.email_addresses ?? [])
       .map((item) => String(item.email_address ?? "").toLowerCase())
       .filter(Boolean);
+    const externalEmails = (user.external_accounts ?? [])
+      .map((item) => String(item.email_address ?? item.emailAddress ?? "").toLowerCase())
+      .filter(Boolean);
     const providers = (user.external_accounts ?? [])
       .map((item) => item.provider)
       .filter(Boolean);
-    const known = emails.some((email) => KNOWN.includes(email));
+    const allEmails = [...new Set([...emails, ...externalEmails])];
+    const known = allEmails.some((email) => KNOWN.includes(email));
     const orgsForUser = memberships.filter((item) => item.userId === user.id);
     const orgText = orgsForUser
       .map((item) => `${item.orgId}:${item.clerkRole}`)
       .join(",") || "none";
     if (known) {
       console.log(
-        `known id=${user.id} email=${emails.join("|") || "absent"} providers=${providers.join("|") || "absent"} orgs=${orgText}`,
+        `known id=${user.id} email=${allEmails.join("|") || "absent"} providers=${providers.join("|") || "absent"} orgs=${orgText}`,
       );
     } else {
       other += 1;
       console.log(
-        `other id=${user.id} domain=${emails.map(domainOf).join("|") || "absent"} providers=${providers.join("|") || "absent"} orgs=${orgText}`,
+        `other id=${user.id} domain=${allEmails.map(domainOf).join("|") || "absent"} providers=${providers.join("|") || "absent"} orgs=${orgText}`,
       );
     }
   }
@@ -133,6 +137,22 @@ async function neonQuery(databaseUrl, query) {
 }
 
 async function reportDatabase(databaseUrl) {
+  try {
+    await reportMemberships(databaseUrl);
+  } catch (error) {
+    console.log(`db_error=${redact(error?.message || error)}`);
+    const tables = await neonQuery(
+      databaseUrl,
+      "select table_schema, table_name from information_schema.tables where table_schema not in ('pg_catalog','information_schema') order by table_schema, table_name",
+    );
+    console.log(`db_tables=${tables.length}`);
+    for (const row of tables) {
+      console.log(`table ${row.table_schema}.${row.table_name}`);
+    }
+  }
+}
+
+async function reportMemberships(databaseUrl) {
   const memberships = await neonQuery(
     databaseUrl,
     "select user_id, org_id, role_id from wewebplus.memberships order by org_id, role_id",
@@ -168,13 +188,14 @@ async function main() {
     const kind = keyKind(secrets.CLERK_SECRET_KEY);
     const db = String(secrets.WEWEBPLUS_DATABASE_URL ?? "").trim() ? "present" : "absent";
     console.log(`config=${project}/${config} clerk=${kind} database=${db}`);
-    if (kind === "absent") continue;
     const marker = secrets.CLERK_SECRET_KEY;
-    if (seen.has(marker)) {
-      console.log(`clerk_directory=same_as_${seen.get(marker)}`);
-    } else {
-      seen.set(marker, `${project}/${config}`);
-      await reportClerk(marker);
+    if (kind !== "absent") {
+      if (seen.has(marker)) {
+        console.log(`clerk_directory=same_as_${seen.get(marker)}`);
+      } else {
+        seen.set(marker, `${project}/${config}`);
+        await reportClerk(marker);
+      }
     }
     if (db === "present") {
       const dbMarker = secrets.WEWEBPLUS_DATABASE_URL;
