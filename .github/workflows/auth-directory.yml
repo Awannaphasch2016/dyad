@@ -1,0 +1,28 @@
+# Read-only list of Clerk users and wewebplus memberships.
+# Does not change Clerk, Doppler, or the database.
+name: Auth directory
+
+on:
+  push:
+    branches:
+      - cursor/shared-auth-substrate-55d6
+    paths:
+      - scripts/doppler/list-auth-directory.mjs
+      - .github/workflows/auth-directory.yml
+
+permissions:
+  contents: read
+
+jobs:
+  list:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: List users and memberships
+        env:
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+        run: node scripts/doppler/list-auth-directory.mjs
