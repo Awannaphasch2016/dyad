@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 // Attach the preview-forma Fargate policy to the Doppler aws/dev caller.
 // Prints the caller ARN and the policy name. Does not print credentials.
+// Run 37840598579 created policy preview-forma-fargate and role
+// preview-forma-deploy, then assumed that role. The push-triggered
+// workflow was removed after that run. Do not add this script back as a
+// standing secret job.
 
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
