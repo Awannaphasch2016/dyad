@@ -116,6 +116,21 @@ export function serviceName(pr) {
   return formaPreviewBranchName(pr);
 }
 
+export function taskFailure(task, sinceMs) {
+  const started = Date.parse(task?.startedAt || task?.createdAt || "");
+  if (!Number.isFinite(started) || started + 5000 < sinceMs) return null;
+  const containers = Array.isArray(task?.containers) ? task.containers : [];
+  const container =
+    containers.find((item) => item.name === "forma") || containers[0] || {};
+  const exitCode = container.exitCode;
+  const stopped = task?.lastStatus === "STOPPED" || Boolean(task?.stopCode);
+  if (!stopped && (exitCode == null || exitCode === 0)) return null;
+  const reason = String(task?.stoppedReason || container.reason || "none")
+    .replace(/\s+/g, " ")
+    .slice(0, 300);
+  return `preview_forma_task_status=${task?.lastStatus || "unknown"} exit=${exitCode ?? "none"} reason=${reason}`;
+}
+
 export function assertSchemaSql(sql) {
   const text = String(sql ?? "");
   if (!/CREATE TABLE IF NOT EXISTS login_attempts/i.test(text)) {
@@ -147,14 +162,19 @@ export function taskDefinitionDocument({ host, image, environment }) {
         image,
         essential: true,
         portMappings: [{ containerPort: 3000, protocol: "tcp" }],
-        command: ["pnpm", "run", "start", "--", "-H", "0.0.0.0", "-p", "3000"],
-        environment: [
-          ...Object.entries(environment).map(([name, value]) => ({
-            name,
-            value,
-          })),
-          { name: "HOSTNAME", value: "0.0.0.0" },
+        command: [
+          "node",
+          "node_modules/next/dist/bin/next",
+          "start",
+          "--hostname",
+          "0.0.0.0",
+          "--port",
+          "3000",
         ],
+        environment: Object.entries(environment).map(([name, value]) => ({
+          name,
+          value,
+        })),
         logConfiguration: {
           logDriver: "awslogs",
           options: {
@@ -519,7 +539,82 @@ function log(line) {
   writeSync(1, `${redact(line)}\n`);
 }
 
+function describeTasks(env, host, arns) {
+  if (arns.length === 0) return [];
+  const described = JSON.parse(
+    aws(
+      [
+        "ecs",
+        "describe-tasks",
+        "--cluster",
+        host.cluster,
+        "--tasks",
+        ...arns.slice(0, 5),
+        "--region",
+        region,
+        "--output",
+        "json",
+      ],
+      env,
+    ),
+  );
+  return described.tasks ?? [];
+}
+
+function listTaskArns(env, host, service, desiredStatus) {
+  const listed = JSON.parse(
+    aws(
+      [
+        "ecs",
+        "list-tasks",
+        "--cluster",
+        host.cluster,
+        "--service-name",
+        service,
+        "--desired-status",
+        desiredStatus,
+        "--region",
+        region,
+        "--output",
+        "json",
+      ],
+      env,
+    ),
+  );
+  return listed.taskArns ?? [];
+}
+
+function logServiceEvents(env, host, service) {
+  const described = JSON.parse(
+    aws(
+      [
+        "ecs",
+        "describe-services",
+        "--cluster",
+        host.cluster,
+        "--services",
+        service,
+        "--region",
+        region,
+        "--output",
+        "json",
+      ],
+      env,
+    ),
+  );
+  const events = described.services?.[0]?.events ?? [];
+  for (const event of events.slice(0, 3)) {
+    log(
+      `preview_forma_event=${String(event.message || "")
+        .replace(/\s+/g, " ")
+        .slice(0, 300)}`,
+    );
+  }
+}
+
 async function waitForHealthy(env, host, service, sleep) {
+  const since = Date.now();
+  let loggedEvents = false;
   for (let attempt = 0; attempt < 40; attempt += 1) {
     const health = JSON.parse(
       aws(
@@ -541,51 +636,29 @@ async function waitForHealthy(env, host, service, sleep) {
     );
     log(`preview_forma_targets=${states.join(",") || "none"}`);
     if (states.includes("healthy")) return;
+    const stopped = describeTasks(
+      env,
+      host,
+      listTaskArns(env, host, service, "STOPPED"),
+    );
+    const failure = stopped
+      .map((task) => taskFailure(task, since))
+      .find(Boolean);
+    if (failure) {
+      if (!loggedEvents) {
+        logServiceEvents(env, host, service);
+        loggedEvents = true;
+      }
+      throw new Error(failure);
+    }
+    if (!loggedEvents && states.includes("draining")) {
+      logServiceEvents(env, host, service);
+      loggedEvents = true;
+    }
     if (attempt === 39) break;
     await sleep(15000);
   }
-  const listed = JSON.parse(
-    aws(
-      [
-        "ecs",
-        "list-tasks",
-        "--cluster",
-        host.cluster,
-        "--service-name",
-        service,
-        "--region",
-        region,
-        "--output",
-        "json",
-      ],
-      env,
-    ),
-  );
-  const taskArns = listed.taskArns ?? [];
-  if (taskArns.length > 0) {
-    const described = JSON.parse(
-      aws(
-        [
-          "ecs",
-          "describe-tasks",
-          "--cluster",
-          host.cluster,
-          "--tasks",
-          ...taskArns,
-          "--region",
-          region,
-          "--output",
-          "json",
-        ],
-        env,
-      ),
-    );
-    for (const task of described.tasks ?? []) {
-      log(
-        `preview_forma_task_status=${task.lastStatus} reason=${task.stoppedReason || "none"}`,
-      );
-    }
-  }
+  logServiceEvents(env, host, service);
   throw new Error("Preview target did not become healthy");
 }
 

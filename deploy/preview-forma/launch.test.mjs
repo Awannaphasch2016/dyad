@@ -15,6 +15,7 @@ import {
   serviceDocument,
   serviceName,
   taskDefinitionDocument,
+  taskFailure,
 } from "./launch.mjs";
 
 const parentId = "br-round-night-b33xeq5p";
@@ -135,18 +136,17 @@ test("the task receives forma runtime values and listens on every interface", ()
   });
   const container = document.containerDefinitions[0];
   assert.deepEqual(container.command, [
-    "pnpm",
-    "run",
+    "node",
+    "node_modules/next/dist/bin/next",
     "start",
-    "--",
-    "-H",
+    "--hostname",
     "0.0.0.0",
-    "-p",
+    "--port",
     "3000",
   ]);
   const names = container.environment.map((item) => item.name);
   assert.equal(names.includes("DATABASE_URL"), true);
-  assert.equal(names.includes("HOSTNAME"), true);
+  assert.equal(names.includes("HOSTNAME"), false);
   assert.equal(
     names.some((name) => name.startsWith("OPENAI_")),
     false,
@@ -166,6 +166,45 @@ test("the task receives forma runtime values and listens on every interface", ()
     "ENABLED",
   );
   assert.equal(service.loadBalancers[0].containerPort, 3000);
+});
+
+test("a stopped task that belongs to this launch is reported", () => {
+  const since = Date.parse("2026-10-08T23:15:00Z");
+  assert.equal(
+    taskFailure(
+      {
+        lastStatus: "STOPPED",
+        startedAt: "2026-10-08T23:16:00Z",
+        stoppedReason: "Essential container in task exited",
+        containers: [{ name: "forma", exitCode: 1, reason: "Error" }],
+      },
+      since,
+    ),
+    "preview_forma_task_status=STOPPED exit=1 reason=Essential container in task exited",
+  );
+  assert.equal(
+    taskFailure(
+      {
+        lastStatus: "STOPPED",
+        startedAt: "2026-10-08T23:10:00Z",
+        stoppedReason: "old",
+        containers: [{ name: "forma", exitCode: 1 }],
+      },
+      since,
+    ),
+    null,
+  );
+  assert.equal(
+    taskFailure(
+      {
+        lastStatus: "RUNNING",
+        startedAt: "2026-10-08T23:16:00Z",
+        containers: [{ name: "forma" }],
+      },
+      since,
+    ),
+    null,
+  );
 });
 
 test("schema sql must create login attempts and the client path is explicit", () => {
