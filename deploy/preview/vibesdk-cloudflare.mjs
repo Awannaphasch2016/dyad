@@ -53,6 +53,18 @@ async function ensureByName(request, { path, body, field, expected }) {
   throw new Error(`POST ${path.split("?")[0]} ${created.status}`);
 }
 
+async function deleteWorkerScript(request, path) {
+  const removed = await request("DELETE", `${path}?force=true`);
+  if (removed.status === 404) return { deleted: false };
+  if (
+    (removed.status !== 200 && removed.status !== 204) ||
+    removed.payload?.success === false
+  ) {
+    throw new Error(`DELETE ${path.split("?")[0]} ${removed.status}`);
+  }
+  return { deleted: true };
+}
+
 async function deleteRequest(request, path) {
   let removed = await request("DELETE", path);
   if (removed.status === 400 || removed.status === 412) {
@@ -109,6 +121,18 @@ export async function ensurePreviewResources({ request, accountId, pr }) {
   return { names, databaseId, kvId };
 }
 
+export function previewWasDeleted(result) {
+  return Boolean(
+    result?.worker?.deleted ||
+    result?.d1?.deleted ||
+    result?.kv?.deleted ||
+    result?.r2?.deleted,
+  );
+}
+
+// Workers rate limiting bindings use account-wide ids and have no delete API.
+// Leave `${pr}01` and `${pr}02` in place. Pull request 21 matches the lab ids
+// 2101 and 2102, so this function must not delete by those ids.
 export async function deletePreviewResources({ request, accountId, pr }) {
   assertAccountId(accountId);
   const names = previewNames(pr);
@@ -128,7 +152,7 @@ export async function deletePreviewResources({ request, accountId, pr }) {
         `GET workers/scripts/${names.worker} ${workerLookup.status}`,
       );
     }
-    worker = await deleteRequest(
+    worker = await deleteWorkerScript(
       request,
       `${account}/workers/scripts/${names.worker}`,
     );

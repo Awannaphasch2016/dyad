@@ -677,5 +677,9 @@ export function previewCommentBody(kind, names) {
   if (kind === "failed") {
     return `${marker}\nVibe SDK preview was not updated.`;
   }
+  if (kind === "cleanup-failed") {
+    const url = names?.url ? `\n\n${names.url}` : "";
+    return `${marker}\nVibe SDK preview cleanup did not finish.${url}`;
+  }
   throw new Error("unknown preview comment");
 }

@@ -10,6 +10,7 @@ import { commandForPullRequest } from "./transition.mjs";
 import {
   deletePreviewResources,
   ensurePreviewResources,
+  previewWasDeleted,
 } from "./vibesdk-cloudflare.mjs";
 import {
   PREVIEW_COMMENT_MARKER,
@@ -47,6 +48,25 @@ export function eventFromEnv(env) {
 
 export function decideFromEvent(event) {
   return commandForPullRequest(event, VIBESDK_PREVIEW_LABEL);
+}
+
+export function commandFromEnv(env = process.env) {
+  if (env.EVENT_NAME === "workflow_dispatch") {
+    previewNames(String(env.PR ?? "").trim());
+    return "destroy";
+  }
+  return decideFromEvent(eventFromEnv(env));
+}
+
+export function removalCommentAction({ deleted, existingBody }) {
+  if (deleted) return "removed";
+  if (
+    typeof existingBody === "string" &&
+    existingBody.includes("cleanup did not finish")
+  ) {
+    return "removed";
+  }
+  return "silent";
 }
 
 export function cloudflareCreds(env, { openRouter = false } = {}) {
@@ -382,6 +402,7 @@ export async function upsertPreviewComment({
   token,
   body,
   fetchImpl = fetch,
+  readOnly = false,
 }) {
   const githubToken = String(token ?? "").trim();
   if (!githubToken || /[\r\n]/.test(githubToken)) {
@@ -425,6 +446,9 @@ export async function upsertPreviewComment({
       typeof comment?.body === "string" &&
       comment.body.includes(PREVIEW_COMMENT_MARKER),
   );
+  if (readOnly) {
+    return { updated: Boolean(existing), body: existing?.body ?? "" };
+  }
   const saved = existing
     ? await github(`${root}/issues/comments/${existing.id}`, {
         method: "PATCH",
@@ -442,6 +466,39 @@ export async function upsertPreviewComment({
   return { updated: Boolean(existing) };
 }
 
+export async function announceRemoval({
+  repo,
+  pr,
+  token,
+  deleted,
+  fetchImpl = fetch,
+}) {
+  const names = previewNames(pr);
+  let existingBody = "";
+  if (!deleted) {
+    const listed = await upsertPreviewComment({
+      repo,
+      pr,
+      token,
+      body: null,
+      fetchImpl,
+      readOnly: true,
+    });
+    existingBody = listed.body ?? "";
+  }
+  if (removalCommentAction({ deleted, existingBody }) !== "removed") {
+    return "silent";
+  }
+  await upsertPreviewComment({
+    repo,
+    pr,
+    token,
+    body: previewCommentBody("removed", names),
+    fetchImpl,
+  });
+  return "removed";
+}
+
 function arg(name) {
   const index = process.argv.indexOf(name);
   return index === -1 ? "" : process.argv[index + 1] || "";
@@ -450,7 +507,7 @@ function arg(name) {
 async function main() {
   const command = process.argv[2];
   if (command === "decide") {
-    const result = decideFromEvent(eventFromEnv(process.env));
+    const result = commandFromEnv(process.env);
     console.log(result);
     if (process.env.GITHUB_OUTPUT) {
       await appendFile(process.env.GITHUB_OUTPUT, `command=${result}\n`);
@@ -460,6 +517,16 @@ async function main() {
   const pr = arg("--pr");
   if (command === "comment") {
     const kind = arg("--kind");
+    if (kind === "removed") {
+      const posted = await announceRemoval({
+        repo: process.env.GITHUB_REPOSITORY,
+        pr,
+        token: process.env.GITHUB_TOKEN,
+        deleted: process.env.DELETED === "true",
+      });
+      console.log(`comment=${posted}`);
+      return;
+    }
     const names = kind === "failed" ? undefined : previewNames(pr);
     await upsertPreviewComment({
       repo: process.env.GITHUB_REPOSITORY,
@@ -477,11 +544,19 @@ async function main() {
   }
   if (command === "down") {
     const removed = await deleteFromEnv(pr);
+    const deleted = previewWasDeleted(removed);
     console.log(`preview_deleted=${removed.names.url}`);
     console.log(`worker=${removed.worker.deleted ? "deleted" : "absent"}`);
     console.log(`d1=${removed.d1.deleted ? "deleted" : "absent"}`);
     console.log(`kv=${removed.kv.deleted ? "deleted" : "absent"}`);
     console.log(`r2=${removed.r2.deleted ? "deleted" : "absent"}`);
+    console.log(`deleted=${deleted}`);
+    if (process.env.GITHUB_OUTPUT) {
+      await appendFile(
+        process.env.GITHUB_OUTPUT,
+        `deleted=${deleted ? "true" : "false"}\n`,
+      );
+    }
     return;
   }
   console.error("Usage: vibesdk-preview.mjs <decide|up|down|comment>");

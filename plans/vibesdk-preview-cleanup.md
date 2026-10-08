@@ -124,36 +124,36 @@ GitHub: one new comment sentence for a failed destroy. A manual workflow input `
 
 ### Phase 1: Delete the Worker completely
 
-- [ ] Delete an existing `vibesdk-pr-<number>` Worker with `?force=true` on the first request.
-- [ ] Treat a missing Worker as success and send no delete.
-- [ ] Report whether the Worker, D1, KV, or R2 was actually deleted.
-- [ ] Leave D1, KV, and R2 force behavior as it is.
+- [x] Delete an existing `vibesdk-pr-<number>` Worker with `?force=true` on the first request.
+- [x] Treat a missing Worker as success and send no delete.
+- [x] Report whether the Worker, D1, KV, or R2 was actually deleted.
+- [x] Leave D1, KV, and R2 force behavior as it is.
 
 ### Phase 2: Tell the truth in the comment
 
-- [ ] Post Removed only when this run deleted something.
-- [ ] Replace a cleanup-failed comment with Removed when a later run finds nothing left.
-- [ ] On destroy failure, say cleanup did not finish. Keep “was not updated” for a failed deploy.
-- [ ] Stay silent when a pull request that never had a preview is closed.
+- [x] Post Removed only when this run deleted something.
+- [x] Replace a cleanup-failed comment with Removed when a later run finds nothing left.
+- [x] On destroy failure, say cleanup did not finish. Keep “was not updated” for a failed deploy.
+- [x] Stay silent when a pull request that never had a preview is closed.
 
 ### Phase 3: Let a person finish a failed cleanup
 
-- [ ] Add a manual workflow run that takes the pull request number and runs the same delete.
-- [ ] Use the existing per-pull-request lock, and do not cancel an in-flight deploy.
-- [ ] Check the destroy job out from the workflow ref.
-- [ ] Note in code that the rate-limit counters are not deleted.
+- [x] Add a manual workflow run that takes the pull request number and runs the same delete.
+- [x] Use the existing per-pull-request lock, and do not cancel an in-flight deploy.
+- [x] Check the destroy job out from the workflow ref.
+- [x] Note in code that the rate-limit counters are not deleted.
 
 ## Testing Strategy
 
-- [ ] `node --test deploy/preview/vibesdk.test.mjs` uses a fake Cloudflare client and makes no live call.
-- [ ] A present Worker is deleted once, with `?force=true`. A plain delete is not sent.
-- [ ] A second run that finds nothing sends no delete and reports that nothing was deleted.
-- [ ] A missing Worker with a remaining D1 database deletes that database and reports a deletion.
-- [ ] A lab or production id still throws before any delete.
-- [ ] Delete calls do not include a rate-limit path.
-- [ ] The cleanup-failed sentence is distinct from “was not updated.”
-- [ ] The workflow has a manual run input, no schedule, the same concurrency group, and a Removed step that runs only after a real delete.
-- [ ] `preview.yml` still has no Wrangler and no Vibe SDK deploy.
+- [x] `node --test deploy/preview/vibesdk.test.mjs` uses a fake Cloudflare client and makes no live call.
+- [x] A present Worker is deleted once, with `?force=true`. A plain delete is not sent.
+- [x] A second run that finds nothing sends no delete and reports that nothing was deleted.
+- [x] A missing Worker with a remaining D1 database deletes that database and reports a deletion.
+- [x] A lab or production id still throws before any delete.
+- [x] Delete calls do not include a rate-limit path.
+- [x] The cleanup-failed sentence is distinct from “was not updated.”
+- [x] The workflow has a manual run input, no schedule, the same concurrency group, and a Removed step that runs only after a real delete.
+- [x] `preview.yml` still has no Wrangler and no Vibe SDK deploy.
 
 ## Risks & Mitigations
 

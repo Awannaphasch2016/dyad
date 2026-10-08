@@ -4,10 +4,14 @@ import test from "node:test";
 import {
   deletePreviewResources,
   ensurePreviewResources,
+  previewWasDeleted,
 } from "./vibesdk-cloudflare.mjs";
 import {
+  announceRemoval,
+  commandFromEnv,
   decideFromEvent,
   provisionPreview,
+  removalCommentAction,
   upsertPreviewComment,
   waitForHealth,
 } from "./vibesdk-preview.mjs";
@@ -146,6 +150,13 @@ test("comments name the builder and the preview URL", () => {
     previewCommentBody("removed", names),
     /Removed Vibe SDK preview/,
   );
+  const cleanup = previewCommentBody("cleanup-failed");
+  assert.match(cleanup, /cleanup did not finish/);
+  assert.equal(cleanup.includes("was not updated"), false);
+  assert.match(
+    previewCommentBody("cleanup-failed", names),
+    new RegExp(names.url.replaceAll(".", "\\.")),
+  );
 });
 
 test("creating resources refuses a production database before deploy", async () => {
@@ -211,9 +222,82 @@ test("a second delete finds nothing and makes no delete call", async () => {
   assert.equal(first.d1.deleted, false);
   assert.equal(second.worker.deleted, false);
   assert.equal(second.d1.deleted, false);
+  assert.equal(previewWasDeleted(second), false);
   assert.equal(
     calls.some((call) => call.startsWith("DELETE")),
     false,
+  );
+  assert.equal(
+    calls.some((call) => /rate-?limit/i.test(call)),
+    false,
+  );
+});
+
+test("an existing worker is force-deleted once", async () => {
+  const calls = [];
+  const result = await deletePreviewResources({
+    accountId,
+    pr: "70",
+    request: async (method, path) => {
+      calls.push(`${method} ${path}`);
+      if (method === "GET" && path.includes("/workers/scripts/")) {
+        return { status: 200, payload: { success: true, result: {} } };
+      }
+      if (method === "DELETE" && path.includes("/workers/scripts/")) {
+        return { status: 200, payload: { success: true } };
+      }
+      return { status: 200, payload: { success: true, result: [] } };
+    },
+  });
+  assert.equal(result.worker.deleted, true);
+  assert.equal(previewWasDeleted(result), true);
+  const deletes = calls.filter((call) => call.startsWith("DELETE"));
+  assert.deepEqual(deletes, [
+    `DELETE /accounts/${accountId}/workers/scripts/vibesdk-pr-70?force=true`,
+  ]);
+});
+
+test("a missing worker still deletes a remaining database", async () => {
+  const calls = [];
+  const result = await deletePreviewResources({
+    accountId,
+    pr: "70",
+    request: async (method, path) => {
+      calls.push(`${method} ${path}`);
+      if (path.includes("/workers/scripts/")) {
+        return { status: 404, payload: {} };
+      }
+      if (method === "GET" && path.includes("/d1/")) {
+        return {
+          status: 200,
+          payload: {
+            success: true,
+            result: [{ name: "vibesdk-pr-70", uuid: databaseId }],
+          },
+        };
+      }
+      if (method === "DELETE" && path.endsWith(`/d1/database/${databaseId}`)) {
+        return { status: 412, payload: { success: false } };
+      }
+      if (method === "DELETE" && path.includes("force=true")) {
+        return { status: 200, payload: { success: true } };
+      }
+      return { status: 200, payload: { success: true, result: [] } };
+    },
+  });
+  assert.equal(result.worker.deleted, false);
+  assert.equal(result.d1.deleted, true);
+  assert.equal(previewWasDeleted(result), true);
+  assert.equal(calls.filter((call) => call.startsWith("DELETE ")).length, 2);
+  assert.equal(
+    calls.some((call) =>
+      call.includes(`/d1/database/${databaseId}?force=true`),
+    ),
+    true,
+  );
+  assert.equal(
+    calls.some((call) => call.startsWith("DELETE") && !call.includes("force=")),
+    true,
   );
 });
 
@@ -322,6 +406,23 @@ test("preview-vibesdk decisions stay on that label", () => {
     "update",
   );
   assert.equal(decideFromEvent({ action: "closed", labels: [] }), "destroy");
+  assert.equal(
+    commandFromEnv({ EVENT_NAME: "workflow_dispatch", PR: "70" }),
+    "destroy",
+  );
+  assert.throws(
+    () => commandFromEnv({ EVENT_NAME: "workflow_dispatch", PR: "nope" }),
+    /Pull request number is required/,
+  );
+  assert.equal(
+    commandFromEnv({
+      EVENT_NAME: "pull_request",
+      ACTION: "closed",
+      CLOSED: "true",
+      LABELS: "",
+    }),
+    "destroy",
+  );
 });
 
 test("the status comment is created once and then updated", async () => {
@@ -420,6 +521,65 @@ test("the Vibe SDK workflow stays off the Dyad devbox", () => {
   assert.equal(dyadPreview.includes("wrangler"), false);
   assert.equal(dyadPreview.includes("vibesdk"), false);
   assert.equal(dyadPreview.includes("patchStaticSiteDeploy"), false);
+  assert.match(workflow, /workflow_dispatch/);
+  assert.match(workflow, /description: Pull request number/);
+  assert.equal(workflow.includes("schedule:"), false);
+  assert.match(workflow, /cancel-in-progress: false/);
+  assert.match(workflow, /cleanup-failed/);
+  assert.match(workflow, /DELETED:/);
+  const destroy = workflow.split("\n  destroy:")[1];
+  assert.equal(destroy.includes("pull_request.head.sha"), false);
+  assert.match(destroy, /kind removed/);
+});
+
+test("a removal comment stays quiet unless a preview existed", async () => {
+  assert.equal(removalCommentAction({ deleted: true }), "removed");
+  assert.equal(
+    removalCommentAction({
+      deleted: false,
+      existingBody: "cleanup did not finish",
+    }),
+    "removed",
+  );
+  assert.equal(
+    removalCommentAction({ deleted: false, existingBody: "" }),
+    "silent",
+  );
+  const calls = [];
+  const silent = await announceRemoval({
+    repo: "Awannaphasch2016/dyad",
+    pr: "12",
+    token: "github-token",
+    deleted: false,
+    fetchImpl: async (url, options = {}) => {
+      calls.push(`${options.method || "GET"} ${url}`);
+      return jsonResponse(200, []);
+    },
+  });
+  assert.equal(silent, "silent");
+  assert.equal(
+    calls.some((call) => call.startsWith("POST") || call.startsWith("PATCH")),
+    false,
+  );
+  const comments = [
+    {
+      id: 4,
+      body: `${PREVIEW_COMMENT_MARKER}\nVibe SDK preview cleanup did not finish.`,
+    },
+  ];
+  const corrected = await announceRemoval({
+    repo: "Awannaphasch2016/dyad",
+    pr: "12",
+    token: "github-token",
+    deleted: false,
+    fetchImpl: async (url, options = {}) => {
+      if (!options.method) return jsonResponse(200, comments);
+      comments[0].body = JSON.parse(options.body).body;
+      return jsonResponse(200, comments[0]);
+    },
+  });
+  assert.equal(corrected, "removed");
+  assert.match(comments[0].body, /Removed Vibe SDK preview/);
 });
 
 test("a normal website is stored and a finished preview failure stops", () => {
