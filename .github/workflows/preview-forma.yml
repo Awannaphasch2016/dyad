@@ -17,6 +17,7 @@ on:
       - .github/workflows/preview-forma.yml
       - scripts/gascity/forma-preview.mjs
       - scripts/gascity/forma-preview.test.mjs
+      - scripts/gascity/forma-openrouter/**
 
 permissions:
   contents: read

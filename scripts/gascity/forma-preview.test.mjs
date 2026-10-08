@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import { commandForPullRequest } from "../../deploy/preview/transition.mjs";
@@ -7,7 +10,9 @@ import {
   FORMA_PARENT_BRANCH_ID,
   assertFormaTarget,
   formaBranchName,
+  applyOpenRouterOverlay,
   includeDeploymentFile,
+  openRouterOverlayFiles,
   previewEnv,
   previewVariablePayload,
   withDeploymentHostOrigin,
@@ -194,4 +199,24 @@ test("a Forma token uses the one visible project and never the dyad project", ()
     () => sourceDeploymentBody({ id: "prj_dyad", name: "dyad" }, []),
     /Refusing to deploy/,
   );
+});
+
+test("the OpenRouter overlay is what the preview deploys", async () => {
+  const files = await openRouterOverlayFiles();
+  assert.ok(files.includes("lib/openrouter.ts"));
+  assert.ok(files.includes("lib/openrouter-job.ts"));
+  assert.ok(files.includes("lib/config.ts"));
+  const checkout = await mkdtemp(join(tmpdir(), "forma-overlay-"));
+  await applyOpenRouterOverlay(checkout);
+  const config = await readFile(join(checkout, "lib/config.ts"), "utf8");
+  assert.match(config, /OPENROUTER_API_KEY/);
+  assert.match(config, /providerMode/);
+  const worker = await readFile(join(checkout, "lib/worker.ts"), "utf8");
+  assert.match(worker, /executeOpenRouterJob/);
+  const studio = await readFile(
+    join(checkout, "components/studio.tsx"),
+    "utf8",
+  );
+  assert.equal(studio.includes(".env.local"), false);
+  assert.match(studio, /provider === "openrouter"/);
 });

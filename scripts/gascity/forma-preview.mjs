@@ -3,10 +3,17 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { dirname, join, relative } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 export const FORMA_NEON_PROJECT_ID = "divine-credit-21002460";
 export const FORMA_PARENT_BRANCH_ID = "br-round-night-b33xeq5p";
@@ -535,6 +542,72 @@ function ensureWalkthroughPullRequest() {
   return openPull(WALKTHROUGH_BRANCH);
 }
 
+export function openRouterOverlayRoot() {
+  return fileURLToPath(new URL("./forma-openrouter/", import.meta.url));
+}
+
+export async function openRouterOverlayFiles(root = openRouterOverlayRoot()) {
+  const files = [];
+  async function walk(dir) {
+    const entries = await readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) await walk(full);
+      else if (entry.isFile()) {
+        files.push(relative(root, full).replaceAll("\\", "/"));
+      }
+    }
+  }
+  await walk(root);
+  return files.sort();
+}
+
+export async function applyOpenRouterOverlay(
+  checkout,
+  root = openRouterOverlayRoot(),
+) {
+  const files = await openRouterOverlayFiles(root);
+  for (const file of files) {
+    const target = join(checkout, file);
+    await mkdir(dirname(target), { recursive: true });
+    await copyFile(join(root, file), target);
+  }
+  return files;
+}
+
+function publishOpenRouterCommit(checkout, files) {
+  run("git", [
+    "-C",
+    checkout,
+    "config",
+    "user.email",
+    "5221649+dyad-harness[bot]@users.noreply.github.com",
+  ]);
+  run("git", ["-C", checkout, "config", "user.name", "dyad-harness[bot]"]);
+  run("git", ["-C", checkout, "add", "--", ...files]);
+  const status = run("git", [
+    "-C",
+    checkout,
+    "status",
+    "--porcelain",
+    "--",
+    ...files,
+  ]);
+  if (!status.trim()) {
+    console.log("forma_openrouter=present");
+    return;
+  }
+  run("git", [
+    "-C",
+    checkout,
+    "commit",
+    "-m",
+    "Build previews with the OpenRouter key.",
+  ]);
+  run("git", ["-C", checkout, "push", "origin", `HEAD:${WALKTHROUGH_BRANCH}`]);
+  console.log("forma_openrouter=committed");
+}
+
 async function migrate(directUrl) {
   const checkout = await mkdtemp(join(tmpdir(), "forma-preview-"));
   run("gh", [
@@ -548,6 +621,8 @@ async function migrate(directUrl) {
     "--branch",
     WALKTHROUGH_BRANCH,
   ]);
+  const files = await applyOpenRouterOverlay(checkout);
+  publishOpenRouterCommit(checkout, files);
   run("corepack", ["enable"], { cwd: checkout });
   run("pnpm", ["install", "--frozen-lockfile"], { cwd: checkout });
   const envFile = join(checkout, ".env.local");
@@ -625,6 +700,21 @@ function publishSignInFix() {
     );
   }
   console.log("forma_signin=committed");
+}
+
+async function probeStatus(url) {
+  let failure = "Preview is not configured for OpenRouter";
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    const response = await fetch(`${url}/api/status`);
+    const body = await response.json().catch(() => ({}));
+    console.log(
+      `forma_status=${response.status} configured=${body.configured === true} provider=${body.provider || "absent"}`,
+    );
+    if (body.configured === true && body.provider === "openrouter") return;
+    failure = `Preview is not configured for OpenRouter (${response.status})`;
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+  }
+  throw new Error(failure);
 }
 
 async function probeSignIn(url) {
@@ -1096,7 +1186,7 @@ function comment(pr, url) {
     "--repo",
     FORMA_REPOSITORY,
     "--body",
-    `Forma preview: ${url}\n\nSign in with APP_PASSWORD from Doppler project forma, config dev.`,
+    `Forma preview: ${url}\n\nSign in with APP_PASSWORD from Doppler project forma, config dev. Send uses the OpenRouter key already stored there.`,
   ]);
 }
 
@@ -1138,6 +1228,7 @@ export async function runFormaPreview() {
   env.runtime.VERCEL_ORG_ID = vercel.project.accountId;
   const url = await deploy(checkout, env, vercel.project);
   await probeSignIn(url);
+  await probeStatus(url);
   console.log(`forma_url=${url}`);
   comment(pr, url);
 }
