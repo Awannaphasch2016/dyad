@@ -102,7 +102,7 @@ The preview address stays `/space/<app>/preview/<branch>/`. Signed `?t=` access,
 - `scripts/doppler/vibesdk-lab.test.mjs` — fixture tests.
 - Checkout only, at deploy time: `space/src/space/deploy-engine.ts`, `space/src/space/durable-object.ts`, `src/routes/chat/components/preview-iframe.tsx`.
 
-The per-PR Vibe SDK provisioner on `cursor/preview-backend-plan-fd29` should apply these same patches later, together with the app-creation limit already used by the lab. That is a follow-up on that branch. It does not go into Dyad’s `preview.yml`.
+The per-PR Vibe SDK provisioner applies these same patches, together with the app-creation limit already used by the lab. That change lives on `cursor/preview-backend-plan-fd29`. It does not go into Dyad’s `preview.yml`.
 
 ### Data Model Changes
 
@@ -135,18 +135,18 @@ No new route. `GET` and `HEAD` of the existing preview path change as follows:
 
 ### Phase 3: Same behavior for a per-PR worker
 
-- [ ] Apply these patches, and the existing app-creation disable, from the Vibe SDK preview provisioner.
-- [ ] Leave Dyad’s preview workflow unchanged.
+- [x] Apply these patches, and the existing app-creation disable, from the Vibe SDK preview provisioner.
+- [x] Leave Dyad’s preview workflow unchanged.
 
 ## Testing Strategy
 
-- [ ] `node --test scripts/doppler/vibesdk-lab.test.mjs` covers the patches with source fixtures and no Cloudflare call.
-- [ ] A `text/html` response with no body keeps its status and content type, and the rewriter is not used.
-- [ ] A `GET` HTML body still rewrites a root-relative `src`.
-- [ ] A snapshot with `index.html` and no `App` class serves that file. An empty snapshot returns 404. A snapshot with `export class App` still uses the Worker path.
-- [ ] The pane sets its error state on the first 404 or 500 and does not schedule a retry or a redeploy. A 200 with no preview-type header still counts as ready.
-- [ ] After the lab workflow rolls the worker out, `HEAD` and `GET` of a fixture snapshot with `index.html` and no `App` class are both 200, and the pane shows that document.
-- [ ] The lab config still rejects a browser binding, containers, a dispatch namespace, and the sandbox export.
+- [x] `node --test scripts/doppler/vibesdk-lab.test.mjs` covers the patches with source fixtures and no Cloudflare call.
+- [x] A `text/html` response with no body keeps its status and content type, and the rewriter is not used.
+- [x] A `GET` HTML body still rewrites a root-relative `src`.
+- [x] A snapshot with `index.html` and no `App` class serves that file. An empty snapshot returns 404. A snapshot with `export class App` still uses the Worker path.
+- [x] The pane sets its error state on the first 404 or 500 and does not schedule a retry or a redeploy. A 200 with no preview-type header still counts as ready.
+- [ ] After the lab workflow rolls the worker out, `HEAD` and `GET` of a fixture snapshot with `index.html` and no `App` class are both 200, and the pane shows that document. The worker is published (`static_preview=enabled`, health 200). An already saved chat still needs another deploy before that check can run.
+- [x] The lab config still rejects a browser binding, containers, a dispatch namespace, and the sandbox export.
 
 ## Risks & Mitigations
 
@@ -172,7 +172,7 @@ No new route. `GET` and `HEAD` of the existing preview path change as follows:
 - Do not show the frame before the check succeeds. Fix the check, and stop treating a finished failure as loading.
 - Retry only a dropped connection, a timeout, or `sandbox-error`. Finished HTTP errors stop immediately.
 - Do not add a browser binding, a container, a dispatch namespace, or a per-app public URL.
-- The per-PR provisioner gets the same patches later. Dyad’s preview workflow stays Dyad-only.
+- The per-PR provisioner gets the same patches. Dyad’s preview workflow stays Dyad-only.
 
 ---
 
