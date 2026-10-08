@@ -40,9 +40,7 @@ export function membershipReady(summary) {
     const [role, count] = part.split(":");
     counts.set(role, Number(count));
   }
-  return (
-    counts.get("developer") >= 1 && counts.get("project-manager") >= 1
-  );
+  return counts.get("developer") >= 1 && counts.get("project-manager") >= 1;
 }
 
 export function sharedSession({ userId = "", memberships = [] } = {}) {
@@ -50,9 +48,7 @@ export function sharedSession({ userId = "", memberships = [] } = {}) {
     return { signedIn: false, organization: null, role: null, userId: null };
   }
   const usable = memberships.filter((row) => {
-    return (
-      row.role_id === "project-manager" || row.role_id === "developer"
-    );
+    return row.role_id === "project-manager" || row.role_id === "developer";
   });
   if (usable.length !== 1) {
     return {
@@ -66,8 +62,7 @@ export function sharedSession({ userId = "", memberships = [] } = {}) {
   return {
     signedIn: true,
     organization: row.organization ?? null,
-    role:
-      row.role_id === "project-manager" ? "Project Manager" : "Developer",
+    role: row.role_id === "project-manager" ? "Project Manager" : "Developer",
     userId: String(userId),
   };
 }
@@ -134,7 +129,8 @@ export function patchLoginModal(source) {
 
 export function patchGlobalHeader(source) {
   const exportAnchor = "export function GlobalHeader() {";
-  const modalImport = "import { useAuthModal } from '../auth/AuthModalProvider';";
+  const modalImport =
+    "import { useAuthModal } from '../auth/AuthModalProvider';";
   const modalHook = "\tconst { showAuthModal } = useAuthModal();";
   const click = "onClick={() => showAuthModal()}";
   requireAnchor(source, exportAnchor, "header export");
@@ -145,7 +141,10 @@ export function patchGlobalHeader(source) {
     .replace(modalImport, "")
     .replace(modalHook, "")
     .replace(exportAnchor, () => `${sharedClerkHelpers()}\n${exportAnchor}`)
-    .replace(click, "onClick={() => {\n\t\t\t\t\t\t\t\tvoid startSharedSignIn();\n\t\t\t\t\t\t\t}}");
+    .replace(
+      click,
+      "onClick={() => {\n\t\t\t\t\t\t\t\tvoid startSharedSignIn();\n\t\t\t\t\t\t\t}}",
+    );
 }
 
 const CLERK_BROWSER_HOSTS = [
@@ -189,14 +188,21 @@ export function patchClerkSecurity(source) {
     .replace(scriptAnchor, `${scriptAnchor}\n                ${hosts},`)
     .replace(connectAnchor, `${connectAnchor},\n        ${hosts}`)
     .replace(frameAnchor, `frameSrc: ["'self'", ${hosts}],`)
-    .replace(imageAnchor, `${imageAnchor}\n                "https://img.clerk.com",`)
+    .replace(
+      imageAnchor,
+      `${imageAnchor}\n                "https://img.clerk.com",`,
+    )
     .replace(workerAnchor, `workerSrc: ["'self'", "blob:", ${hosts}],`)
     .replace(embedAnchor, `crossOriginEmbedderPolicy: false,`)
-    .replace(openerAnchor, `crossOriginOpenerPolicy: 'same-origin-allow-popups',`);
+    .replace(
+      openerAnchor,
+      `crossOriginOpenerPolicy: 'same-origin-allow-popups',`,
+    );
 }
 
 export function patchAuthContext(source) {
-  const sessionAnchor = "async function fetchAuthSession(): Promise<CachedAuthSession | null> {";
+  const sessionAnchor =
+    "async function fetchAuthSession(): Promise<CachedAuthSession | null> {";
   const logoutAnchor = "\t\t\ttry {\n\t\t\t\tawait apiClient.logout();";
   requireAnchor(source, sessionAnchor, "auth session");
   requireAnchor(source, logoutAnchor, "logout");
