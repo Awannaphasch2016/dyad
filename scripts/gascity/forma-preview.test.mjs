@@ -267,7 +267,7 @@ test("the preview deploys a Forma commit instead of copying the editor", async (
   assert.equal(workflow.includes("OPENROUTER"), false);
   assert.equal(workflow.includes("DATABASE_URL"), false);
   const preview = await readFile(
-    new URL("../../.github/workflows/preview-forma.yml", import.meta.url),
+    new URL("../../.github/workflows/pr-preview-forma.yml", import.meta.url),
     "utf8",
   );
   assert.match(preview, /name: PR Preview - Forma/);
@@ -275,4 +275,5 @@ test("the preview deploys a Forma commit instead of copying the editor", async (
   assert.match(preview, /FORMA_SHA/);
   assert.match(preview, /FORMA_ENVIRONMENT/);
   assert.equal(preview.includes("packages: write"), false);
+  assert.equal(preview.includes("permission-workflows"), false);
 });
