@@ -3,7 +3,7 @@ pipeline:
   identifier: dyad_harness_images
   orgIdentifier: default
   projectIdentifier: dyad
-  description: Experiments 1 and 4. Push only harness- image tags. GHCR login uses the connector key and records the key type. GitHub Actions stays the publisher of :preview and :sha- tags.
+  description: Experiments 1 and 4. Push only harness- image tags. GHCR login uses the classic token. GitHub Actions stays the publisher of :preview and :sha- tags.
   properties:
     ci:
       codebase:
@@ -37,15 +37,10 @@ pipeline:
                       spec:
                         shell: Bash
                         envVariables:
-                          GH_APP_KEY: '<+secrets.getValue("account.Dyad_harness1")>'
+                          GHCR_PUSH_TOKEN: '<+secrets.getValue("account.ghcr_push_token")>'
                         command: |
                           set -euo pipefail
-                          umask 077
-                          key_file="${HOME}/.harness-gh-app.pem"
-                          rm -f "${key_file}"
-                          printf '%s' "$GH_APP_KEY" > "${key_file}"
-                          GH_APP_KEY_FILE="${key_file}" python3 scripts/harness/ghcr_app_login.py --docker-login
-                          rm -f "${key_file}"
+                          python3 scripts/harness/ghcr_app_login.py --docker-login
                           echo "ghcr_login=ok"
                   - step:
                       type: Run
@@ -81,15 +76,10 @@ pipeline:
                       spec:
                         shell: Bash
                         envVariables:
-                          GH_APP_KEY: '<+secrets.getValue("account.Dyad_harness1")>'
+                          GHCR_PUSH_TOKEN: '<+secrets.getValue("account.ghcr_push_token")>'
                         command: |
                           set -euo pipefail
-                          umask 077
-                          key_file="${HOME}/.harness-gh-app.pem"
-                          rm -f "${key_file}"
-                          printf '%s' "$GH_APP_KEY" > "${key_file}"
-                          GH_APP_KEY_FILE="${key_file}" python3 scripts/harness/ghcr_app_login.py --docker-login
-                          rm -f "${key_file}"
+                          python3 scripts/harness/ghcr_app_login.py --docker-login
                           echo "ghcr_login=ok"
                   - step:
                       type: Run
