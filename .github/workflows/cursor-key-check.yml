@@ -74,22 +74,17 @@ jobs:
           models=$(curl -sS -w '\n%{http_code}' -H "$auth" https://api.cursor.com/v1/models)
           mcode=$(tail -n1 <<<"$models")
           mbody=$(sed '$d' <<<"$models")
-          echo "GET /v1/models: $mcode count=$(jq 'if type=="array" then length elif .models then (.models|length) else 0 end' <<<"$mbody" 2>/dev/null || echo 0)"
-          cursor=""
-          total=0
-          impl=no
-          ground=no
-          while true; do
-            url="https://api.cursor.com/v1/repositories"
-            [ -n "$cursor" ] && url="${url}?cursor=$(jq -rn --arg c "$cursor" '$c|@uri')"
-            page=$(curl -sS -H "$auth" "$url")
-            names=$(jq -r '(.repositories // [])[] | (.repository // .url // "")' <<<"$page")
-            total=$((total + $(grep -c . <<<"$names" || true)))
-            grep -q "sdd-gitcon-impl" <<<"$names" && impl=yes
-            grep -qi "dev25-git-con" <<<"$names" && ground=yes
-            cursor=$(jq -r '.nextCursor // empty' <<<"$page")
-            [ -n "$cursor" ] || break
-          done
+          echo "GET /v1/models: $mcode count=$(jq '(.items // .models // []) | length' <<<"$mbody" 2>/dev/null || echo 0)"
+          jq -r '(.items // .models // [])[].id' <<<"$mbody" 2>/dev/null | head -n 30 | sed 's/^/  model /'
+          # This endpoint is limited to one call per user per minute.
+          page=$(curl -sS --max-time 120 -w '\n%{http_code}' -H "$auth" https://api.cursor.com/v1/repositories)
+          echo "GET /v1/repositories status: $(tail -n1 <<<"$page")"
+          page=$(sed '$d' <<<"$page")
+          names=$(jq -r '(.items // .repositories // [])[] | (.url // .repository // "")' <<<"$page" 2>/dev/null || true)
+          total=$(grep -c . <<<"$names" || true)
+          impl=no; ground=no
+          grep -q "sdd-gitcon-impl" <<<"$names" && impl=yes
+          grep -qi "dev25-git-con" <<<"$names" && ground=yes
           echo "GET /v1/repositories: $total repositories, impl=$impl, ground_truth=$ground"
 
       - name: Revoke the Doppler token
