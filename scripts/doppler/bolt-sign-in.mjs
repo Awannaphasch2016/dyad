@@ -239,6 +239,7 @@ export async function loadDirectory(secret) {
     );
     accounts.push({
       id: String(user.id),
+      externalId: user.external_id ? String(user.external_id) : null,
       emails: (user.email_addresses ?? [])
         .map((item) => item.email_address)
         .filter(Boolean),

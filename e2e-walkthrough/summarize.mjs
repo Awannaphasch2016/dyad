@@ -41,7 +41,7 @@ export function renderSummary(reports, totals) {
     const summary =
       name === "password-strategy"
         ? data.verdict
-        : `${data.role} · ${data.email} · ${data.strategy} · human step: ${data.humanStep} · ${data.secondsToSignIn}s · roleId=${data.roleId} · phase=${data.phase} · reload keeps session: ${data.reloadKeepsSession} · signed-out status ${data.signedOutStatus}`;
+        : `${data.role} · ${data.userId} · ${data.strategy} · human step: ${data.humanStep} · ${data.secondsToSignIn}s · roleId=${data.roleId} · phase=${data.phase} · reload keeps session: ${data.reloadKeepsSession} · signed-out status ${data.signedOutStatus}`;
     lines.push(`| ${name} | ${String(summary).replace(/\|/g, "\\|")} |`);
   }
   if (reports.length === 0)

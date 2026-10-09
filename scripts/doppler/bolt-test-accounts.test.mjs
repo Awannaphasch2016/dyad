@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   TEST_ACCOUNTS,
+  emailParameterRejected,
   findWewebplus,
   frontendApiHost,
   isClerkTestEmail,
@@ -124,7 +125,8 @@ test("a second run creates nothing and joins only the missing member", () => {
       },
       {
         id: "user_test_dev",
-        emails: [TEST_ACCOUNTS[1].email.toUpperCase()],
+        externalId: TEST_ACCOUNTS[1].externalId,
+        emails: [],
         providers: [],
         orgIds: [],
       },
@@ -134,10 +136,15 @@ test("a second run creates nothing and joins only the missing member", () => {
     maxMemberships: 5,
   });
   assert.deepEqual(
-    plan.map((account) => [account.userId, account.create, account.joinOrg]),
+    plan.map((account) => [
+      account.userId,
+      account.identifier,
+      account.create,
+      account.joinOrg,
+    ]),
     [
-      ["user_test_pm", false, false],
-      ["user_test_dev", false, true],
+      ["user_test_pm", "email", false, false],
+      ["user_test_dev", "none", false, true],
     ],
   );
 });
@@ -202,19 +209,35 @@ test("database rows carry the gate role for each test user", () => {
 test("output lines name ids and factors, nothing secret", () => {
   const lines = outputLines(
     [
-      { ...TEST_ACCOUNTS[0], userId: "user_test_pm" },
-      { ...TEST_ACCOUNTS[1], userId: "user_test_dev" },
+      { ...TEST_ACCOUNTS[0], userId: "user_test_pm", identifier: "email" },
+      { ...TEST_ACCOUNTS[1], userId: "user_test_dev", identifier: "none" },
     ],
     signInCapabilities(environment),
   );
   assert.deepEqual(lines, [
     "pm_email=walkthrough-pm+clerk_test@example.com",
     "pm_user_id=user_test_pm",
+    "pm_identifier=email",
     "dev_email=walkthrough-dev+clerk_test@example.com",
     "dev_user_id=user_test_dev",
+    "dev_identifier=none",
     "ticket_first_factor=on",
     "password_first_factor=off",
     "email_code_first_factor=off",
     "second_factor_required=no",
   ]);
+});
+
+test("only the email-attribute rejection triggers the identifier-less retry", () => {
+  assert.equal(
+    emailParameterRejected(
+      'Clerk POST /v1/users failed: 422 {"errors":[{"message":"is unknown","long_message":"email_address is not a valid parameter for this request. Please ensure the appropriate settings are enabled."}]}',
+    ),
+    true,
+  );
+  assert.equal(
+    emailParameterRejected("Clerk POST /v1/users failed: 429"),
+    false,
+  );
+  assert.equal(emailParameterRejected(undefined), false);
 });

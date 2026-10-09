@@ -23,6 +23,7 @@ import {
 export const TEST_ACCOUNTS = [
   {
     key: "pm",
+    externalId: "walkthrough-test-pm",
     email: "walkthrough-pm+clerk_test@example.com",
     roleId: "project-manager",
     firstName: "Walkthrough",
@@ -30,6 +31,7 @@ export const TEST_ACCOUNTS = [
   },
   {
     key: "dev",
+    externalId: "walkthrough-test-dev",
     email: "walkthrough-dev+clerk_test@example.com",
     roleId: "developer",
     firstName: "Walkthrough",
@@ -106,10 +108,12 @@ export function planTestAccounts({
     if (!isClerkTestEmail(email) || humans.has(email)) {
       throw new Error(`refusing to manage ${spec.key}: not a test address`);
     }
-    const existing = (accounts ?? []).find((account) =>
-      (account.emails ?? []).some(
-        (item) => String(item).toLowerCase() === email,
-      ),
+    const existing = (accounts ?? []).find(
+      (account) =>
+        account.externalId === spec.externalId ||
+        (account.emails ?? []).some(
+          (item) => String(item).toLowerCase() === email,
+        ),
     );
     const member = existing
       ? (existing.orgIds ?? []).includes(organization.id)
@@ -118,6 +122,11 @@ export function planTestAccounts({
     plan.push({
       ...spec,
       userId: existing ? existing.id : null,
+      identifier: existing
+        ? (existing.emails ?? []).length > 0
+          ? "email"
+          : "none"
+        : null,
       create: !existing,
       joinOrg: !member,
     });
@@ -145,6 +154,7 @@ export function outputLines(accounts, capabilities) {
   for (const account of accounts) {
     lines.push(`${account.key}_email=${account.email}`);
     lines.push(`${account.key}_user_id=${account.userId}`);
+    lines.push(`${account.key}_identifier=${account.identifier ?? "none"}`);
   }
   lines.push(`ticket_first_factor=${capabilities.ticket ? "on" : "off"}`);
   lines.push(`password_first_factor=${capabilities.password ? "on" : "off"}`);
@@ -172,19 +182,37 @@ async function clerkPost(url, headers, body) {
   return text ? JSON.parse(text) : {};
 }
 
+// A social-only instance rejects `email_address` on this call until the
+// Email address attribute is turned on in the Dashboard. The user is then
+// created with no identifier at all; a sign-in token still signs it in.
+export function emailParameterRejected(message) {
+  return /email_address is not a valid parameter/i.test(String(message ?? ""));
+}
+
 async function createUser(headers, spec) {
-  const created = await clerkPost("https://api.clerk.com/v1/users", headers, {
-    email_address: [spec.email],
+  const base = {
+    external_id: spec.externalId,
     first_name: spec.firstName,
     last_name: spec.lastName,
     skip_password_requirement: true,
     skip_restriction_checks: true,
-    public_metadata: {
-      walkthrough_test: true,
-      walkthrough_role: spec.roleId,
-    },
-  });
-  return String(created.id);
+    public_metadata: { walkthrough_test: true, walkthrough_role: spec.roleId },
+  };
+  try {
+    const created = await clerkPost("https://api.clerk.com/v1/users", headers, {
+      ...base,
+      email_address: [spec.email],
+    });
+    return { userId: String(created.id), identifier: "email" };
+  } catch (error) {
+    if (!emailParameterRejected(error?.message)) throw error;
+  }
+  const created = await clerkPost(
+    "https://api.clerk.com/v1/users",
+    headers,
+    base,
+  );
+  return { userId: String(created.id), identifier: "none" };
 }
 
 async function joinOrganization(headers, organizationId, userId) {
@@ -248,7 +276,9 @@ export async function ensureTestAccounts() {
   let joined = 0;
   for (const account of plan) {
     if (account.create) {
-      account.userId = await createUser(headers, account);
+      const made = await createUser(headers, account);
+      account.userId = made.userId;
+      account.identifier = made.identifier;
       created += 1;
     }
     if (account.joinOrg) {

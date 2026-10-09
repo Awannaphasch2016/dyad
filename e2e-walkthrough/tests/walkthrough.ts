@@ -1,3 +1,4 @@
+import { createClerkClient } from "@clerk/backend";
 import { clerk, setupClerkTestingToken } from "@clerk/testing/playwright";
 import type { BrowserContext, Page } from "@playwright/test";
 import { writeFileSync } from "node:fs";
@@ -6,6 +7,7 @@ export type RoleKey = "pm" | "dev";
 
 export interface Role {
   key: RoleKey;
+  userId: string;
   email: string;
   roleId: "project-manager" | "developer";
   label: string;
@@ -16,12 +18,14 @@ export interface Role {
 export const ROLES: Record<RoleKey, Role> = {
   pm: {
     key: "pm",
+    userId: process.env.WALKTHROUGH_PM_USER_ID ?? "",
     email: process.env.WALKTHROUGH_PM_EMAIL ?? "",
     roleId: "project-manager",
     label: "Project Manager",
   },
   dev: {
     key: "dev",
+    userId: process.env.WALKTHROUGH_DEV_USER_ID ?? "",
     email: process.env.WALKTHROUGH_DEV_EMAIL ?? "",
     roleId: "developer",
     label: "Developer",
@@ -41,6 +45,24 @@ export async function openWalkthrough(context: BrowserContext, page: Page) {
   await setupClerkTestingToken({ context });
   await page.goto("/");
   await clerk.loaded({ page });
+}
+
+// Sign in by user id: a one-time sign-in token from the Backend API, consumed
+// in the page with the ticket strategy. Works whether or not the user has an
+// email address, and skips every verification step by design.
+export async function signInAs(page: Page, userId: string) {
+  const client = createClerkClient({
+    secretKey: process.env.CLERK_SECRET_KEY ?? "",
+  });
+  const token = await client.signInTokens.createSignInToken({
+    userId,
+    expiresInSeconds: 300,
+  });
+  await clerk.signIn({
+    page,
+    signInParams: { strategy: "ticket", ticket: token.token },
+  });
+  await page.waitForFunction(() => window.Clerk?.user != null);
 }
 
 // The same request the page makes every two seconds. 401 when signed out.

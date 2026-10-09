@@ -4,6 +4,7 @@ import {
   ROLES,
   openWalkthrough,
   projectSnapshot,
+  signInAs,
   writeReport,
   type RoleKey,
 } from "./walkthrough";
@@ -19,7 +20,10 @@ for (const key of ["pm", "dev"] as RoleKey[]) {
     page,
     context,
   }) => {
-    test.skip(!role.email, `WALKTHROUGH_${key.toUpperCase()}_EMAIL is absent`);
+    test.skip(
+      !role.userId,
+      `WALKTHROUGH_${key.toUpperCase()}_USER_ID is absent`,
+    );
 
     await openWalkthrough(context, page);
     await expect(page.getByTestId("bolt-sign-in")).toBeVisible();
@@ -28,7 +32,7 @@ for (const key of ["pm", "dev"] as RoleKey[]) {
     await page.screenshot({ path: `artifacts/${key}-1-signed-out.png` });
 
     const started = Date.now();
-    await clerk.signIn({ page, emailAddress: role.email });
+    await signInAs(page, role.userId);
     const account = page.getByTestId("bolt-account");
     await expect(account).toBeVisible();
     await expect(account).toContainText(role.label);
@@ -56,6 +60,7 @@ for (const key of ["pm", "dev"] as RoleKey[]) {
 
     writeReport(`${key}-sign-in`, {
       role: key,
+      userId: role.userId,
       email: role.email,
       strategy: "ticket (Backend API sign-in token, 300 s)",
       humanStep: "none",
@@ -75,7 +80,7 @@ test("password sign-in: what this Development instance allows today", async ({
   context,
 }) => {
   const pm = ROLES.pm;
-  test.skip(!pm.email, "WALKTHROUGH_PM_EMAIL is absent");
+  test.skip(!pm.userId, "WALKTHROUGH_PM_USER_ID is absent");
   const fapi = process.env.CLERK_FAPI ?? "";
   const environment = (await (
     await fetch(`https://${fapi}/v1/environment`)
