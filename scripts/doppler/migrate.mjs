@@ -125,8 +125,9 @@ export async function status(client, manifest, out) {
   const { project, sources } = manifest;
   const envs = await client.environments(project);
   out(`project=${project} environments=${envs.join(",")}`);
-  const where = await locate(client, manifest);
+  const { where, unreadable } = await locate(client, manifest, out);
   for (const source of sources) {
+    if (unreadable.includes(source)) continue;
     const count = [...where.values()].filter((s) => s === source).length;
     out(`source_${source}=${count}`);
   }
@@ -149,23 +150,42 @@ export async function status(client, manifest, out) {
 }
 
 // Which source config holds each manifest name: the first in order wins.
-async function locate(client, manifest) {
+// A source the token cannot read is reported, not fatal; the token may be
+// scoped to one environment.
+async function locate(client, manifest, out) {
   const where = new Map();
+  const unreadable = [];
   for (const source of manifest.sources) {
-    for (const name of await client.names(manifest.project, source)) {
+    let names;
+    try {
+      names = await client.names(manifest.project, source);
+    } catch (error) {
+      if (
+        error instanceof DopplerError &&
+        [400, 403, 404].includes(error.status)
+      ) {
+        unreadable.push(source);
+        out(`source_${source}=no-access http-${error.status}`);
+        continue;
+      }
+      throw error;
+    }
+    for (const name of names) {
       if (!where.has(name)) where.set(name, source);
     }
   }
-  return where;
+  return { where, unreadable };
 }
 
 export async function phase1(client, manifest, out) {
   const { project, sources } = manifest;
   const envs = new Set(await client.environments(project));
-  const where = await locate(client, manifest);
+  const { where, unreadable } = await locate(client, manifest, out);
   const raw = {};
-  for (const source of sources)
+  for (const source of sources) {
+    if (unreadable.includes(source)) continue;
     raw[source] = await client.rawSecrets(project, source);
+  }
   let failures = 0;
   for (const [slug, env] of Object.entries(manifest.environments)) {
     if (!envs.has(slug)) {

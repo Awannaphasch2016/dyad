@@ -48,6 +48,12 @@ function fakeDoppler(initial) {
       state.configs[body.slug] = {};
       return json(200, { environment: { slug: body.slug } });
     }
+    if (config && state.noAccess?.includes(config))
+      return json(400, {
+        messages: [
+          `This token does not have access to requested config '${config}'`,
+        ],
+      });
     if (path === "/configs/config/secrets/names")
       return json(200, { names: Object.keys(state.configs[config] || {}) });
     if (path === "/configs/config/secrets" && method === "GET") {
@@ -209,6 +215,22 @@ test("verify checks names and that ci's DOPPLER_TOKEN really reads the preview c
   assert.equal(await main(["verify"], { ...bad.io, manifest, client }), 1);
   assert.match(bad.out(), /ci_doppler_token=http-401/);
   assert.match(bad.out(), /phase1=incomplete/);
+});
+
+test("a source config the token cannot read is reported and skipped", async () => {
+  const d = fakeDoppler({ ...seeded, noAccess: ["dev"] });
+  const client = makeClient("admin", d.fetchImpl);
+  const c = capture();
+  assert.equal(await main(["status"], { ...c.io, manifest, client }), 0);
+  assert.match(c.out(), /source_dev=no-access http-400/);
+  assert.match(c.out(), /source_preview=5/);
+  assert.match(c.out(), /ci_not_in_sources=EC2_SSH_KEY/);
+
+  const p = capture();
+  assert.equal(await main(["phase1"], { ...p.io, manifest, client }), 1);
+  assert.match(p.out(), /ci_copied=2 already=0/);
+  assert.match(p.out(), /ci_absent_in_sources=EC2_SSH_KEY/);
+  assert.ok(!("EC2_SSH_KEY" in d.state.configs.ci));
 });
 
 test("a rejected admin token is reported as AUTH_REQUIRED", async () => {
