@@ -71,6 +71,8 @@ jobs:
           WALKTHROUGH_URL: https://bolt-walkthrough-55d6.karant-test-egress-canary.workers.dev
           WALKTHROUGH_PM_USER_ID: ${{ steps.accounts.outputs.pm_user_id }}
           WALKTHROUGH_DEV_USER_ID: ${{ steps.accounts.outputs.dev_user_id }}
+          WALKTHROUGH_PM_IDENTIFIER: ${{ steps.accounts.outputs.pm_identifier }}
+          WALKTHROUGH_DEV_IDENTIFIER: ${{ steps.accounts.outputs.dev_identifier }}
           WALKTHROUGH_PM_EMAIL: ${{ steps.accounts.outputs.pm_email }}
           WALKTHROUGH_DEV_EMAIL: ${{ steps.accounts.outputs.dev_email }}
           WALKTHROUGH_PASSWORD_FACTOR: ${{ steps.accounts.outputs.password_first_factor }}

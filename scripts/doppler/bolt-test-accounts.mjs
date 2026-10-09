@@ -155,6 +155,9 @@ export function outputLines(accounts, capabilities) {
     lines.push(`${account.key}_email=${account.email}`);
     lines.push(`${account.key}_user_id=${account.userId}`);
     lines.push(`${account.key}_identifier=${account.identifier ?? "none"}`);
+    if (account.emailAttach) {
+      lines.push(`${account.key}_email_attach=${account.emailAttach}`);
+    }
   }
   lines.push(`ticket_first_factor=${capabilities.ticket ? "on" : "off"}`);
   lines.push(`password_first_factor=${capabilities.password ? "on" : "off"}`);
@@ -215,6 +218,25 @@ async function createUser(headers, spec) {
   return { userId: String(created.id), identifier: "none" };
 }
 
+// Second try for a user created without an identifier: attach the test
+// address directly. The same instance setting may refuse this too; the
+// outcome is reported either way.
+async function attachEmail(headers, account) {
+  try {
+    await clerkPost("https://api.clerk.com/v1/email_addresses", headers, {
+      user_id: account.userId,
+      email_address: account.email,
+      verified: true,
+      primary: true,
+    });
+    return { identifier: "email", emailAttach: "attached" };
+  } catch (error) {
+    const text = String(error?.message ?? error);
+    const code = /"code":"([a-z_]+)"/.exec(text)?.[1] ?? "rejected";
+    return { identifier: "none", emailAttach: code };
+  }
+}
+
 async function joinOrganization(headers, organizationId, userId) {
   await clerkPost(
     `https://api.clerk.com/v1/organizations/${encodeURIComponent(organizationId)}/memberships`,
@@ -225,7 +247,7 @@ async function joinOrganization(headers, organizationId, userId) {
 
 async function organizationCounts(headers, organizationId) {
   const org = await clerkJson(
-    `https://api.clerk.com/v1/organizations/${encodeURIComponent(organizationId)}`,
+    `https://api.clerk.com/v1/organizations/${encodeURIComponent(organizationId)}?include_members_count=true`,
     headers,
   );
   return {
@@ -280,6 +302,11 @@ export async function ensureTestAccounts() {
       account.userId = made.userId;
       account.identifier = made.identifier;
       created += 1;
+    }
+    if (account.identifier === "none") {
+      const attached = await attachEmail(headers, account);
+      account.identifier = attached.identifier;
+      account.emailAttach = attached.emailAttach;
     }
     if (account.joinOrg) {
       await joinOrganization(headers, organization.id, account.userId);

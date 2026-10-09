@@ -39,8 +39,8 @@ export function renderSummary(reports, totals) {
   lines.push("| Report | Result |", "| --- | --- |");
   for (const { name, data } of reports) {
     const summary =
-      name === "password-strategy"
-        ? data.verdict
+      name === "password-strategy" || name === "token-sign-in-preflight"
+        ? `${data.outcome ? `${data.outcome} · ` : ""}${data.verdict}`
         : `${data.role} · ${data.userId} · ${data.strategy} · human step: ${data.humanStep} · ${data.secondsToSignIn}s · roleId=${data.roleId} · phase=${data.phase} · reload keeps session: ${data.reloadKeepsSession} · signed-out status ${data.signedOutStatus}`;
     lines.push(`| ${name} | ${String(summary).replace(/\|/g, "\\|")} |`);
   }

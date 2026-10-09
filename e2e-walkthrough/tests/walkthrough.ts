@@ -8,6 +8,9 @@ export type RoleKey = "pm" | "dev";
 export interface Role {
   key: RoleKey;
   userId: string;
+  // "email" when Clerk holds an address for the user, "none" when the
+  // instance refused one. A sign-in token needs an identification.
+  identifier: string;
   email: string;
   roleId: "project-manager" | "developer";
   label: string;
@@ -19,6 +22,7 @@ export const ROLES: Record<RoleKey, Role> = {
   pm: {
     key: "pm",
     userId: process.env.WALKTHROUGH_PM_USER_ID ?? "",
+    identifier: process.env.WALKTHROUGH_PM_IDENTIFIER ?? "none",
     email: process.env.WALKTHROUGH_PM_EMAIL ?? "",
     roleId: "project-manager",
     label: "Project Manager",
@@ -26,6 +30,7 @@ export const ROLES: Record<RoleKey, Role> = {
   dev: {
     key: "dev",
     userId: process.env.WALKTHROUGH_DEV_USER_ID ?? "",
+    identifier: process.env.WALKTHROUGH_DEV_IDENTIFIER ?? "none",
     email: process.env.WALKTHROUGH_DEV_EMAIL ?? "",
     roleId: "developer",
     label: "Developer",
@@ -50,6 +55,9 @@ export async function openWalkthrough(context: BrowserContext, page: Page) {
 // Sign in by user id: a one-time sign-in token from the Backend API, consumed
 // in the page with the ticket strategy. Works whether or not the user has an
 // email address, and skips every verification step by design.
+export const NO_IDENTIFICATION =
+  "The given token doesn't have an associated identification";
+
 export async function signInAs(page: Page, userId: string) {
   const client = createClerkClient({
     secretKey: process.env.CLERK_SECRET_KEY ?? "",

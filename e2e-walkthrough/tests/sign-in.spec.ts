@@ -1,6 +1,7 @@
 import { clerk } from "@clerk/testing/playwright";
 import { expect, test } from "@playwright/test";
 import {
+  NO_IDENTIFICATION,
   ROLES,
   openWalkthrough,
   projectSnapshot,
@@ -13,6 +14,47 @@ import {
 // person confirming anything? Each role gets its own context, so the two
 // sessions never share a cookie jar.
 
+const BLOCKED =
+  "Clerk refuses a sign-in token for a user with no identification, and this " +
+  "social-only Development instance refuses to give the test users an email " +
+  "address through the Backend API. Turning on the Email address attribute in " +
+  "the Clerk Dashboard (User & authentication → Email, phone, username) is the " +
+  "one remaining step; no password is needed for the token path.";
+
+test("preflight: the instance lets a token sign in the test users", async ({
+  page,
+  context,
+}) => {
+  const pm = ROLES.pm;
+  test.skip(!pm.userId, "WALKTHROUGH_PM_USER_ID is absent");
+  await openWalkthrough(context, page);
+  let error: string | null = null;
+  try {
+    await signInAs(page, pm.userId);
+  } catch (caught) {
+    error = String((caught as Error).message ?? caught);
+  }
+  const blocked = error !== null && error.includes(NO_IDENTIFICATION);
+  writeReport("token-sign-in-preflight", {
+    userId: pm.userId,
+    identifier: pm.identifier,
+    outcome: error === null ? "signed in" : blocked ? "blocked" : "failed",
+    error,
+    verdict:
+      error === null
+        ? "a sign-in token signs the test user in with no human step"
+        : blocked
+          ? BLOCKED
+          : "sign-in failed for another reason; see error",
+  });
+  await page.screenshot({ path: "artifacts/preflight.png" });
+  if (error === null) {
+    await clerk.signOut({ page });
+    return;
+  }
+  throw new Error(blocked ? BLOCKED : error);
+});
+
 for (const key of ["pm", "dev"] as RoleKey[]) {
   const role = ROLES[key];
 
@@ -24,6 +66,7 @@ for (const key of ["pm", "dev"] as RoleKey[]) {
       !role.userId,
       `WALKTHROUGH_${key.toUpperCase()}_USER_ID is absent`,
     );
+    test.skip(role.identifier === "none", BLOCKED);
 
     await openWalkthrough(context, page);
     await expect(page.getByTestId("bolt-sign-in")).toBeVisible();
