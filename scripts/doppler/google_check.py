@@ -230,34 +230,153 @@ def drive(token, path, raw=False, **params):
     return http("GET", f"https://www.googleapis.com/drive/v3/{path}?{query}", {"Authorization": "Bearer " + token}, raw=raw)
 
 
+FOLDER_MIME = "application/vnd.google-apps.folder"
+EXPORT_MIME = {
+    "application/vnd.google-apps.document": "text/plain",
+    "application/vnd.google-apps.spreadsheet": "text/csv",
+    "application/vnd.google-apps.presentation": "text/plain",
+}
+OFFICE_TEXT_XML = {
+    ".docx": ["word/document.xml"],
+    ".pptx": None,  # every ppt/slides/slide*.xml
+    ".xlsx": ["xl/sharedStrings.xml"],
+}
+TEXT_EXT = (".txt", ".md", ".csv", ".json", ".yaml", ".yml", ".xml", ".html", ".htm", ".sql", ".php", ".js", ".css")
+PER_FILE_CHARS = 80000
+MAX_DOWNLOAD_BYTES = 60 * 1024 * 1024
+TAG = re.compile(r"<[^>]+>")
+
+
+def office_text(data, ext):
+    """Pull visible text out of a docx/pptx/xlsx without external libraries."""
+    import zipfile
+    import io
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            members = OFFICE_TEXT_XML.get(ext)
+            if members is None:
+                members = sorted(n for n in zf.namelist() if n.startswith("ppt/slides/slide") and n.endswith(".xml"))
+            chunks = []
+            for member in members:
+                if member in zf.namelist():
+                    xml = zf.read(member).decode("utf-8", "replace")
+                    xml = re.sub(r"</w:p>|</a:p>|</si>", "\n", xml)
+                    chunks.append(TAG.sub("", xml))
+            return "\n".join(chunks)
+    except zipfile.BadZipFile:
+        return None
+
+
+def zip_contents(data, label):
+    """List every entry of an archive and extract text from the readable ones."""
+    import zipfile
+    import io
+
+    out = {"entries": [], "texts": {}}
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(data))
+    except zipfile.BadZipFile:
+        out["error"] = "bad zip"
+        return out
+    with zf:
+        for info in zf.infolist():
+            out["entries"].append({"name": info.filename, "size": info.file_size})
+            if info.is_dir() or info.file_size > 20 * 1024 * 1024:
+                continue
+            lower = info.filename.lower()
+            ext = os.path.splitext(lower)[1]
+            text = None
+            if ext in OFFICE_TEXT_XML:
+                text = office_text(zf.read(info), ext)
+            elif ext in TEXT_EXT:
+                text = zf.read(info).decode("utf-8", "replace")
+            if text:
+                out["texts"][info.filename] = text[:PER_FILE_CHARS]
+    print(f"{label}: zip entries={len(out['entries'])} text_entries={len(out['texts'])}")
+    return out
+
+
+def fetch_file(token, item):
+    """Attach exported or downloaded text to a Drive file record."""
+    mime = item.get("mimeType", "")
+    name = item.get("name", "")
+    ext = os.path.splitext(name.lower())[1]
+    if mime in EXPORT_MIME:
+        status, data = drive(token, f"files/{item['id']}/export", mimeType=EXPORT_MIME[mime], raw=True)
+        item["export_status"] = status
+        if status == 200:
+            item["text"] = data.decode("utf-8", "replace")[:PER_FILE_CHARS]
+        print(f"export {mime.split('.')[-1]}: {status} bytes={len(data) if status == 200 else 0}")
+        return
+    size = int(item.get("size") or 0)
+    if size > MAX_DOWNLOAD_BYTES:
+        item["skipped"] = f"too large ({size} bytes)"
+        return
+    if ext in OFFICE_TEXT_XML or ext in TEXT_EXT or ext == ".zip" or mime == "application/pdf":
+        status, data = drive(token, f"files/{item['id']}", alt="media", raw=True)
+        item["download_status"] = status
+        print(f"download {ext or mime}: {status} bytes={len(data) if status == 200 else 0}")
+        if status != 200:
+            return
+        if ext == ".zip":
+            item["zip"] = zip_contents(data, name)
+        elif ext in OFFICE_TEXT_XML:
+            text = office_text(data, ext)
+            item["text"] = text[:PER_FILE_CHARS] if text else None
+        elif ext in TEXT_EXT:
+            item["text"] = data.decode("utf-8", "replace")[:PER_FILE_CHARS]
+        elif mime == "application/pdf":
+            # No PDF parser in the runner's stdlib; record the size and the
+            # text-looking fragments only so the report shows what is there.
+            item["pdf_bytes"] = len(data)
+
+
+def walk_folder(token, folder_id, depth=0, counters=None):
+    counters = counters if counters is not None else {"folders": 0, "files": 0}
+    files = []
+    page_token = None
+    while True:
+        params = dict(q=f"'{folder_id}' in parents and trashed=false", fields="nextPageToken,files(id,name,mimeType,modifiedTime,size)", pageSize="200", includeItemsFromAllDrives="true")
+        if page_token:
+            params["pageToken"] = page_token
+        status, body = drive(token, "files", **params)
+        if status != 200:
+            print(f"folder listing failed at depth {depth}: {status}")
+            return {"status": status, "files": []}
+        files.extend(body.get("files", []))
+        page_token = body.get("nextPageToken")
+        if not page_token:
+            break
+    counters["files"] += len(files)
+    for item in files:
+        if item.get("mimeType") == FOLDER_MIME:
+            counters["folders"] += 1
+            item["children"] = walk_folder(token, item["id"], depth + 1, counters)
+        else:
+            fetch_file(token, item)
+    print(f"depth {depth}: {len(files)} items")
+    return {"status": 200, "files": files, "counters": counters if depth == 0 else None}
+
+
 def probe_drive(label, token):
     result = {"credential": label}
     status, body = drive(token, "about", fields="user(emailAddress)")
     result["about_status"] = status
     print(f"drive about: {status}")
-    status, body = drive(token, f"files/{DOC_ID}", fields="id,name,mimeType,modifiedTime")
+    status, body = drive(token, f"files/{DOC_ID}", fields="id,name,mimeType,modifiedTime,size")
     result["doc_status"] = status
     result["doc"] = body if status == 200 else None
     print(f"doc metadata: {status} mimeType={body.get('mimeType') if status == 200 else '-'}")
-    if status == 200 and body.get("mimeType") == "application/vnd.google-apps.document":
-        status, text = drive(token, f"files/{DOC_ID}/export", mimeType="text/plain", raw=True)
-        result["doc_export_status"] = status
-        result["doc_text"] = text.decode("utf-8", "replace") if status == 200 else None
-        print(f"doc export: {status} chars={len(text) if status == 200 else 0}")
-    status, body = drive(token, "files", q=f"'{FOLDER_ID}' in parents and trashed=false", fields="files(id,name,mimeType,modifiedTime,size)", pageSize="200", includeItemsFromAllDrives="true")
+    if status == 200:
+        fetch_file(token, result["doc"])
+    status, body = drive(token, f"files/{FOLDER_ID}", fields="id,name,mimeType")
     result["folder_status"] = status
-    files = body.get("files", []) if status == 200 else []
-    result["folder_files"] = files
-    print(f"folder listing: {status} files={len(files)}")
-    for item in files:
-        if item.get("mimeType") == "application/vnd.google-apps.folder":
-            status, sub = drive(token, "files", q=f"'{item['id']}' in parents and trashed=false", fields="files(id,name,mimeType,modifiedTime,size)", pageSize="200", includeItemsFromAllDrives="true")
-            item["children"] = sub.get("files", []) if status == 200 else []
-            print(f"subfolder: {status} files={len(item['children'])}")
-        elif item.get("mimeType") == "application/vnd.google-apps.document":
-            status, text = drive(token, f"files/{item['id']}/export", mimeType="text/plain", raw=True)
-            item["text"] = text.decode("utf-8", "replace")[:60000] if status == 200 else None
-            print(f"doc in folder export: {status}")
+    result["folder"] = body if status == 200 else None
+    print(f"folder metadata: {status}")
+    if status == 200:
+        result["tree"] = walk_folder(token, FOLDER_ID)
+        print(f"tree walked: {result['tree'].get('counters')}")
     return result
 
 
@@ -276,4 +395,3 @@ with open("report.json", "w", encoding="utf-8") as handle:
     json.dump(report, handle, ensure_ascii=False, indent=2)
 print("report.json written")
 
-# re-run after sharing the folder with the service account
