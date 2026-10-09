@@ -75,7 +75,7 @@ B and D together: the script decides the order; the server snapshot proves the o
 ## Status
 
 - Done on `cursor/automated-hitl-verification-851d`: `scripts/doppler/bolt-test-accounts.mjs` (two test users `user_3KSMlRRSbdUgnQO6LFhD276Qj2x` PM and `user_3KSMlT5sJc4zq6IwJYazCw6mif9` Dev exist, are Wewebplus members, and have `wewebplus.memberships` rows), `e2e-walkthrough/` (Playwright: preflight, one token sign-in per role, password probe, Markdown summary), `.github/workflows/bolt-walkthrough-verify.yml`.
-- Blocked on the Email address attribute (see decision 4). The job's preflight test fails with that sentence until it is on; the next run attaches the addresses and the role tests stop skipping.
+- The Email address attribute was turned on in the Dashboard (Development instance, sign-up with email, not required, not a sign-in factor). Run 37960548651 then attached both `+clerk_test` addresses and passed 4/4: each role signed in with a sign-in token in about 2.5 s with no human step, `GET /api/project` returned `project-manager` and `developer`, reload kept the session, sign-out returned 401. Phase 1 authentication is proven.
 - Password probe result on the live instance: `form_param_value_invalid` ("password does not match one of the allowed values for parameter strategy"); typing a password cannot sign in today.
 
 ## Phase 1: single account, full evidence
