@@ -67,7 +67,10 @@ try {
 // 3. Model exists.
 try {
   const models = await cursor("/v1/models");
-  const ids = models.models ?? models;
+  const listed = models.items ?? models.models ?? models;
+  const ids = (Array.isArray(listed) ? listed : []).map((m) =>
+    typeof m === "string" ? m : m.id,
+  );
   note(
     ids.includes(model),
     `model ${model} is in GET /v1/models (${ids.length} models)`,
@@ -80,8 +83,8 @@ try {
 let groundTruthListed = null;
 try {
   const repos = await cursor("/v1/repositories");
-  const urls = (repos.repositories ?? [])
-    .map((r) => r.repository ?? r.url ?? "")
+  const urls = (repos.items ?? repos.repositories ?? [])
+    .map((r) => (typeof r === "string" ? r : (r.repository ?? r.url ?? "")))
     .map((u) =>
       u.replace(/^https?:\/\/github\.com\//, "").replace(/\.git$/, ""),
     );
