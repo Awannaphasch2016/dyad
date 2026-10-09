@@ -341,3 +341,6 @@ if (entry && import.meta.url === pathToFileURL(entry).href) {
     process.exit(1);
   });
 }
+
+// The Email address attribute was enabled on the Development instance on
+// 2026-10-09; the next run attaches the test addresses and signs both roles in.
