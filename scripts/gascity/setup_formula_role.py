@@ -16,7 +16,7 @@ import urllib.request
 import zipfile
 
 ROLE_NAME = "github-preview-formula"
-TRUST_SUB = "repo:Awannaphasch2016/dyad:*"
+TRUST_SUB = "repo:Awannaphasch2016@28061800/dyad@1384672033:ref:refs/heads/cursor/formula-config-ui-55d6"
 DYAD_TOKEN_FILE = "/etc/doppler/dyad-preview.token"
 AWS_TOKEN_FILE = "/etc/doppler/aws-dev.token"
 SECRET_NAME = "AWS_PREVIEW_FORMULA_ROLE_ARN"
@@ -37,10 +37,8 @@ def trust_policy(account_id):
                 "Condition": {
                     "StringEquals": {
                         f"{OIDC_HOST}:aud": "sts.amazonaws.com",
-                    },
-                    "StringLike": {
                         f"{OIDC_HOST}:sub": TRUST_SUB,
-                    },
+                    }
                 },
             }
         ],

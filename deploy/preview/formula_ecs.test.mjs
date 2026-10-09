@@ -262,7 +262,7 @@ test("the formula workflow deploys to ECS and does not cook", () => {
   assert.match(workflow, /\/formulas\/discovery/);
   assert.match(
     workflow,
-    /repo:Awannaphasch2016\/dyad:ref:refs\/heads\/cursor\/formula-config-ui-55d6/,
+    /repo:Awannaphasch2016@28061800\/dyad@1384672033:ref:refs\/heads\/cursor\/formula-config-ui-55d6/,
   );
   assert.equal(workflow.includes("gascity-rollout"), false);
   assert.equal(workflow.includes("devbox"), false);
@@ -321,9 +321,9 @@ test("the production host stores the role address without printing it", () => {
         "mod = importlib.util.module_from_spec(spec)",
         "spec.loader.exec_module(mod)",
         "policy = mod.trust_policy('123456789012')",
-        "sub = policy['Statement'][0]['Condition']['StringLike']['token.actions.githubusercontent.com:sub']",
+        "sub = policy['Statement'][0]['Condition']['StringEquals']['token.actions.githubusercontent.com:sub']",
         "assert sub == mod.TRUST_SUB",
-        "assert sub == 'repo:Awannaphasch2016/dyad:*'",
+        "assert 'dyad@1384672033' in sub",
         "text = json.dumps(mod.permissions_policy('123456789012'))",
         "assert 'iam:CreateUser' not in text",
         "assert 'formula-preview-execution' in text",

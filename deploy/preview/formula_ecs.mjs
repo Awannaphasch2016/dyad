@@ -1138,7 +1138,7 @@ async function writeRoleArn() {
       "AWS_PREVIEW_FORMULA_ROLE_ARN is absent from Doppler and from the GitHub secret.",
     );
     console.error(
-      "The role must trust repo:Awannaphasch2016/dyad:ref:refs/heads/cursor/formula-config-ui-55d6",
+      "The role must trust repo:Awannaphasch2016@28061800/dyad@1384672033:ref:refs/heads/cursor/formula-config-ui-55d6",
     );
     process.exitCode = 1;
     return;
