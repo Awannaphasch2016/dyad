@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -171,6 +178,100 @@ test("preview-up refuses bad arguments and the production checkout", () => {
   }
 });
 
+test("a skipped tunnel is still created when the Cloudflare names are present", () => {
+  const root = mkdtempSync(join(tmpdir(), "preview-up-"));
+  const bin = join(root, "bin");
+  const state = join(root, "state");
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(
+    join(bin, "docker"),
+    `#!/bin/sh
+if [ "$1" = "info" ]; then
+  echo /tmp
+  exit 0
+fi
+printf '%s\\n' "$*" >> "$DOCKER_LOG"
+exit 0
+`,
+    { mode: 0o755 },
+  );
+  writeFileSync(
+    join(bin, "node"),
+    `#!/bin/sh
+printf '%s\\n' "$@" >> "$NODE_LOG"
+printf '%s' 'stub-tunnel-token' > "$3"
+exit 0
+`,
+    { mode: 0o755 },
+  );
+  const script = new URL("./preview-up.sh", import.meta.url);
+  const run = (env) =>
+    spawnSync("bash", [script.pathname, "79", digest], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${bin}:${process.env.PATH}`,
+        HOME: root,
+        PREVIEW_STATE_DIR: state,
+        PREVIEW_PRODUCTION_MARKER: join(root, "missing-production"),
+        PREVIEW_SKIP_TUNNEL: "1",
+        PREVIEW_QUICK_TUNNEL: "0",
+        DOCKER_LOG: join(root, "docker.log"),
+        NODE_LOG: join(root, "node.log"),
+        CLOUDFLARE_API_TOKEN: "",
+        CLOUDFLARE_ZONE_ID: "",
+        CLOUDFLARE_ACCOUNT_ID: "",
+        ...env,
+      },
+    });
+  try {
+    const skipped = run({});
+    assert.equal(skipped.status, 0, skipped.stderr);
+    assert.match(skipped.stdout, /CLOUDFLARE_API_TOKEN: absent/);
+    assert.match(skipped.stdout, /CLOUDFLARE_ZONE_ID: absent/);
+    assert.equal(existsSync(join(root, "node.log")), false);
+    assert.equal(
+      readFileSync(join(root, "docker.log"), "utf8").includes(
+        "--profile tunnel",
+      ),
+      false,
+    );
+
+    rmSync(join(root, "docker.log"));
+    const created = run({
+      CLOUDFLARE_API_TOKEN: "api-token",
+      CLOUDFLARE_ZONE_ID: "zone-id",
+      CLOUDFLARE_ACCOUNT_ID: "account-id",
+    });
+    assert.equal(created.status, 0, created.stderr);
+    assert.match(created.stdout, /CLOUDFLARE_API_TOKEN: present/);
+    assert.match(created.stdout, /CLOUDFLARE_ZONE_ID: present/);
+    assert.match(created.stdout, /CLOUDFLARE_ACCOUNT_ID: present/);
+    assert.equal(created.stdout.includes("CLOUDFLARE_API_TOKEN_"), false);
+    assert.equal(created.stdout.includes("CLOUDFLARE_ZONE_ID_"), false);
+    assert.equal(created.stdout.includes("api-token"), false);
+    assert.equal(created.stdout.includes("stub-tunnel-token"), false);
+    const nodeLog = readFileSync(join(root, "node.log"), "utf8");
+    assert.match(nodeLog, /preview-tunnel\.mjs/);
+    assert.match(nodeLog, /\n79\n/);
+    const envFile = readFileSync(join(state, "preview-79.env"), "utf8");
+    assert.match(envFile, /^CLOUDFLARE_TUNNEL_TOKEN=stub-tunnel-token$/m);
+    assert.match(
+      readFileSync(join(root, "docker.log"), "utf8"),
+      /--profile tunnel/,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("preview-up can print a temporary hostname without the named tunnel", () => {
+  const script = readFileSync(new URL("./preview-up.sh", import.meta.url), "utf8");
+  assert.match(script, /PREVIEW_QUICK_TUNNEL/);
+  assert.match(script, /trycloudflare/);
+  assert.equal(script.includes('echo "$CLOUDFLARE_API_TOKEN"'), false);
+});
+
 test("preview image workflow updates the shared Devbox after publish", () => {
   const workflow = readFileSync(
     new URL("../../.github/workflows/preview-image.yml", import.meta.url),
@@ -184,6 +285,11 @@ test("preview image workflow updates the shared Devbox after publish", () => {
     workflow,
     /PREVIEW_SKIP_TUNNEL=1 bash scripts\/gascity\/preview-up\.sh/,
   );
+  assert.match(workflow, /secrets\.CLOUDFLARE_API_TOKEN/);
+  assert.match(workflow, /secrets\.CLOUDFLARE_ZONE_ID/);
+  assert.match(workflow, /secrets\.CLOUDFLARE_ACCOUNT_ID/);
+  assert.equal(workflow.includes("CLOUDFLARE_API_TOKEN_"), false);
+  assert.equal(workflow.includes("CLOUDFLARE_ZONE_ID_"), false);
   assert.match(workflow, /https:\/\/pr-\$\{PR\}\.anakwannaphaschaiyong\.com/);
   assert.equal(workflow.includes("13.251.216.187"), false);
 });
@@ -197,7 +303,10 @@ test("preview wake workflow starts the existing Devbox stack and does not touch 
   assert.match(workflow, /namespacelabs\/nscloud-setup@v0/);
   assert.match(workflow, /devbox exec Wewebplus-ci/);
   assert.match(workflow, /preview-34/);
-  assert.match(workflow, /https:\/\/pr-34\.anakwannaphaschaiyong\.com\/sign-in/);
+  assert.match(
+    workflow,
+    /https:\/\/pr-34\.anakwannaphaschaiyong\.com\/sign-in/,
+  );
   assert.equal(workflow.includes("EC2_SSH_KEY"), false);
   assert.equal(workflow.includes("13.251.216.187"), false);
   assert.equal(workflow.includes("gascity-rollout"), false);

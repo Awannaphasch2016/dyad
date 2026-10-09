@@ -1,7 +1,9 @@
 /**
- * Serves the existing renderer on 127.0.0.1 and gives that page a
- * window.electron that calls the main-process handlers. A Cloudflare tunnel
- * in front of this port is how the same Dyad UI opens in a browser.
+ * Serves the existing renderer and gives that page a window.electron that
+ * calls the main-process handlers. The default bind is 127.0.0.1. Set
+ * DYAD_BROWSER_BRIDGE_HOST to 0.0.0.0 only when a load balancer must reach
+ * this port. A Cloudflare tunnel in front of the DevBox preview is the other
+ * way the same UI opens in a browser.
  *
  * In development the Vite dev server is proxied (HMR included). In a packaged
  * build the renderer files next to the main bundle are served directly.
@@ -693,6 +695,13 @@ function bridgePortFromEnv(): number {
   return port;
 }
 
+export function bridgeHostFromEnv(
+  raw: string | undefined = process.env.DYAD_BROWSER_BRIDGE_HOST,
+): string {
+  if (raw === "127.0.0.1" || raw === "0.0.0.0") return raw;
+  return BROWSER_BRIDGE_HOST;
+}
+
 /**
  * The packaged renderer lives next to the main bundle, the same path
  * main.ts hands to loadFile.
@@ -705,10 +714,11 @@ export function startBrowserBridgeFromEnv(): void {
   if (process.env.DYAD_BROWSER_BRIDGE !== "1") return;
   const devServerUrl = readViteDevServerUrl();
   const port = bridgePortFromEnv();
+  const host = bridgeHostFromEnv();
   void (
     devServerUrl
-      ? startBrowserBridge({ devServerUrl, port })
-      : startBrowserBridge({ rendererDir: packagedRendererDir(), port })
+      ? startBrowserBridge({ devServerUrl, port, host })
+      : startBrowserBridge({ rendererDir: packagedRendererDir(), port, host })
   )
     .then((bridge) => {
       activeBridge = bridge;

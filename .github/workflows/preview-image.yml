@@ -9,6 +9,7 @@ on:
   push:
     branches:
       - cursor/preview-bridge-proof-9e7a
+      - cursor/formula-config-ui-55d6
 
 permissions:
   contents: read
@@ -19,6 +20,21 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  credentials:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Report Cloudflare names
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node deploy/preview/cloudflare_env.mjs --report
+
   publish:
     runs-on: ubuntu-latest
     timeout-minutes: 180
@@ -181,6 +197,13 @@ jobs:
           fi
           echo "NSC_TOKEN_FILE=${token_file}" >> "$GITHUB_ENV"
 
+      - name: Stage Cloudflare exports
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node deploy/preview/cloudflare_env.mjs --write /tmp/preview-cloudflare.sh
+
       - name: Update the preview on Wewebplus-ci
         env:
           PR: ${{ steps.pr.outputs.number }}
@@ -200,6 +223,9 @@ jobs:
               "$PR" "$SHA" "$IMAGE" "$BRANCH" "$REPO_URL"
             if [[ -s /tmp/preview-runtime.sh ]]; then
               cat /tmp/preview-runtime.sh
+            fi
+            if [[ -s /tmp/preview-cloudflare.sh ]]; then
+              cat /tmp/preview-cloudflare.sh
             fi
             printf '%s\n' \
               'set -euo pipefail' \
@@ -242,7 +268,7 @@ jobs:
           [[ "$PR" =~ ^[0-9]+$ ]]
           url="https://pr-${PR}.anakwannaphaschaiyong.com"
           ok=0
-          for _ in 1 2 3 4 5 6; do
+          for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
             code="$(curl -sS -o /tmp/preview-body -w '%{http_code}' --max-time 20 "$url" || true)"
             echo "http ${code}"
             if [[ "$code" == "200" ]] && grep -q 'data-dyad-browser-bridge' /tmp/preview-body; then
