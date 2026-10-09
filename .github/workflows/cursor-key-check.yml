@@ -48,8 +48,9 @@ jobs:
           for c in $(curl -sS -u "$DOPPLER_TOKEN:" "https://api.doppler.com/v3/configs?project=dyad&per_page=100" | jq -r '.configs[].name'); do
             names=$(curl -sS -u "$DOPPLER_TOKEN:" "https://api.doppler.com/v3/configs/config/secrets/names?project=dyad&config=$c" | jq -r '.names[]?' 2>/dev/null || true)
             if [ -z "$names" ]; then echo "  $c: unreadable"; continue; fi
-            hits=$(grep -iE 'CURSOR|API_KEY' <<<"$names" || true)
-            echo "  $c: $(wc -l <<<"$names") names; cursor-like: $(tr '\n' ' ' <<<"$hits")"
+            echo "  $c: $(wc -l <<<"$names") names"
+            tr '\n' ' ' <<<"$names"
+            echo
           done
           raw=$(curl -sS -u "$DOPPLER_TOKEN:" \
             "https://api.doppler.com/v3/configs/config/secret?project=dyad&config=preview&name=CURSOR_API_KEY" \
