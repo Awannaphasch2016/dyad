@@ -40,6 +40,14 @@ The Cursor carrier and the Cursor follow-up are not decided.
 
 A no-repo plan agent (`bc-ef4536d3-9314-4a74-9b67-a051b72cabb0`) was created so the probe did not clone or push a repository. The first run was `run-97f4bbd7-0af8-483f-8c5d-c6c5059787bf` and finished with `pong`. The follow-up was a new run id, `run-24e499a3-50ef-48aa-9e4f-b69c9a42804b`, and finished with `pong-2`. Statuses seen: `CREATING`, `RUNNING`, `FINISHED`. The agent was deleted (`DELETE` 200).
 
-C1–C4 can start. They have not started.
+C1–C4 can start.
+
+## C1 Cursor run record
+
+2026-10-09. `npm test -- src/main/factory_host_cursor_run.test.ts`: 3 tests passed.
+
+A Cursor run is a `factory_host_runs` row. `run_id` and `intent_id` are `cursor-run:` plus the Cursor run id. The agent id is `cursor_agent_id`, a nullable column, because follow-ups share one agent id and `intent_id` is unique. Two runs for agent `bc-ef4536d3-9314-4a74-9b67-a051b72cabb0` (`run-97f4bbd7-0af8-483f-8c5d-c6c5059787bf` and `run-24e499a3-50ef-48aa-9e4f-b69c9a42804b`) both read back. Writing the first run id again does not insert a second row. No new table.
+
+`0056_hitl_questions` has no Drizzle snapshot, so `db:generate` first emitted those tables again. The committed `0057_cursor_agent_id.sql` keeps only `ALTER TABLE factory_host_runs ADD cursor_agent_id`. A second `db:generate` reported no schema changes. The snapshot still includes the HITL tables and the new column.
 
 The diff from `cursor/galan-software-factory-2fff` does not touch `scripts/gascity/`, GasCity, the Neon schema, or Paperclip.
