@@ -19,7 +19,15 @@ import {
   renderSummary,
   resetStatements,
   signInTokenBody,
+  walkthroughSummaryReady,
 } from "./bolt-preview-verify.mjs";
+
+const SUMMARY = [
+  "## Discovery summary",
+  "- **Page name:** North Pier Fish",
+  "- **One sentence:** A one-page site with a welcome line.",
+  "- **Page contents:** fish and chips, clam chowder, and iced tea.",
+].join("\n");
 
 test("reset deletes trial rows and returns Discovery", () => {
   const statements = resetStatements(
@@ -91,7 +99,11 @@ test("a failed step stays failed and later steps stay unverified", () => {
   const report = createReport();
   markStep(report, "reset-project", "passed");
   markStep(report, "sign-in-project-manager", "failed");
-  finishReport(report, classifyPreview({}));
+  finishReport(report, {
+    layer: "generated-website",
+    status: "not_run",
+    reason: "The walk did not reach the preview.",
+  });
   assert.equal(report.functional, "failed");
   assert.equal(report.failedStep, "sign-in-project-manager");
   assert.equal(
@@ -100,7 +112,7 @@ test("a failed step stays failed and later steps stay unverified", () => {
   );
   assert.equal(
     report.unverified.find((item) => item.layer === "generated-website").status,
-    "unverified",
+    "not_run",
   );
   assert.equal(
     report.unverified.find((item) => item.layer === "visual-regression").status,
@@ -116,19 +128,65 @@ test("a failed step stays failed and later steps stay unverified", () => {
   assert.equal(summary.includes("sk_test_"), false);
 });
 
-test("readable preview text is still not a pass", () => {
-  const preview = classifyPreview({
+test("the preview passes only when the page name and menu are present", () => {
+  const missing = classifyPreview({
     src: "https://preview.example",
     text: "Hello",
     readable: true,
   });
-  assert.equal(preview.status, "unverified");
-  const report = createReport();
-  for (const name of FUNCTIONAL_STEPS) markStep(report, name, "passed");
-  finishReport(report, preview);
-  assert.equal(report.functional, "passed");
-  assert.match(renderSummary(report), /generated-website=unverified/);
-  assert.match(renderSummary(report), /agentic-ux=not_run/);
+  assert.equal(missing.status, "failed");
+  assert.equal(classifyPreview({}).status, "failed");
+  const preview = classifyPreview({
+    src: "https://preview.example",
+    text: "North Pier Fish serves fish and chips, clam chowder, and iced tea.",
+    readable: true,
+  });
+  assert.equal(preview.status, "passed");
+  const passed = createReport();
+  for (const name of FUNCTIONAL_STEPS) markStep(passed, name, "passed");
+  finishReport(passed, preview);
+  assert.equal(passed.functional, "passed");
+  assert.match(renderSummary(passed), /generated-website=passed/);
+  assert.match(renderSummary(passed), /agentic-ux=not_run/);
+  const failed = createReport();
+  for (const name of FUNCTIONAL_STEPS) markStep(failed, name, "passed");
+  finishReport(failed, missing);
+  assert.equal(failed.functional, "failed");
+  assert.equal(failed.failedStep, "generated-website");
+  assert.match(renderSummary(failed), /generated-website=failed/);
+});
+
+test("the discovery step waits for the summary, not any reply", () => {
+  assert.equal(
+    walkthroughSummaryReady([
+      { role: "user", content: WALKTHROUGH_EXPECTATIONS.discoveryPrompt },
+      {
+        role: "assistant",
+        content: "Should the page name be North Pier Fish?",
+      },
+    ]),
+    false,
+  );
+  assert.equal(
+    walkthroughSummaryReady([
+      {
+        role: "assistant",
+        content:
+          "<think>## Discovery summary\n- **Page name:** North Pier Fish\n- **One sentence:** Welcome.\n- **Page contents:** fish and chips, clam chowder, and iced tea.</think>What is the page name?",
+      },
+    ]),
+    false,
+  );
+  assert.equal(
+    walkthroughSummaryReady([
+      { role: "assistant", content: "## Discovery summary\n\nComing soon." },
+    ]),
+    false,
+  );
+  assert.equal(
+    walkthroughSummaryReady([{ role: "assistant", content: SUMMARY }]),
+    true,
+  );
 });
 
 test("the contract matches the product labels and does not follow them by import", () => {
@@ -172,6 +230,16 @@ test("the contract matches the product labels and does not follow them by import
     WALKTHROUGH_EXPECTATIONS.discoveryPrompt,
     "A one-page site for North Pier Fish with the restaurant name, a welcome line, and a menu of fish and chips, clam chowder, and iced tea.",
   );
+  assert.equal(
+    WALKTHROUGH_EXPECTATIONS.discoveryAnswer,
+    "Yes. The page name is North Pier Fish.",
+  );
+  assert.deepEqual(WALKTHROUGH_EXPECTATIONS.previewPhrases, [
+    "North Pier Fish",
+    "fish and chips",
+    "clam chowder",
+    "iced tea",
+  ]);
   assert.equal(FUNCTIONAL_STEPS.includes("send-discovery-description"), true);
   assert.equal(
     WALKTHROUGH_EXPECTATIONS.projectManager,
@@ -184,6 +252,10 @@ test("the contract matches the product labels and does not follow them by import
   );
   assert.equal(source.includes("transitionLabel"), false);
   assert.equal(source.includes("waitingLabel"), false);
+  assert.equal(source.includes("Yes. The page name is North Pier Fish."), true);
+  assert.equal(source.includes("fish and chips"), true);
+  assert.equal(source.includes("clam chowder"), true);
+  assert.equal(source.includes("iced tea"), true);
   assert.match(source, /strategy: "ticket"/);
   assert.match(source, /sign_in_tokens/);
   for (const pattern of [

@@ -12,6 +12,7 @@ import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { neonSqlEndpoint } from "./bolt-hitl.mjs";
 import { redact } from "./bolt-project.mjs";
+import { discoverySummaryText } from "./bolt-workflow.mjs";
 import {
   WALKTHROUGH_APP_ID,
   WALKTHROUGH_CHAT_ID,
@@ -30,6 +31,13 @@ export const WALKTHROUGH_EXPECTATIONS = {
   placeholder: "Describe the page",
   discoveryPrompt:
     "A one-page site for North Pier Fish with the restaurant name, a welcome line, and a menu of fish and chips, clam chowder, and iced tea.",
+  discoveryAnswer: "Yes. The page name is North Pier Fish.",
+  previewPhrases: [
+    "North Pier Fish",
+    "fish and chips",
+    "clam chowder",
+    "iced tea",
+  ],
   moveToImplementation: "Move to Implementation",
   waitingOnProjectManager: "Waiting on the Project Manager.",
   waitingOnDeveloper: "Waiting on the Developer.",
@@ -57,7 +65,7 @@ export const FUNCTIONAL_STEPS = [
 ];
 
 const UI_TIMEOUT_MS = 30_000;
-const DISCOVERY_REPLY_MS = 240_000;
+const DISCOVERY_REPLY_MS = 480_000;
 const PREVIEW_WAIT_MS = 120_000;
 
 export function resetStatements(
@@ -150,29 +158,45 @@ export function markStep(report, name, status) {
 
 export function classifyPreview(snapshot) {
   const src = String(snapshot?.src ?? "").trim();
-  const text = String(snapshot?.text ?? "").trim();
-  if (!src || src === "about:blank") {
+  const text = String(snapshot?.text ?? "");
+  const readable =
+    Boolean(src) &&
+    src !== "about:blank" &&
+    snapshot?.readable === true &&
+    text.trim().length > 0;
+  if (!readable) {
     return {
       layer: "generated-website",
-      status: "unverified",
-      reason:
-        "The preview iframe had no address. WebContainer output is not a pass gate.",
+      status: "failed",
+      reason: "The preview iframe had no readable document.",
     };
   }
-  if (snapshot?.readable !== true || text.length === 0) {
+  const missing = WALKTHROUGH_EXPECTATIONS.previewPhrases.filter(
+    (phrase) => !text.toLowerCase().includes(phrase.toLowerCase()),
+  );
+  if (missing.length > 0) {
     return {
       layer: "generated-website",
-      status: "unverified",
-      reason:
-        "A preview iframe was present, but its document was not readable. WebContainer output is not a pass gate.",
+      status: "failed",
+      reason: `The preview was missing: ${missing.join(", ")}.`,
     };
   }
   return {
     layer: "generated-website",
-    status: "unverified",
-    reason:
-      "A preview iframe had text. This run does not assert the generated page, so it stays unverified.",
+    status: "passed",
+    reason: "The preview contained the page name and the three menu items.",
   };
+}
+
+export function walkthroughSummaryReady(messages) {
+  const phrases = WALKTHROUGH_EXPECTATIONS.previewPhrases;
+  return (messages ?? []).some((message) => {
+    if (message?.role !== "assistant") return false;
+    const summary = discoverySummaryText(message.content);
+    if (!summary) return false;
+    const text = summary.toLowerCase();
+    return phrases.every((phrase) => text.includes(phrase.toLowerCase()));
+  });
 }
 
 export function layersNotRun() {
@@ -195,7 +219,14 @@ export function layersNotRun() {
 export function finishReport(report, preview) {
   const required = report.steps.every((step) => step.status === "passed");
   if (report.functional !== "failed") {
-    report.functional = required ? "passed" : "not_run";
+    if (!required) {
+      report.functional = "not_run";
+    } else if (preview?.status === "passed") {
+      report.functional = "passed";
+    } else {
+      report.functional = "failed";
+      report.failedStep = "generated-website";
+    }
   }
   report.unverified = [preview, ...layersNotRun()];
   return report;
@@ -438,12 +469,18 @@ async function projectSnapshot(page) {
   });
 }
 
+async function sendComposer(page, text) {
+  const box = page.getByPlaceholder(WALKTHROUGH_EXPECTATIONS.placeholder);
+  await box.fill(text);
+  await box.press("Enter");
+}
+
 async function sendDiscoveryDescription(page, dir) {
   const prompt = WALKTHROUGH_EXPECTATIONS.discoveryPrompt;
-  const box = page.getByPlaceholder(WALKTHROUGH_EXPECTATIONS.placeholder);
-  await box.fill(prompt);
-  await box.press("Enter");
+  const answer = WALKTHROUGH_EXPECTATIONS.discoveryAnswer;
+  await sendComposer(page, prompt);
   const deadline = Date.now() + DISCOVERY_REPLY_MS;
+  let answered = false;
   while (Date.now() < deadline) {
     const snapshot = await projectSnapshot(page);
     const messages = snapshot?.messages ?? [];
@@ -452,17 +489,25 @@ async function sendDiscoveryDescription(page, dir) {
         message?.role === "user" &&
         String(message.content ?? "").includes(prompt),
     );
+    if (stored && walkthroughSummaryReady(messages)) {
+      await shoot(page, dir, "discovery-reply-project-manager.png");
+      return;
+    }
     const replied = messages.some(
       (message) =>
         message?.role === "assistant" && String(message.content ?? "").trim(),
     );
-    if (stored && replied) {
-      await shoot(page, dir, "discovery-reply-project-manager.png");
-      return;
+    const summaryStarted = messages.some(
+      (message) =>
+        message?.role === "assistant" && discoverySummaryText(message.content),
+    );
+    if (stored && replied && !summaryStarted && !answered) {
+      answered = true;
+      await sendComposer(page, answer);
     }
     await page.waitForTimeout(2000);
   }
-  throw new Error("Discovery reply was not stored");
+  throw new Error("Discovery summary was not stored");
 }
 
 async function readPreview(page) {
@@ -493,7 +538,29 @@ async function walk(report, pages, dir) {
   const expected = WALKTHROUGH_EXPECTATIONS;
 
   await step(report, "discovery-role-isolation", async () => {
-    await waitForGateText(pm, expected.moveToImplementation);
+    await pm.getByPlaceholder(expected.placeholder).waitFor({
+      timeout: UI_TIMEOUT_MS,
+    });
+    const deadline = Date.now() + UI_TIMEOUT_MS;
+    let open = false;
+    while (Date.now() < deadline) {
+      const snapshot = await projectSnapshot(pm);
+      if (
+        snapshot?.phase === "discovery" &&
+        snapshot.canSend === true &&
+        snapshot.canTransition === false
+      ) {
+        open = true;
+        break;
+      }
+      await pm.waitForTimeout(500);
+    }
+    if (!open) {
+      throw new Error(
+        "Move to Implementation was available before the Discovery summary",
+      );
+    }
+    await assertNoTransition(pm);
     await waitForGateText(dev, expected.waitingOnProjectManager);
     await assertNoTransition(dev);
     await shoot(pm, dir, "discovery-project-manager.png");
@@ -582,12 +649,20 @@ async function walk(report, pages, dir) {
     if (managerHtml !== developerHtml) {
       throw new Error("Downloads did not match");
     }
+    const downloadText = managerHtml.toLowerCase();
     if (
       !managerHtml.includes("<h1>Delivered</h1>") ||
       !managerHtml.includes(expected.answer) ||
-      !managerHtml.includes(expected.discoveryPrompt)
+      !managerHtml.includes(expected.discoveryPrompt) ||
+      !managerHtml.includes("Discovery summary") ||
+      !managerHtml.includes("Page name") ||
+      !managerHtml.includes("One sentence") ||
+      !managerHtml.includes("Page contents") ||
+      !expected.previewPhrases.every((phrase) =>
+        downloadText.includes(phrase.toLowerCase()),
+      )
     ) {
-      throw new Error("Download did not contain the typed Discovery text");
+      throw new Error("Download did not contain the Discovery summary");
     }
   });
 }
@@ -629,7 +704,11 @@ export async function runVerification(env = process.env) {
   let projectManagerPage;
   let developerPage;
   let tracing = false;
-  let preview = classifyPreview({});
+  let preview = {
+    layer: "generated-website",
+    status: "not_run",
+    reason: "The walk did not reach the preview.",
+  };
   try {
     const secret = String(env.CLERK_SECRET_KEY ?? "");
     const databaseUrl = String(env.WEWEBPLUS_DATABASE_URL ?? "").trim();

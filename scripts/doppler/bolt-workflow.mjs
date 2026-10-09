@@ -110,6 +110,55 @@ export function canRecordMessages(phase, roleId, messages) {
   return true;
 }
 
+const DISCOVERY_SUMMARY_LABELS = ["page name", "one sentence", "page contents"];
+
+export function discoverySummaryText(content) {
+  const withoutThinking = String(content ?? "").replace(
+    /<think>[\s\S]*?<\/think>/gi,
+    "",
+  );
+  const lines = withoutThinking.split(/\r?\n/);
+  const start = lines.findIndex((line) => {
+    const match = /^\s*#{1,4}\s*(.+?)\s*$/.exec(line);
+    return (
+      match != null &&
+      match[1].replace(/\*/g, "").replace(/:\s*$/, "").trim().toLowerCase() ===
+        "discovery summary"
+    );
+  });
+  if (start === -1) return null;
+  const bullets = [];
+  for (const line of lines.slice(start + 1)) {
+    if (/^\s*([-*]|\d+\.)\s+/.test(line)) {
+      bullets.push(line.trimEnd());
+      continue;
+    }
+    if (line.trim() === "") {
+      if (bullets.length > 0) break;
+      continue;
+    }
+    if (bullets.length > 0 && /^\s{2,}\S/.test(line)) {
+      bullets.push(line.trimEnd());
+      continue;
+    }
+    break;
+  }
+  if (bullets.length < 3) return null;
+  const text = bullets.join("\n").toLowerCase();
+  if (!DISCOVERY_SUMMARY_LABELS.every((label) => text.includes(label))) {
+    return null;
+  }
+  return bullets.join("\n");
+}
+
+export function hasDiscoverySummary(messages) {
+  return (messages ?? []).some(
+    (message) =>
+      message?.role === "assistant" &&
+      discoverySummaryText(message.content) != null,
+  );
+}
+
 export function presentSnapshot({
   phase,
   messages,
@@ -118,6 +167,7 @@ export function presentSnapshot({
   documentHtml,
 }) {
   const next = nextPhase(phase, roleId);
+  const ready = phase !== "discovery" || hasDiscoverySummary(messages);
   const shown = (questions ?? []).filter(isSharedQuestion).map((question) => ({
     id: question.id,
     stepId: question.stepId,
@@ -140,8 +190,8 @@ export function presentSnapshot({
     roleId,
     waitingLabel: waitingLabel(phase, roleId, questions),
     canSend: canSendPrompt(phase, roleId),
-    canTransition: next != null,
-    transitionLabel: next ? transitionLabel(phase) : null,
+    canTransition: next != null && ready,
+    transitionLabel: next && ready ? transitionLabel(phase) : null,
     canDownload:
       phase === "delivered" &&
       typeof documentHtml === "string" &&
@@ -297,6 +347,12 @@ export async function handleProject(input) {
       return {
         status: 403,
         body: { error: "Your role can't move this phase." },
+      };
+    }
+    if (state.phase === "discovery" && !hasDiscoverySummary(state.messages)) {
+      return {
+        status: 403,
+        body: { error: "The Discovery summary is not ready." },
       };
     }
     const document =
@@ -685,6 +741,43 @@ function canRecordMessages(phase: string, roleId: RoleId, messages: IncomingMess
   return true;
 }
 
+function discoverySummaryText(content: string): string | null {
+  const withoutThinking = content.replace(/<think>[\\s\\S]*?<\\/think>/gi, '');
+  const lines = withoutThinking.split(/\\r?\\n/);
+  const start = lines.findIndex((line) => {
+    const match = /^\\s*#{1,4}\\s*(.+?)\\s*$/.exec(line);
+    if (!match) return false;
+    return match[1].replace(/\\*/g, '').replace(/:\\s*$/, '').trim().toLowerCase() === 'discovery summary';
+  });
+  if (start < 0) return null;
+  const bullets: string[] = [];
+  for (const line of lines.slice(start + 1)) {
+    if (/^\\s*([-*]|\\d+\\.)\\s+/.test(line)) {
+      bullets.push(line.trimEnd());
+      continue;
+    }
+    if (line.trim() === '') {
+      if (bullets.length > 0) break;
+      continue;
+    }
+    if (bullets.length > 0 && /^\\s{2,}\\S/.test(line)) {
+      bullets.push(line.trimEnd());
+      continue;
+    }
+    break;
+  }
+  if (bullets.length < 3) return null;
+  const text = bullets.join('\\n').toLowerCase();
+  if (!text.includes('page name') || !text.includes('one sentence') || !text.includes('page contents')) {
+    return null;
+  }
+  return bullets.join('\\n');
+}
+
+function hasDiscoverySummary(messages: { role: string; content: string }[]): boolean {
+  return messages.some((message) => message.role === 'assistant' && discoverySummaryText(message.content) != null);
+}
+
 function isSharedQuestion(question: StoredQuestion): boolean {
   return question.phase === 'implementation' && question.stepId === 'review-approve-dev' && question.targetRoleId === 'developer';
 }
@@ -712,14 +805,15 @@ function presentSnapshot(state: {
   documentHtml: string | null;
 }, roleId: RoleId) {
   const next = nextPhase(state.phase, roleId);
+  const ready = state.phase !== 'discovery' || hasDiscoverySummary(state.messages);
   return {
     phase: state.phase,
     messages: state.messages.map((message) => ({ id: message.id, role: message.role, content: message.content })),
     roleId,
     waitingLabel: waitingLabel(state.phase, roleId, state.questions),
     canSend: canSendPrompt(state.phase, roleId),
-    canTransition: next != null,
-    transitionLabel: next ? transitionLabel(state.phase) : null,
+    canTransition: next != null && ready,
+    transitionLabel: next && ready ? transitionLabel(state.phase) : null,
     canDownload: state.phase === 'delivered' && Boolean(state.documentHtml),
     questions: state.questions.filter(isSharedQuestion).map((question) => ({
       id: question.id,
@@ -855,6 +949,9 @@ export async function handleProjectRequest(input: {
       if (!state) return { status: 503, body: { error: 'Project store is unavailable.' } };
       const phase = nextPhase(state.phase, roleId);
       if (!phase) return { status: 403, body: { error: "Your role can't move this phase." } };
+      if (state.phase === 'discovery' && !hasDiscoverySummary(state.messages)) {
+        return { status: 403, body: { error: 'The Discovery summary is not ready.' } };
+      }
       const document = phase === 'delivered' ? deliveryDocument(state.messages) : null;
       const updated = await query(CAS_PHASE_SQL, [APP_ID, phase, state.phase, document]);
       if (!updated[0]) return { status: 409, body: { error: 'The phase already changed.' } };
@@ -1189,16 +1286,19 @@ function gateDialogSource() {
     "import { useState } from 'react';",
     "import { useStore } from '@nanostores/react';",
     "import { Dialog, DialogDescription, DialogRoot, DialogTitle } from '~/components/ui/Dialog';",
-    "import { continuePrefill, factoryPhaseKickoff, latestFactoryPhaseSummary } from '~/lib/factoryPhase';",
+    "import { continuePrefill, extractFactoryPhaseSummary, factoryPhaseKickoff, latestFactoryPhaseSummary } from '~/lib/factoryPhase';",
     "import { hitlFetch } from '~/lib/hitl/client';",
     "import { sharedSnapshot, startBuilderTurn } from '~/lib/hitl/session';",
     "import type { ProjectSnapshot } from '~/lib/hitl/session';",
     "",
     "function discoveryText(messages: { role: string; content: string }[]): string | null {",
-    "  const summary = latestFactoryPhaseSummary(messages, 'discovery');",
-    "  if (summary) return summary;",
-    "  const typed = [...messages].reverse().find((message) => message.role === 'user')?.content?.trim();",
-    "  return typed || null;",
+    "  for (let index = messages.length - 1; index >= 0; index -= 1) {",
+    "    const message = messages[index];",
+    "    if (message.role !== 'assistant') continue;",
+    "    const summary = extractFactoryPhaseSummary(message.content, 'discovery');",
+    "    if (summary) return summary;",
+    "  }",
+    "  return null;",
     "}",
     "",
     "function kickoffFor(phase: string, messages: { role: string; content: string }[]): string {",

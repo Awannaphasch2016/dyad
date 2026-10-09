@@ -6,7 +6,7 @@ The shared Bolt walkthrough is not ready for review until the `verify` job in `.
 
 - Report `functional=passed` only when that job is green.
 - When the job fails, name the failed step and link the `bolt-preview-verification` artifact (screenshots, videos, traces, `summary.txt`).
-- The job always lists `generated-website`, `visual-regression`, and `agentic-ux`. Those layers stay unverified or not run until a check actually asserts them. Do not describe them as passing.
+- The job always lists `generated-website`, `visual-regression`, and `agentic-ux`. `generated-website` is `passed` only when the preview text contains `North Pier Fish`, `fish and chips`, `clam chowder`, and `iced tea`. A missing document or a missing phrase fails the job. `visual-regression` and `agentic-ux` stay `not_run`. Do not describe those two as passing.
 - If Doppler, Clerk, or the browser cannot run, say the walkthrough was not verified and why. Do not fill the gap with a manual click-path for the reviewer to try first.
 
 ## Testing contract
@@ -22,5 +22,5 @@ The shared Bolt walkthrough is not ready for review until the `verify` job in `.
 - It resets `wewebplus` app `bolt-walkthrough`: answers, questions, messages, and `project_state` go back to Discovery. Memberships, the app row, and the chat row stay. Say that a run replaces the shared preview people may already be viewing.
 - It signs in the existing Project Manager and Developer with short-lived Clerk sign-in tokens (`strategy: "ticket"`). Development keys only. Stop on `sk_live_` or `pk_live_`. Never log a token.
 - It does not open Google or Microsoft, and it does not complete Microsoft Authenticator.
-- Two browser contexts stay isolated. The Project Manager types the Discovery description in the page box before Move to Implementation. That card does not cover the box. The job checks who can send, who can answer, who can move each phase, and that both downloads match and contain the typed description and the Developer answer.
+- Two browser contexts stay isolated. Discovery starts with no Move to Implementation button. The Project Manager types the Discovery description in the page box. That card does not cover the box. If the reply has no Discovery summary, the job sends `Yes. The page name is North Pier Fish.` once. The button appears only after an assistant message has `## Discovery summary` and the Page name, One sentence, and Page contents bullets. The job does not click Move to Implementation without that summary. Both downloads must match and contain the typed description, that summary, and the Developer answer.
 - Playwright on the GitHub-hosted runner is the functional gate. Do not add Browserbase, Stagehand, Skyvern, Momentic, mabl, or QA Wolf unless an account is already available. A model's opinion of the layout is not a pass gate.

@@ -14,12 +14,21 @@ import {
   applyBoltWorkflowPatches,
   canSendPrompt,
   deliveryDocument,
+  discoverySummaryText,
   handleProject,
+  hasDiscoverySummary,
   nextPhase,
   presentSnapshot,
   workflowServerSource,
   WORKFLOW_SQL,
 } from "./bolt-workflow.mjs";
+
+const DISCOVERY_SUMMARY = [
+  "## Discovery summary",
+  "- **Page name:** North Pier Fish",
+  "- **One sentence:** A fish shop on the pier.",
+  "- **Page contents:** fish and chips, clam chowder, and iced tea.",
+].join("\n");
 
 const env = {
   WEWEBPLUS_DATABASE_URL: "postgres://user:secret@ep.example.neon.tech/neondb",
@@ -216,8 +225,31 @@ test("the snapshot hides the seeded discovery question", () => {
   });
   assert.deepEqual(view.questions, []);
   assert.equal(view.canSend, true);
-  assert.equal(view.transitionLabel, "Move to Implementation");
+  assert.equal(view.canTransition, false);
+  assert.equal(view.transitionLabel, null);
+  assert.equal(view.waitingLabel, null);
   assert.equal(view.canDownload, false);
+  const ready = presentSnapshot({
+    phase: "discovery",
+    roleId: "project-manager",
+    documentHtml: null,
+    messages: [
+      { role: "user", content: "North Pier Fish" },
+      { role: "assistant", content: DISCOVERY_SUMMARY },
+    ],
+    questions: [],
+  });
+  assert.equal(ready.canTransition, true);
+  assert.equal(ready.transitionLabel, "Move to Implementation");
+  const developer = presentSnapshot({
+    phase: "discovery",
+    roleId: "developer",
+    documentHtml: null,
+    messages: [{ role: "assistant", content: DISCOVERY_SUMMARY }],
+    questions: [],
+  });
+  assert.equal(developer.canTransition, false);
+  assert.equal(developer.waitingLabel, "Waiting on the Project Manager.");
 });
 
 test("both roles read one project and only the project manager records a discovery prompt", async () => {
@@ -282,6 +314,100 @@ test("both roles read one project and only the project manager records a discove
   assert.equal(empty.status, 400);
 });
 
+test("discovery stays on the page until the summary bullets exist", async () => {
+  assert.equal(
+    discoverySummaryText("Should the page name be North Pier Fish?"),
+    null,
+  );
+  assert.equal(
+    discoverySummaryText(
+      "<think>## Discovery summary\n- **Page name:** North Pier Fish\n- **One sentence:** A shop.\n- **Page contents:** fish and chips, clam chowder, and iced tea.</think>What is the page name?",
+    ),
+    null,
+  );
+  assert.equal(
+    discoverySummaryText("## Discovery summary\n\nComing soon."),
+    null,
+  );
+  assert.equal(
+    discoverySummaryText(
+      "## Discovery summary\n- **Page name:** North Pier Fish\n- **One sentence:** A shop.",
+    ),
+    null,
+  );
+  assert.match(discoverySummaryText(DISCOVERY_SUMMARY), /Page name/);
+  const store = memory();
+  await call(store, "user_pm", {
+    method: "POST",
+    json: {
+      command: "record",
+      messages: [
+        { id: "u1", role: "user", content: "North Pier Fish" },
+        {
+          id: "a1",
+          role: "assistant",
+          content: "Should the page name be North Pier Fish?",
+        },
+      ],
+    },
+  });
+  assert.equal(hasDiscoverySummary(store.messages), false);
+  const blocked = await call(store, "user_pm", {
+    method: "POST",
+    json: { command: "transition" },
+  });
+  assert.equal(blocked.status, 403);
+  assert.equal(blocked.body.error, "The Discovery summary is not ready.");
+  assert.equal(store.project.phase, "discovery");
+  assert.equal(
+    store.questions.some((row) => row.phase === "implementation"),
+    false,
+  );
+  await call(store, "user_pm", {
+    method: "POST",
+    json: {
+      command: "record",
+      messages: [
+        {
+          id: "a-think",
+          role: "assistant",
+          content: `<think>\n## Discovery summary\n- **Page name:** North Pier Fish\n- **One sentence:** A shop.\n- **Page contents:** fish and chips, clam chowder, and iced tea.\n</think>\nWhat is the page name?`,
+        },
+      ],
+    },
+  });
+  const thinking = await call(store, "user_pm", {
+    method: "POST",
+    json: { command: "transition" },
+  });
+  assert.equal(thinking.status, 403);
+  await call(store, "user_pm", {
+    method: "POST",
+    json: {
+      command: "record",
+      messages: [
+        { id: "a-summary", role: "assistant", content: DISCOVERY_SUMMARY },
+        {
+          id: "a-later",
+          role: "assistant",
+          content: "Want to change anything?",
+        },
+      ],
+    },
+  });
+  const view = await call(store, "user_pm", { method: "GET" });
+  assert.equal(view.body.canSend, true);
+  assert.equal(view.body.canTransition, true);
+  assert.equal(view.body.transitionLabel, "Move to Implementation");
+  const moved = await call(store, "user_pm", {
+    method: "POST",
+    json: { command: "transition" },
+  });
+  assert.equal(moved.status, 200);
+  assert.equal(moved.body.snapshot.phase, "implementation");
+  assert.equal(moved.body.snapshot.waitingLabel, "Waiting on the Developer.");
+});
+
 test("implementation belongs to the developer and delivery to the project manager", async () => {
   const store = memory();
   await call(store, "user_pm", {
@@ -290,7 +416,7 @@ test("implementation belongs to the developer and delivery to the project manage
       command: "record",
       messages: [
         { id: "u-fish", role: "user", content: "North Pier <Fish>." },
-        { id: "a-fish", role: "assistant", content: "A fish shop." },
+        { id: "a-fish", role: "assistant", content: DISCOVERY_SUMMARY },
       ],
     },
   });
@@ -530,7 +656,10 @@ test("the walkthrough page uses the builder chat and one gate", () => {
   );
   assert.match(gate, /data-testid="shared-gate"/);
   assert.match(gate, /snapshot\.canSend && showTransition/);
-  assert.match(gate, /message\.role === 'user'/);
+  assert.match(gate, /extractFactoryPhaseSummary/);
+  assert.equal(gate.includes("message.role === 'user'"), false);
+  assert.match(server, /The Discovery summary is not ready/);
+  assert.match(server, /function hasDiscoverySummary/);
   assert.equal(existsSync(join(bar, "SharedProject.tsx")), false);
   assert.equal(existsSync(join(bar, "HitlGateList.tsx")), false);
 });
