@@ -189,20 +189,20 @@ export function membershipSeedStatements({
   return statements;
 }
 
-function safe(text) {
+export function safe(text) {
   return redact(text).replace(
     /\b(?:pk|sk)_(?:test|live)_[A-Za-z0-9+/=_-]+/g,
     "clerk_redacted",
   );
 }
 
-function asList(payload) {
+export function asList(payload) {
   if (Array.isArray(payload)) return payload;
   if (Array.isArray(payload?.data)) return payload.data;
   return [];
 }
 
-async function clerkJson(url, headers) {
+export async function clerkJson(url, headers) {
   const response = await fetch(url, { headers });
   if (!response.ok) {
     throw new Error(`Clerk request failed: ${response.status}`);
@@ -210,7 +210,7 @@ async function clerkJson(url, headers) {
   return response.json();
 }
 
-async function loadDirectory(secret) {
+export async function loadDirectory(secret) {
   const headers = { Authorization: `Bearer ${secret}` };
   const users = [];
   for (let offset = 0; offset < 500; offset += 100) {
@@ -251,7 +251,7 @@ async function loadDirectory(secret) {
   return { accounts, organizations };
 }
 
-async function neonQuery(databaseUrl, query, params) {
+export async function neonQuery(databaseUrl, query, params) {
   const endpoint = new URL(databaseUrl);
   const response = await fetch(`https://${endpoint.host}/sql`, {
     method: "POST",

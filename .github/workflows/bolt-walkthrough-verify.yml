@@ -1,0 +1,96 @@
+# Sign two dedicated test accounts into the deployed Bolt walkthrough from
+# headless Chrome with no person involved. Credentials come from Doppler
+# bolt/preview in this job; nothing is printed or copied anywhere else.
+
+name: Bolt walkthrough verify
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cursor/automated-hitl-verification-851d
+    paths:
+      - .github/workflows/bolt-walkthrough-verify.yml
+      - scripts/doppler/bolt-test-accounts.mjs
+      - scripts/doppler/bolt-sign-in.mjs
+      - scripts/doppler/export-bolt-preview-env.mjs
+      - e2e-walkthrough/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bolt-walkthrough-verify
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/cursor/automated-hitl-verification-851d'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the scripts
+        uses: actions/checkout@v4
+
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Read bolt preview from Doppler
+        env:
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+        run: |
+          set -euo pipefail
+          set +x
+          node scripts/doppler/export-bolt-preview-env.mjs
+
+      - name: Ensure the two walkthrough test accounts
+        id: accounts
+        run: |
+          set -euo pipefail
+          set +x
+          node scripts/doppler/bolt-test-accounts.mjs | tee /tmp/accounts.txt
+          {
+            echo "### Test accounts"
+            echo
+            echo '```'
+            cat /tmp/accounts.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install the walkthrough checks
+        working-directory: e2e-walkthrough
+        run: |
+          npm ci --ignore-scripts
+          npx playwright install --with-deps chromium
+
+      - name: Sign in each role without a person
+        working-directory: e2e-walkthrough
+        env:
+          WALKTHROUGH_URL: https://bolt-walkthrough-55d6.karant-test-egress-canary.workers.dev
+          WALKTHROUGH_PM_EMAIL: ${{ steps.accounts.outputs.pm_email }}
+          WALKTHROUGH_DEV_EMAIL: ${{ steps.accounts.outputs.dev_email }}
+          WALKTHROUGH_PASSWORD_FACTOR: ${{ steps.accounts.outputs.password_first_factor }}
+        run: |
+          set -euo pipefail
+          set +x
+          npx playwright test
+
+      - name: Summarize
+        if: always()
+        working-directory: e2e-walkthrough
+        run: node summarize.mjs
+
+      - name: Keep the evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: walkthrough-sign-in-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            e2e-walkthrough/report
+            e2e-walkthrough/artifacts
+            e2e-walkthrough/playwright-report
+            e2e-walkthrough/test-results
