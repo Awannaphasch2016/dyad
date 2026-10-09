@@ -46,7 +46,6 @@ jobs:
             exit 1
           fi
           arn="$(cat "$RUNNER_TEMP/formula-role-arn")"
-          echo "::add-mask::$arn"
           echo "arn=$arn" >> "$GITHUB_OUTPUT"
           echo "AWS role is set"
 

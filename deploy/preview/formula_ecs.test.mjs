@@ -274,6 +274,11 @@ test("the formula workflow deploys to ECS and does not cook", () => {
   assert.equal(workflow.includes("CLOUDFLARE_"), false);
   assert.equal(compose.includes("DYAD_BROWSER_BRIDGE_HOST"), false);
   assert.match(workflow, /formula_ecs\.mjs role-arn/);
+  assert.equal(workflow.includes("::add-mask::"), false);
+  assert.match(
+    workflow,
+    /role-to-assume: \$\{\{ needs\.role\.outputs\.arn \}\}/,
+  );
 });
 
 test("the production host stores the role address without printing it", () => {
