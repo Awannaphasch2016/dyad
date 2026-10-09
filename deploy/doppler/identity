@@ -1,0 +1,4 @@
+# The Doppler Service Account Identity ID used by this repository's workflows.
+# It is a configuration value, not a secret: it is useless without a GitHub
+# OIDC token whose claims the identity accepts. Put the UUID on its own line.
+# plans/ec2-access-operation-axi.md says how to create the identity.

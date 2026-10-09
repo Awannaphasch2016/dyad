@@ -1,0 +1,90 @@
+# Run scripts/doppler/migrate.mjs against the Doppler workplace from GitHub
+# Actions, authenticated by OIDC through a Doppler Service Account Identity.
+# No Doppler token is stored anywhere. Prints names and counts, never values.
+#
+# A push runs `status` (read-only). To run phase1, dispatch with
+# command=phase1, or push a commit whose message contains [doppler:phase1];
+# GitHub only dispatches workflow files on the default branch, so the commit
+# marker is the way to run it from a feature branch. phase1 is followed by
+# verify.
+name: Doppler organize
+
+on:
+  workflow_dispatch:
+    inputs:
+      command:
+        description: status, phase1, or verify
+        required: true
+        default: status
+        type: choice
+        options:
+          - status
+          - phase1
+          - verify
+  push:
+    branches:
+      - cursor/axi-toolbox-image-plan-531e
+    paths:
+      - .github/workflows/doppler-organize.yml
+      - .github/actions/doppler-oidc/action.yml
+      - scripts/doppler/**
+      - deploy/doppler/**
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: doppler-organize
+  cancel-in-progress: false
+
+jobs:
+  organize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Decide the command
+        id: command
+        env:
+          INPUT_COMMAND: ${{ github.event.inputs.command }}
+          HEAD_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          set -euo pipefail
+          command="${INPUT_COMMAND:-}"
+          if [[ -z "$command" ]]; then
+            if [[ "$HEAD_MESSAGE" == *"[doppler:phase1]"* ]]; then
+              command=phase1
+            elif [[ "$HEAD_MESSAGE" == *"[doppler:verify]"* ]]; then
+              command=verify
+            else
+              command=status
+            fi
+          fi
+          echo "doppler_command=${command}"
+          echo "command=${command}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to Doppler by OIDC
+        id: doppler
+        uses: ./.github/actions/doppler-oidc
+        with:
+          identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+
+      - name: Stop when there is no identity
+        if: steps.doppler.outputs.ok != 'true'
+        run: |
+          echo "Doppler OIDC login did not produce a token; see the lines above." >&2
+          exit 1
+
+      - name: Status
+        run: node scripts/doppler/migrate.mjs status
+
+      - name: Phase 1
+        if: steps.command.outputs.command == 'phase1'
+        run: node scripts/doppler/migrate.mjs phase1
+
+      - name: Verify
+        if: steps.command.outputs.command != 'status'
+        run: node scripts/doppler/migrate.mjs verify

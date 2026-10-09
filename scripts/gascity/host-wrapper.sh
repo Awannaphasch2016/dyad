@@ -19,12 +19,22 @@ fi
 
 REPO=/opt/gascity/weaver-plus
 BRANCH=cursor/browser-dyad-ui-bbea
-TOKEN_FILE=/etc/doppler/dyad-preview.token
+# A service token is bound to one config, so the file decides what is
+# downloaded. Phase 3 of plans/doppler-organization.md installs the prd file;
+# until it exists the preview file is used as before.
+PRD_TOKEN_FILE=/etc/doppler/dyad-prd.token
+PREVIEW_TOKEN_FILE=/etc/doppler/dyad-preview.token
 AWS_TOKEN_FILE=/etc/doppler/aws-dev.token
 ENV_FILE=/run/gascity-rollout.env
 
-if [[ ! -f "$TOKEN_FILE" ]]; then
-  echo "Missing Doppler token file $TOKEN_FILE" >&2
+if [[ -f "$PRD_TOKEN_FILE" ]]; then
+  TOKEN_FILE="$PRD_TOKEN_FILE"
+  TOKEN_CONFIG=prd
+elif [[ -f "$PREVIEW_TOKEN_FILE" ]]; then
+  TOKEN_FILE="$PREVIEW_TOKEN_FILE"
+  TOKEN_CONFIG=preview
+else
+  echo "Missing Doppler token file $PRD_TOKEN_FILE or $PREVIEW_TOKEN_FILE" >&2
   exit 2
 fi
 if [[ ! -f "$AWS_TOKEN_FILE" ]]; then
@@ -50,7 +60,7 @@ aws_json="$(mktemp)"
 merged="$(mktemp)"
 trap 'rm -f "$preview" "$aws_json" "$merged" "$ENV_FILE"' EXIT
 DOPPLER_TOKEN="$(<"$TOKEN_FILE")"
-DOPPLER_PROJECT=dyad DOPPLER_CONFIG=prd DOPPLER_TOKEN="$DOPPLER_TOKEN" \
+DOPPLER_PROJECT=dyad DOPPLER_CONFIG="$TOKEN_CONFIG" DOPPLER_TOKEN="$DOPPLER_TOKEN" \
   /usr/bin/doppler secrets download --no-file --format json > "$preview"
 unset DOPPLER_TOKEN
 DOPPLER_TOKEN="$(<"$AWS_TOKEN_FILE")"

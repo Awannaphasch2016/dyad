@@ -1,0 +1,17 @@
+{
+  "name": "ops-axi",
+  "version": "0.1.0",
+  "description": "Operations AXI for this repository: run the preview, formula, and rollout workflows as commands.",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "ops-axi": "./bin/ops-axi.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "license": "Apache-2.0"
+}

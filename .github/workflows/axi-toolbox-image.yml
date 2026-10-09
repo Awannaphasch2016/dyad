@@ -1,0 +1,111 @@
+# Build and publish the AXI toolbox image: gh, gh-axi, and the operations
+# AXI slot. This workflow only builds. It does not dispatch other workflows,
+# does not SSH, and holds no Doppler or AWS credential.
+name: AXI toolbox image
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - cursor/axi-toolbox-image-plan-531e
+    paths:
+      - docker/axi/**
+      - packages/ops-axi/**
+      - .github/workflows/axi-toolbox-image.yml
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: axi-toolbox-image
+  cancel-in-progress: false
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Read pinned versions
+        id: pins
+        run: |
+          set -euo pipefail
+          # shellcheck source=docker/axi/tools.env
+          source docker/axi/tools.env
+          [[ "$GH_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$GH_AXI_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          {
+            echo "gh=${GH_VERSION}"
+            echo "gh_axi=${GH_AXI_VERSION}"
+            echo "image=ghcr.io/${owner}/axi-toolbox"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build the amd64 image for testing
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/axi/Dockerfile
+          build-contexts: |
+            ops-axi=packages/ops-axi
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: axi-toolbox:test
+          build-args: |
+            GH_VERSION=${{ steps.pins.outputs.gh }}
+            GH_AXI_VERSION=${{ steps.pins.outputs.gh_axi }}
+            DEFAULT_REPO=${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Test the image
+        env:
+          AXI_TOOLBOX_IMAGE: axi-toolbox:test
+        run: bash docker/axi/toolbox.test.sh
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push the multi-arch image
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/axi/Dockerfile
+          build-contexts: |
+            ops-axi=packages/ops-axi
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ steps.pins.outputs.image }}:sha-${{ github.sha }}
+            ${{ steps.pins.outputs.image }}:${{ steps.pins.outputs.gh_axi }}
+          build-args: |
+            GH_VERSION=${{ steps.pins.outputs.gh }}
+            GH_AXI_VERSION=${{ steps.pins.outputs.gh_axi }}
+            DEFAULT_REPO=${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Print the digest
+        env:
+          IMAGE: ${{ steps.pins.outputs.image }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          set -euo pipefail
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "image=${IMAGE}@${DIGEST}"
