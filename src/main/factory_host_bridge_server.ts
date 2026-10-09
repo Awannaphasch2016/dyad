@@ -24,6 +24,7 @@ import {
   createHitlQuestion,
   getHitlQuestion,
   listHitlQuestions,
+  resumeAnsweredFactoryQuestions,
   syncRemote,
 } from "@/control_plane/hitl_device";
 import type { HitlCaller } from "@/control_plane/hitl";
@@ -47,7 +48,7 @@ const QuestionBody = z.object({
   stepId: z.string().trim().min(1).max(128),
   targetRoleId: z.string().trim().min(1).max(64),
   body: z.string().min(1).max(20_000),
-  gateBeadId: z.string().trim().min(1).max(128),
+  gateBeadId: z.string().trim().min(1).max(128).nullish(),
 });
 const AnswerBody = z.object({
   body: z.string().min(1).max(20_000),
@@ -169,7 +170,7 @@ export function createFactoryHostBridgeServer(options: {
             targetRoleId: body.targetRoleId,
             body: body.body,
             idempotencyKey: body.idempotencyKey,
-            gateBeadId: body.gateBeadId,
+            gateBeadId: body.gateBeadId ?? null,
           });
           if (created.created) await syncRemote(created.question);
           json(response, created.created ? 201 : 200, {
@@ -218,6 +219,7 @@ export function createFactoryHostBridgeServer(options: {
             questionId,
             caller,
             body: body.body,
+            dispatch: options.dispatchChatIntent,
           });
           json(response, 200, result);
           return;
@@ -358,6 +360,13 @@ export async function startFactoryHostBridgeFromEnv(): Promise<void> {
     });
   });
   activeServer = server;
+  // The bridge is already listening. A database that is not ready, or one
+  // follow-up that fails, must not take it down. The next start retries.
+  try {
+    await resumeAnsweredFactoryQuestions(db);
+  } catch {
+    return;
+  }
 }
 
 export function stopFactoryHostBridge(): void {
