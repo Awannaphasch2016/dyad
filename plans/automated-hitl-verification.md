@@ -82,7 +82,7 @@ B and D together: the script decides the order; the server snapshot proves the o
 - Phase 2 ran in [37980191409](https://github.com/Awannaphasch2016/dyad/actions/runs/37980191409). The job reset to Discovery, passed the single-account checks, reset again, then drove both browsers. The Developer `record` during Discovery returned 403. Both pages showed the same two messages. The Developer answered "Approved.", moved to Delivery, and the Project Manager clicked "Approve delivery". Both downloads were 959 bytes and identical, and both contained "North Pier". Reload kept Delivered. Both sign-outs returned 401. Postgres: `phase=delivered user_messages=1 assistant_messages=3 question=answered answers=1` (`assistant_messages=3` is the Discovery reply plus the Implementation and Delivery kickoffs). The assistant wrote no `filePath` action, so the workbench file check had nothing to assert; the Developer console had 0 install logs. The live project is now Delivered.
 - The outsider `user_3KTG7Vk8ngkrvMaJhtiB5I9aZsa` (`walkthrough-outsider+clerk_test@example.com`) is not a Wewebplus member. That browser got `GET /api/project` 404, no shared gate, and no Wewebplus / Project Manager / Developer label. The local phase bar stayed, because it is Bolt chrome.
 - The live preview now keeps Move to Implementation closed until the latest assistant reply asks nothing. [38000818800](https://github.com/Awannaphasch2016/dyad/actions/runs/38000818800) followed that gate: the Project Manager sent the North Pier prompt and three fixed answers, then the button opened. The Developer `record` during Discovery returned 403. A second answer returned 200 and Postgres stayed at `answers=1`. The Project Manager's move to Delivery returned 403. The Developer's approval returned 403. Both downloads were 12397 bytes and identical. Reload kept the prompt. Sign-out returned 401. The outsider got 404. The assistant still wrote no file. The project is Delivered.
-- Phase 3 is not started. The two human accounts have not walked the checklist.
+- Phase 3 is decided below. The two human accounts have not walked the checklist.
 
 ## Phase 1: single account, full evidence
 
@@ -123,14 +123,37 @@ Scope: the full 12-point checklist from `plans/builder-session-hitl.md`, both ro
 
 ## Phase 3: evaluate hosted infrastructure
 
-Trigger for this phase, any of: a step must wait on a real human for longer than a job; someone wants to watch or take over the bot's browser live; the owner wants exploratory, model-driven coverage beyond the scripted checklist.
+The evaluation starts when a step must wait on a real human for longer than a job, someone must watch or take over the bot's browser live, or the owner wants a model to explore past the scripted checklist.
 
 - **Browserbase + Stagehand:** swap `chromium.launch()` for `chromium.connectOverCDP(browserbase session)`; Contexts give persistent cookies; Live View for takeover. Stagehand `act()` for exploration, with the same API/DB oracle for verification.
 - **Browser Use Cloud:** cheapest hosted browser; Python agent library; pair with the same oracle.
 - **Cloudflare Browser Run:** if the orchestrator should live beside the Worker; Cloudflare Workflows for human-wait steps.
 - **Durable engines:** only with a real human-wait step.
 
-Decision record after Phase 2: cost per run, flake rate, and whether any of the three triggers above actually occurred.
+### Decision record
+
+Measured from `bolt-walkthrough-verify` job time, GitHub-hosted Linux at $0.008 per minute.
+
+| Run                                                                              | Job time | Result | What it was                                                                                                          |
+| -------------------------------------------------------------------------------- | -------- | ------ | -------------------------------------------------------------------------------------------------------------------- |
+| [37960548651](https://github.com/Awannaphasch2016/dyad/actions/runs/37960548651) | 1m 21s   | passed | Sign-in only                                                                                                         |
+| [37964116225](https://github.com/Awannaphasch2016/dyad/actions/runs/37964116225) | 1m 20s   | failed | The send-button selector matched Model Settings too. Fixed in the next run.                                          |
+| [37964371000](https://github.com/Awannaphasch2016/dyad/actions/runs/37964371000) | 1m 40s   | passed | Project Manager, Discovery through Implementation                                                                    |
+| [37980191409](https://github.com/Awannaphasch2016/dyad/actions/runs/37980191409) | 2m 51s   | passed | Both roles through Delivery, first try                                                                               |
+| [38000159942](https://github.com/Awannaphasch2016/dyad/actions/runs/38000159942) | 2m 36s   | failed | A preview deploy closed Move to Implementation until the reply asks nothing. The test still expected the old button. |
+| [38000818800](https://github.com/Awannaphasch2016/dyad/actions/runs/38000818800) | 3m 50s   | passed | Same checklist after following that gate                                                                             |
+
+A two-role walk costs about $0.02–$0.03 of runner time. The passing two-role jobs were 2m 51s and 3m 50s. No unchanged test failed twice against the same preview. The red walk after the selector fix was a preview deploy from another branch, and the next run passed.
+
+The three triggers:
+
+1. No step waits on a person. The longest passing job is 3m 50s.
+2. Replay already exists. Each run uploads a video per browser, screenshots, and the Playwright report for 14 days, and the latest videos are on PR #91. Nobody has had to grab the browser in the middle of a run.
+3. The checklist is scripted. A model choosing clicks would replace the assertions that already read `GET /api/project` and Postgres.
+
+Stay on Playwright on the GitHub Actions runner. Browserbase Developer is $20 a month before the first session, for Live View this walk does not use. Browser Use is $0.02 per browser-hour and answers with a model. Cloudflare Browser Rendering is about $0.09 an hour after the included time, and it would move the orchestrator off the runner that already has the Doppler token. A durable workflow engine would keep a system running for a job that finishes in under four minutes.
+
+Reopen this evaluation when a step must wait on a person for hours, someone needs to take over the live browser, or the check should leave the scripted checklist.
 
 ## Out of scope
 
