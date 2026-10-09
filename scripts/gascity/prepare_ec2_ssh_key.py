@@ -24,13 +24,12 @@ def write_key(path, value):
     os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
 
 
-def key_from_doppler():
-    token = os.environ.get("DOPPLER_TOKEN", "").strip()
-    if not token:
-        print("doppler token absent")
-        return ""
+def download_config(token, project="", config=""):
+    query = "format=json"
+    if project and config:
+        query += f"&project={project}&config={config}"
     request = urllib.request.Request(
-        "https://api.doppler.com/v3/configs/config/secrets/download?format=json",
+        "https://api.doppler.com/v3/configs/config/secrets/download?" + query,
         headers={
             "Authorization": f"Bearer {token}",
             "Accept": "application/json",
@@ -42,14 +41,37 @@ def key_from_doppler():
             print(f"doppler download http {response.status}")
     except urllib.error.HTTPError as error:
         error.read()
-        print(f"doppler download http {error.code}")
+        where = f" project={project} config={config}" if project else ""
+        print(f"doppler download http {error.code}{where}")
+        return {}
+    return body if isinstance(body, dict) else {}
+
+
+def key_from_doppler():
+    token = os.environ.get("DOPPLER_TOKEN", "").strip()
+    if not token:
+        print("doppler token absent")
         return ""
-    if not isinstance(body, dict):
-        print("doppler EC2_SSH_KEY absent")
+    body = download_config(token)
+    value = str(body.get("EC2_SSH_KEY") or "")
+    print("doppler EC2_SSH_KEY " + ("present" if value.strip() else "absent"))
+    return value
+
+
+def key_from_admin():
+    token = os.environ.get("DOPPLER_ADMIN_TOKEN", "").strip()
+    if not token:
+        print("doppler admin token absent")
         return ""
-    value = body.get("EC2_SSH_KEY") or ""
-    print("doppler EC2_SSH_KEY " + ("present" if str(value).strip() else "absent"))
-    return str(value)
+    print("doppler admin token present")
+    for project, config in (("dyad", "preview"), ("dyad", "prd")):
+        body = download_config(token, project, config)
+        value = str(body.get("EC2_SSH_KEY") or "")
+        state = "present" if value.strip() else "absent"
+        print(f"doppler EC2_SSH_KEY {state} project={project} config={config}")
+        if value.strip():
+            return value
+    return ""
 
 
 def main():
@@ -62,8 +84,11 @@ def main():
         value = key_from_doppler()
         source = "doppler"
     if not value.strip():
+        value = key_from_admin()
+        source = "doppler-admin"
+    if not value.strip():
         sys.stderr.write(
-            "EC2_SSH_KEY is empty in the GitHub secret and in the Doppler config this token can read.\n"
+            "EC2_SSH_KEY is empty in the GitHub secret and in Doppler dyad preview and prd.\n"
         )
         return 1
     write_key(sys.argv[1], value)

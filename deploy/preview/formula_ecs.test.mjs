@@ -296,7 +296,10 @@ test("the production host stores the role address without printing it", () => {
   assert.equal(script.includes("gascity-rollout"), false);
   assert.match(workflow, /EC2_SSH_KEY/);
   assert.match(workflow, /DOPPLER_TOKEN/);
+  assert.match(workflow, /DOPPLER_ADMIN_TOKEN/);
   assert.match(workflow, /prepare_ec2_ssh_key\.py/);
+  assert.match(workflow, /store_formula_role_arn\.py/);
+  assert.match(workflow, /> "\$RUNNER_TEMP\/formula-role-arn"/);
   assert.match(workflow, /gascity_known_hosts/);
   assert.match(workflow, /setup_formula_role\.py/);
   assert.equal(workflow.includes("gascity-rollout"), false);
@@ -319,6 +322,12 @@ test("the production host stores the role address without printing it", () => {
         "command = mod.doppler_set_command('/usr/bin/doppler')",
         "assert command == ['/usr/bin/doppler', 'secrets', 'set', mod.SECRET_NAME, '--silent']",
         "assert 'arn:aws' not in ' '.join(command)",
+        "assert 'def write_role_file' in open('scripts/gascity/setup_formula_role.py', encoding='utf-8').read()",
+        "store = importlib.util.spec_from_file_location('store', 'scripts/gascity/store_formula_role_arn.py')",
+        "store_mod = importlib.util.module_from_spec(store)",
+        "store.loader.exec_module(store_mod)",
+        "assert store_mod.role_file_from_log('role_file=/tmp/formula-role-abc123') == '/tmp/formula-role-abc123'",
+        "assert store_mod.role_file_from_log('role_file=/etc/passwd') == ''",
         "print('ok')",
       ].join("\n"),
     ],

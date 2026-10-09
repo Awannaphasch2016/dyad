@@ -1081,15 +1081,19 @@ function arg(name) {
   return index === -1 ? "" : process.argv[index + 1] || "";
 }
 
-async function downloadDoppler(token) {
+async function downloadDoppler(token, project = "", config = "") {
+  const params = new URLSearchParams({ format: "json" });
+  if (project) params.set("project", project);
+  if (config) params.set("config", config);
   const response = await fetch(
-    "https://api.doppler.com/v3/configs/config/secrets/download?format=json",
+    `https://api.doppler.com/v3/configs/config/secrets/download?${params}`,
     {
       headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
     },
   );
   if (!response.ok) {
-    throw new Error(`Doppler download failed (${response.status})`);
+    const where = project ? ` project=${project} config=${config}` : "";
+    throw new Error(`Doppler download failed (${response.status})${where}`);
   }
   return response.json();
 }
@@ -1097,11 +1101,38 @@ async function downloadDoppler(token) {
 async function writeRoleArn() {
   const out = arg("--out");
   if (!out) throw new Error("Missing --out");
-  let download = {};
+  const downloads = [];
   if (process.env.DOPPLER_TOKEN) {
-    download = await downloadDoppler(process.env.DOPPLER_TOKEN);
+    downloads.push(await downloadDoppler(process.env.DOPPLER_TOKEN));
   }
-  const roleArn = formulaRoleArn(process.env, download);
+  const admin = process.env.DOPPLER_ADMIN_TOKEN || "";
+  if (admin) {
+    process.stdout.write("doppler admin token present\n");
+    for (const [project, config] of [
+      ["dyad", "preview"],
+      ["dyad", "prd"],
+    ]) {
+      try {
+        downloads.push(await downloadDoppler(admin, project, config));
+        process.stdout.write(
+          `doppler read project=${project} config=${config}\n`,
+        );
+      } catch (error) {
+        process.stderr.write(
+          `${error instanceof Error ? error.message : "Doppler download failed"}\n`,
+        );
+      }
+    }
+  } else {
+    process.stdout.write("doppler admin token absent\n");
+  }
+  let roleArn = formulaRoleArn(process.env, {});
+  if (!roleArn) {
+    for (const download of downloads) {
+      roleArn = formulaRoleArn({}, download);
+      if (roleArn) break;
+    }
+  }
   if (!roleArn) {
     console.error(
       "AWS_PREVIEW_FORMULA_ROLE_ARN is absent from Doppler and from the GitHub secret.",

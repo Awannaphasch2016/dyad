@@ -19,7 +19,7 @@ Do not run Gas City rollout for this. That workflow SSHs in and then rebuilds th
 | Formula preview role | `preview-formula-role.yml` | This is the reusable job. It already SSHs with the same key, known hosts, and host, then runs `scripts/gascity/setup_formula_role.py`. |
 | Preview formula      | `preview-formula.yml`      | Reads the stored name from Doppler afterward. It does not SSH.                                                                         |
 
-The last Formula preview role run stopped before a shell opened because the Actions secret `EC2_SSH_KEY` was empty. The host is still up. The job now reads that same name from Doppler with `DOPPLER_TOKEN` when the Actions secret is empty.
+The Actions secrets `EC2_SSH_KEY` and `DOPPLER_TOKEN` are empty on this repository. **Bolt preview from Doppler** already reads Doppler with `DOPPLER_ADMIN_TOKEN`. **Formula preview role** uses that same token to read `EC2_SSH_KEY` from `dyad` `preview` or `prd`, opens the host shell, and the host runs `doppler secrets set`. The job then stores the address in Doppler project `dyad`, config `preview`.
 
 Gas City rollout's SSH shape is the pattern already copied:
 

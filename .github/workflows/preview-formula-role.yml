@@ -10,6 +10,7 @@ on:
     paths:
       - scripts/gascity/setup_formula_role.py
       - scripts/gascity/prepare_ec2_ssh_key.py
+      - scripts/gascity/store_formula_role_arn.py
       - .github/workflows/preview-formula-role.yml
 
 permissions:
@@ -27,13 +28,23 @@ jobs:
         env:
           EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
         run: |
           set -euo pipefail
-          python3 scripts/gascity/prepare_ec2_ssh_key.py "$RUNNER_TEMP/gascity-ec2"
-          ssh -i "$RUNNER_TEMP/gascity-ec2" \
-            -o UserKnownHostsFile="$GITHUB_WORKSPACE/.github/gascity_known_hosts" \
-            -o StrictHostKeyChecking=yes \
-            -o IdentitiesOnly=yes \
-            -o ConnectTimeout=20 \
-            ubuntu@13.251.216.187 \
-            "python3 -" < scripts/gascity/setup_formula_role.py
+          set +x
+          key="$RUNNER_TEMP/gascity-ec2"
+          python3 scripts/gascity/prepare_ec2_ssh_key.py "$key"
+          ssh_opts=(
+            -i "$key"
+            -o UserKnownHostsFile="$GITHUB_WORKSPACE/.github/gascity_known_hosts"
+            -o StrictHostKeyChecking=yes
+            -o IdentitiesOnly=yes
+            -o ConnectTimeout=20
+          )
+          ssh "${ssh_opts[@]}" ubuntu@13.251.216.187 "python3 -" \
+            < scripts/gascity/setup_formula_role.py \
+            | tee "$RUNNER_TEMP/formula-role-setup.txt"
+          role_file="$(python3 scripts/gascity/store_formula_role_arn.py --role-file-from-log "$RUNNER_TEMP/formula-role-setup.txt")"
+          ssh "${ssh_opts[@]}" ubuntu@13.251.216.187 "cat '$role_file' && rm -f '$role_file'" \
+            > "$RUNNER_TEMP/formula-role-arn"
+          python3 scripts/gascity/store_formula_role_arn.py "$RUNNER_TEMP/formula-role-arn"

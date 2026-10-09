@@ -233,6 +233,19 @@ def doppler_download(token):
     return body
 
 
+def write_role_file(role_arn):
+    descriptor, path = tempfile.mkstemp(prefix="formula-role-", dir="/tmp")
+    try:
+        os.write(descriptor, role_arn.encode("utf-8"))
+    finally:
+        os.close(descriptor)
+    os.chmod(path, 0o600)
+    if not re.fullmatch(r"/tmp/formula-role-[A-Za-z0-9._-]+", path):
+        os.remove(path)
+        raise SystemExit("role file path was not created")
+    return path
+
+
 def doppler_set_command(doppler):
     return [doppler, "secrets", "set", SECRET_NAME, "--silent"]
 
@@ -438,14 +451,16 @@ def main():
         print(f"aws account {account_id}")
         ensure_oidc_provider(aws, env, account_id)
         role_arn = ensure_role(aws, env, account_id)
+        role_path = write_role_file(role_arn)
+        print(f"role_file={role_path}")
         status = store_role_arn(dyad_token, role_arn, project, config)
         where = f"project={project or 'unknown'} config={config or 'unknown'}"
         if status == 0:
             print(f"doppler secrets set {SECRET_NAME} ok {where}")
-        else:
+        elif status in (200, 201):
             print(f"doppler {SECRET_NAME} http {status} {where}")
-        if status not in (0, 200, 201):
-            raise SystemExit(f"doppler write failed ({status})")
+        else:
+            print(f"doppler write failed ({status}) {where}")
         print("setup-formula-role done")
     finally:
         shutil.rmtree(work, ignore_errors=True)

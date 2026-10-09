@@ -28,6 +28,7 @@ jobs:
         id: role
         env:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
           AWS_PREVIEW_FORMULA_ROLE_ARN: ${{ secrets.AWS_PREVIEW_FORMULA_ROLE_ARN }}
         run: |
           set -euo pipefail
