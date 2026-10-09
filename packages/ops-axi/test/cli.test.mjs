@@ -201,6 +201,19 @@ test("errors print error and code and exit with the right status", async () => {
   const u = capture();
   assert.equal(await main(["rollout"], { ...u.io, gh }), 2);
   assert.match(u.err(), /code: VALIDATION_ERROR/);
+
+  // A read-only token is refused before GitHub looks at the workflow file.
+  const readOnly = fakeGh({
+    "workflow run": {
+      status: 1,
+      stderr:
+        "could not create workflow dispatch event: HTTP 403: Resource not accessible by integration",
+    },
+  });
+  const f = capture();
+  assert.equal(await main(["ec2", "check"], { ...f.io, gh: readOnly }), 3);
+  assert.match(f.err(), /code: FORBIDDEN/);
+  assert.match(f.err(), /actions: write/);
 });
 
 test("the binary runs and prints help without gh", () => {

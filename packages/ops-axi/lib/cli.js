@@ -175,6 +175,10 @@ export function renderError(error) {
   if (error.code === "AUTH_REQUIRED")
     help.push("Set GH_TOKEN or run `gh auth login`");
   if (error.code === "VALIDATION_ERROR") help.push("Run `ops-axi --help`");
+  if (error.code === "FORBIDDEN")
+    help.push(
+      "Starting a run needs a token with actions: write on this repository; a read-only token can only watch runs",
+    );
   if (error.code === "NO_RUN_TO_RERUN") {
     help.push(
       "Push the branch once so a run exists, or merge the workflow file to the default branch",
