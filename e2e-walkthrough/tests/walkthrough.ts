@@ -1,6 +1,11 @@
 import { createClerkClient } from "@clerk/backend";
 import { clerk, setupClerkTestingToken } from "@clerk/testing/playwright";
-import type { BrowserContext, Page } from "@playwright/test";
+import {
+  expect,
+  type BrowserContext,
+  type Locator,
+  type Page,
+} from "@playwright/test";
 import { writeFileSync } from "node:fs";
 
 export type RoleKey = "pm" | "dev";
@@ -93,4 +98,48 @@ export async function projectSnapshot(page: Page): Promise<ProjectProbe> {
 
 export function writeReport(name: string, data: Record<string, unknown>) {
   writeFileSync(`report/${name}.json`, `${JSON.stringify(data, null, 2)}\n`);
+}
+
+export async function composerCovered(box: Locator): Promise<boolean> {
+  return box.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const hit = document.elementFromPoint(
+      rect.left + Math.min(24, Math.max(rect.width / 2, 1)),
+      rect.top + Math.min(24, Math.max(rect.height / 2, 1)),
+    );
+    return hit !== element && !element.contains(hit);
+  });
+}
+
+// Discovery keeps the approval card open over the whole page, so the
+// composer can be covered. A real keystroke is used when it is not. When it
+// is, the same React handlers run from a DOM event and the report says so.
+export async function sendWalkthroughPrompt(page: Page, prompt: string) {
+  const box = page.getByPlaceholder("Describe the page");
+  await expect(box).toBeVisible();
+  const covered = await composerCovered(box);
+  if (!covered) {
+    await box.fill(prompt);
+    await box.press("Enter");
+    return { covered };
+  }
+  await box.evaluate((element, text) => {
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      "value",
+    )?.set;
+    setter?.call(element, text);
+    element.dispatchEvent(new Event("input", { bubbles: true }));
+  }, prompt);
+  await expect(box.locator("xpath=parent::div//button")).toBeAttached();
+  await box.evaluate((element) => {
+    element.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  });
+  return { covered };
 }

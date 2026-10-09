@@ -29,7 +29,7 @@ function playwrightTotals(directory) {
 }
 
 export function renderSummary(reports, totals) {
-  const lines = ["## Walkthrough sign-in check", ""];
+  const lines = ["## Walkthrough check", ""];
   if (totals) {
     lines.push(
       `Playwright: ${totals.expected} passed, ${totals.unexpected} failed, ${totals.skipped} skipped, ${totals.flaky} flaky`,
@@ -38,8 +38,9 @@ export function renderSummary(reports, totals) {
   }
   lines.push("| Report | Result |", "| --- | --- |");
   for (const { name, data } of reports) {
-    const summary =
-      name === "password-strategy" || name === "token-sign-in-preflight"
+    const summary = data.summary
+      ? data.summary
+      : name === "password-strategy" || name === "token-sign-in-preflight"
         ? `${data.outcome ? `${data.outcome} · ` : ""}${data.verdict}`
         : `${data.role} · ${data.userId} · ${data.strategy} · human step: ${data.humanStep} · ${data.secondsToSignIn}s · roleId=${data.roleId} · phase=${data.phase} · reload keeps session: ${data.reloadKeepsSession} · signed-out status ${data.signedOutStatus}`;
     lines.push(`| ${name} | ${String(summary).replace(/\|/g, "\\|")} |`);

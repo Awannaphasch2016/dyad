@@ -12,6 +12,7 @@ on:
     paths:
       - .github/workflows/bolt-walkthrough-verify.yml
       - scripts/doppler/bolt-test-accounts.mjs
+      - scripts/doppler/bolt-reset-project.mjs
       - scripts/doppler/bolt-sign-in.mjs
       - scripts/doppler/export-bolt-preview-env.mjs
       - e2e-walkthrough/**
@@ -59,13 +60,26 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Return the walkthrough project to Discovery
+        run: |
+          set -euo pipefail
+          set +x
+          node scripts/doppler/bolt-reset-project.mjs | tee /tmp/reset.txt
+          {
+            echo "### Reset"
+            echo
+            echo '```'
+            cat /tmp/reset.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Install the walkthrough checks
         working-directory: e2e-walkthrough
         run: |
           npm ci --ignore-scripts
           npx playwright install --with-deps chromium
 
-      - name: Sign in each role without a person
+      - name: Run the walkthrough checks
         working-directory: e2e-walkthrough
         env:
           WALKTHROUGH_URL: https://bolt-walkthrough-55d6.karant-test-egress-canary.workers.dev
@@ -80,6 +94,20 @@ jobs:
           set -euo pipefail
           set +x
           npx playwright test
+
+      - name: Confirm the project is in Implementation
+        if: always()
+        run: |
+          set -euo pipefail
+          set +x
+          node scripts/doppler/bolt-reset-project.mjs check | tee /tmp/check.txt
+          {
+            echo "### Stored project"
+            echo
+            echo '```'
+            cat /tmp/check.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Summarize
         if: always()
