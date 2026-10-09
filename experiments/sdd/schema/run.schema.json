@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SDD experiment run record",
+  "type": "object",
+  "required": [
+    "run_id",
+    "approach",
+    "approach_version",
+    "spec_version",
+    "spec_sha256",
+    "impl_repo",
+    "baseline_ref",
+    "worker",
+    "coordinator",
+    "pr",
+    "isolation",
+    "interventions",
+    "caps"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9-]+$"
+    },
+    "approach": { "type": "string", "enum": ["speckit"] },
+    "approach_version": { "type": "string" },
+    "spec_version": { "type": "string", "pattern": "^[a-z0-9]+-v[0-9]+$" },
+    "spec_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "impl_repo": { "type": "string", "pattern": "^[^/]+/[^/]+$" },
+    "baseline_ref": { "type": "string" },
+    "worker": {
+      "type": "object",
+      "required": [
+        "agent_id",
+        "run_id",
+        "model",
+        "created_at",
+        "finished_at",
+        "status"
+      ],
+      "properties": {
+        "agent_id": { "type": ["string", "null"] },
+        "run_id": { "type": ["string", "null"] },
+        "model": { "type": "string" },
+        "created_at": { "type": ["string", "null"] },
+        "finished_at": { "type": ["string", "null"] },
+        "status": {
+          "type": "string",
+          "enum": [
+            "NOT_STARTED",
+            "CREATING",
+            "RUNNING",
+            "FINISHED",
+            "ERROR",
+            "CANCELLED",
+            "EXPIRED"
+          ]
+        },
+        "duration_ms": { "type": ["number", "null"] },
+        "url": { "type": ["string", "null"] }
+      }
+    },
+    "coordinator": {
+      "type": "object",
+      "properties": {
+        "agent_id": { "type": ["string", "null"] },
+        "started_at": { "type": "string" }
+      }
+    },
+    "pr": {
+      "type": "object",
+      "required": ["number", "head_sha", "url"],
+      "properties": {
+        "number": { "type": ["integer", "null"] },
+        "head_sha": { "type": ["string", "null"] },
+        "url": { "type": ["string", "null"] },
+        "branch": { "type": "string" }
+      }
+    },
+    "isolation": {
+      "type": "object",
+      "required": ["ground_truth_listed", "leak_markers"],
+      "properties": {
+        "ground_truth_listed": { "type": ["boolean", "null"] },
+        "leak_markers": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "interventions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["at", "by", "action"],
+        "properties": {
+          "at": { "type": "string" },
+          "by": { "type": "string" },
+          "action": { "type": "string" },
+          "reason": { "type": "string" },
+          "automated": { "type": "boolean" }
+        }
+      }
+    },
+    "caps": {
+      "type": "object",
+      "required": ["wall_clock_minutes", "estimated_usd"],
+      "properties": {
+        "wall_clock_minutes": { "type": "number" },
+        "estimated_usd": { "type": "number" }
+      }
+    },
+    "iterations": { "type": "object" },
+    "final_status": { "type": "string" }
+  }
+}

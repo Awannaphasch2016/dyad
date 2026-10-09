@@ -1,0 +1,205 @@
+{
+  "days": [
+    {
+      "id": "monday",
+      "title": "Monday 8 September 2025",
+      "sessions": [
+        {
+          "time": "08.00 - 08.45",
+          "title": "Registration",
+          "speaker": "",
+          "affiliation": "",
+          "room": "Foyer"
+        },
+        {
+          "time": "08.45 - 09.30",
+          "title": "Opening Ceremony",
+          "speaker": "Jatuporn Buruspat",
+          "affiliation": "Minister of Commerce",
+          "room": "Grand Ballroom (Main)"
+        },
+        {
+          "time": "09.30 - 10.00",
+          "title": "Towards a Sustainable Future for the Thai Gem and Jewelry Industry",
+          "speaker": "Prida Tiasuwan",
+          "affiliation": "Founder Chairman, Pranda Jewelry Public Company Limited",
+          "room": "Grand Ballroom (Main)"
+        },
+        {
+          "time": "10.00 - 10.30",
+          "title": "Future Trends: Sustainability in Jewelry Art 2025",
+          "speaker": "Wallace Chan",
+          "affiliation": "World-renowned Chinese jewellery creator",
+          "room": "Grand Ballroom (Main)"
+        },
+        {
+          "time": "10.30 - 10.45",
+          "title": "Coffee Break",
+          "speaker": "",
+          "affiliation": "",
+          "room": "Foyer"
+        },
+        {
+          "time": "10.45 - 11.15",
+          "title": "Transforming Thailand's Gem and Jewelry Industry through Research and Innovation",
+          "speaker": "Chakkaphan Sutthirat",
+          "affiliation": "Vice President, Thailand Science, Research and Innovation (TSRI)",
+          "room": "Grand Ballroom (Main)"
+        },
+        {
+          "time": "11.15 - 11.45",
+          "title": "The Role of Women in the Gem and Jewelry Industry",
+          "speaker": "Ashoo Sinchawla",
+          "affiliation": "Director, Sant Enterprises Company Limited",
+          "room": "Grand Ballroom (Main)"
+        },
+        {
+          "time": "11.45 - 12.45",
+          "title": "Lunch and Poster Viewing",
+          "speaker": "",
+          "affiliation": "",
+          "room": "Foyer"
+        },
+        {
+          "time": "12.45 - 13.15",
+          "title": "Traceability Ledgers for Coloured Stones: A Pilot in Chanthaburi",
+          "speaker": "Marisa Ruangrit",
+          "affiliation": "Research Fellow, Lamphun Gemmological Laboratory",
+          "room": "Grand Ballroom (Main)"
+        },
+        {
+          "time": "13.15 - 13.45",
+          "title": "Recycled Gold Certification: What Auditors Actually Check",
+          "speaker": "Olav Brekke",
+          "affiliation": "Lead Auditor, Nordfjord Assurance",
+          "room": "The Residence 303 (Break out)"
+        },
+        {
+          "time": "13.45 - 14.15",
+          "title": "Low-Water Cutting Workshops in Northern Thailand",
+          "speaker": "Nattaya Khamsing",
+          "affiliation": "Owner, Mae Sai Lapidary Cooperative",
+          "room": "The Residence 303 (Break out)"
+        },
+        {
+          "time": "14.15 - 14.30",
+          "title": "Coffee Break",
+          "speaker": "",
+          "affiliation": "",
+          "room": "Foyer"
+        },
+        {
+          "time": "14.30 - 15.00",
+          "title": "Spectroscopic Screening of Treated Spinel at Scale",
+          "speaker": "Devika Raman",
+          "affiliation": "Senior Gemologist, Kandy Gem Testing Centre",
+          "room": "Grand Ballroom (Main)"
+        },
+        {
+          "time": "15.00 - 15.30",
+          "title": "Panel: Who Pays for Responsible Sourcing?",
+          "speaker": "Panel",
+          "affiliation": "Moderator: Teerawat Chaiyasit, Bangkok Jewelry Review",
+          "room": "Grand Ballroom (Main)"
+        },
+        {
+          "time": "15.30",
+          "title": "End of Day 1",
+          "speaker": "",
+          "affiliation": "",
+          "room": ""
+        }
+      ]
+    },
+    {
+      "id": "tuesday",
+      "title": "Tuesday 9 September 2025",
+      "sessions": [
+        {
+          "time": "08.30 - 09.00",
+          "title": "Registration",
+          "speaker": "",
+          "affiliation": "",
+          "room": "Foyer"
+        },
+        {
+          "time": "09.00 - 09.30",
+          "title": "Mapping Alluvial Sapphire Deposits with Low-Cost Drones",
+          "speaker": "Hiroshi Tanabe",
+          "affiliation": "Associate Professor, Kochi Institute of Earth Sciences",
+          "room": "Grand Ballroom (Main)"
+        },
+        {
+          "time": "09.30 - 10.00",
+          "title": "Garnet Provenance from Trace-Element Fingerprints",
+          "speaker": "Amara Okafor",
+          "affiliation": "Geochemist, Jos Plateau Minerals Institute",
+          "room": "Grand Ballroom (Main)"
+        },
+        {
+          "time": "10.00 - 10.30",
+          "title": "Lab-Grown Diamonds and the Disclosure Gap in Online Retail",
+          "speaker": "Priya Venkatesan",
+          "affiliation": "Policy Analyst, Surat Trade Observatory",
+          "room": "The Residence 303 (Break out)"
+        },
+        {
+          "time": "10.30 - 10.45",
+          "title": "Coffee Break",
+          "speaker": "",
+          "affiliation": "",
+          "room": "Foyer"
+        },
+        {
+          "time": "10.45 - 11.15",
+          "title": "Fair Wages in Small Cutting Houses: Survey Results from Three Provinces",
+          "speaker": "Somchai Ritthirong",
+          "affiliation": "Labour Economist, Isan Development Forum",
+          "room": "Grand Ballroom (Main)"
+        },
+        {
+          "time": "11.15 - 11.45",
+          "title": "Designing Jewelry for Disassembly and Metal Recovery",
+          "speaker": "Lena Hartmann",
+          "affiliation": "Design Director, Idar Atelier",
+          "room": "The Residence 303 (Break out)"
+        },
+        {
+          "time": "11.45 - 12.45",
+          "title": "Lunch and Poster Viewing",
+          "speaker": "",
+          "affiliation": "",
+          "room": "Foyer"
+        },
+        {
+          "time": "12.45 - 13.15",
+          "title": "Blockchain Claims in Gem Trading: Separating Audit Trails from Marketing",
+          "speaker": "Daniel Mwangi",
+          "affiliation": "Supply Chain Lead, Nairobi Gem Exchange",
+          "room": "Grand Ballroom (Main)"
+        },
+        {
+          "time": "13.15 - 13.45",
+          "title": "Student Session: Heat Treatment Detection in Ruby Using Portable Raman",
+          "speaker": "Kanokwan Phetcharat",
+          "affiliation": "MSc Candidate, Chiang Mai University",
+          "room": "The Residence 303 (Break out)"
+        },
+        {
+          "time": "13.45 - 14.15",
+          "title": "Closing Keynote: Responsible Practices as a Competitive Advantage",
+          "speaker": "Thanong Leelawatanasuk",
+          "affiliation": "Deputy Director (Technical), The Gem and Jewelry Institute of Thailand (Public Organization)",
+          "room": "Grand Ballroom (Main)"
+        },
+        {
+          "time": "14.15",
+          "title": "End of Conference",
+          "speaker": "",
+          "affiliation": "",
+          "room": ""
+        }
+      ]
+    }
+  ]
+}

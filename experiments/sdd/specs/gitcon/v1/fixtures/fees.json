@@ -1,0 +1,31 @@
+{
+  "columns": [
+    "Registrant Type",
+    "Early Bird Rate (March 1, 2025 - July 18, 2025)",
+    "Regular Rate (July 19, 2025 - September 7, 2025)",
+    "On Site Rate (September 8-9, 2025)"
+  ],
+  "tables": [
+    {
+      "title": "Registration Fee",
+      "rows": [
+        ["Student", "USD 150", "USD 200", "USD 400"],
+        ["General", "USD 200", "USD 300", "USD 300"],
+        ["Pre-Conference Excursion", "USD 425", "USD 425", "USD 425"]
+      ]
+    },
+    {
+      "title": "Registration Fees For Thai Citizen (Government Subsidy)",
+      "rows": [
+        ["Student", "3,000 Baht", "4,000 Baht", "5,000 Baht"],
+        ["General", "4,000 Baht", "5,000 Baht", "7,000 Baht"],
+        [
+          "Pre-Conference Excursion",
+          "14,900 Baht",
+          "14,900 Baht",
+          "14,900 Baht"
+        ]
+      ]
+    }
+  ]
+}

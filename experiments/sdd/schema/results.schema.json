@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SDD experiment results",
+  "type": "object",
+  "required": [
+    "run_id",
+    "final_status",
+    "spec_coverage",
+    "acceptance",
+    "verification_pass_rate",
+    "ui_verification",
+    "build",
+    "execution_time",
+    "cost",
+    "human_intervention",
+    "source_lines",
+    "iterations",
+    "verifier"
+  ],
+  "properties": {
+    "run_id": { "type": "string" },
+    "final_status": {
+      "type": "string",
+      "enum": ["completed", "partially_completed", "blocked", "contaminated"]
+    },
+    "spec_unchanged_by_worker": { "type": "boolean" },
+    "spec_coverage": {
+      "type": "object",
+      "required": ["implemented", "total", "ratio"],
+      "properties": {
+        "implemented": { "type": "integer" },
+        "total": { "type": "integer" },
+        "ratio": { "type": "number" },
+        "implemented_frs": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "acceptance": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "fr", "status", "expected", "actual", "evidence"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^AC-[0-9]{2}$" },
+          "fr": { "type": "array", "items": { "type": "string" } },
+          "status": {
+            "type": "string",
+            "enum": ["passed", "failed", "not_measurable", "not_run"]
+          },
+          "expected": { "type": "string" },
+          "actual": { "type": "string" },
+          "evidence": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "verification_pass_rate": {
+      "type": "object",
+      "required": ["passed", "total", "ratio"],
+      "properties": {
+        "passed": { "type": "integer" },
+        "total": { "type": "integer" },
+        "ratio": { "type": "number" },
+        "not_measurable": { "type": "integer" }
+      }
+    },
+    "ui_verification": {
+      "type": "object",
+      "required": ["pages_visited", "failures"],
+      "properties": {
+        "pages_visited": { "type": "integer" },
+        "screenshots": { "type": "array", "items": { "type": "string" } },
+        "failures": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "build": {
+      "type": "object",
+      "required": ["docker_build", "container_healthy", "build_seconds"],
+      "properties": {
+        "docker_build": { "type": "string" },
+        "container_healthy": { "type": "boolean" },
+        "build_seconds": { "type": ["number", "null"] },
+        "network_none_status": { "type": ["integer", "null"] }
+      }
+    },
+    "execution_time": {
+      "type": "object",
+      "required": [
+        "worker_seconds",
+        "verifier_seconds",
+        "total_seconds",
+        "started_at",
+        "verified_at"
+      ],
+      "properties": {
+        "worker_seconds": { "type": "number" },
+        "verifier_seconds": { "type": "number" },
+        "total_seconds": { "type": "number" },
+        "started_at": { "type": ["string", "null"] },
+        "verified_at": { "type": "string" }
+      }
+    },
+    "cost": {
+      "type": "object",
+      "required": [
+        "worker_tokens",
+        "worker_usd_estimate",
+        "pricing_source",
+        "note"
+      ],
+      "properties": {
+        "worker_tokens": { "type": "object" },
+        "worker_usd_estimate": { "type": ["number", "null"] },
+        "coordinator_tokens": { "type": "object" },
+        "coordinator_usd_estimate": { "type": ["number", "null"] },
+        "actions_minutes": { "type": ["number", "null"] },
+        "pricing_source": { "type": "string" },
+        "note": { "type": "string" }
+      }
+    },
+    "human_intervention": {
+      "type": "object",
+      "required": ["count", "actions"],
+      "properties": {
+        "count": { "type": "integer" },
+        "actions": { "type": "array" }
+      }
+    },
+    "source_lines": {
+      "type": "object",
+      "required": ["tool", "php", "html", "css", "js", "excluded"],
+      "properties": {
+        "tool": { "type": "string" },
+        "php": { "type": "integer" },
+        "html": { "type": "integer" },
+        "css": { "type": "integer" },
+        "js": { "type": "integer" },
+        "total_code": { "type": "integer" },
+        "excluded": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "iterations": {
+      "type": "object",
+      "required": ["implement_rounds", "converge_rounds", "follow_up_runs"],
+      "properties": {
+        "implement_rounds": { "type": "integer" },
+        "converge_rounds": { "type": "integer" },
+        "follow_up_runs": { "type": "integer" }
+      }
+    },
+    "isolation": { "type": "object" },
+    "worker": { "type": "object" },
+    "pr": { "type": "object" },
+    "verifier": {
+      "type": "object",
+      "required": ["run_url", "artifact"],
+      "properties": {
+        "run_url": { "type": ["string", "null"] },
+        "artifact": { "type": "string" }
+      }
+    }
+  }
+}
