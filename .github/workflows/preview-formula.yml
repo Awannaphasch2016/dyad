@@ -163,6 +163,7 @@ jobs:
       - name: Attach the Neon preview branch
         env:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           PR: ${{ steps.pr.outputs.number }}
         run: node deploy/preview/controller.mjs attach --pr "$PR" --out /tmp/preview-runtime.sh
