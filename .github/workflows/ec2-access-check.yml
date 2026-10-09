@@ -1,0 +1,79 @@
+# Prove each link from GitHub Actions to the production host and on to
+# Doppler. Prints names, statuses, and fingerprints. Never prints a key,
+# a token, a secret value, or a role ARN. Changes nothing on the host.
+name: EC2 access check
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cursor/axi-toolbox-image-plan-531e
+    paths:
+      - .github/workflows/ec2-access-check.yml
+      - scripts/gascity/check_host_access.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ec2-access-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Check the synced GitHub secrets
+        id: secrets
+        env:
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+        run: |
+          set -euo pipefail
+          ok=1
+          if [[ -z "${EC2_SSH_KEY//[[:space:]]/}" ]]; then
+            echo "github_ec2_ssh_key=absent"
+            ok=0
+          else
+            python3 scripts/gascity/write_ssh_key.py "$RUNNER_TEMP/gascity-ec2"
+            if fp="$(ssh-keygen -l -f "$RUNNER_TEMP/gascity-ec2" 2>/dev/null)"; then
+              echo "github_ec2_ssh_key=present fingerprint=$(printf '%s' "$fp" | awk '{print $2}')"
+            else
+              echo "github_ec2_ssh_key=present-but-not-a-private-key"
+              ok=0
+            fi
+          fi
+          if [[ -z "${DOPPLER_TOKEN//[[:space:]]/}" ]]; then
+            echo "github_doppler_token=absent"
+          else
+            status="$(curl -sS -o "$RUNNER_TEMP/doppler.json" -w '%{http_code}' \
+              -H "Authorization: Bearer ${DOPPLER_TOKEN}" \
+              https://api.doppler.com/v3/configs/config || echo 000)"
+            project="$(jq -r '.config.project // "unknown"' "$RUNNER_TEMP/doppler.json" 2>/dev/null || echo unknown)"
+            config="$(jq -r '.config.name // "unknown"' "$RUNNER_TEMP/doppler.json" 2>/dev/null || echo unknown)"
+            echo "github_doppler_token=http-${status} project=${project} config=${config}"
+            rm -f "$RUNNER_TEMP/doppler.json"
+          fi
+          echo "ssh_key_ok=${ok}" >> "$GITHUB_OUTPUT"
+          if [[ "$ok" != "1" ]]; then
+            echo "The Doppler sync for project dyad, config preview, is not delivering EC2_SSH_KEY to this repository." >&2
+            exit 1
+          fi
+
+      - name: SSH to the host and check its Doppler tokens
+        if: steps.secrets.outputs.ssh_key_ok == '1'
+        run: |
+          set -euo pipefail
+          ssh -i "$RUNNER_TEMP/gascity-ec2" \
+            -o UserKnownHostsFile="$GITHUB_WORKSPACE/.github/gascity_known_hosts" \
+            -o StrictHostKeyChecking=yes \
+            -o IdentitiesOnly=yes \
+            -o ConnectTimeout=20 \
+            -o BatchMode=yes \
+            ubuntu@13.251.216.187 \
+            "python3 -" < scripts/gascity/check_host_access.py
+          echo "ec2_ssh=ok"
