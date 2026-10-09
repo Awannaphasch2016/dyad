@@ -308,11 +308,12 @@ test("both roles walk one shared project", async ({ browser }) => {
     ).toBeAttached({
       timeout: 20_000,
     });
+    // File replay skips shell, so only the Project Manager runs `npm run dev`.
     await expect
-      .poll(async () => previewState(devPage), {
+      .poll(async () => previewState(pmPage), {
         timeout: PREVIEW_MS,
         intervals: [2_000],
-        message: "the preview did not show North Pier Fish",
+        message: "the Project Manager preview did not show North Pier Fish",
       })
       .toBe("ready");
     await shot(pmPage, "two-roles-3-implementation-pm");
