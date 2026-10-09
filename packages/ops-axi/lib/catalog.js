@@ -31,6 +31,13 @@ export const OPERATIONS = {
     summary: "Deploy the formula preview to ECS and print its URL",
     verify: [{ key: "url", expect: /^https?:\/\// }],
   },
+  "doppler status": {
+    workflow: "doppler-organize.yml",
+    defaultRef: "cursor/axi-toolbox-image-plan-531e",
+    summary:
+      "Log in to Doppler by OIDC from GitHub Actions and report the dyad environments against deploy/doppler/manifest.json",
+    verify: [{ key: "doppler_oidc", expect: /^http-200/ }],
+  },
   rollout: {
     workflow: "gascity-rollout.yml",
     defaultRef: "cursor/browser-dyad-ui-bbea",

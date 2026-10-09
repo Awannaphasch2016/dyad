@@ -26,6 +26,7 @@ test("help lists every operation and the dispatch note", () => {
     "formula role",
     "formula verify",
     "formula deploy",
+    "doppler status",
     "rollout <sha>",
     "run <workflow.yml>",
   ]) {

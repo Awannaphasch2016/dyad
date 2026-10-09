@@ -40,6 +40,7 @@ Result lines whose key looks like a secret (`TOKEN`, `KEY`, `SECRET`, `PASSWORD`
 | `formula verify` | `ec2-access-check.yml`     | `cursor/axi-toolbox-image-plan-531e` | `AWS_PREVIEW_FORMULA_ROLE_ARN=present` |
 | `formula deploy` | `preview-formula.yml`      | `cursor/formula-config-ui-55d6`      | `url=https://…`                        |
 | `rollout <sha>`  | `gascity-rollout.yml`      | `cursor/browser-dyad-ui-bbea`        | run passes                             |
+| `doppler status` | `doppler-organize.yml`     | `cursor/axi-toolbox-image-plan-531e` | `doppler_oidc=http-200…`               |
 
 The catalog lives in `lib/catalog.js`. Adding an operation is one entry: name, workflow file, default ref, optional positional input, optional verify list.
 

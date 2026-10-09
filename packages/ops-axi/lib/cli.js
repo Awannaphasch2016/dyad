@@ -35,6 +35,7 @@ examples:
   ops-axi formula role
   ops-axi formula verify
   ops-axi formula deploy
+  ops-axi doppler status
   ops-axi rollout 5e952bbc
   ops-axi run preview-wake.yml --ref cursor/preview-wake-34-bbea`;
 

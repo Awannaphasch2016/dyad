@@ -62,3 +62,58 @@ test("names are sorted and valid Doppler classic names", () => {
     for (const name of list) assert.match(name, /^[A-Z][A-Z0-9_]*$/);
   }
 });
+
+test("the Doppler workflows authenticate by OIDC and store no token", () => {
+  const action = readFileSync(
+    new URL(".github/actions/doppler-oidc/action.yml", root),
+    "utf8",
+  );
+  assert.match(action, /api\.doppler\.com\/v3\/auth\/oidc/);
+  assert.match(action, /::add-mask::/);
+  assert.doesNotMatch(
+    action,
+    /dp\.(st|sa|ct|pt)\./,
+    "action must not contain a Doppler token",
+  );
+  for (const file of [
+    "doppler-organize.yml",
+    "ec2-access-check.yml",
+    "preview-formula-role.yml",
+  ]) {
+    const text = readFileSync(
+      new URL(`.github/workflows/${file}`, root),
+      "utf8",
+    );
+    assert.match(
+      text,
+      /id-token: write/,
+      `${file} needs id-token: write for OIDC`,
+    );
+    assert.match(
+      text,
+      /uses: \.\/\.github\/actions\/doppler-oidc/,
+      `${file} uses the OIDC action`,
+    );
+  }
+  const organize = readFileSync(
+    new URL(".github/workflows/doppler-organize.yml", root),
+    "utf8",
+  );
+  assert.doesNotMatch(
+    organize,
+    /secrets\.DOPPLER_TOKEN/,
+    "organize must not depend on a stored token",
+  );
+  for (const command of ["status", "phase1", "verify"]) {
+    assert.match(organize, new RegExp(`migrate\\.mjs ${command}`));
+  }
+  const identity = readFileSync(new URL("identity", import.meta.url), "utf8");
+  for (const line of identity.split(/\r?\n/)) {
+    if (!line || line.startsWith("#")) continue;
+    assert.match(
+      line,
+      /^[0-9a-fA-F-]{36}$/,
+      "identity file holds a UUID or comments only",
+    );
+  }
+});
