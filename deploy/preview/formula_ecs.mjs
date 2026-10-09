@@ -34,7 +34,9 @@ export function formulaRoleArn(env = {}, download = {}) {
     env.AWS_PREVIEW_FORMULA_ROLE_ARN,
     download.AWS_PREVIEW_FORMULA_ROLE_ARN,
   ]) {
-    if (typeof value === "string" && FORMULA_ROLE_ARN.test(value)) return value;
+    if (typeof value === "string" && FORMULA_ROLE_ARN.test(value.trim())) {
+      return value.trim();
+    }
   }
   return "";
 }

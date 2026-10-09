@@ -233,7 +233,43 @@ def doppler_download(token):
     return body
 
 
+def doppler_set_command(doppler):
+    return [doppler, "secrets", "set", SECRET_NAME, "--silent"]
+
+
+def store_with_doppler_cli(token, role_arn, project, config):
+    doppler = "/usr/bin/doppler" if os.path.isfile("/usr/bin/doppler") else shutil.which("doppler")
+    if not doppler:
+        return None
+    env = os.environ.copy()
+    env["DOPPLER_TOKEN"] = token
+    if project:
+        env["DOPPLER_PROJECT"] = project
+    if config:
+        env["DOPPLER_CONFIG"] = config
+    try:
+        proc = subprocess.run(
+            doppler_set_command(doppler),
+            input=role_arn,
+            capture_output=True,
+            text=True,
+            env=env,
+            check=False,
+            timeout=45,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        print(f"doppler secrets set failed: {redact(str(error))}")
+        return 1
+    if proc.returncode != 0:
+        detail = redact((proc.stderr or proc.stdout or "").strip())
+        print(f"doppler secrets set failed: {detail or 'exit ' + str(proc.returncode)}")
+    return proc.returncode
+
+
 def store_role_arn(token, role_arn, project, config):
+    wrote = store_with_doppler_cli(token, role_arn, project, config)
+    if wrote == 0:
+        return 0
     payload = {"secrets": {SECRET_NAME: role_arn}}
     if project and config:
         payload["project"] = project
@@ -403,8 +439,12 @@ def main():
         ensure_oidc_provider(aws, env, account_id)
         role_arn = ensure_role(aws, env, account_id)
         status = store_role_arn(dyad_token, role_arn, project, config)
-        print(f"doppler {SECRET_NAME} http {status} project={project or 'unknown'} config={config or 'unknown'}")
-        if status not in (200, 201):
+        where = f"project={project or 'unknown'} config={config or 'unknown'}"
+        if status == 0:
+            print(f"doppler secrets set {SECRET_NAME} ok {where}")
+        else:
+            print(f"doppler {SECRET_NAME} http {status} {where}")
+        if status not in (0, 200, 201):
             raise SystemExit(f"doppler write failed ({status})")
         print("setup-formula-role done")
     finally:

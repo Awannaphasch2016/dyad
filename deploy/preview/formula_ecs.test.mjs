@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import {
   AwsError,
@@ -55,6 +58,10 @@ test("the formula role address comes from Doppler or the GitHub secret", () => {
   const arn = "arn:aws:iam::123456789012:role/github-preview-formula";
   assert.equal(formulaRoleArn({}, { AWS_PREVIEW_FORMULA_ROLE_ARN: arn }), arn);
   assert.equal(formulaRoleArn({ AWS_PREVIEW_FORMULA_ROLE_ARN: arn }, {}), arn);
+  assert.equal(
+    formulaRoleArn({ AWS_PREVIEW_FORMULA_ROLE_ARN: `${arn}\n` }, {}),
+    arn,
+  );
   assert.equal(
     formulaRoleArn({ AWS_PREVIEW_FORMULA_ROLE_ARN: "nope" }, {}),
     "",
@@ -283,13 +290,17 @@ test("the production host stores the role address without printing it", () => {
   );
   assert.match(script, /AWS_PREVIEW_FORMULA_ROLE_ARN/);
   assert.match(script, /dyad-preview\.token/);
+  assert.match(script, /doppler secrets set/);
   assert.match(script, /def redact/);
   assert.equal(script.includes("set -x"), false);
   assert.equal(script.includes("gascity-rollout"), false);
   assert.match(workflow, /EC2_SSH_KEY/);
+  assert.match(workflow, /DOPPLER_TOKEN/);
+  assert.match(workflow, /prepare_ec2_ssh_key\.py/);
   assert.match(workflow, /gascity_known_hosts/);
   assert.match(workflow, /setup_formula_role\.py/);
   assert.equal(workflow.includes("gascity-rollout"), false);
+  assert.equal(workflow.includes("write_ssh_key.py"), false);
   const check = spawnSync(
     "python3",
     [
@@ -305,6 +316,9 @@ test("the production host stores the role address without printing it", () => {
         "text = json.dumps(mod.permissions_policy('123456789012'))",
         "assert 'iam:CreateUser' not in text",
         "assert 'formula-preview-execution' in text",
+        "command = mod.doppler_set_command('/usr/bin/doppler')",
+        "assert command == ['/usr/bin/doppler', 'secrets', 'set', mod.SECRET_NAME, '--silent']",
+        "assert 'arn:aws' not in ' '.join(command)",
         "print('ok')",
       ].join("\n"),
     ],
@@ -312,6 +326,27 @@ test("the production host stores the role address without printing it", () => {
   );
   assert.equal(check.status, 0, check.stderr);
   assert.match(check.stdout, /ok/);
+  const keyFile = join(
+    tmpdir(),
+    `formula-ssh-${randomBytes(4).toString("hex")}`,
+  );
+  const prepare = spawnSync(
+    "python3",
+    ["scripts/gascity/prepare_ec2_ssh_key.py", keyFile],
+    {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        EC2_SSH_KEY: "line-one\\nline-two",
+        DOPPLER_TOKEN: "",
+      },
+    },
+  );
+  assert.equal(prepare.status, 0, prepare.stderr);
+  assert.match(prepare.stdout, /ssh key source=github/);
+  assert.equal(prepare.stdout.includes("line-one"), false);
+  assert.equal(readFileSync(keyFile, "utf8"), "line-one\nline-two\n");
+  rmSync(keyFile);
 });
 
 function memoryAws() {

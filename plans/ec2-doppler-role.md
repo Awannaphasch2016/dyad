@@ -6,8 +6,8 @@ Do not run Gas City rollout for this. That workflow SSHs in and then rebuilds th
 
 ## What you can check
 
-1. `EC2_SSH_KEY` is present in this repository's Actions secrets. The value is not in any committed file.
-2. A manual run of **Formula preview role** prints `setup-formula-role done` and a Doppler HTTP status of 200. The log does not print the SSH key, the AWS keys, or the role ARN.
+1. **Formula preview role** prints `ssh key source=github` or `ssh key source=doppler`. The log does not print the key.
+2. That run prints `doppler secrets set AWS_PREVIEW_FORMULA_ROLE_ARN ok` and `setup-formula-role done`. The log does not print the AWS keys or the role ARN.
 3. That run does not execute `gascity-rollout`.
 4. **Preview formula** then reads `AWS_PREVIEW_FORMULA_ROLE_ARN` from Doppler and prints the load balancer URL.
 
@@ -19,19 +19,19 @@ Do not run Gas City rollout for this. That workflow SSHs in and then rebuilds th
 | Formula preview role | `preview-formula-role.yml` | This is the reusable job. It already SSHs with the same key, known hosts, and host, then runs `scripts/gascity/setup_formula_role.py`. |
 | Preview formula      | `preview-formula.yml`      | Reads the stored name from Doppler afterward. It does not SSH.                                                                         |
 
-The last Formula preview role run stopped before a shell opened because `EC2_SSH_KEY` was empty. The host is still up. The placeholder in git has nothing to fill until that Actions secret is synced from Doppler project `dyad`, config `preview`.
+The last Formula preview role run stopped before a shell opened because the Actions secret `EC2_SSH_KEY` was empty. The host is still up. The job now reads that same name from Doppler with `DOPPLER_TOKEN` when the Actions secret is empty.
 
 Gas City rollout's SSH shape is the pattern already copied:
 
-- `scripts/gascity/write_ssh_key.py` writes the secret to a mode-600 file and does not print it.
+- `scripts/gascity/prepare_ec2_ssh_key.py` writes the secret to a mode-600 file and does not print it.
 - `.github/gascity_known_hosts` is the server's public host key.
 - The login is `ubuntu@13.251.216.187`.
 - On the host, `/etc/doppler/dyad-preview.token` and `/etc/doppler/aws-dev.token` are the Doppler logins. GitHub does not receive those tokens.
 
 ## Direction
 
-1. Confirm the Actions secret `EC2_SSH_KEY` is the key Doppler already syncs. Do not commit the key.
-2. Run **Formula preview role** once. The host creates role `github-preview-formula`, trusts `repo:Awannaphasch2016/dyad:ref:refs/heads/cursor/formula-config-ui-55d6`, and writes the address into the Doppler config that token file belongs to.
+1. **Formula preview role** logs in with `EC2_SSH_KEY` when that Actions secret is set. When it is empty, the same job downloads the key from Doppler with `DOPPLER_TOKEN` and does not print it.
+2. The host creates role `github-preview-formula`, trusts `repo:Awannaphasch2016/dyad:ref:refs/heads/cursor/formula-config-ui-55d6`, and runs `doppler secrets set AWS_PREVIEW_FORMULA_ROLE_ARN` into the Doppler config that `/etc/doppler/dyad-preview.token` belongs to.
 3. Leave **Gas City rollout** unchanged so a formula setup cannot rebuild production.
 4. Leave **Preview formula** as the consumer. It already waits for that Doppler name and assumes it.
 

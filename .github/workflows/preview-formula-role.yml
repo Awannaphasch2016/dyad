@@ -1,5 +1,5 @@
-# Store the formula preview role address in Doppler from the production host.
-# Does not roll out the host and does not print secret values.
+# Open a shell on the production host, then that host runs doppler secrets set.
+# Does not rebuild the host and does not print secret values.
 name: Formula preview role
 
 on:
@@ -9,6 +9,7 @@ on:
       - cursor/formula-config-ui-55d6
     paths:
       - scripts/gascity/setup_formula_role.py
+      - scripts/gascity/prepare_ec2_ssh_key.py
       - .github/workflows/preview-formula-role.yml
 
 permissions:
@@ -25,9 +26,10 @@ jobs:
       - name: Store the role address from the production host
         env:
           EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
         run: |
           set -euo pipefail
-          python3 scripts/gascity/write_ssh_key.py "$RUNNER_TEMP/gascity-ec2"
+          python3 scripts/gascity/prepare_ec2_ssh_key.py "$RUNNER_TEMP/gascity-ec2"
           ssh -i "$RUNNER_TEMP/gascity-ec2" \
             -o UserKnownHostsFile="$GITHUB_WORKSPACE/.github/gascity_known_hosts" \
             -o StrictHostKeyChecking=yes \
