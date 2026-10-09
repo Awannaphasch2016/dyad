@@ -14,6 +14,9 @@ import urllib.error
 import urllib.request
 
 DYAD_TOKEN_FILE = "/etc/doppler/dyad-preview.token"
+# Phase 3 of plans/doppler-organization.md installs this file; it is optional
+# until then and reported as absent, which is not a failure.
+PRD_TOKEN_FILE = "/etc/doppler/dyad-prd.token"
 AWS_TOKEN_FILE = "/etc/doppler/aws-dev.token"
 ROLE_SECRET = "AWS_PREVIEW_FORMULA_ROLE_ARN"
 SSH_KEY_SECRET = "EC2_SSH_KEY"
@@ -50,10 +53,13 @@ def doppler_get(token, url):
         return 0, {}
 
 
-def describe(label, path):
+def describe(label, path, optional=False):
     token = read_root_file(path)
     if not token:
-        print(f"{label}_token=missing file={path}")
+        if optional and not os.path.exists(path):
+            print(f"{label}_token=absent file={path}")
+        else:
+            print(f"{label}_token=missing file={path}")
         return False, None
     status, body = doppler_get(token, "https://api.doppler.com/v3/configs/config")
     config = body.get("config") or {}
@@ -78,6 +84,7 @@ def main():
     print("host-access-check start", flush=True)
     print(f"host={os.uname().nodename} user={os.environ.get('USER', 'unknown')}")
     ok_dyad, dyad_token = describe("dyad", DYAD_TOKEN_FILE)
+    describe("dyad_prd", PRD_TOKEN_FILE, optional=True)
     ok_aws, _aws_token = describe("aws", AWS_TOKEN_FILE)
     if ok_dyad:
         status, names = secret_names(dyad_token)
