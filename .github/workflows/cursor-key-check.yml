@@ -1,7 +1,7 @@
 # Confirm the CURSOR_API_KEY in Doppler dyad/preview can call the Cloud Agents
 # API, can see the implementation repository, and cannot see the ground-truth
 # fork. The key is masked and never printed. Repository names other than the
-# two under test are not printed either. Re-run after the secret was saved.
+# two under test are not printed either. Re-run after sdd-gitcon-impl was added to the Cursor GitHub App.
 name: Cursor API key check
 
 on:
