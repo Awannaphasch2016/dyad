@@ -32,8 +32,19 @@ report = {"projects": {}, "google_candidates": [], "drive": {}}
 
 
 def mask(value):
-    if value:
-        print(f"::add-mask::{value}")
+    # GitHub reads ::add-mask:: one line at a time, so a multi-line secret must
+    # be masked line by line. Passing the whole value prints every line after
+    # the first into the log in clear text. Mask each non-empty line and every
+    # whitespace-separated token so JSON field values are covered too.
+    if not value:
+        return
+    seen = set()
+    for line in str(value).splitlines():
+        for token in [line] + line.replace('"', " ").replace(",", " ").split():
+            token = token.strip().strip('"').strip(",")
+            if len(token) >= 8 and token not in seen:
+                seen.add(token)
+                print(f"::add-mask::{token}")
 
 
 def http(method, url, headers=None, body=None, raw=False):
@@ -82,10 +93,19 @@ def doppler_get(path, **params):
     return http("GET", f"{DOPPLER}/v3/{path}?{query}", AUTH)
 
 
-status, body = doppler_get("projects", per_page=100)
-if status == 200:
-    projects = [p["name"] for p in body.get("projects", [])]
-    print(f"projects listed: {projects}")
+projects = []
+page = 1
+while True:
+    status, body = doppler_get("projects", per_page=100, page=page)
+    if status != 200:
+        break
+    batch = [p["name"] for p in body.get("projects", [])]
+    projects.extend(batch)
+    if len(batch) < 100:
+        break
+    page += 1
+if projects:
+    print(f"projects listed ({len(projects)}): {sorted(projects)}")
 else:
     projects = CANDIDATE_PROJECTS
     print(f"project listing not permitted ({status}); probing {projects}")
