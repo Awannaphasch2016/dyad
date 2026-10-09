@@ -115,11 +115,19 @@ The workflow runs this script before pushing. The script needs Docker and does n
 
 A unit test in `deploy/preview/` style reads `axi-toolbox-image.yml` and asserts: `packages: write`, no `id-token`, no `DOPPLER_TOKEN`, no `EC2_SSH_KEY`, no `13.251.216.187`, and that the push trigger is path-filtered.
 
+## Status
+
+The first image is published from commit `5e952bb`:
+
+`ghcr.io/awannaphasch2016/axi-toolbox@sha256:1cdfdfc68982bf89728fd4cd1d89ca781fd00534634ba200a69117c4a49b0024`
+
+Tags `0.1.36` and `sha-5e952bbca6729cfc2383e23f182788a8d3d8cd6b`, for `linux/amd64` and `linux/arm64`. `toolbox.test.sh` passed in the run before the push. The package is public on GHCR.
+
 ## What you do
 
-1. Approve this plan.
-2. After the first image is pushed, confirm the digest line in the run log and try item 3 with your own token.
-3. Decide whether `pr-review-alerts.yml` is the first workflow to move onto the image.
+1. Try check 3 with your own token against the digest above.
+2. Decide whether `pr-review-alerts.yml` is the first workflow to move onto the image.
+3. When this merges to `main`, drop `cursor/axi-toolbox-image-plan-531e` from the workflow's push branches.
 
 Nothing in AWS, Doppler, or Cloudflare changes.
 
