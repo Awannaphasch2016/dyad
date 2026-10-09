@@ -3,6 +3,14 @@
 # The image carries no credentials. Pass GH_TOKEN at run time or mount a
 # read-only gh config at /home/agent/.config/gh. Versions come from
 # docker/axi/tools.env; see docs/axi-toolbox.md for how to bump them.
+
+# The operations AXI slot. By default this stage holds only the stub. When
+# packages/ops-axi exists, build with
+#   --build-context ops-axi=packages/ops-axi/dist
+# and its contents replace this stage.
+FROM scratch AS ops-axi
+COPY docker/axi/ops-axi-stub.sh /ops-axi-stub.sh
+
 FROM node:24-bookworm-slim
 
 ARG GH_VERSION
@@ -39,18 +47,13 @@ RUN npm install -g --prefix /opt/axi --ignore-scripts "gh-axi@${GH_AXI_VERSION}"
     && rm -rf /root/.npm /tmp/* \
     && test "$(gh-axi --version)" = "${GH_AXI_VERSION}"
 
-# The operations AXI slot. The stub is always present so the COPY succeeds
-# when packages/ops-axi does not exist in the build context; the glob sits on
-# that directory because BuildKit stats every literal path component. When
-# the package exists, its dist contents land beside the stub and the real
-# binary is linked.
-COPY docker/axi/ops-axi-stub.sh packages/ops-ax[i]/dist /opt/axi/local/
+COPY --from=ops-axi / /opt/axi/local/
 RUN if [ -f /opt/axi/local/bin/ops-axi.js ]; then \
         ln -s /opt/axi/local/bin/ops-axi.js /opt/axi/bin/ops-axi; \
     else \
-        ln -s /opt/axi/local/ops-axi-stub.sh /opt/axi/bin/ops-axi; \
+        chmod 755 /opt/axi/local/ops-axi-stub.sh \
+        && ln -s /opt/axi/local/ops-axi-stub.sh /opt/axi/bin/ops-axi; \
     fi \
-    && chmod 755 /opt/axi/local/ops-axi-stub.sh \
     && ops-axi --help >/dev/null
 
 COPY docker/axi/entrypoint.sh /opt/axi/entrypoint.sh

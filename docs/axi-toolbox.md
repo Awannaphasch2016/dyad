@@ -78,7 +78,7 @@ gh-axi setup hooks
 
 ## The operations AXI slot
 
-`/opt/axi/local` receives `packages/ops-axi/dist` when that directory exists in the build context. Until it does, `ops-axi --help` prints that the tool is not installed in this image and exits 0. The operations AXI has its own plan and depends on the preview and rollout workflows accepting `workflow_dispatch` inputs first.
+`/opt/axi/local` is filled from the named build context `ops-axi`. By default that is a stage holding only a stub, so `ops-axi --help` prints that the tool is not installed in this image and exits 0. Once `packages/ops-axi` exists, the build passes `--build-context ops-axi=packages/ops-axi/dist` and the real CLI takes the slot. The operations AXI has its own plan and depends on the preview and rollout workflows accepting `workflow_dispatch` inputs first.
 
 ## What the image does not do
 
