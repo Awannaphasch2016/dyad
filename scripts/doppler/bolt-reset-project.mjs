@@ -13,6 +13,12 @@ import { IMPLEMENTATION_QUESTION_ID } from "./bolt-workflow.mjs";
 
 export const PROMPT = "A single page that lists the North Pier lunch menu.";
 
+// The role-visibility check posts this question, then removes it. Reset removes
+// it too, so a failed check cannot leave it on the shared project.
+export const P3_IDEMPOTENCY_KEY = "p3:plan-approve";
+export const P3_QUESTION_BODY =
+  "P3 plan question: which name should the page use?";
+
 export function neonRows(payload) {
   const fields = Array.isArray(payload?.fields) ? payload.fields : [];
   const rows = Array.isArray(payload?.rows) ? payload.rows : [];
@@ -63,6 +69,17 @@ export function resetStatements() {
       name: "questions",
       query: "delete from wewebplus.questions where id = $1",
       params: [IMPLEMENTATION_QUESTION_ID],
+    },
+    {
+      name: "p3-answers",
+      query:
+        "delete from wewebplus.answers where question_id in (select id from wewebplus.questions where idempotency_key = $1)",
+      params: [P3_IDEMPOTENCY_KEY],
+    },
+    {
+      name: "p3-questions",
+      query: "delete from wewebplus.questions where idempotency_key = $1",
+      params: [P3_IDEMPOTENCY_KEY],
     },
   ];
 }

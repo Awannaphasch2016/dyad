@@ -9,6 +9,7 @@ on:
   push:
     branches:
       - cursor/automated-hitl-verification-851d
+      - cursor/hitl-p3-signin-d072
     paths:
       - .github/workflows/bolt-walkthrough-verify.yml
       - scripts/doppler/bolt-test-accounts.mjs
@@ -26,7 +27,7 @@ concurrency:
 
 jobs:
   verify:
-    if: github.ref == 'refs/heads/cursor/automated-hitl-verification-851d'
+    if: github.ref == 'refs/heads/cursor/automated-hitl-verification-851d' || github.ref == 'refs/heads/cursor/hitl-p3-signin-d072'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
