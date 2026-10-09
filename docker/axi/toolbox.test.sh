@@ -73,7 +73,8 @@ trap 'rm -rf "$tmp"' EXIT
 chmod 777 "$tmp"
 run -v "$tmp:/home/agent" "$image" true
 [[ -f "$tmp/.claude/settings.json" ]] || fail "entrypoint did not repair hooks over a mounted home"
-[[ -e "$tmp/.agents/skills/gh-axi" ]] || fail "entrypoint did not link the skill over a mounted home"
+# The link target lives inside the image, so test the link, not the target.
+[[ -L "$tmp/.agents/skills/gh-axi" ]] || fail "entrypoint did not link the skill over a mounted home"
 
 run "$image" ops-axi --help >/dev/null || fail "ops-axi --help failed"
 
