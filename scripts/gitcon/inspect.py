@@ -95,6 +95,17 @@ if report["cloc_excluded"]:
     php = report["cloc_excluded"].get("PHP", {}).get("code")
     total = report["cloc_excluded"].get("SUM", {}).get("code")
     print(f"cloc after exclusions: total code lines {total}, PHP {php}")
+application = run([
+    "cloc", "--vcs=git", "--json", "--quiet",
+    "--exclude-dir=" + ",".join(sorted(EXCLUDE_DIRS | {"lib", "libs", "ckeditor", "fileman", "fonts", "webfonts", "img", "pdf", "tcpdf", "mpdf", "mpdf-8.1.0", "adodb5"})),
+    "--not-match-d=assets/(vendor|lib|plugins)",
+    r"--not-match-f=(\.min\.(js|css)|composer\.lock|package-lock\.json|yarn\.lock)$",
+    "--exclude-lang=JSON,YAML,Markdown,Text,SVG,XML",
+    ".",
+])
+report["cloc_application"] = json.loads(application) if application.strip() else None
+if report["cloc_application"]:
+    print(f"cloc application code: total {report['cloc_application'].get('SUM', {}).get('code')} PHP {report['cloc_application'].get('PHP', {}).get('code')}")
 by_dir = {}
 for entry in tree:
     if entry["dir"] != "." and entry["dir"].count(os.sep) == 0 and entry["dir"] not in EXCLUDE_DIRS:
