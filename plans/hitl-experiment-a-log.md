@@ -10,7 +10,11 @@ Baseline, before the steps below: `answerHitlQuestion` returned `resolved: false
 
 ## P3 two sign-ins
 
-Not run. It needs two Dyad instances signed in as the project manager and the developer. The same visibility rule is already asserted by `src/main/factory_host_bridge_hitl.test.ts`: the developer sees status only, and an outsider organization sees nothing. A6 still waits on the live check.
+2026-10-09. Ran on the Bolt walkthrough with the automated sign-in from PR #91, not two Dyad windows. [PR #98](https://github.com/Awannaphasch2016/dyad/pull/98). Job [37976118225](https://github.com/Awannaphasch2016/dyad/actions/runs/37976118225): 6 passed, including `p3: a project-manager question is visible only to that role`.
+
+The job posted `plan-approve` with the machine token while both roles were signed in on the shared project, phase `implementation`, question `d34c0432-ba45-4a50-b295-a782c2eaf887`. The project manager session received the body and could answer. The developer session received status `open`, a hidden body, and a refused answer (403). The developer page did not show the question text. The same run's on-screen gate showed "Waiting on the Developer." to the project manager and "Approve the Implementation review." to the developer.
+
+The local unit test still covers the same rule in `src/main/factory_host_bridge_hitl.test.ts`. A6, the local end-to-end fixture, is still not run.
 
 ## A1 request marker
 
