@@ -43,3 +43,7 @@ No other workflow changes. **Formula preview role** is not run again. **Gas City
 6. The log does not print the SSH key, the AWS keys, or a Doppler token.
 
 The new commit has a new SHA, so **publish** builds `ghcr.io/<owner>/dyad:sha-<that-sha>` once. Later pushes of the same SHA reuse it. The image build is the long part. The role lookup is not.
+
+## What the run showed
+
+Run 37997749864 found the address and then GitHub logged `Skip output 'arn' since it may contain secret.` The address matches the Actions secret `AWS_PREVIEW_FORMULA_ROLE_ARN`, so GitHub will not pass it between jobs. The deploy job reads that secret itself in `role-to-assume`. The log shows the secret as hidden. The role name is not written to a job output.
