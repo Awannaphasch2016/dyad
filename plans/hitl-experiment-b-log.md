@@ -22,4 +22,16 @@ After `## Discovery summary`, the developer Continue control is disabled and the
 
 The project manager approves Discovery through `factory:approve`. A developer approve of Delivery is refused. The Experiment A fixtures then run in Implementation: the project manager is asked, then the developer, then the run ends on `## Implementation summary`. All three `factoryHostRuns` rows are Implementation. Delivery has no messages, and `isFactoryPhaseUnlocked("delivery")` stays false before the loop, during it, and after the summary. Implementation stays unlocked because Discovery is approved.
 
-P2 and C1–C4 are still open. This environment has no Cursor API key.
+## Section 8
+
+2026-10-09. A and B are done, so the decisions those runs can settle are filled in `plans/hitl-experiments-runbook.md` section 8.
+
+A request does not need a bead. The local resume edge stays in the bridge. `resolve_hitl_answer.py` stays for bead-backed gates and was not used here. The `stepId: "question"` relaxation stays; A6 did not need a role outside `project-manager` and `developer`. Both approval paths stay, behind `requirePhaseApproval`.
+
+The Cursor carrier and the Cursor follow-up are not decided.
+
+## P2
+
+2026-10-09. Still blocked. The process environment has no `CURSOR_API_KEY`. Doppler is not installed. The GitHub CLI token is a GitHub token. C1–C4 stay unstarted, because the runbook starts them only after P2.
+
+The diff from `cursor/galan-software-factory-2fff` does not touch `scripts/gascity/`, GasCity, the Neon schema, or Paperclip.
