@@ -8,7 +8,7 @@ This plan does not change any workflow in group 4. It does not fork `gh-axi`. It
 
 1. `docker run --rm ghcr.io/awannaphasch2016/axi-toolbox:<tag> gh-axi --version` prints the pinned version. `gh --version` and `node --version` print theirs.
 2. `docker run --rm ghcr.io/awannaphasch2016/axi-toolbox:<tag> gh-axi run list` with no token exits non-zero and prints the AXI `AUTH_REQUIRED` error, not a stack trace.
-3. The same command with `-e GH_TOKEN=…` and `-e GITHUB_REPOSITORY=Awannaphasch2016/dyad` prints the last ten runs of this repo in TOON form.
+3. The same command with `-e GH_TOKEN=…` prints the last ten runs of this repo in TOON form. `GH_REPO` already defaults to this repo inside the image.
 4. `docker inspect` shows user `agent`, not root. `docker history` shows no `GH_TOKEN`, `GITHUB_TOKEN`, or `DOPPLER_TOKEN` layer.
 5. A GitHub Actions job declares `container: ghcr.io/awannaphasch2016/axi-toolbox@sha256:…` and runs `gh-axi pr view "$PR"` with only `GH_TOKEN: ${{ github.token }}`. It installs nothing.
 6. On Devbox `Wewebplus-ci`, `docker run` of the image with the mounted `gh` config runs `gh-axi workflow run preview-wake.yml` and the run appears in the Actions tab.
@@ -30,25 +30,25 @@ This plan does not change any workflow in group 4. It does not fork `gh-axi`. It
 
 The image carries only the AXIs that talk to GitHub. The browser AXI needs Chrome and the review AXI needs a server; both are out of scope.
 
-| Tool                | Source                          | Pinned how                          | Why it is here                                                 |
-| ------------------- | ------------------------------- | ----------------------------------- | -------------------------------------------------------------- |
-| `gh`                | GitHub apt repository           | version in `tools.env`              | `gh-axi` shells out to it, and `gh auth` owns the login        |
-| `gh-axi`            | npm, `gh-axi@0.1.35` today      | version in `tools.env`              | Issues, pull requests, runs, workflow dispatch, releases       |
-| `axi-sdk-js`        | npm, as a `gh-axi` dependency   | the lockfile that `npm ci` produces | Shared by every `*-axi` CLI; not installed on its own          |
-| operations AXI      | `packages/ops-axi` in this repo | the commit that built the image     | `preview up`, `preview wake`, `rollout`, once those exist      |
-| `jq`, `git`, `curl` | Debian                          | Debian stable                       | `gascity-rollout.yml` and the preview scripts already use them |
+| Tool                | Source                                               | Pinned how                          | Why it is here                                                 |
+| ------------------- | ---------------------------------------------------- | ----------------------------------- | -------------------------------------------------------------- |
+| `gh`                | `.deb` from the `cli/cli` release, checksum verified | version in `tools.env`              | `gh-axi` shells out to it, and `gh auth` owns the login        |
+| `gh-axi`            | npm, `gh-axi@0.1.36` today                           | version in `tools.env`              | Issues, pull requests, runs, workflow dispatch, releases       |
+| `axi-sdk-js`        | npm, as a `gh-axi` dependency                        | the lockfile that `npm ci` produces | Shared by every `*-axi` CLI; not installed on its own          |
+| operations AXI      | `packages/ops-axi` in this repo                      | the commit that built the image     | `preview up`, `preview wake`, `rollout`, once those exist      |
+| `jq`, `git`, `curl` | Debian                                               | Debian stable                       | `gascity-rollout.yml` and the preview scripts already use them |
 
 `tasks-axi`, `quota-axi`, and `chrome-devtools-axi` are not in the image. Adding one later is one line in `tools.env` and a rebuild.
 
 ## Image shape
 
-Base `node:24-bookworm-slim`. The GitHub apt repository is added with its signed key, and `gh` is installed from it at the pinned version. npm global installs go to `/opt/axi`, which is on `PATH` for every user. The install uses `npm install -g --ignore-scripts` with the exact version, so the image does not run package lifecycle scripts.
+Base `node:24-bookworm-slim`. `gh` is installed from the pinned release's `.deb` on `github.com/cli/cli`, after its SHA-256 is checked against the release checksum file, so the same version lands on amd64 and arm64. npm global installs go to `/opt/axi`, which is on `PATH` for every user. The install uses `npm install -g --ignore-scripts` with the exact version, so the image does not run package lifecycle scripts.
 
 User `agent`, uid 10001, home `/home/agent`. The image runs as that user. Root is only used while installing.
 
 `/opt/axi` is owned by root and the image runs as `agent`, so the `update` command that `axi-sdk-js` gives every AXI fails with a permission error instead of writing a newer version into a container that is about to be discarded. Versions change in `tools.env` only, and `docs/axi-toolbox.md` says so.
 
-`gh-axi setup hooks` runs at build time as `agent`. That writes the Claude Code, Codex, and OpenCode SessionStart hooks into `/home/agent` and copies the `gh-axi` Agent Skill into `/home/agent/.agents/skills`. When a caller mounts their own home over `/home/agent`, those files vanish; the entrypoint runs `gh-axi setup hooks` again when the hook files are missing, then execs the command. The entrypoint never touches `gh auth`.
+`gh-axi setup hooks` runs at build time as `agent`. That writes the Claude Code, Codex, and OpenCode SessionStart hooks into `/home/agent` (`.claude/settings.json`, `.codex/hooks.json`, `.codex/config.toml`, `.config/opencode/plugins/axi-gh-axi.js`). The Dockerfile then links the `gh-axi` Agent Skill that ships in the npm package into `/home/agent/.agents/skills/gh-axi` and `/home/agent/.claude/skills/gh-axi`. When a caller mounts their own home over `/home/agent`, those files vanish; the entrypoint runs `gh-axi setup hooks` again and relinks the skill when the hook file is missing, then execs the command. The entrypoint never touches `gh auth`.
 
 The operations AXI slot is `/opt/axi/local`. The Dockerfile copies `packages/ops-axi/dist` into it with a glob source (`dis[t]`), so the build succeeds when that directory is absent and copies it when it exists. The `ops-axi` binary links into `/opt/axi/bin`. Until that package exists, `ops-axi --help` prints that the tool is not installed in this image.
 
@@ -65,7 +65,7 @@ The image has no credentials. Each place that runs it provides one of:
 | Cursor cloud agent    | `GH_TOKEN` from the environment                                 | The cloud agent has a repo-scoped token in its environment already.                                                                                                                                                          |
 | Laptop                | the same read-only mount, or `GH_TOKEN` from a fine-grained PAT | The PAT needs Actions read and write, pull requests read and write.                                                                                                                                                          |
 
-`GITHUB_REPOSITORY=Awannaphasch2016/dyad` is set as an image default so `gh-axi` resolves the repo even without a checkout. A caller running against another repo overrides it or passes `-R`.
+`GH_REPO=Awannaphasch2016/dyad` is set as an image default so `gh-axi` resolves the repo even without a checkout; `gh-axi` reads `--repo`, then `GH_REPO`, then the git remote. A caller running against another repo overrides it or passes `-R`.
 
 The image does not receive `DOPPLER_TOKEN`, `EC2_SSH_KEY`, or any AWS key. The operations AXI only dispatches workflows; the workflows hold those secrets.
 
