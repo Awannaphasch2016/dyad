@@ -50,15 +50,15 @@ So, to the question "can Cursor launch another worker agent programmatically": y
 
 ### A.5 Missing infrastructure and permissions
 
-| Item                                                             | Purpose                                                                           | Status                                                                                                                                         |
-| ---------------------------------------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CURSOR_API_KEY` as a Cloud Agent Runtime Secret                 | Coordinator creates, polls, cancels the worker, reads usage, lists repositories   | Missing. Add in Cursor Dashboard, Cloud Agents, Secrets, scoped to `Awannaphasch2016/dyad`. User or service-account key, not a team-admin key. |
-| Implementation repository                                        | Where the worker writes code, separate from Dyad and from the ground truth        | Missing. Proposed `Awannaphasch2016/sdd-gitcon-impl`, public.                                                                                  |
-| Cursor GitHub App installed on the implementation repository     | The worker can only be created on repositories returned by `GET /v1/repositories` | Missing. One-time action in GitHub, Settings, Applications, Cursor.                                                                            |
-| Read access to `Wewebplus/dev25-git-con` for one analyst session | Ground-truth inspection and `cloc`                                                | Missing. The repository returns 404 with and without this token. The organization lists zero public repositories.                              |
-| Read access to the Google Doc and Drive folder                   | Functional requirements                                                           | Missing. Export URL returns 401; folder redirects to login.                                                                                    |
-| Fine-grained PAT for the implementation repository (optional)    | Only if that repository is private, so `sdd-verify.yml` can check it out          | Not needed when the repository is public.                                                                                                      |
-| Docker in the worker's Cloud Agent environment (optional)        | Lets the worker test its own `Dockerfile` before finishing                        | Unknown. This VM has no Docker. The worker can self-test with `php -S` instead; the verifier builds the image.                                 |
+| Item                                                             | Purpose                                                                           | Status                                                                                                                                                                                                            |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CURSOR_API_KEY` as a Cloud Agent Runtime Secret                 | Coordinator creates, polls, cancels the worker, reads usage, lists repositories   | Missing. Add in Cursor Dashboard, Cloud Agents, Secrets, scoped to `Awannaphasch2016/dyad`. User or service-account key, not a team-admin key.                                                                    |
+| Implementation repository                                        | Where the worker writes code, separate from Dyad and from the ground truth        | Missing. Proposed `Awannaphasch2016/sdd-gitcon-impl`, public.                                                                                                                                                     |
+| Cursor GitHub App installed on the implementation repository     | The worker can only be created on repositories returned by `GET /v1/repositories` | Missing. One-time action in GitHub, Settings, Applications, Cursor.                                                                                                                                               |
+| Read access to `Wewebplus/dev25-git-con` for one analyst session | Ground-truth inspection and `cloc`                                                | Missing. The repository returns 404 with and without this token. The organization lists zero public repositories.                                                                                                 |
+| Read access to the Google Doc and Drive folder                   | Functional requirements                                                           | Resolved 2026-10-09 via service account `gitcon-reader@wewebplus.iam.gserviceaccount.com` (key `GOOGLE_DRIVE_SA_JSON` in Doppler `dyad/preview`). Result in B.1a: no GIT Conference functional spec exists there. |
+| Fine-grained PAT for the implementation repository (optional)    | Only if that repository is private, so `sdd-verify.yml` can check it out          | Not needed when the repository is public.                                                                                                                                                                         |
+| Docker in the worker's Cloud Agent environment (optional)        | Lets the worker test its own `Dockerfile` before finishing                        | Unknown. This VM has no Docker. The worker can self-test with `php -S` instead; the verifier builds the image.                                                                                                    |
 
 Secrets referenced by existing workflows, by name only (`rg 'secrets\.' .github/workflows`): `GITHUB_TOKEN`, `DYAD_GITHUB_APP_PRIVATE_KEY`, `DOPPLER_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `NEON_API_KEY`, `MAILGUN_API_KEY`, `EC2_SSH_KEY`, `CLOUDFLARE_ZONE_ID`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `ANTHROPIC_API_KEY`, `AWS_PREVIEW_FORMULA_ROLE_ARN`, Apple and Azure signing secrets. Whether each is set cannot be confirmed from here (`gh secret list` is 403). None of them is required for run 1. The verifier uses only `GITHUB_TOKEN`.
 
@@ -66,7 +66,9 @@ Secrets referenced by existing workflows, by name only (`rg 'secrets\.' .github/
 
 ### B.1 What could and could not be inspected
 
-Could not: the repository `Wewebplus/dev25-git-con` (404 for this token and for anonymous `git ls-remote`), the Google Doc (401), the Drive folder (login). The question of which Drive documents describe GIT Conference rather than GIT Omni Channel is therefore open; nothing in this plan relies on either document.
+Could not: the repository `Wewebplus/dev25-git-con` (404 for this token and for anonymous `git ls-remote`).
+
+Could, after the folder was shared with the service account: the Google Doc and the whole Drive folder, every file exported or downloaded and read by a GitHub Actions job (`scripts/doppler/google_check.py` on branch `cursor/doppler-google-check-be23`, runs 37979566018 and 37979944112, report sealed to a session key so no document text reached a public log). Findings are in B.1a.
 
 Could: the public website https://gitconference.git.or.th, fetched page by page with `curl` on 2026-10-09. Why this site is taken as the deployed form of `dev25-git-con` (inferred, not verified): the repository name reads as "dev 2025 GIT Conference"; the site is "GIT 2025, The 8th International Gem and Jewelry Conference"; the site's Content-Security-Policy allows frames and objects from `https://project.wewebserver.com`, which matches the Wewebplus organization; the site sets `PHPSESSID`, matching "Technology: PHP". Confirming the link needs one person with repository access to compare `front/template/default/` against the site's asset paths.
 
@@ -115,6 +117,24 @@ Verified (observed in responses): the pages, fields, tables, texts, redirects an
 Inferred (not observed): server-side validation rules; what the contact form does after submit (reCAPTCHA blocks a test); account creation and member registration flows; the admin CMS; the database schema; the PDF download tokeniser behind `/en/download/?file=...`; whether the 302 pages were removed or are time-gated.
 
 Enough information exists for a small reproducible slice because the slice below uses only verified content and makes the one unverified behaviour (form submission) explicit in the specification.
+
+### B.1a What the Google Doc and the Drive folder actually contain, verified 2026-10-09
+
+Which artifacts describe GIT Conference and which describe GIT Omni Channel:
+
+| Artifact                                                                            | Describes        | Content                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ----------------------------------------------------------------------------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Google Doc `10GhhSmsrvTDXINiKgu6yotpX6bC3wiP0okuUZm5rwA8` "Project: GIT Conference" | GIT Conference   | Six lines, 227 characters: title "GIT Conference (ISO Document)", repo URL, branch `main`, stack PHP, run at `localhost:8080/dev25-git-con`, debug view `?mode=debug`. No requirements, no pages, no acceptance criteria.                                                                                                                                                                                  |
+| Folder `9 iso format example documents` (9 subfolders, 65 files)                    | GIT Omni Channel | ISO/IEC 29110 work products of project `GIT_Omni_Channel_67` by WeWebPlus: cost sheet, SOW, project plan, risk register, kick-off and progress minutes, change requests, correction register, SRS, verification and validation records, software design, prototype, RTM, test case template, test and UAT reports, operation guide, user manual, delivery documents, SLA. Zero files mention "Conference". |
+| `OneDrive_1_19-07-2026.zip` (165 MB, 56 entries)                                    | GIT Omni Channel | The same nine subfolders exported from OneDrive; a duplicate of the folder above, not additional material.                                                                                                                                                                                                                                                                                                 |
+
+Conclusion: the Drive holds no functional specification of GIT Conference. The folder name and the Doc title together read as "produce ISO 29110 documents for GIT Conference in the format of these Omni Channel examples", which is a documentation task on the existing code, not the input to a spec-driven build. The experiment therefore keeps the specification proposed in B.5, derived from the live site. What the Omni Channel examples do give the experiment is a house format for three artifacts, and the plan adopts it so the output is recognisable to the team:
+
+- `SPEC.md` follows the SRS layout `16.WP-SR-RS-01`: section 4.1 page structure (header, body, footer, each as a numbered table of elements), section 4.2 numbered requirement rows with columns "requirement", "evidence", "reference". The "reference" column points to FR ids instead of TOR clauses.
+- `acceptance/criteria.json` carries the Requirement Traceability Matrix columns from `19.WP-SE-Traceabilities-01`: requirement, function mapping, design item, code reference, test case id, test description. The verifier fills "code reference" and "test result" after the run.
+- The verifier's report mirrors the test sheet `20.WP-SA-TC-01`: test case id, scenario, steps, expected result, actual result, status, date, issue. `results.json` is the machine-readable form; the Markdown summary is the human form.
+
+Nothing from the Omni Channel documents enters the worker's prompt or the implementation repository; they describe a different product and would only add noise.
 
 ### B.5 Smallest useful implementation target, proposed for approval
 
@@ -216,7 +236,7 @@ Required steps are numbered. Optional improvements are in D.9.
 2. Create `Awannaphasch2016/sdd-gitcon-impl`, public, empty, default branch `main`.
 3. Install the Cursor GitHub App on `sdd-gitcon-impl` (GitHub, Settings, Applications, Cursor, Repository access).
 4. Add `CURSOR_API_KEY` as a Runtime Secret for Cloud Agents on `Awannaphasch2016/dyad` (Cursor Dashboard, Cloud Agents, Secrets). Use a user or service-account key from Dashboard, API Keys.
-5. Optional but recommended for B.3: grant one analyst session read access to `Wewebplus/dev25-git-con` and the Google Doc, or run the `cloc` command in B.3 yourself and paste the report.
+5. Optional but recommended for B.3: grant one analyst session read access to `Wewebplus/dev25-git-con` (the Google Doc is already read, see B.1a), or run the `cloc` command in B.3 yourself and paste the report.
 
 ### D.1 Dyad harness branch, required
 
@@ -506,18 +526,19 @@ Required and missing:
 
 Optional:
 
-| Name                                           | Where                | Purpose                                                                         |
-| ---------------------------------------------- | -------------------- | ------------------------------------------------------------------------------- |
-| `SDD_IMPL_GITHUB_TOKEN`                        | Dyad Actions secret  | Only if the implementation repository is private                                |
-| Read access to `Wewebplus/dev25-git-con`       | GitHub, for a person | `cloc` and source-level requirement verification (B.3, B.4)                     |
-| Read access to the Google Doc and Drive folder | Google, for a person | Confirm which documents are GIT Conference and whether a functional spec exists |
+| Name                                     | Where                | Purpose                                                     |
+| ---------------------------------------- | -------------------- | ----------------------------------------------------------- |
+| `SDD_IMPL_GITHUB_TOKEN`                  | Dyad Actions secret  | Only if the implementation repository is private            |
+| Read access to `Wewebplus/dev25-git-con` | GitHub, for a person | `cloc` and source-level requirement verification (B.3, B.4) |
+
+Resolved during planning: Drive read access, via the service account `gitcon-reader@wewebplus.iam.gserviceaccount.com` whose key is `GOOGLE_DRIVE_SA_JSON` in Doppler `dyad/preview`, read from GitHub Actions through the `DOPPLER_SERVICE_IDENTITY_ID` OIDC identity. The experiment itself does not need it; the Drive contents are summarised in B.1a.
 
 Blockers and how the plan handles each:
 
 | #   | Blocker                                                                                  | Handling                                                                                                    |
 | --- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
 | B1  | Ground truth repository inaccessible from this environment                               | Spec built from the live site; `cloc` deferred to D.0.5; link between repo and site marked inferred         |
-| B2  | Google Doc and Drive inaccessible                                                        | Not used; the slice relies on observed behaviour                                                            |
+| B2  | Google Doc and Drive hold no GIT Conference specification (B.1a)                         | Slice relies on observed site behaviour; Omni Channel documents supply the house format only                |
 | B3  | No Docker in Cloud Agent VMs observed here                                               | Verification in GitHub Actions; worker self-tests with `php -S`                                             |
 | B4  | `workflow_dispatch` unavailable off the default branch                                   | Push-triggered workflow with a path filter; dispatch is an optional improvement after merge                 |
 | B5  | Spec Kit clarify and checklist gates expect a person                                     | Prompt instructs resolution from the Assumptions section and recording in `NOTES.md`; counted in the report |
