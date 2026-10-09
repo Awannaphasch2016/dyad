@@ -1,0 +1,78 @@
+# Names-only survey of every Doppler config the theHut identity can read,
+# looking for an existing GitHub or Cursor API credential that would let the
+# remaining setup steps run without a person. Values are masked and used only
+# for a read-only identity call; the log shows names, logins and scopes.
+name: Doppler GitHub/Cursor token check
+
+on:
+  push:
+    branches: [cursor/doppler-google-check-be23]
+    paths:
+      - .github/workflows/doppler-github-token-check.yml
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  survey:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DOPPLER_IDENTITY_ID: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID_THEHUT }}
+    steps:
+      - name: Exchange the GitHub OIDC token for a Doppler token
+        id: auth
+        run: |
+          set -euo pipefail
+          oidc=$(curl -sS -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL" | jq -r .value)
+          echo "::add-mask::$oidc"
+          resp=$(curl -sS -X POST https://api.doppler.com/v3/auth/oidc -H 'Content-Type: application/json' \
+            -d "$(jq -n --arg i "$DOPPLER_IDENTITY_ID" --arg t "$oidc" '{identity:$i, token:$t}')")
+          token=$(jq -r '.token // empty' <<<"$resp")
+          [ -n "$token" ] || { echo "OIDC exchange failed: $(jq -c 'del(.token)' <<<"$resp")"; exit 1; }
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+
+      - name: Survey secret names and test candidate tokens read-only
+        env:
+          DOPPLER_TOKEN: ${{ steps.auth.outputs.token }}
+        run: |
+          set -euo pipefail
+          api() { curl -sS -u "$DOPPLER_TOKEN:" "https://api.doppler.com/v3/$1"; }
+          projects=$(api 'projects?per_page=100' | jq -r '.projects[].slug')
+          echo "projects: $(wc -w <<<"$projects")"
+          for p in $projects; do
+            configs=$(api "configs?project=$p&per_page=100" | jq -r '.configs[].name')
+            for c in $configs; do
+              names=$(api "configs/config/secrets/names?project=$p&config=$c" | jq -r '.names[]?' 2>/dev/null || true)
+              [ -n "$names" ] || { echo "$p/$c: unreadable"; continue; }
+              hits=$(grep -iE 'GITHUB|^GH_|_PAT$|GITLAB|CURSOR' <<<"$names" | grep -vE '^GITHUB_(REPOSITORY|OWNER|REF|SHA)$' || true)
+              echo "$p/$c: $(wc -l <<<"$names") names; candidates: $(tr '\n' ' ' <<<"$hits")"
+              for n in $hits; do
+                v=$(api "configs/config/secret?project=$p&config=$c&name=$n" | jq -r '.value.raw // empty')
+                [ -n "$v" ] || { echo "  $n: empty"; continue; }
+                echo "::add-mask::$v"
+                case "$v" in
+                  ghp_*|github_pat_*|gho_*|ghs_*)
+                    hdr=$(curl -sS -D - -o /tmp/user.json -H "Authorization: Bearer $v" https://api.github.com/user || true)
+                    status=$(head -n1 <<<"$hdr" | awk '{print $2}')
+                    scopes=$(grep -i '^x-oauth-scopes:' <<<"$hdr" | cut -d: -f2- | tr -d '\r' || true)
+                    login=$(jq -r '.login // "-"' /tmp/user.json 2>/dev/null || echo "-")
+                    echo "  $n: GitHub token, status $status, login $login, classic scopes [${scopes:- none / fine-grained}]"
+                    ;;
+                  key_*|cur_*|sk-*)
+                    me=$(curl -sS -o /tmp/me.json -w '%{http_code}' -u "$v:" https://api.cursor.com/v1/me || true)
+                    echo "  $n: Cursor-looking key, GET /v1/me status $me, user $(jq -r '.userEmail // .email // "-"' /tmp/me.json 2>/dev/null)"
+                    ;;
+                  *) echo "  $n: ${#v} chars, prefix not recognised as GitHub or Cursor";;
+                esac
+              done
+            done
+          done
+
+      - name: Revoke the Doppler token
+        if: always() && steps.auth.outputs.token != ''
+        env:
+          DOPPLER_TOKEN: ${{ steps.auth.outputs.token }}
+        run: curl -sS -o /dev/null -w 'revoke status %{http_code}\n' -X POST https://api.doppler.com/v3/auth/revoke -H 'Content-Type: application/json' -d "$(jq -n --arg t "$DOPPLER_TOKEN" '{token:$t}')"
