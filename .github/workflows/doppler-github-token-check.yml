@@ -75,4 +75,6 @@ jobs:
         if: always() && steps.auth.outputs.token != ''
         env:
           DOPPLER_TOKEN: ${{ steps.auth.outputs.token }}
-        run: curl -sS -o /dev/null -w 'revoke status %{http_code}\n' -X POST https://api.doppler.com/v3/auth/revoke -H 'Content-Type: application/json' -d "$(jq -n --arg t "$DOPPLER_TOKEN" '{token:$t}')"
+        run: |
+          curl -sS -o /dev/null -w 'revoke status %{http_code}\n' -X POST https://api.doppler.com/v3/auth/revoke \
+            -H 'Content-Type: application/json' -d "$(jq -n --arg t "$DOPPLER_TOKEN" '{token:$t}')"
