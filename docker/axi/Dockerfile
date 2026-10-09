@@ -40,9 +40,11 @@ RUN npm install -g --prefix /opt/axi --ignore-scripts "gh-axi@${GH_AXI_VERSION}"
     && test "$(gh-axi --version)" = "${GH_AXI_VERSION}"
 
 # The operations AXI slot. The stub is always present so the COPY succeeds
-# when packages/ops-axi/dist does not exist in the build context; when it
-# does, its contents land beside the stub and the real binary is linked.
-COPY docker/axi/ops-axi-stub.sh packages/ops-axi/dis[t] /opt/axi/local/
+# when packages/ops-axi does not exist in the build context; the glob sits on
+# that directory because BuildKit stats every literal path component. When
+# the package exists, its dist contents land beside the stub and the real
+# binary is linked.
+COPY docker/axi/ops-axi-stub.sh packages/ops-ax[i]/dist /opt/axi/local/
 RUN if [ -f /opt/axi/local/bin/ops-axi.js ]; then \
         ln -s /opt/axi/local/bin/ops-axi.js /opt/axi/bin/ops-axi; \
     else \
