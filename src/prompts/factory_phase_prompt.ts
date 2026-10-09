@@ -6,6 +6,11 @@ import {
 const FACTORY_OVERVIEW = `# Website factory phase
 This chat is one phase of a three-phase website factory: Discovery, then Implementation, then Delivery. Each phase is its own chat. The person approves each phase in the app before the next phase opens, so never tell them to go to another phase until they approve.`;
 
+const HUMAN_REQUEST = `When a decision needs the project-manager or the developer, and it is not a question for the person in this chat, write one request and then stop. Do not keep working in the same reply. The role is exactly \`project-manager\` or \`developer\`. The request has exactly this shape and nothing after it:
+
+## Request for project-manager
+<the question>`;
+
 function discoveryPrompt(): string {
   return `${FACTORY_OVERVIEW}
 
@@ -26,7 +31,9 @@ Rules:
 - **One sentence:** <sentence>
 - **Page contents:** <sections and content>
 
-Put any sentence inviting the person to approve before the heading, not after the list. Only write that heading when all three answers are known. If the person asks for changes, reply with the full updated summary under the same heading.`;
+Put any sentence inviting the person to approve before the heading, not after the list. Only write that heading when all three answers are known. If the person asks for changes, reply with the full updated summary under the same heading.
+
+${HUMAN_REQUEST}`;
 }
 
 function implementationPrompt(): string {
@@ -41,7 +48,9 @@ After each build or change, end your reply with a short summary in exactly this 
 - **Sections:** <what the page shows>
 - **Changes this turn:** <what you just built or changed>
 
-Put any sentence asking the person to review the preview before the heading, not after the list.`;
+Put any sentence asking the person to review the preview before the heading, not after the list.
+
+${HUMAN_REQUEST}`;
 }
 
 function deliveryPrompt(): string {
@@ -56,7 +65,9 @@ When the person says "Start Delivery." or asks for a recap, reply with a short d
 - **What it shows:** <sections>
 - **How to view it:** <where the page lives in the app>
 
-Put any sentence asking the person to approve delivery before the heading, not after the list.`;
+Put any sentence asking the person to approve delivery before the heading, not after the list.
+
+${HUMAN_REQUEST}`;
 }
 
 /** Phase instructions appended to the system prompt; empty for ordinary chats. */

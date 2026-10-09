@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { extractFactoryPhaseSummary } from "@/lib/factoryPhase";
+import { extractFactoryRequest } from "@/lib/factoryRequest";
 import {
   appendFactoryPhaseSystemPrompt,
   factoryPhaseSystemPrompt,
@@ -39,6 +40,17 @@ describe("factoryPhaseSystemPrompt", () => {
       const template = prompt.slice(prompt.indexOf("## "));
       const block = template.split("\n\n")[0];
       expect(extractFactoryPhaseSummary(block, phase)).not.toBeNull();
+    }
+  });
+
+  it("tells every phase how to stop and ask a role", () => {
+    for (const phase of ["discovery", "implementation", "delivery"] as const) {
+      const prompt = factoryPhaseSystemPrompt(phase);
+      expect(prompt).toContain("then stop");
+      expect(extractFactoryRequest(prompt)).toEqual({
+        role: "project-manager",
+        body: "<the question>",
+      });
     }
   });
 
