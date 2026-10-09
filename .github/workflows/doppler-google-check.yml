@@ -25,7 +25,7 @@ jobs:
 
       - name: Read Doppler and probe Drive
         env:
-          DOPPLER_IDENTITY_ID: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          DOPPLER_IDENTITY_ID: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID_THEHUT }}
           DOC_ID: 10GhhSmsrvTDXINiKgu6yotpX6bC3wiP0okuUZm5rwA8
           FOLDER_ID: 1Ti4bk4OBcazwM_OextrA-0OEVknJPagW
         run: python3 scripts/doppler/google_check.py
