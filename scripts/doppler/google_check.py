@@ -23,7 +23,7 @@ DOC_ID = os.environ["DOC_ID"]
 FOLDER_ID = os.environ["FOLDER_ID"]
 IDENTITY = os.environ["DOPPLER_IDENTITY_ID"]
 GOOGLE_NAME = re.compile(
-    r"GOOGLE|GDRIVE|GSUITE|GCP|GAPI|SERVICE_ACCOUNT|OAUTH|CLIENT_ID|CLIENT_SECRET|REFRESH_TOKEN|DRIVE",
+    r"GOOGLE|GDRIVE|GSUITE|GCP|GAPI|GCLOUD|FIREBASE|GMAIL|SHEETS|CREDENTIALS|JSON_KEY|_SA_|SERVICE_ACCOUNT|OAUTH|CLIENT_ID|CLIENT_SECRET|REFRESH_TOKEN|DRIVE",
     re.I,
 )
 CANDIDATE_PROJECTS = ["dyad", "aws", "google", "thehut", "wewebplus", "hitl", "drive", "shared"]
@@ -107,7 +107,7 @@ for project in projects:
         names = body.get("names", [])
         matching = sorted(n for n in names if GOOGLE_NAME.search(n) and not n.startswith("DOPPLER_"))
         print(f"{project}/{config}: {len(names)} secrets, google-like names: {matching}")
-        report["projects"][project]["configs"][config] = {"count": len(names), "google_like": matching}
+        report["projects"][project]["configs"][config] = {"count": len(names), "google_like": matching, "names": sorted(names)}
         for name in matching:
             report["google_candidates"].append({"project": project, "config": config, "name": name})
 
