@@ -422,13 +422,20 @@ def ensure_role(aws, env, account_id):
     return role_arn
 
 
-def main():
-    print("setup-formula-role start", flush=True)
-    dyad_token = read_root_file(DYAD_TOKEN_FILE)
-    aws_token = read_root_file(AWS_TOKEN_FILE)
-    dyad_status, project, config = doppler_config(dyad_token)
-    print(f"dyad token http {dyad_status} project={project or 'unknown'} config={config or 'unknown'}")
-    aws_env = doppler_download(aws_token)
+def download_project(token, project, config):
+    status, body = doppler_json(
+        token,
+        "https://api.doppler.com/v3/configs/config/secrets/download"
+        f"?format=json&project={project}&config={config}",
+    )
+    if status != 200 or not isinstance(body, dict):
+        raise SystemExit(
+            f"doppler download failed ({status}) project={project} config={config}"
+        )
+    return body
+
+
+def publish_role(aws_env, token, project, config):
     for name in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION"):
         if not aws_env.get(name):
             raise SystemExit(f"aws doppler config is missing {name}")
@@ -452,8 +459,8 @@ def main():
         ensure_oidc_provider(aws, env, account_id)
         role_arn = ensure_role(aws, env, account_id)
         role_path = write_role_file(role_arn)
-        print(f"role_file={role_path}")
-        status = store_role_arn(dyad_token, role_arn, project, config)
+        print(f"role_file={role_path}", flush=True)
+        status = store_role_arn(token, role_arn, project, config)
         where = f"project={project or 'unknown'} config={config or 'unknown'}"
         if status == 0:
             print(f"doppler secrets set {SECRET_NAME} ok {where}")
@@ -461,14 +468,40 @@ def main():
             print(f"doppler {SECRET_NAME} http {status} {where}")
         else:
             print(f"doppler write failed ({status}) {where}")
-        print("setup-formula-role done")
+        print("setup-formula-role done", flush=True)
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
 
+def main():
+    print("setup-formula-role start", flush=True)
+    dyad_token = read_root_file(DYAD_TOKEN_FILE)
+    aws_token = read_root_file(AWS_TOKEN_FILE)
+    dyad_status, project, config = doppler_config(dyad_token)
+    print(
+        f"dyad token http {dyad_status} project={project or 'unknown'} config={config or 'unknown'}",
+        flush=True,
+    )
+    aws_env = doppler_download(aws_token)
+    publish_role(aws_env, dyad_token, project, config)
+
+
+def main_admin():
+    print("setup-formula-role admin start", flush=True)
+    token = os.environ.get("DOPPLER_ADMIN_TOKEN", "").strip()
+    if not token:
+        raise SystemExit("doppler admin token absent")
+    aws_env = download_project(token, "aws", "dev")
+    print("doppler aws dev downloaded", flush=True)
+    publish_role(aws_env, token, "dyad", "preview")
+
+
 if __name__ == "__main__":
     try:
-        main()
+        if "--admin" in sys.argv:
+            main_admin()
+        else:
+            main()
     except SystemExit:
         raise
     except Exception as error:
