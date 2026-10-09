@@ -188,7 +188,6 @@ export function buildTaskDefinition({
         portMappings: [{ containerPort: 8373, protocol: "tcp" }],
         environment: FORMULA_ENVIRONMENT,
         secrets,
-        linuxParameters: { sharedMemorySize: 1024 },
         logConfiguration: {
           logDriver: "awslogs",
           options: {

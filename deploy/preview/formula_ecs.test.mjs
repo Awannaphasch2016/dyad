@@ -103,7 +103,7 @@ test("the task publishes only the browser bridge port", () => {
   assert.deepEqual(container.portMappings, [
     { containerPort: 8373, protocol: "tcp" },
   ]);
-  assert.equal(container.linuxParameters.sharedMemorySize, 1024);
+  assert.equal(container.linuxParameters, undefined);
   assert.equal(task.cpu, "2048");
   assert.equal(task.memory, "8192");
   assert.equal(task.ephemeralStorage.sizeInGiB, 40);
@@ -225,7 +225,7 @@ test("sync keeps one service and does not publish the factory port", async () =>
   assert.deepEqual(container.portMappings, [
     { containerPort: 8373, protocol: "tcp" },
   ]);
-  assert.equal(container.linuxParameters.sharedMemorySize, 1024);
+  assert.equal(container.linuxParameters, undefined);
   assert.equal(aws.state.secret.NOVNC_PASSWORD, "generated-16");
   assert.equal(aws.state.secret.GAS_CITY_CITY_NAME, "wewebplus");
   assert.equal(Object.hasOwn(aws.state.secret, "CLOUDFLARE_API_TOKEN"), false);
