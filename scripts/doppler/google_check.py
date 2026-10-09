@@ -202,6 +202,8 @@ def classify(project, config, names):
             continue
         if info.get("type") == "service_account" and info.get("private_key"):
             print(f"{project}/{config}/{name}: service account JSON, email domain {info.get('client_email', '').split('@')[-1]}")
+            report["service_account_email"] = info.get("client_email")
+            report["service_account_project"] = f"{project}/{config}/{name}"
             return f"service_account:{name}", service_account_access_token(info)
         if info.get("refresh_token") and info.get("client_id") and info.get("client_secret"):
             print(f"{project}/{config}/{name}: OAuth user credential JSON")
