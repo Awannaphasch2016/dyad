@@ -321,8 +321,9 @@ test("the production host stores the role address without printing it", () => {
         "mod = importlib.util.module_from_spec(spec)",
         "spec.loader.exec_module(mod)",
         "policy = mod.trust_policy('123456789012')",
-        "sub = policy['Statement'][0]['Condition']['StringEquals']['token.actions.githubusercontent.com:sub']",
+        "sub = policy['Statement'][0]['Condition']['StringLike']['token.actions.githubusercontent.com:sub']",
         "assert sub == mod.TRUST_SUB",
+        "assert sub == 'repo:Awannaphasch2016/dyad:*'",
         "text = json.dumps(mod.permissions_policy('123456789012'))",
         "assert 'iam:CreateUser' not in text",
         "assert 'formula-preview-execution' in text",
@@ -344,6 +345,24 @@ test("the production host stores the role address without printing it", () => {
   );
   assert.equal(check.status, 0, check.stderr);
   assert.match(check.stdout, /ok/);
+  const oidc = spawnSync("python3", ["scripts/gascity/print_oidc_subject.py"], {
+    input: JSON.stringify({
+      value:
+        "aaa." +
+        Buffer.from(
+          JSON.stringify({
+            sub: "repo:Awannaphasch2016/dyad:ref:refs/heads/cursor/formula-config-ui-55d6",
+            aud: "sts.amazonaws.com",
+          }),
+        ).toString("base64url") +
+        ".signature-must-not-print",
+    }),
+    encoding: "utf8",
+  });
+  assert.equal(oidc.status, 0, oidc.stderr);
+  assert.match(oidc.stdout, /oidc sub=repo:Awannaphasch2016\/dyad:ref:/);
+  assert.match(oidc.stdout, /oidc aud=sts\.amazonaws\.com/);
+  assert.equal(oidc.stdout.includes("signature-must-not-print"), false);
   const keyFile = join(
     tmpdir(),
     `formula-ssh-${randomBytes(4).toString("hex")}`,

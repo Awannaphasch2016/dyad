@@ -167,6 +167,14 @@ jobs:
           PR: ${{ steps.pr.outputs.number }}
         run: node deploy/preview/controller.mjs attach --pr "$PR" --out /tmp/preview-runtime.sh
 
+      - name: Record the GitHub login subject
+        run: |
+          set -euo pipefail
+          set +x
+          curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" \
+            | python3 scripts/gascity/print_oidc_subject.py
+
       - name: Assume the AWS role
         uses: aws-actions/configure-aws-credentials@v4
         with:
