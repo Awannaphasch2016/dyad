@@ -74,6 +74,23 @@ export function assertGateRole(
 }
 
 /**
+ * A named gate keeps its fixed role. Any other step is a role request, and
+ * the role has to be one of the two factory roles.
+ */
+export function roleForQuestionStep(
+  stepId: string,
+  targetRoleId: string,
+): AdminRoleId {
+  if (roleForGateStep(stepId)) return assertGateRole(stepId, targetRoleId);
+  if (!isAdminRoleId(targetRoleId)) {
+    throw new Error(
+      `${stepId} is not a request for ${targetRoleId || "that role"}`,
+    );
+  }
+  return targetRoleId;
+}
+
+/**
  * Same organization sees status. The body and the answer control exist only
  * for the membership role the question names. Any other organization is absent.
  */

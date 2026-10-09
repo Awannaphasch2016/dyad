@@ -19,6 +19,8 @@ import {
 import { escapeXmlContent } from "../../shared/xmlEscape";
 import { computeChatTurnPayloadHash } from "@/ipc/utils/chat_turn_intent_hash";
 import { dispatchChatIntentAndWait } from "@/ipc/services/chat_actor_service";
+
+export type FactoryRunDispatch = typeof dispatchChatIntentAndWait;
 import type { SerializableChatTurnIntent } from "@/chat_stream/transport";
 
 export type FactoryHostDatabase = typeof productionDb;
@@ -257,10 +259,11 @@ export async function startFactoryRun(
     prompt: string;
     idempotencyKey: string;
   },
-  dispatch?: typeof dispatchChatIntentAndWait,
+  dispatch?: FactoryRunDispatch,
+  options?: { requireLink?: boolean },
 ) {
   const state = readFactoryState(database, input.appId);
-  if (!state.factoryHostManaged) {
+  if ((options?.requireLink ?? true) && !state.factoryHostManaged) {
     throw new FactoryHostError("App is not linked to Gas City", 409);
   }
   const chatId = resolveFactoryPhaseChats(database, input.appId)[input.phase];

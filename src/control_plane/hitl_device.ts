@@ -1,12 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
-import { hitlAnswers, hitlQuestions } from "@/db/schema";
+import { factoryHostRuns, hitlAnswers, hitlQuestions } from "@/db/schema";
+import { FACTORY_PHASES, type FactoryPhase } from "@/lib/factoryPhase";
 import type { FactoryHostDatabase } from "@/main/factory_host_service";
-import { FactoryHostError } from "@/main/factory_host_service";
 import {
-  assertGateRole,
+  FactoryHostError,
+  startFactoryRun,
+  type FactoryRunDispatch,
+} from "@/main/factory_host_service";
+import {
   decideAnswer,
   presentQuestion,
+  roleForQuestionStep,
   type HitlCaller,
   type HitlQuestionRecord,
   type HitlQuestionView,
@@ -92,7 +97,7 @@ export function createHitlQuestion(
 ): { question: HitlQuestionRecord; created: boolean } {
   let targetRoleId: HitlQuestionRecord["targetRoleId"];
   try {
-    targetRoleId = assertGateRole(input.stepId, input.targetRoleId);
+    targetRoleId = roleForQuestionStep(input.stepId, input.targetRoleId);
   } catch (error) {
     throw new FactoryHostError(
       error instanceof Error ? error.message : "Invalid gate",
@@ -138,9 +143,18 @@ export function createHitlQuestion(
   return { question: rowToRecord(stored), created: true };
 }
 
+function isFactoryPhase(value: string): value is FactoryPhase {
+  return (FACTORY_PHASES as readonly string[]).includes(value);
+}
+
 export async function answerHitlQuestion(
   database: DeviceDb,
-  input: { questionId: string; caller: HitlCaller; body: string },
+  input: {
+    questionId: string;
+    caller: HitlCaller;
+    body: string;
+    dispatch?: FactoryRunDispatch;
+  },
 ): Promise<{ view: HitlQuestionView; resolved: boolean }> {
   const row = database
     .select()
@@ -196,7 +210,65 @@ export async function answerHitlQuestion(
     body: input.body,
     createdAt: answeredAt,
   });
-  return { view, resolved: false };
+  const resolved = await resumeLocalRun(database, {
+    appId: updated.appId,
+    phase: updated.phase,
+    runId: updated.runId,
+    questionId: updated.id,
+    questionBody: updated.body,
+    answerBody: input.body,
+    dispatch: input.dispatch,
+  });
+  return { view, resolved };
+}
+
+/**
+ * A question filed against a local factory run starts one follow-up run.
+ * An answer that is already stored returns before this runs.
+ * Questions that belong to a GasCity bead have no local run and stay
+ * unresolved here; the bead worker still closes those.
+ */
+async function resumeLocalRun(
+  database: DeviceDb,
+  input: {
+    appId: number;
+    phase: string;
+    runId: string;
+    questionId: string;
+    questionBody: string;
+    answerBody: string;
+    dispatch?: FactoryRunDispatch;
+  },
+): Promise<boolean> {
+  if (!isFactoryPhase(input.phase)) return false;
+  const localRun = database
+    .select()
+    .from(factoryHostRuns)
+    .where(eq(factoryHostRuns.runId, input.runId))
+    .get();
+  if (!localRun || localRun.appId !== input.appId) return false;
+  const idempotencyKey = `${input.questionId}:resume`;
+  try {
+    await startFactoryRun(
+      database,
+      {
+        appId: input.appId,
+        phase: input.phase,
+        prompt: `${input.questionBody}\n\n${input.answerBody}`,
+        idempotencyKey,
+      },
+      input.dispatch,
+      { requireLink: false },
+    );
+  } catch {
+    return false;
+  }
+  const resume = database
+    .select()
+    .from(factoryHostRuns)
+    .where(eq(factoryHostRuns.idempotencyKey, idempotencyKey))
+    .get();
+  return resume?.acceptance === "accepted";
 }
 
 export async function syncRemote(

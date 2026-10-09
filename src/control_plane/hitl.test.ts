@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   decideAnswer,
   presentQuestion,
+  roleForQuestionStep,
   type HitlCaller,
   type HitlQuestionRecord,
 } from "./hitl";
@@ -72,6 +73,19 @@ describe("HITL question visibility", () => {
     expect(
       presentQuestion(question(), caller({ roleId: null }))?.body,
     ).toBeNull();
+  });
+
+  it("keeps a named gate on its role and accepts any other step for a factory role", () => {
+    expect(roleForQuestionStep("plan-approve", "project-manager")).toBe(
+      "project-manager",
+    );
+    expect(() => roleForQuestionStep("plan-approve", "developer")).toThrow(
+      /not a gate/,
+    );
+    expect(roleForQuestionStep("question", "developer")).toBe("developer");
+    expect(() => roleForQuestionStep("question", "reviewer")).toThrow(
+      /not a request/,
+    );
   });
 
   it("does not open a second answer after the question is closed", () => {

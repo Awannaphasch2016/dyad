@@ -21,3 +21,11 @@ The three phase prompts tell the agent to write `## Request for project-manager`
 ## A2 stop classification
 
 `classifyFactoryStop` in `src/lib/factoryStop.ts`. One case per row of the status table, plus a request beating a summary, in `src/lib/factoryStop.test.ts`. Local status `completed` counts as finished. A `rejected` run is abandoned, so every status the function accepts returns a class.
+
+## A3 request without a bead
+
+`roleForQuestionStep` keeps `plan-approve` on the project manager and accepts `stepId: "question"` for the developer. The bridge no longer requires `gateBeadId`. `src/main/factory_host_bridge_hitl.test.ts` stores that question with `beadId` null and still returns 400 when `plan-approve` names the developer.
+
+## A4 resume from an answer
+
+Answering a question whose `runId` is a local factory run starts one follow-up. The prompt contains the question and the answer. The idempotency key is `<question id>:resume`. A second answer does not start another run. `resolved` is true only when that follow-up was accepted. A question with no local run, including the existing gate test, still returns `resolved: false`. The follow-up does not require the app to be linked to GasCity. Asserted by "starts one resume run from an answer and ignores a second answer".
