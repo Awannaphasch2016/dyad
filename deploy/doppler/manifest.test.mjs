@@ -1,0 +1,59 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+
+const root = new URL("../../", import.meta.url);
+const manifest = JSON.parse(
+  readFileSync(new URL("manifest.json", import.meta.url), "utf8"),
+);
+
+function names(slug) {
+  return manifest.environments[slug].names;
+}
+
+test("every secret the operational workflows read is in the ci environment", () => {
+  const ci = new Set(names("ci"));
+  for (const file of manifest.operationalWorkflows) {
+    const text = readFileSync(
+      new URL(`.github/workflows/${file}`, root),
+      "utf8",
+    );
+    for (const match of text.matchAll(/secrets\.([A-Z_][A-Z0-9_]*)/g)) {
+      const name = match[1];
+      if (name === "GITHUB_TOKEN") continue;
+      assert.ok(
+        ci.has(name),
+        `${file} reads secrets.${name}, which is not in manifest ci`,
+      );
+    }
+  }
+});
+
+test("the prd environment is exactly the rollout allowlist minus the aws project's names", () => {
+  const source = readFileSync(
+    new URL("scripts/gascity/write_rollout_env.py", root),
+    "utf8",
+  );
+  const block = source.match(/ALLOW = \(([\s\S]*?)\)/);
+  assert.ok(block, "ALLOW tuple not found");
+  const allow = [...block[1].matchAll(/"([A-Z_][A-Z0-9_]*)"/g)].map(
+    (m) => m[1],
+  );
+  const fromDyad = allow.filter((n) => !n.startsWith("AWS_"));
+  assert.deepEqual([...names("prd")].sort(), fromDyad.sort());
+});
+
+test("ci and prd share no names and the ssh key never reaches the host", () => {
+  const ci = new Set(names("ci"));
+  for (const name of names("prd"))
+    assert.ok(!ci.has(name), `${name} is in both ci and prd`);
+  assert.ok(!names("prd").includes("EC2_SSH_KEY"));
+});
+
+test("names are sorted and valid Doppler classic names", () => {
+  for (const slug of Object.keys(manifest.environments)) {
+    const list = names(slug);
+    assert.deepEqual(list, [...list].sort(), `${slug} names are not sorted`);
+    for (const name of list) assert.match(name, /^[A-Z][A-Z0-9_]*$/);
+  }
+});

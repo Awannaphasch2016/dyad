@@ -1,0 +1,37 @@
+{
+  "project": "dyad",
+  "source": "preview",
+  "environments": {
+    "ci": {
+      "purpose": "What GitHub Actions needs. Synced to this repository's Actions secrets.",
+      "names": [
+        "AWS_PREVIEW_FORMULA_ROLE_ARN",
+        "CLOUDFLARE_ACCOUNT_ID",
+        "CLOUDFLARE_API_TOKEN",
+        "CLOUDFLARE_ZONE_ID",
+        "DOPPLER_TOKEN",
+        "EC2_SSH_KEY",
+        "NEON_API_KEY"
+      ]
+    },
+    "prd": {
+      "purpose": "The production host runtime. One service token, /etc/doppler/dyad-prd.token.",
+      "names": [
+        "CLERK_PUBLISHABLE_KEY",
+        "CLERK_SECRET_KEY",
+        "GAS_CITY_HOST_BRIDGE_TOKEN",
+        "NOVNC_PASSWORD",
+        "WEWEBPLUS_DATABASE_URL",
+        "WEWEBPLUS_SECRETS_KEY"
+      ]
+    }
+  },
+  "operationalWorkflows": [
+    "ec2-access-check.yml",
+    "gascity-rollout.yml",
+    "preview-formula-role.yml",
+    "preview-formula.yml",
+    "preview-image.yml",
+    "preview.yml"
+  ]
+}
