@@ -243,7 +243,8 @@ OFFICE_TEXT_XML = {
 }
 TEXT_EXT = (".txt", ".md", ".csv", ".json", ".yaml", ".yml", ".xml", ".html", ".htm", ".sql", ".php", ".js", ".css")
 PER_FILE_CHARS = 80000
-MAX_DOWNLOAD_BYTES = 60 * 1024 * 1024
+MAX_DOWNLOAD_BYTES = 400 * 1024 * 1024
+ZIP_TEXT_BUDGET = 3 * 1024 * 1024
 TAG = re.compile(r"<[^>]+>")
 
 
@@ -279,10 +280,11 @@ def zip_contents(data, label):
     except zipfile.BadZipFile:
         out["error"] = "bad zip"
         return out
+    budget = ZIP_TEXT_BUDGET
     with zf:
         for info in zf.infolist():
             out["entries"].append({"name": info.filename, "size": info.file_size})
-            if info.is_dir() or info.file_size > 20 * 1024 * 1024:
+            if info.is_dir() or info.file_size > 20 * 1024 * 1024 or budget <= 0:
                 continue
             lower = info.filename.lower()
             ext = os.path.splitext(lower)[1]
@@ -292,7 +294,9 @@ def zip_contents(data, label):
             elif ext in TEXT_EXT:
                 text = zf.read(info).decode("utf-8", "replace")
             if text:
-                out["texts"][info.filename] = text[:PER_FILE_CHARS]
+                text = text[:PER_FILE_CHARS]
+                budget -= len(text)
+                out["texts"][info.filename] = text
     print(f"{label}: zip entries={len(out['entries'])} text_entries={len(out['texts'])}")
     return out
 
