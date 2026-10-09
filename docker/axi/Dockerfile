@@ -4,10 +4,10 @@
 # read-only gh config at /home/agent/.config/gh. Versions come from
 # docker/axi/tools.env; see docs/axi-toolbox.md for how to bump them.
 
-# The operations AXI slot. By default this stage holds only the stub. When
-# packages/ops-axi exists, build with
-#   --build-context ops-axi=packages/ops-axi/dist
-# and its contents replace this stage.
+# The operations AXI slot. Without a named context this stage holds only the
+# stub. The workflow builds with
+#   --build-context ops-axi=packages/ops-axi
+# and the package contents replace this stage.
 FROM scratch AS ops-axi
 COPY docker/axi/ops-axi-stub.sh /ops-axi-stub.sh
 
@@ -49,7 +49,8 @@ RUN npm install -g --prefix /opt/axi --ignore-scripts "gh-axi@${GH_AXI_VERSION}"
 
 COPY --from=ops-axi / /opt/axi/local/
 RUN if [ -f /opt/axi/local/bin/ops-axi.js ]; then \
-        ln -s /opt/axi/local/bin/ops-axi.js /opt/axi/bin/ops-axi; \
+        chmod 755 /opt/axi/local/bin/ops-axi.js \
+        && ln -s /opt/axi/local/bin/ops-axi.js /opt/axi/bin/ops-axi; \
     else \
         chmod 755 /opt/axi/local/ops-axi-stub.sh \
         && ln -s /opt/axi/local/ops-axi-stub.sh /opt/axi/bin/ops-axi; \

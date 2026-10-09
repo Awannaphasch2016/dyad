@@ -2,7 +2,8 @@
 # Checks for the AXI toolbox image. Needs Docker. Does not need a GitHub token
 # and does not reach GitHub after the build.
 #
-# Set AXI_TOOLBOX_IMAGE to test an image that is already built.
+# Set AXI_TOOLBOX_IMAGE to test an image that is already built. Set
+# AXI_TOOLBOX_EXPECT_OPS_AXI=0 for an image built without the ops-axi context.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -18,6 +19,7 @@ if [[ -z "$image" ]]; then
     --file docker/axi/Dockerfile \
     --build-arg "GH_VERSION=${GH_VERSION}" \
     --build-arg "GH_AXI_VERSION=${GH_AXI_VERSION}" \
+    --build-context ops-axi=packages/ops-axi \
     --tag "$image" \
     .
 fi
@@ -82,7 +84,10 @@ run -v "$tmp:/home/agent" "$image" true
 # The link target lives inside the image, so test the link, not the target.
 [[ -L "$tmp/.agents/skills/gh-axi" ]] || fail "entrypoint did not link the skill over a mounted home"
 
-run "$image" ops-axi --help >/dev/null || fail "ops-axi --help failed"
+got="$(run "$image" ops-axi --help)" || fail "ops-axi --help failed"
+if [[ "${AXI_TOOLBOX_EXPECT_OPS_AXI:-1}" == 1 ]]; then
+  [[ "$got" == *"operations["* ]] || fail "ops-axi is the stub, not the package: $got"
+fi
 
 got="$(run "$image" sh -c 'echo "$GH_REPO"')"
 [[ -n "$got" ]] || fail "GH_REPO default is empty"
