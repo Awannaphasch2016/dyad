@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   setup:
@@ -22,12 +23,44 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      # The SSH key comes from the synced GitHub secret when present, else
+      # from Doppler by OIDC (see .github/actions/doppler-oidc). Either way
+      # it goes straight into a mode-600 file.
+      - name: Log in to Doppler by OIDC
+        id: doppler
+        uses: ./.github/actions/doppler-oidc
+        with:
+          identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+
+      - name: Fetch the SSH key from Doppler when GitHub has none
+        if: steps.doppler.outputs.ok == 'true'
+        env:
+          SYNCED_EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${SYNCED_EC2_SSH_KEY//[[:space:]]/}" ]]; then
+            echo "ec2_ssh_key_fetch=skipped reason=github-secret-present"
+            exit 0
+          fi
+          status="$(curl -sS -o "$RUNNER_TEMP/key.json" -w '%{http_code}' \
+            -H "Authorization: Bearer ${DOPPLER_TOKEN}" \
+            "https://api.doppler.com/v3/configs/config/secret?project=dyad&config=preview&name=EC2_SSH_KEY" || echo 000)"
+          echo "ec2_ssh_key_fetch=http-${status} project=dyad config=preview"
+          if [[ "$status" == "200" ]]; then
+            umask 077
+            jq -r '.value.computed // empty' "$RUNNER_TEMP/key.json" > "$RUNNER_TEMP/gascity-ec2"
+            [[ -s "$RUNNER_TEMP/gascity-ec2" ]] || rm -f "$RUNNER_TEMP/gascity-ec2"
+          fi
+          rm -f "$RUNNER_TEMP/key.json"
+
       - name: Store the role address from the production host
         env:
           EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
         run: |
           set -euo pipefail
-          python3 scripts/gascity/write_ssh_key.py "$RUNNER_TEMP/gascity-ec2"
+          if [[ ! -f "$RUNNER_TEMP/gascity-ec2" ]]; then
+            python3 scripts/gascity/write_ssh_key.py "$RUNNER_TEMP/gascity-ec2"
+          fi
           ssh -i "$RUNNER_TEMP/gascity-ec2" \
             -o UserKnownHostsFile="$GITHUB_WORKSPACE/.github/gascity_known_hosts" \
             -o StrictHostKeyChecking=yes \

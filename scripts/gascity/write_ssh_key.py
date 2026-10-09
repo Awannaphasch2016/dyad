@@ -13,7 +13,7 @@ def main() -> int:
     value = os.environ.get("EC2_SSH_KEY", "")
     if not value.strip():
         sys.stderr.write(
-            "EC2_SSH_KEY is empty. Doppler's GitHub sync must provide it.\n"
+            "EC2_SSH_KEY is empty. A Doppler sync or the OIDC fetch step must provide it.\n"
         )
         return 1
     if "\n" not in value and "\\n" in value:
