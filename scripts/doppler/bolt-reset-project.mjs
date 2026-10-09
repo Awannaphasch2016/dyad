@@ -111,6 +111,32 @@ function truthy(value) {
   return value === true || value === "t" || value === "true";
 }
 
+export function deliveredQuery() {
+  const statement = checkQuery();
+  return {
+    query: `${statement.query},
+      (select count(*) from wewebplus.answers where question_id = $3) as answers`,
+    params: statement.params,
+  };
+}
+
+export function deliveredProblems(row) {
+  const problems = [];
+  const phase = row?.phase == null ? "absent" : String(row.phase);
+  if (phase !== "delivered") problems.push(`phase=${phase}`);
+  if (Number(row?.user_messages ?? 0) < 1) problems.push("user_messages=0");
+  if (Number(row?.assistant_messages ?? 0) < 1) {
+    problems.push("assistant_messages=0");
+  }
+  const question =
+    row?.question_status == null ? "absent" : String(row.question_status);
+  if (question !== "answered") problems.push(`question=${question}`);
+  if (Number(row?.answers ?? 0) < 1) problems.push("answers=0");
+  if (!truthy(row?.has_document)) problems.push("document_html=absent");
+  if (!truthy(row?.has_delivered)) problems.push("delivered_at=absent");
+  return problems;
+}
+
 export function implementationProblems(row) {
   const problems = [];
   const phase = row?.phase == null ? "absent" : String(row.phase);
@@ -169,18 +195,38 @@ export async function resetWalkthroughProject() {
   }
 }
 
-export async function checkWalkthroughProject() {
+async function requireDatabase() {
   const databaseUrl = (process.env.WEWEBPLUS_DATABASE_URL ?? "").trim();
   if (!databaseUrl) throw new Error("Question store is unavailable.");
-  const row = (await neonRowsQuery(databaseUrl, checkQuery()))[0] ?? {};
-  const problems = implementationProblems(row);
+  return databaseUrl;
+}
+
+function reportRow(row) {
   console.log(
-    `phase=${row.phase ?? "absent"} user_messages=${Number(row.user_messages ?? 0)} assistant_messages=${Number(row.assistant_messages ?? 0)} question=${row.question_status ?? "absent"}`,
+    `phase=${row.phase ?? "absent"} user_messages=${Number(row.user_messages ?? 0)} assistant_messages=${Number(row.assistant_messages ?? 0)} question=${row.question_status ?? "absent"} answers=${Number(row.answers ?? 0)}`,
   );
+}
+
+export async function checkWalkthroughProject() {
+  const row =
+    (await neonRowsQuery(await requireDatabase(), checkQuery()))[0] ?? {};
+  const problems = implementationProblems(row);
+  reportRow(row);
   if (problems.length > 0) {
     throw new Error(`Walkthrough check failed: ${problems.join(" ")}`);
   }
   console.log("walkthrough_check=implementation");
+}
+
+export async function checkDeliveredProject() {
+  const row =
+    (await neonRowsQuery(await requireDatabase(), deliveredQuery()))[0] ?? {};
+  const problems = deliveredProblems(row);
+  reportRow(row);
+  if (problems.length > 0) {
+    throw new Error(`Walkthrough check failed: ${problems.join(" ")}`);
+  }
+  console.log("walkthrough_check=delivered");
 }
 
 const entry = process.argv[1];
@@ -188,7 +234,9 @@ if (entry && import.meta.url === pathToFileURL(entry).href) {
   const run =
     process.argv[2] === "check"
       ? checkWalkthroughProject
-      : resetWalkthroughProject;
+      : process.argv[2] === "check-delivered"
+        ? checkDeliveredProject
+        : resetWalkthroughProject;
   run().catch((error) => {
     console.log(redact(error?.message || error));
     process.exit(1);

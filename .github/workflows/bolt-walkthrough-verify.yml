@@ -79,7 +79,7 @@ jobs:
           npm ci --ignore-scripts
           npx playwright install --with-deps chromium
 
-      - name: Run the walkthrough checks
+      - name: Run the single-account checks
         working-directory: e2e-walkthrough
         env:
           WALKTHROUGH_URL: https://bolt-walkthrough-55d6.karant-test-egress-canary.workers.dev
@@ -93,7 +93,7 @@ jobs:
         run: |
           set -euo pipefail
           set +x
-          npx playwright test
+          npx playwright test tests/sign-in.spec.ts tests/pm-discovery.spec.ts
 
       - name: Confirm the project is in Implementation
         if: always()
@@ -102,10 +102,56 @@ jobs:
           set +x
           node scripts/doppler/bolt-reset-project.mjs check | tee /tmp/check.txt
           {
-            echo "### Stored project"
+            echo "### Stored project after one account"
             echo
             echo '```'
             cat /tmp/check.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Return the project to Discovery for both roles
+        if: always()
+        run: |
+          set -euo pipefail
+          set +x
+          node scripts/doppler/bolt-reset-project.mjs | tee /tmp/reset-two.txt
+          {
+            echo "### Reset before both roles"
+            echo
+            echo '```'
+            cat /tmp/reset-two.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run both roles
+        if: always()
+        working-directory: e2e-walkthrough
+        env:
+          WALKTHROUGH_URL: https://bolt-walkthrough-55d6.karant-test-egress-canary.workers.dev
+          WALKTHROUGH_PM_USER_ID: ${{ steps.accounts.outputs.pm_user_id }}
+          WALKTHROUGH_DEV_USER_ID: ${{ steps.accounts.outputs.dev_user_id }}
+          WALKTHROUGH_PM_IDENTIFIER: ${{ steps.accounts.outputs.pm_identifier }}
+          WALKTHROUGH_DEV_IDENTIFIER: ${{ steps.accounts.outputs.dev_identifier }}
+          WALKTHROUGH_PM_EMAIL: ${{ steps.accounts.outputs.pm_email }}
+          WALKTHROUGH_DEV_EMAIL: ${{ steps.accounts.outputs.dev_email }}
+          WALKTHROUGH_OUTSIDER_USER_ID: ${{ steps.accounts.outputs.outsider_user_id }}
+          WALKTHROUGH_PASSWORD_FACTOR: ${{ steps.accounts.outputs.password_first_factor }}
+        run: |
+          set -euo pipefail
+          set +x
+          npx playwright test tests/two-roles.spec.ts
+
+      - name: Confirm the project is Delivered
+        if: always()
+        run: |
+          set -euo pipefail
+          set +x
+          node scripts/doppler/bolt-reset-project.mjs check-delivered | tee /tmp/check-delivered.txt
+          {
+            echo "### Stored project after both roles"
+            echo
+            echo '```'
+            cat /tmp/check-delivered.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 

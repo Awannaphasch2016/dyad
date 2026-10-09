@@ -114,7 +114,7 @@ export async function composerCovered(box: Locator): Promise<boolean> {
 // Discovery keeps the approval card open over the whole page, so the
 // composer can be covered. A real keystroke is used when it is not. When it
 // is, the same React handlers run from a DOM event and the report says so.
-export async function sendWalkthroughPrompt(page: Page, prompt: string) {
+export async function pressComposerEnter(page: Page, prompt: string) {
   const box = page.getByPlaceholder("Describe the page");
   await expect(box).toBeVisible();
   const covered = await composerCovered(box);
@@ -145,3 +145,5 @@ export async function sendWalkthroughPrompt(page: Page, prompt: string) {
   });
   return { covered };
 }
+
+export const sendWalkthroughPrompt = pressComposerEnter;

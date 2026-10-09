@@ -20,6 +20,17 @@ import {
 
 // `+clerk_test` addresses never receive mail and are accepted by a Development
 // instance in test mode. `example.com` is the domain Clerk documents for them.
+// A third test user who is never added to Wewebplus. The project is owned by
+// that one org, so this account is how the walkthrough proves a 404.
+export const OUTSIDER_ACCOUNT = {
+  key: "outsider",
+  externalId: "walkthrough-test-outsider",
+  email: "walkthrough-outsider+clerk_test@example.com",
+  roleId: "none",
+  firstName: "Walkthrough",
+  lastName: "Outsider",
+};
+
 export const TEST_ACCOUNTS = [
   {
     key: "pm",
@@ -139,6 +150,42 @@ export function planTestAccounts({
     );
   }
   return plan;
+}
+
+// The outsider is created so a browser can sign in, and is never joined to
+// the organization. A membership would make the project visible.
+export function planOutsider({ accounts, organization }) {
+  if (!organization) throw new Error("Wewebplus organization was not found");
+  const spec = OUTSIDER_ACCOUNT;
+  const email = spec.email.toLowerCase();
+  if (
+    !isClerkTestEmail(email) ||
+    email === PROJECT_MANAGER_EMAIL.toLowerCase() ||
+    email === DEVELOPER_EMAIL.toLowerCase()
+  ) {
+    throw new Error("refusing to manage outsider: not a test address");
+  }
+  const existing = (accounts ?? []).find(
+    (account) =>
+      account.externalId === spec.externalId ||
+      (account.emails ?? []).some(
+        (item) => String(item).toLowerCase() === email,
+      ),
+  );
+  if (existing && (existing.orgIds ?? []).includes(organization.id)) {
+    throw new Error("the outsider test account is a Wewebplus member");
+  }
+  return {
+    ...spec,
+    userId: existing ? existing.id : null,
+    identifier: existing
+      ? (existing.emails ?? []).length > 0
+        ? "email"
+        : "none"
+      : null,
+    create: !existing,
+    joinOrg: false,
+  };
 }
 
 export function testMembershipStatements({ organizationId, accounts }) {
@@ -319,11 +366,26 @@ export async function ensureTestAccounts() {
   })) {
     await neonQuery(databaseUrl, statement.query, statement.params);
   }
+  const outsider = planOutsider({
+    accounts: directory.accounts,
+    organization,
+  });
+  if (outsider.create) {
+    const made = await createUser(headers, outsider);
+    outsider.userId = made.userId;
+    outsider.identifier = made.identifier;
+    created += 1;
+  }
+  if (outsider.identifier === "none") {
+    const attached = await attachEmail(headers, outsider);
+    outsider.identifier = attached.identifier;
+    outsider.emailAttach = attached.emailAttach;
+  }
   const after = await organizationCounts(headers, organization.id);
   console.log(
-    `org=${organization.name} created=${created} joined=${joined} clerk_members=${after.memberCount}/${after.maxMemberships} db_memberships=${plan.length}`,
+    `org=${organization.name} created=${created} joined=${joined} clerk_members=${after.memberCount}/${after.maxMemberships} db_memberships=${plan.length} outsider=not-a-member`,
   );
-  const lines = outputLines(plan, capabilities);
+  const lines = outputLines([...plan, outsider], capabilities);
   for (const line of lines) console.log(line);
   const outputFile = process.env.GITHUB_OUTPUT ?? "";
   if (outputFile) {

@@ -8,6 +8,8 @@ import {
   checkQuery,
   countRecord,
   countsQuery,
+  deliveredProblems,
+  deliveredQuery,
   implementationProblems,
   neonRows,
   resetReport,
@@ -88,16 +90,48 @@ test("neon rows accept object rows and field-aligned arrays", () => {
 });
 
 test("the browser prompt is the sentence the database check looks for", () => {
-  const source = readFileSync(
-    new URL(
-      "../../e2e-walkthrough/tests/pm-discovery.spec.ts",
-      import.meta.url,
-    ),
-    "utf8",
+  const pattern = new RegExp(PROMPT.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  for (const file of [
+    "../../e2e-walkthrough/tests/pm-discovery.spec.ts",
+    "../../e2e-walkthrough/tests/two-roles.spec.ts",
+  ]) {
+    assert.match(readFileSync(new URL(file, import.meta.url), "utf8"), pattern);
+  }
+});
+
+test("delivered requires the answer, the document, and the timestamp", () => {
+  const statement = deliveredQuery();
+  assert.match(statement.query, /wewebplus\.answers/);
+  assert.equal(statement.params[3], PROMPT);
+  assert.deepEqual(
+    deliveredProblems({
+      phase: "delivered",
+      user_messages: 1,
+      assistant_messages: "1",
+      question_status: "answered",
+      answers: "1",
+      has_document: true,
+      has_delivered: "t",
+    }),
+    [],
   );
-  assert.match(
-    source,
-    new RegExp(PROMPT.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+  assert.deepEqual(
+    deliveredProblems({
+      phase: "implementation",
+      user_messages: 1,
+      assistant_messages: 1,
+      question_status: "open",
+      answers: 0,
+      has_document: false,
+      has_delivered: false,
+    }),
+    [
+      "phase=implementation",
+      "question=open",
+      "answers=0",
+      "document_html=absent",
+      "delivered_at=absent",
+    ],
   );
 });
 

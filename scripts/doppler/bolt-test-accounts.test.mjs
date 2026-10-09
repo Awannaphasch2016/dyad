@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  OUTSIDER_ACCOUNT,
   TEST_ACCOUNTS,
   emailParameterRejected,
   findWewebplus,
   frontendApiHost,
   isClerkTestEmail,
   outputLines,
+  planOutsider,
   planTestAccounts,
   signInCapabilities,
   testMembershipStatements,
@@ -146,6 +148,46 @@ test("a second run creates nothing and joins only the missing member", () => {
       ["user_test_pm", "email", false, false],
       ["user_test_dev", "none", false, true],
     ],
+  );
+});
+
+test("the outsider is created and never joined", () => {
+  const fresh = planOutsider({ accounts: humans, organization });
+  assert.equal(fresh.create, true);
+  assert.equal(fresh.joinOrg, false);
+  assert.equal(fresh.userId, null);
+  assert.equal(fresh.email, OUTSIDER_ACCOUNT.email);
+  const existing = planOutsider({
+    accounts: [
+      ...humans,
+      {
+        id: "user_outsider",
+        externalId: OUTSIDER_ACCOUNT.externalId,
+        emails: [],
+        providers: [],
+        orgIds: [],
+      },
+    ],
+    organization,
+  });
+  assert.deepEqual(
+    [existing.userId, existing.create, existing.joinOrg, existing.identifier],
+    ["user_outsider", false, false, "none"],
+  );
+  assert.throws(
+    () =>
+      planOutsider({
+        accounts: [
+          {
+            id: "user_outsider",
+            externalId: OUTSIDER_ACCOUNT.externalId,
+            emails: [OUTSIDER_ACCOUNT.email],
+            orgIds: [organization.id],
+          },
+        ],
+        organization,
+      }),
+    /Wewebplus member/,
   );
 });
 
