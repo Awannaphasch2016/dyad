@@ -69,7 +69,13 @@ run "$image" test -f /home/agent/.agents/skills/gh-axi/SKILL.md \
 
 # A caller who mounts an empty home still gets the hooks.
 tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT
+# The container writes into the mount as uid 10001, so remove through it.
+cleanup() {
+  docker run --rm -v "$tmp:/home/agent" --entrypoint sh "$image" \
+    -c 'find /home/agent -mindepth 1 -delete' >/dev/null 2>&1 || true
+  rm -rf "$tmp"
+}
+trap cleanup EXIT
 chmod 777 "$tmp"
 run -v "$tmp:/home/agent" "$image" true
 [[ -f "$tmp/.claude/settings.json" ]] || fail "entrypoint did not repair hooks over a mounted home"
