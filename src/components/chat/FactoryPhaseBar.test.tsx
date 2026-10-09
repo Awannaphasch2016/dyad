@@ -255,26 +255,30 @@ describe("FactoryPhaseBar", () => {
     const refused = await screen.findByRole("button", {
       name: "Approve and continue to Implementation",
     });
-    expect(refused).toBeDisabled();
+    expect((refused as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText(/Your role can't approve this phase/)).toBeTruthy();
     developer.unmount();
 
     const manager = renderBar(signedIn("project-manager"));
     expect(
-      await screen.findByRole("button", {
-        name: "Approve and continue to Implementation",
-      }),
-    ).toBeEnabled();
+      (
+        (await screen.findByRole("button", {
+          name: "Approve and continue to Implementation",
+        })) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false);
     expect(screen.queryByText(/Your role can't approve this phase/)).toBeNull();
     manager.unmount();
 
     getChat.mockResolvedValue({ messages: [] });
     renderBar(signedIn("project-manager"));
     expect(
-      await screen.findByRole("button", {
-        name: "Approve and continue to Implementation",
-      }),
-    ).toBeDisabled();
+      (
+        (await screen.findByRole("button", {
+          name: "Approve and continue to Implementation",
+        })) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
     expect(
       screen.getByText(
         /Approval unlocks when wewebplus posts its Discovery summary/,
