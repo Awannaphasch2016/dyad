@@ -131,7 +131,8 @@ export function deliveredProblems(row) {
   const question =
     row?.question_status == null ? "absent" : String(row.question_status);
   if (question !== "answered") problems.push(`question=${question}`);
-  if (Number(row?.answers ?? 0) < 1) problems.push("answers=0");
+  const answers = Number(row?.answers ?? 0);
+  if (answers !== 1) problems.push(`answers=${answers}`);
   if (!truthy(row?.has_document)) problems.push("document_html=absent");
   if (!truthy(row?.has_delivered)) problems.push("delivered_at=absent");
   return problems;

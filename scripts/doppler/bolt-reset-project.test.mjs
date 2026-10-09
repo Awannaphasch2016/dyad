@@ -133,6 +133,18 @@ test("delivered requires the answer, the document, and the timestamp", () => {
       "delivered_at=absent",
     ],
   );
+  assert.deepEqual(
+    deliveredProblems({
+      phase: "delivered",
+      user_messages: 1,
+      assistant_messages: 1,
+      question_status: "answered",
+      answers: 2,
+      has_document: true,
+      has_delivered: true,
+    }),
+    ["answers=2"],
+  );
 });
 
 test("the implementation check requires the stored prompt and an open question", () => {

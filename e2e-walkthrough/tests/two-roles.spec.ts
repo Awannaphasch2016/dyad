@@ -14,6 +14,7 @@ import {
 // Same sentence as PROMPT in scripts/doppler/bolt-reset-project.mjs.
 const PROMPT = "A single page that lists the North Pier lunch menu.";
 const ANSWER = "Approved.";
+const SECOND_ANSWER = "Second answer.";
 const BLOCKED_PROMPT = "Developer should not send.";
 // The page polls every 2 seconds. A handover has to show up on the other
 // screen within a handful of those polls.
@@ -30,10 +31,26 @@ interface Snapshot {
   transitionLabel?: string | null;
   messages?: { id: string; role: string; content: string }[];
   questions?: {
+    id?: string;
     status?: string;
     canAnswer?: boolean;
     answeredByName?: string | null;
   }[];
+}
+
+async function postProject(page: Page, json: Record<string, unknown>) {
+  return page.evaluate(async (body) => {
+    const token = await window.Clerk?.session?.getToken();
+    const response = await fetch("/api/project", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    return response.status;
+  }, json);
 }
 
 function filePaths(body: Snapshot): string[] {
@@ -180,23 +197,16 @@ test("both roles walk one shared project", async ({ browser }) => {
         { timeout: 5_000, intervals: [1_000] },
       )
       .toBe(0);
-    const blocked = await devPage.evaluate(async (text) => {
-      const token = await window.Clerk?.session?.getToken();
-      const response = await fetch("/api/project", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
+    const blocked = await postProject(devPage, {
+      command: "record",
+      messages: [
+        {
+          id: "dev-should-not-send",
+          role: "user",
+          content: BLOCKED_PROMPT,
         },
-        body: JSON.stringify({
-          command: "record",
-          messages: [
-            { id: "dev-should-not-send", role: "user", content: text },
-          ],
-        }),
-      });
-      return response.status;
-    }, BLOCKED_PROMPT);
+      ],
+    });
     expect(blocked).toBe(403);
 
     const sent = await sendWalkthroughPrompt(pmPage, PROMPT);
@@ -277,6 +287,53 @@ test("both roles walk one shared project", async ({ browser }) => {
     );
     await expect(pmPage.getByTestId("shared-gate")).toContainText("Answered");
     await expect(pmPage.getByTestId("shared-gate-transition")).toHaveCount(0);
+    const answered = await untilSnapshot(
+      devPage,
+      (body) =>
+        body.questions?.[0]?.status === "answered" &&
+        Boolean(body.questions?.[0]?.id) &&
+        (body.messages ?? []).some((message) => message.content === ANSWER),
+      HANDOVER_MS,
+      "the Developer did not keep the first answer",
+    );
+    const questionId = answered.questions?.[0]?.id ?? "";
+    const repeat = await postProject(devPage, {
+      command: "answer",
+      questionId,
+      body: SECOND_ANSWER,
+    });
+    expect(repeat).toBe(200);
+    await untilSnapshot(
+      devPage,
+      (body) =>
+        body.phase === "implementation" &&
+        body.questions?.[0]?.status === "answered" &&
+        (body.messages ?? []).filter((message) => message.content === ANSWER)
+          .length === 1 &&
+        !(body.messages ?? []).some(
+          (message) => message.content === SECOND_ANSWER,
+        ),
+      HANDOVER_MS,
+      "a second answer changed the stored answer",
+    );
+    await untilSnapshot(
+      pmPage,
+      (body) =>
+        body.phase === "implementation" &&
+        !(body.messages ?? []).some(
+          (message) => message.content === SECOND_ANSWER,
+        ),
+      HANDOVER_MS,
+      "the Project Manager saw a second answer",
+    );
+    const pmMove = await postProject(pmPage, { command: "transition" });
+    expect(pmMove).toBe(403);
+    await untilSnapshot(
+      pmPage,
+      (body) => body.phase === "implementation",
+      HANDOVER_MS,
+      "the Project Manager moved the phase",
+    );
     const devTransition = devPage.getByTestId("shared-gate-transition");
     await expect(devTransition).toBeVisible();
     await expect(devTransition).toContainText("Move to Delivery");
@@ -308,6 +365,14 @@ test("both roles walk one shared project", async ({ browser }) => {
     await expect(devPage.getByTestId("shared-gate-waiting")).toContainText(
       "Waiting on the Project Manager.",
     );
+    const devApprove = await postProject(devPage, { command: "transition" });
+    expect(devApprove).toBe(403);
+    await untilSnapshot(
+      devPage,
+      (body) => body.phase === "delivery" && body.canTransition === false,
+      HANDOVER_MS,
+      "the Developer approved Delivery",
+    );
     await shot(pmPage, "two-roles-5-delivery-pm");
     await shot(devPage, "two-roles-5-delivery-dev");
 
@@ -336,22 +401,41 @@ test("both roles walk one shared project", async ({ browser }) => {
     await shot(pmPage, "two-roles-6-delivered-pm");
     await shot(devPage, "two-roles-6-delivered-dev");
 
+    const kept = await untilSnapshot(
+      pmPage,
+      (body) =>
+        (body.messages ?? []).some((message) =>
+          message.content.includes(PROMPT),
+        ),
+      HANDOVER_MS,
+      "the prompt was missing before reload",
+    );
+    const keptIds = (kept.messages ?? []).map((message) => message.id);
+
     await pmPage.reload();
     await devPage.reload();
     await clerk.loaded({ page: pmPage });
     await clerk.loaded({ page: devPage });
+    const sameMessages = (body: Snapshot) =>
+      body.phase === "delivered" &&
+      keptIds.every((id) =>
+        (body.messages ?? []).some((message) => message.id === id),
+      ) &&
+      (body.messages ?? []).some((message) => message.content.includes(PROMPT));
     await untilSnapshot(
       pmPage,
-      (body) => body.phase === "delivered" && body.canDownload === true,
+      (body) => sameMessages(body) && body.canDownload === true,
       30_000,
       "reload did not keep Delivered for the Project Manager",
     );
     await untilSnapshot(
       devPage,
-      (body) => body.phase === "delivered" && body.roleId === "developer",
+      (body) => sameMessages(body) && body.roleId === "developer",
       30_000,
       "reload did not keep Delivered for the Developer",
     );
+    await expect(pmPage.getByText(PROMPT).first()).toBeAttached();
+    await expect(devPage.getByText(PROMPT).first()).toBeAttached();
     await expect(pmPage.getByTestId("factory-phase-delivery")).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -367,9 +451,12 @@ test("both roles walk one shared project", async ({ browser }) => {
     expect(devInstalls.length).toBeLessThan(2);
 
     writeReport("two-roles", {
-      summary: `both roles · composer covered: ${sent.covered} · developer record before the prompt: ${blocked} · messages ${devReply.messages?.length ?? 0} · files ${files.join(",") || "none"} · dev install logs ${devInstalls.length} · downloads ${pmFile.length} bytes and identical · reload kept delivered · signed out 401`,
+      summary: `both roles · composer covered: ${sent.covered} · developer record before the prompt: ${blocked} · second answer ${repeat} stored nothing new · project manager transition ${pmMove} · developer approval ${devApprove} · messages ${devReply.messages?.length ?? 0} · files ${files.join(",") || "none"} · dev install logs ${devInstalls.length} · downloads ${pmFile.length} bytes and identical · reload kept the prompt · signed out 401`,
       prompt: PROMPT,
       answer: ANSWER,
+      secondAnswerStatus: repeat,
+      projectManagerTransitionStatus: pmMove,
+      developerApprovalStatus: devApprove,
       composerCoveredByGate: sent.covered,
       developerRecordStatus: blocked,
       messageIds: ids,
