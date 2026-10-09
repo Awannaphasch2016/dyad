@@ -10,6 +10,7 @@ on:
       - cursor/bolt-doppler-55d6
       - cursor/shared-hitl-workflow-851d
       - cursor/builder-session-hitl-851d
+      - cursor/preview-ui-verify-851d
     paths:
       - .github/workflows/bolt-preview-from-doppler.yml
       - scripts/doppler/ensure-bolt-project.mjs
@@ -20,6 +21,7 @@ on:
       - scripts/doppler/bolt-hitl.mjs
       - scripts/doppler/bolt-sign-in.mjs
       - scripts/doppler/bolt-workflow.mjs
+      - scripts/doppler/bolt-preview-verify.mjs
 
 permissions:
   contents: read
@@ -30,7 +32,7 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.ref == 'refs/heads/cursor/bolt-doppler-55d6' || github.ref == 'refs/heads/cursor/shared-hitl-workflow-851d' || github.ref == 'refs/heads/cursor/builder-session-hitl-851d'
+    if: github.ref == 'refs/heads/cursor/bolt-doppler-55d6' || github.ref == 'refs/heads/cursor/shared-hitl-workflow-851d' || github.ref == 'refs/heads/cursor/builder-session-hitl-851d' || github.ref == 'refs/heads/cursor/preview-ui-verify-851d'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -120,3 +122,50 @@ jobs:
               echo "hitl_${name}=absent" >> "$GITHUB_STEP_SUMMARY"
             fi
           done
+
+  verify:
+    needs: deploy
+    if: github.ref == 'refs/heads/cursor/bolt-doppler-55d6' || github.ref == 'refs/heads/cursor/shared-hitl-workflow-851d' || github.ref == 'refs/heads/cursor/builder-session-hitl-851d' || github.ref == 'refs/heads/cursor/preview-ui-verify-851d'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Check out the verification script
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Read bolt preview from Doppler
+        env:
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+        run: |
+          set -euo pipefail
+          set +x
+          node scripts/doppler/export-bolt-preview-env.mjs
+
+      - name: Install the desktop browser
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/playwright-verify" --ignore-scripts playwright@1.58.2
+          "$RUNNER_TEMP/playwright-verify/node_modules/.bin/playwright" install --with-deps chromium
+
+      - name: Walk the shared project
+        env:
+          PLAYWRIGHT_MODULE: ${{ runner.temp }}/playwright-verify/node_modules/playwright/index.mjs
+        run: |
+          set -euo pipefail
+          set +x
+          node scripts/doppler/bolt-preview-verify.mjs
+
+      - name: Upload verification evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: bolt-preview-verification
+          path: verification-evidence/
+          if-no-files-found: warn

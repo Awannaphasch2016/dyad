@@ -12,6 +12,7 @@ dist/
 # playwright
 playwright-report/
 test-results/
+verification-evidence/
 blob-report/
 flakiness-report/
 

@@ -43,6 +43,7 @@ Detailed rules and learnings are in the `rules/` directory. Read the relevant fi
 | [rules/model-effort-and-catalog.md](rules/model-effort-and-catalog.md)     | Sending reasoning effort or output-token limits to models via the engine, editing the remote model catalog, or debugging 400s / truncation from a provider (Gemini thought signatures, OpenRouter context limits, Anthropic 4096 default) |
 
 | [rules/claude-code-backend.md](rules/claude-code-backend.md) | Claude Code backend, model picker, subscription usage, and tool presentation |
+| [rules/bolt-preview-verification.md](rules/bolt-preview-verification.md) | Bolt walkthrough UI changes. The preview verify job is the handback gate; do not rewrite its expected results to force a pass |
 
 ## Project setup and lints
 
