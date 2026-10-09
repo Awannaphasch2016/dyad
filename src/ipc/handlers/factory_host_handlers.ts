@@ -1,3 +1,4 @@
+import { requirePhaseApproval } from "@/control_plane/factory_records";
 import { db } from "@/db";
 import {
   approveFactoryPhase,
@@ -29,7 +30,9 @@ export function registerFactoryHostHandlers() {
   );
   createTypedHandler(
     factoryHostContracts.approvePhase,
-    async (_, { appId, phase }) =>
-      run(() => approveFactoryPhase(db, appId, phase)),
+    async (event, { appId, phase }) => {
+      await requirePhaseApproval(event, appId, phase);
+      return run(() => approveFactoryPhase(db, appId, phase));
+    },
   );
 }
