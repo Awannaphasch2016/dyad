@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 // Phase 1 of plans/doppler-organization.md: add the `ci` and `prd`
-// environments to the dyad project and fill them from `preview` according to
-// deploy/doppler/manifest.json. Adds beside the current config; moves and
+// environments to the dyad project and fill them from the source configs
+// listed in deploy/doppler/manifest.json (the first source that has a name
+// wins). Adds beside the current config; moves and
 // deletes nothing. Prints key=value result lines and never a secret value.
 //
 //   DOPPLER_TOKEN=... node scripts/doppler/migrate.mjs status
 //   DOPPLER_TOKEN=... node scripts/doppler/migrate.mjs phase1
 //   DOPPLER_TOKEN=... node scripts/doppler/migrate.mjs verify
 //
-// The token needs read on the source config and write on the project. A
+// The token needs read on the source configs and write on the project. A
 // service token is bound to one config and cannot do this; use a CLI token
 // or a service-account token scoped to project dyad.
 
@@ -121,29 +122,50 @@ function reserved(name) {
 }
 
 export async function status(client, manifest, out) {
-  const { project, source } = manifest;
+  const { project, sources } = manifest;
   const envs = await client.environments(project);
   out(`project=${project} environments=${envs.join(",")}`);
-  const sourceNames = new Set(await client.names(project, source));
-  out(`source=${source} names=${sourceNames.size}`);
+  const where = await locate(client, manifest);
+  for (const source of sources) {
+    const count = [...where.values()].filter((s) => s === source).length;
+    out(`source_${source}=${count}`);
+  }
   for (const [slug, env] of Object.entries(manifest.environments)) {
     const exists = envs.includes(slug);
     const have = exists
       ? new Set(await client.names(project, slug))
       : new Set();
     const missing = env.names.filter((n) => !have.has(n));
-    const unsourced = env.names.filter((n) => !sourceNames.has(n));
+    const unsourced = env.names.filter((n) => !where.has(n));
     out(
       `${slug}=${exists ? "present" : "absent"} wanted=${env.names.length} present=${env.names.length - missing.length} missing=${missing.length}`,
     );
-    if (unsourced.length) out(`${slug}_not_in_source=${unsourced.join(",")}`);
+    for (const source of sources) {
+      const fromHere = env.names.filter((n) => where.get(n) === source);
+      if (fromHere.length) out(`${slug}_from_${source}=${fromHere.join(",")}`);
+    }
+    if (unsourced.length) out(`${slug}_not_in_sources=${unsourced.join(",")}`);
   }
 }
 
+// Which source config holds each manifest name: the first in order wins.
+async function locate(client, manifest) {
+  const where = new Map();
+  for (const source of manifest.sources) {
+    for (const name of await client.names(manifest.project, source)) {
+      if (!where.has(name)) where.set(name, source);
+    }
+  }
+  return where;
+}
+
 export async function phase1(client, manifest, out) {
-  const { project, source } = manifest;
+  const { project, sources } = manifest;
   const envs = new Set(await client.environments(project));
-  const sourceSecrets = await client.rawSecrets(project, source);
+  const where = await locate(client, manifest);
+  const raw = {};
+  for (const source of sources)
+    raw[source] = await client.rawSecrets(project, source);
   let failures = 0;
   for (const [slug, env] of Object.entries(manifest.environments)) {
     if (!envs.has(slug)) {
@@ -154,14 +176,15 @@ export async function phase1(client, manifest, out) {
     }
     const have = new Set(await client.names(project, slug));
     const toSet = {};
-    const absentInSource = [];
+    const absentInSources = [];
     for (const name of env.names) {
       if (have.has(name) || reserved(name)) continue;
-      if (!(name in sourceSecrets)) {
-        absentInSource.push(name);
+      const source = where.get(name);
+      if (!source) {
+        absentInSources.push(name);
         continue;
       }
-      toSet[name] = sourceSecrets[name];
+      toSet[name] = raw[source][name];
     }
     if (Object.keys(toSet).length) {
       await client.setSecrets(project, slug, toSet);
@@ -169,9 +192,9 @@ export async function phase1(client, manifest, out) {
     out(
       `${slug}_copied=${Object.keys(toSet).length} already=${env.names.filter((n) => have.has(n)).length}`,
     );
-    if (absentInSource.length) {
-      failures += absentInSource.length;
-      out(`${slug}_absent_in_source=${absentInSource.join(",")}`);
+    if (absentInSources.length) {
+      failures += absentInSources.length;
+      out(`${slug}_absent_in_sources=${absentInSources.join(",")}`);
     }
   }
   return failures === 0;

@@ -27,6 +27,32 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      # The Doppler sync writes DOPPLER_PROJECT and DOPPLER_CONFIG beside the
+      # secrets it delivers, as secrets or as variables. Matching them against
+      # known names says which config feeds this repository without printing
+      # a secret value.
+      - name: Say which Doppler config feeds this repository
+        env:
+          SECRET_PROJECT: ${{ secrets.DOPPLER_PROJECT }}
+          SECRET_CONFIG: ${{ secrets.DOPPLER_CONFIG }}
+          VAR_PROJECT: ${{ vars.DOPPLER_PROJECT }}
+          VAR_CONFIG: ${{ vars.DOPPLER_CONFIG }}
+        run: |
+          set -euo pipefail
+          classify() {
+            local value="$1"; shift
+            if [[ -z "$value" ]]; then echo absent; return; fi
+            local known
+            for known in "$@"; do
+              if [[ "$value" == "$known" ]]; then echo "$known"; return; fi
+            done
+            echo other
+          }
+          project="$(classify "${SECRET_PROJECT:-$VAR_PROJECT}" dyad aws ai-pilot)"
+          config="$(classify "${SECRET_CONFIG:-$VAR_CONFIG}" dev ci preview prd)"
+          echo "github_sync_project=${project}"
+          echo "github_sync_config=${config}"
+
       - name: Check the synced GitHub secrets
         id: secrets
         env:
@@ -60,7 +86,7 @@ jobs:
           fi
           echo "ssh_key_ok=${ok}" >> "$GITHUB_OUTPUT"
           if [[ "$ok" != "1" ]]; then
-            echo "The Doppler sync for project dyad, config preview, is not delivering EC2_SSH_KEY to this repository." >&2
+            echo "No Doppler sync is delivering EC2_SSH_KEY to this repository. github_sync_config above names the config that feeds it; EC2_SSH_KEY must be in that config." >&2
             exit 1
           fi
 

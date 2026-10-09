@@ -5,7 +5,7 @@ import { main, makeClient } from "./migrate.mjs";
 
 const manifest = {
   project: "dyad",
-  source: "preview",
+  sources: ["preview", "dev"],
   environments: {
     ci: { names: ["DOPPLER_TOKEN", "EC2_SSH_KEY", "NEON_API_KEY"] },
     prd: { names: ["CLERK_SECRET_KEY", "NOVNC_PASSWORD"] },
@@ -68,10 +68,13 @@ function fakeDoppler(initial) {
 const seeded = {
   environments: ["dev", "preview"],
   configs: {
-    dev: {},
+    // The SSH key lives in dev, not preview.
+    dev: {
+      EC2_SSH_KEY: "-----BEGIN OPENSSH PRIVATE KEY-----\nkeybody\n",
+      NEON_API_KEY: "stale-dev-neon-value",
+    },
     preview: {
       DOPPLER_TOKEN: "dp.st.preview.secret-token-value",
-      EC2_SSH_KEY: "-----BEGIN OPENSSH PRIVATE KEY-----\nkeybody\n",
       NEON_API_KEY: "neon-value",
       CLERK_SECRET_KEY: "clerk-value",
       NOVNC_PASSWORD: "novnc-value",
@@ -98,7 +101,10 @@ function capture() {
 }
 
 function assertNoValues(text) {
-  for (const value of Object.values(seeded.configs.preview)) {
+  for (const value of [
+    ...Object.values(seeded.configs.preview),
+    ...Object.values(seeded.configs.dev),
+  ]) {
     assert.ok(
       !text.includes(value.split("\n")[0]),
       `output leaked a secret value`,
@@ -116,7 +122,11 @@ test("status reports what exists and what is missing without values", async () =
   });
   assert.equal(code, 0);
   assert.match(c.out(), /project=dyad environments=dev,preview/);
+  assert.match(c.out(), /source_preview=5/);
+  assert.match(c.out(), /source_dev=1/);
   assert.match(c.out(), /ci=absent wanted=3 present=0 missing=3/);
+  assert.match(c.out(), /ci_from_preview=DOPPLER_TOKEN,NEON_API_KEY/);
+  assert.match(c.out(), /ci_from_dev=EC2_SSH_KEY/);
   assert.match(c.out(), /prd=absent wanted=2 present=0 missing=2/);
   assertNoValues(c.out());
 });
@@ -141,8 +151,12 @@ test("phase1 creates the environments, copies only the manifest names, and is id
   ]);
   // WEWEBPLUS_DATABASE_URL is in preview but in neither manifest list.
   assert.ok(!("WEWEBPLUS_DATABASE_URL" in d.state.configs.prd));
-  // preview is untouched.
-  assert.equal(Object.keys(d.state.configs.preview).length, 6);
+  // The first source that has a name wins; dev only supplies what preview lacks.
+  assert.equal(d.state.configs.ci.NEON_API_KEY, "neon-value");
+  assert.equal(d.state.configs.ci.EC2_SSH_KEY, seeded.configs.dev.EC2_SSH_KEY);
+  // The sources are untouched.
+  assert.equal(Object.keys(d.state.configs.preview).length, 5);
+  assert.equal(Object.keys(d.state.configs.dev).length, 2);
   assert.ok(!d.calls.some((call) => call.method === "DELETE"));
   assertNoValues(c.out());
 
@@ -160,7 +174,7 @@ test("phase1 creates the environments, copies only the manifest names, and is id
 test("phase1 reports names the source does not have and exits 1", async () => {
   const d = fakeDoppler({
     ...seeded,
-    configs: { ...seeded.configs, preview: { NOVNC_PASSWORD: "x" } },
+    configs: { dev: {}, preview: { NOVNC_PASSWORD: "x" } },
   });
   const c = capture();
   const code = await main(["phase1"], {
@@ -171,9 +185,9 @@ test("phase1 reports names the source does not have and exits 1", async () => {
   assert.equal(code, 1);
   assert.match(
     c.out(),
-    /ci_absent_in_source=DOPPLER_TOKEN,EC2_SSH_KEY,NEON_API_KEY/,
+    /ci_absent_in_sources=DOPPLER_TOKEN,EC2_SSH_KEY,NEON_API_KEY/,
   );
-  assert.match(c.out(), /prd_absent_in_source=CLERK_SECRET_KEY/);
+  assert.match(c.out(), /prd_absent_in_sources=CLERK_SECRET_KEY/);
 });
 
 test("verify checks names and that ci's DOPPLER_TOKEN really reads the preview config", async () => {

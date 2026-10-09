@@ -1,6 +1,6 @@
 {
   "project": "dyad",
-  "source": "preview",
+  "sources": ["preview", "dev"],
   "environments": {
     "ci": {
       "purpose": "What GitHub Actions needs. Synced to this repository's Actions secrets.",

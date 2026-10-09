@@ -20,7 +20,12 @@ test("every secret the operational workflows read is in the ci environment", () 
     );
     for (const match of text.matchAll(/secrets\.([A-Z_][A-Z0-9_]*)/g)) {
       const name = match[1];
-      if (name === "GITHUB_TOKEN") continue;
+      // GitHub's own token, and the three names the Doppler sync writes about itself.
+      if (
+        name === "GITHUB_TOKEN" ||
+        /^DOPPLER_(PROJECT|CONFIG|ENVIRONMENT)$/.test(name)
+      )
+        continue;
       assert.ok(
         ci.has(name),
         `${file} reads secrets.${name}, which is not in manifest ci`,

@@ -4,7 +4,9 @@
 
 ## Summary
 
-GitHub Actions reaches the EC2 host with `EC2_SSH_KEY`, a repository secret that the Doppler → GitHub sync (project `dyad`, config `preview`) is supposed to deliver. On 2026-10-09 that sync delivers nothing: [run 37960326401](https://github.com/Awannaphasch2016/dyad/actions/runs/37960326401) printed `github_ec2_ssh_key=absent` and `github_doppler_token=absent`. On 2026-10-02 the key was present and SSH worked ([run 37072073538](https://github.com/Awannaphasch2016/dyad/actions/runs/37072073538)), but the host's own Doppler token answered `Invalid Auth token`. Both breaks sit outside the repository. Everything that can be built around them is built; the checks that prove the fix are in place.
+GitHub Actions reaches the EC2 host with `EC2_SSH_KEY`, a repository secret that a Doppler → GitHub sync delivers. On 2026-10-09 nothing arrives: [run 37960326401](https://github.com/Awannaphasch2016/dyad/actions/runs/37960326401) and [run 37974296078](https://github.com/Awannaphasch2016/dyad/actions/runs/37974296078) printed `github_ec2_ssh_key=absent` and `github_doppler_token=absent`. On 2026-10-02 the key was present and SSH worked ([run 37072073538](https://github.com/Awannaphasch2016/dyad/actions/runs/37072073538)), but the host's own Doppler token answered `Invalid Auth token`.
+
+The key is in Doppler project `dyad`, config **`dev`** (operator, 2026-10-09). Every document and script in this repository says the sync comes from config `preview`. If that is still where the sync points, the sync can be healthy and still never deliver the key: it is not in the config being synced. The check now prints `github_sync_project=` and `github_sync_config=` from the `DOPPLER_PROJECT` / `DOPPLER_CONFIG` names the sync writes beside the secrets, so the next run says which of the two it is. Both fixes sit outside the repository. Everything that can be built around them is built; the checks that prove the fix are in place.
 
 ## Status
 
@@ -56,7 +58,11 @@ In this order. Nothing here is printed by any workflow, and none of it goes into
 
 The agent VM has no Doppler token, no AWS keys, no SSH key, and a read-only GitHub token, so items 1 and 3 need you. If you add a Doppler CLI or service-account token for project `dyad` as a Cloud Agent secret named `DOPPLER_TOKEN` (Cursor Dashboard → Cloud Agents → Secrets), the agent can run `scripts/doppler/migrate.mjs` and the Phase 1 of `plans/doppler-organization.md` itself; the GitHub sync and the host file still need the dashboard and `sudo` on the host.
 
-1. **Restore the Doppler → GitHub sync.** In Doppler, project `dyad`, config `preview`, Integrations: the GitHub Actions sync to `Awannaphasch2016/dyad` is gone or paused. Delete it if it exists and create it again. Confirm in GitHub, Settings → Secrets → Actions, that `EC2_SSH_KEY` and `DOPPLER_TOKEN` appear. If `DOPPLER_TOKEN` is not a name inside the config, add it: a service token for `dyad`/`preview`.
+1. **Make the synced config hold the key.** Read `github_sync_config=` from the latest EC2 access check run.
+   - `preview`: the sync is alive but `EC2_SSH_KEY` is in `dev`. In Doppler, open `dyad`/`dev`, `EC2_SSH_KEY`, and apply it to `preview` as well (one copy; the plan's Phase 1 later moves it to `ci` and `migrate.mjs` already looks in `dev` after `preview`). Do the same for `DOPPLER_TOKEN` if it is only in `dev`.
+   - `absent`: no sync has written to this repository, or it was removed. In `dyad`, Integrations, create a GitHub Actions sync to `Awannaphasch2016/dyad` from the config that holds `EC2_SSH_KEY` and `DOPPLER_TOKEN`; `preview` after the copy above, or `ci` once Phase 1 has run.
+   - `dev`: the sync comes from `dev` and still delivers nothing; recreate it.
+     Confirm in GitHub, Settings → Secrets → Actions, that `EC2_SSH_KEY` and `DOPPLER_TOKEN` appear.
 2. **Run `ops-axi ec2 check`** (or push to `cursor/axi-toolbox-image-plan-531e`). Expect `github_ec2_ssh_key=present` and `ec2_ssh=ok`. The host lines will still say `dyad_token=http-401` until the next item.
 3. **Replace the host token.** Create a service token for `dyad`/`preview` **with write access** (`doppler configs tokens create formula-role --project dyad --config preview --plain`, choosing write in the dashboard, or a service-account token scoped to that config). On the host: `sudo install -m 600 -o root -g root /dev/stdin /etc/doppler/dyad-preview.token` and paste the token. `plans/preview-token-rollout.md` records that a replacement token was checked on 2026-10-03 but not installed; that one is read-only and will not do for step 3.
 4. **Run `ops-axi ec2 check` again.** Expect `dyad_token=http-200 project=dyad config=preview` and `host_doppler=ok`.
