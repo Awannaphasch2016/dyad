@@ -60,7 +60,8 @@ dyad                            the Gas City host and its previews
                                 EC2_SSH_KEY, AWS_PREVIEW_FORMULA_ROLE_ARN,
                                 DOPPLER_TOKEN = service token for dyad.preview,
                                 NEON_API_KEY, CLOUDFLARE_* as references to shared-platform.prd
-                                -> synced to the repository's Actions secrets
+                                -> read by workflows through the OIDC identity;
+                                   a GitHub sync from here is optional
   preview                       root: template for every pull-request preview
                                 Clerk, secrets key, Neon project as references; NOVNC_PASSWORD
     preview_pr_123              one per pull request: WEWEBPLUS_DATABASE_URL = Neon branch URL,
@@ -82,7 +83,7 @@ formula                         same; AWS_PREVIEW_FORMULA_ROLE_ARN moves here fr
 Rules that make it hold together:
 
 - A value is typed once. Application configs hold references, not copies, for anything in `shared-platform` or `aws`. Doppler's "Search by Secret Value" finds the copies that remain.
-- Each consumer gets one token bound to the one config it reads: the host reads `dyad.prd`; the GitHub sync reads `dyad.ci`; workflows that need a preview's runtime env read `dyad.preview` (or a `preview_pr_N` branch) with `DOPPLER_TOKEN`. No token can read production and CI at once.
+- Each consumer gets one credential bound to what it reads: the host reads `dyad.prd` with a service token; GitHub Actions reads `dyad.ci` through a Service Account Identity (OIDC, nothing stored) via `.github/actions/doppler-oidc`; workflows that need a preview's runtime env read `dyad.preview` (or a `preview_pr_N` branch) with `DOPPLER_TOKEN`. No token can read production and CI at once.
 - `ci` is an environment, not a branch of `preview`, so access to it can be granted without granting `preview` or `prd`.
 - Production runtime secrets in `dyad.prd` are set to `restricted` visibility. The host does not need a human to see them, and the dashboard stops showing them.
 - Secrets that the host must never receive (`EC2_SSH_KEY`) are simply not in `dyad.prd`, so `write_rollout_env.py`'s allowlist becomes a check rather than the only guard.
@@ -116,7 +117,7 @@ Every phase adds something beside the current path, verifies it with `ops-axi`, 
 
 **Phase 1 — add environments, move nothing.** `deploy/doppler/manifest.json` is the source of truth for which names belong to `ci` and `prd`; `deploy/doppler/manifest.test.mjs` fails if an operational workflow reads a secret that is not in `ci`, or if `prd` drifts from `write_rollout_env.py`'s allowlist. `DOPPLER_TOKEN=<cli or service-account token for project dyad> node scripts/doppler/migrate.mjs phase1` creates the `ci` and `prd` environments if they are absent and copies only the manifest names from the first source config that has each one, `preview` then `dev` (raw values, so references stay references). It writes nothing that already exists, deletes nothing, and prints names and counts, never values. `migrate.mjs status` shows the gap first; `migrate.mjs verify` afterwards checks every name is there and that `ci`'s `DOPPLER_TOKEN` really answers for `dyad`/`preview`. `preview` is untouched.
 
-**Phase 2 — point the GitHub sync at `ci`.** Delete the broken sync, create a new GitHub Actions sync from `dyad.ci` to this repository. The secret names GitHub receives are the same ones the workflows reference today, so no workflow changes. `DOPPLER_TOKEN` in `ci` is a service token for `dyad.preview`, so the download path in `formula_ecs.mjs` and `controller.mjs` still reaches the preview template. Verify: `ops-axi ec2 check` prints `github_ec2_ssh_key=present`, `github_doppler_token=http-200 project=dyad config=preview`, `ec2_ssh=ok`.
+**Phase 2 — point GitHub Actions at `ci`.** The workflows that already use `.github/actions/doppler-oidc` read `ci` directly; for the rest (`preview-formula.yml`, `preview-image.yml`, `preview.yml`) either add the same OIDC step or, if a sync is preferred, create a GitHub Actions sync from `dyad.ci` to this repository. The secret names GitHub receives are the same ones the workflows reference today, so no workflow changes. `DOPPLER_TOKEN` in `ci` is a service token for `dyad.preview`, so the download path in `formula_ecs.mjs` and `controller.mjs` still reaches the preview template. Verify: `ops-axi ec2 check` prints `ec2_ssh_key_source=doppler-oidc` (or `github-secret` with a sync) and `ec2_ssh=ok`.
 
 **Phase 3 — one token for the host.** Create a service token for `dyad.prd`, install it as `/etc/doppler/dyad-prd.token` (root, mode 600). `scripts/gascity/host-wrapper.sh` already prefers that file and falls back to `dyad-preview.token`, and `check_host_access.py` reports `dyad_prd_token=` as `absent` until it exists. The host runs the wrapper from its checkout of `cursor/browser-dyad-ui-bbea`, so that change reaches the host when this branch is merged there. Run one rollout with `ops-axi rollout <sha>`. On the host, compare the names in `/run/gascity-rollout.env` before and after (the wrapper deletes the file on exit; compare inside the run). When the rollout is healthy, remove the old file and the fallback. Values are not printed at any step.
 
