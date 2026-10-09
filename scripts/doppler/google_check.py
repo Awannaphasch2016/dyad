@@ -275,3 +275,5 @@ if not probed:
 with open("report.json", "w", encoding="utf-8") as handle:
     json.dump(report, handle, ensure_ascii=False, indent=2)
 print("report.json written")
+
+# re-run after sharing the folder with the service account
