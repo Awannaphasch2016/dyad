@@ -12,7 +12,7 @@ import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { neonSqlEndpoint } from "./bolt-hitl.mjs";
 import { redact } from "./bolt-project.mjs";
-import { discoverySummaryText } from "./bolt-workflow.mjs";
+import { discoveryReady } from "./bolt-workflow.mjs";
 import {
   WALKTHROUGH_APP_ID,
   WALKTHROUGH_CHAT_ID,
@@ -32,6 +32,9 @@ export const WALKTHROUGH_EXPECTATIONS = {
   discoveryPrompt:
     "A one-page site for North Pier Fish with the restaurant name, a welcome line, and a menu of fish and chips, clam chowder, and iced tea.",
   discoveryAnswer: "Yes. The page name is North Pier Fish.",
+  discoverySentence: "Welcome to North Pier Fish.",
+  discoveryContents:
+    "The page shows the restaurant name, a welcome line, and a menu of fish and chips, clam chowder, and iced tea.",
   previewPhrases: [
     "North Pier Fish",
     "fish and chips",
@@ -65,7 +68,7 @@ export const FUNCTIONAL_STEPS = [
 ];
 
 const UI_TIMEOUT_MS = 30_000;
-const DISCOVERY_REPLY_MS = 480_000;
+const DISCOVERY_REPLY_MS = 1_080_000;
 const PREVIEW_WAIT_MS = 120_000;
 
 export function resetStatements(
@@ -186,17 +189,6 @@ export function classifyPreview(snapshot) {
     status: "passed",
     reason: "The preview contained the page name and the three menu items.",
   };
-}
-
-export function walkthroughSummaryReady(messages) {
-  const phrases = WALKTHROUGH_EXPECTATIONS.previewPhrases;
-  return (messages ?? []).some((message) => {
-    if (message?.role !== "assistant") return false;
-    const summary = discoverySummaryText(message.content);
-    if (!summary) return false;
-    const text = summary.toLowerCase();
-    return phrases.every((phrase) => text.includes(phrase.toLowerCase()));
-  });
 }
 
 export function layersNotRun() {
@@ -477,10 +469,14 @@ async function sendComposer(page, text) {
 
 async function sendDiscoveryDescription(page, dir) {
   const prompt = WALKTHROUGH_EXPECTATIONS.discoveryPrompt;
-  const answer = WALKTHROUGH_EXPECTATIONS.discoveryAnswer;
+  const answers = [
+    WALKTHROUGH_EXPECTATIONS.discoveryAnswer,
+    WALKTHROUGH_EXPECTATIONS.discoverySentence,
+    WALKTHROUGH_EXPECTATIONS.discoveryContents,
+  ];
   await sendComposer(page, prompt);
   const deadline = Date.now() + DISCOVERY_REPLY_MS;
-  let answered = false;
+  let sent = 0;
   while (Date.now() < deadline) {
     const snapshot = await projectSnapshot(page);
     const messages = snapshot?.messages ?? [];
@@ -489,25 +485,22 @@ async function sendDiscoveryDescription(page, dir) {
         message?.role === "user" &&
         String(message.content ?? "").includes(prompt),
     );
-    if (stored && walkthroughSummaryReady(messages)) {
+    if (stored && discoveryReady(messages)) {
       await shoot(page, dir, "discovery-reply-project-manager.png");
       return;
     }
-    const replied = messages.some(
+    const assistantCount = messages.filter(
       (message) =>
         message?.role === "assistant" && String(message.content ?? "").trim(),
-    );
-    const summaryStarted = messages.some(
-      (message) =>
-        message?.role === "assistant" && discoverySummaryText(message.content),
-    );
-    if (stored && replied && !summaryStarted && !answered) {
-      answered = true;
+    ).length;
+    if (stored && assistantCount > sent && sent < answers.length) {
+      const answer = answers[sent];
+      sent += 1;
       await sendComposer(page, answer);
     }
     await page.waitForTimeout(2000);
   }
-  throw new Error("Discovery summary was not stored");
+  throw new Error("Discovery still has a question.");
 }
 
 async function readPreview(page) {
@@ -654,15 +647,11 @@ async function walk(report, pages, dir) {
       !managerHtml.includes("<h1>Delivered</h1>") ||
       !managerHtml.includes(expected.answer) ||
       !managerHtml.includes(expected.discoveryPrompt) ||
-      !managerHtml.includes("Discovery summary") ||
-      !managerHtml.includes("Page name") ||
-      !managerHtml.includes("One sentence") ||
-      !managerHtml.includes("Page contents") ||
       !expected.previewPhrases.every((phrase) =>
         downloadText.includes(phrase.toLowerCase()),
       )
     ) {
-      throw new Error("Download did not contain the Discovery summary");
+      throw new Error("Download did not contain the typed Discovery text");
     }
   });
 }

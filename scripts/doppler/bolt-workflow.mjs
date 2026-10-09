@@ -110,53 +110,20 @@ export function canRecordMessages(phase, roleId, messages) {
   return true;
 }
 
-const DISCOVERY_SUMMARY_LABELS = ["page name", "one sentence", "page contents"];
-
-export function discoverySummaryText(content) {
+export function assistantAsksQuestion(content) {
   const withoutThinking = String(content ?? "").replace(
     /<think>[\s\S]*?<\/think>/gi,
     "",
   );
-  const lines = withoutThinking.split(/\r?\n/);
-  const start = lines.findIndex((line) => {
-    const match = /^\s*#{1,4}\s*(.+?)\s*$/.exec(line);
-    return (
-      match != null &&
-      match[1].replace(/\*/g, "").replace(/:\s*$/, "").trim().toLowerCase() ===
-        "discovery summary"
-    );
-  });
-  if (start === -1) return null;
-  const bullets = [];
-  for (const line of lines.slice(start + 1)) {
-    if (/^\s*([-*]|\d+\.)\s+/.test(line)) {
-      bullets.push(line.trimEnd());
-      continue;
-    }
-    if (line.trim() === "") {
-      if (bullets.length > 0) break;
-      continue;
-    }
-    if (bullets.length > 0 && /^\s{2,}\S/.test(line)) {
-      bullets.push(line.trimEnd());
-      continue;
-    }
-    break;
-  }
-  if (bullets.length < 3) return null;
-  const text = bullets.join("\n").toLowerCase();
-  if (!DISCOVERY_SUMMARY_LABELS.every((label) => text.includes(label))) {
-    return null;
-  }
-  return bullets.join("\n");
+  return withoutThinking.includes("?");
 }
 
-export function hasDiscoverySummary(messages) {
-  return (messages ?? []).some(
-    (message) =>
-      message?.role === "assistant" &&
-      discoverySummaryText(message.content) != null,
-  );
+export function discoveryReady(messages) {
+  const latest = [...(messages ?? [])]
+    .reverse()
+    .find((message) => message?.role === "assistant");
+  if (!latest || !String(latest.content ?? "").trim()) return false;
+  return !assistantAsksQuestion(latest.content);
 }
 
 export function presentSnapshot({
@@ -167,7 +134,7 @@ export function presentSnapshot({
   documentHtml,
 }) {
   const next = nextPhase(phase, roleId);
-  const ready = phase !== "discovery" || hasDiscoverySummary(messages);
+  const ready = phase !== "discovery" || discoveryReady(messages);
   const shown = (questions ?? []).filter(isSharedQuestion).map((question) => ({
     id: question.id,
     stepId: question.stepId,
@@ -349,10 +316,10 @@ export async function handleProject(input) {
         body: { error: "Your role can't move this phase." },
       };
     }
-    if (state.phase === "discovery" && !hasDiscoverySummary(state.messages)) {
+    if (state.phase === "discovery" && !discoveryReady(state.messages)) {
       return {
         status: 403,
-        body: { error: "The Discovery summary is not ready." },
+        body: { error: "Discovery still has a question." },
       };
     }
     const document =
@@ -741,41 +708,19 @@ function canRecordMessages(phase: string, roleId: RoleId, messages: IncomingMess
   return true;
 }
 
-function discoverySummaryText(content: string): string | null {
+function assistantAsksQuestion(content: string): boolean {
   const withoutThinking = content.replace(/<think>[\\s\\S]*?<\\/think>/gi, '');
-  const lines = withoutThinking.split(/\\r?\\n/);
-  const start = lines.findIndex((line) => {
-    const match = /^\\s*#{1,4}\\s*(.+?)\\s*$/.exec(line);
-    if (!match) return false;
-    return match[1].replace(/\\*/g, '').replace(/:\\s*$/, '').trim().toLowerCase() === 'discovery summary';
-  });
-  if (start < 0) return null;
-  const bullets: string[] = [];
-  for (const line of lines.slice(start + 1)) {
-    if (/^\\s*([-*]|\\d+\\.)\\s+/.test(line)) {
-      bullets.push(line.trimEnd());
-      continue;
-    }
-    if (line.trim() === '') {
-      if (bullets.length > 0) break;
-      continue;
-    }
-    if (bullets.length > 0 && /^\\s{2,}\\S/.test(line)) {
-      bullets.push(line.trimEnd());
-      continue;
-    }
-    break;
-  }
-  if (bullets.length < 3) return null;
-  const text = bullets.join('\\n').toLowerCase();
-  if (!text.includes('page name') || !text.includes('one sentence') || !text.includes('page contents')) {
-    return null;
-  }
-  return bullets.join('\\n');
+  return withoutThinking.includes('?');
 }
 
-function hasDiscoverySummary(messages: { role: string; content: string }[]): boolean {
-  return messages.some((message) => message.role === 'assistant' && discoverySummaryText(message.content) != null);
+function discoveryReady(messages: { role: string; content: string }[]): boolean {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role !== 'assistant') continue;
+    if (!message.content.trim()) return false;
+    return !assistantAsksQuestion(message.content);
+  }
+  return false;
 }
 
 function isSharedQuestion(question: StoredQuestion): boolean {
@@ -805,7 +750,7 @@ function presentSnapshot(state: {
   documentHtml: string | null;
 }, roleId: RoleId) {
   const next = nextPhase(state.phase, roleId);
-  const ready = state.phase !== 'discovery' || hasDiscoverySummary(state.messages);
+  const ready = state.phase !== 'discovery' || discoveryReady(state.messages);
   return {
     phase: state.phase,
     messages: state.messages.map((message) => ({ id: message.id, role: message.role, content: message.content })),
@@ -949,8 +894,8 @@ export async function handleProjectRequest(input: {
       if (!state) return { status: 503, body: { error: 'Project store is unavailable.' } };
       const phase = nextPhase(state.phase, roleId);
       if (!phase) return { status: 403, body: { error: "Your role can't move this phase." } };
-      if (state.phase === 'discovery' && !hasDiscoverySummary(state.messages)) {
-        return { status: 403, body: { error: 'The Discovery summary is not ready.' } };
+      if (state.phase === 'discovery' && !discoveryReady(state.messages)) {
+        return { status: 403, body: { error: 'Discovery still has a question.' } };
       }
       const document = phase === 'delivered' ? deliveryDocument(state.messages) : null;
       const updated = await query(CAS_PHASE_SQL, [APP_ID, phase, state.phase, document]);
@@ -1298,7 +1243,10 @@ function gateDialogSource() {
     "    const summary = extractFactoryPhaseSummary(message.content, 'discovery');",
     "    if (summary) return summary;",
     "  }",
-    "  return null;",
+    "  const approved = messages",
+    "    .filter((message) => message.role === 'user' && message.content.trim())",
+    "    .map((message) => message.content.trim());",
+    "  return approved.length > 0 ? approved.join('\\n\\n') : null;",
     "}",
     "",
     "function kickoffFor(phase: string, messages: { role: string; content: string }[]): string {",

@@ -19,15 +19,8 @@ import {
   renderSummary,
   resetStatements,
   signInTokenBody,
-  walkthroughSummaryReady,
 } from "./bolt-preview-verify.mjs";
-
-const SUMMARY = [
-  "## Discovery summary",
-  "- **Page name:** North Pier Fish",
-  "- **One sentence:** A one-page site with a welcome line.",
-  "- **Page contents:** fish and chips, clam chowder, and iced tea.",
-].join("\n");
+import { discoveryReady } from "./bolt-workflow.mjs";
 
 test("reset deletes trial rows and returns Discovery", () => {
   const statements = resetStatements(
@@ -156,9 +149,9 @@ test("the preview passes only when the page name and menu are present", () => {
   assert.match(renderSummary(failed), /generated-website=failed/);
 });
 
-test("the discovery step waits for the summary, not any reply", () => {
+test("the discovery step waits until the latest reply asks nothing", () => {
   assert.equal(
-    walkthroughSummaryReady([
+    discoveryReady([
       { role: "user", content: WALKTHROUGH_EXPECTATIONS.discoveryPrompt },
       {
         role: "assistant",
@@ -168,24 +161,21 @@ test("the discovery step waits for the summary, not any reply", () => {
     false,
   );
   assert.equal(
-    walkthroughSummaryReady([
+    discoveryReady([
       {
         role: "assistant",
         content:
-          "<think>## Discovery summary\n- **Page name:** North Pier Fish\n- **One sentence:** Welcome.\n- **Page contents:** fish and chips, clam chowder, and iced tea.</think>What is the page name?",
+          "<think>Is the name North Pier Fish?</think>The page name is North Pier Fish.",
       },
     ]),
-    false,
+    true,
   );
   assert.equal(
-    walkthroughSummaryReady([
-      { role: "assistant", content: "## Discovery summary\n\nComing soon." },
+    discoveryReady([
+      { role: "assistant", content: "The page name is North Pier Fish." },
+      { role: "assistant", content: "What one sentence should describe it?" },
     ]),
     false,
-  );
-  assert.equal(
-    walkthroughSummaryReady([{ role: "assistant", content: SUMMARY }]),
-    true,
   );
 });
 
@@ -234,6 +224,14 @@ test("the contract matches the product labels and does not follow them by import
     WALKTHROUGH_EXPECTATIONS.discoveryAnswer,
     "Yes. The page name is North Pier Fish.",
   );
+  assert.equal(
+    WALKTHROUGH_EXPECTATIONS.discoverySentence,
+    "Welcome to North Pier Fish.",
+  );
+  assert.equal(
+    WALKTHROUGH_EXPECTATIONS.discoveryContents,
+    "The page shows the restaurant name, a welcome line, and a menu of fish and chips, clam chowder, and iced tea.",
+  );
   assert.deepEqual(WALKTHROUGH_EXPECTATIONS.previewPhrases, [
     "North Pier Fish",
     "fish and chips",
@@ -252,7 +250,15 @@ test("the contract matches the product labels and does not follow them by import
   );
   assert.equal(source.includes("transitionLabel"), false);
   assert.equal(source.includes("waitingLabel"), false);
+  assert.equal(source.includes("discoveryReady"), true);
   assert.equal(source.includes("Yes. The page name is North Pier Fish."), true);
+  assert.equal(source.includes("Welcome to North Pier Fish."), true);
+  assert.equal(
+    source.includes(
+      "The page shows the restaurant name, a welcome line, and a menu of fish and chips, clam chowder, and iced tea.",
+    ),
+    true,
+  );
   assert.equal(source.includes("fish and chips"), true);
   assert.equal(source.includes("clam chowder"), true);
   assert.equal(source.includes("iced tea"), true);

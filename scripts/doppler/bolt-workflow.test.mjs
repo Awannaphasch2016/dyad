@@ -14,9 +14,9 @@ import {
   applyBoltWorkflowPatches,
   canSendPrompt,
   deliveryDocument,
-  discoverySummaryText,
+  assistantAsksQuestion,
+  discoveryReady,
   handleProject,
-  hasDiscoverySummary,
   nextPhase,
   presentSnapshot,
   workflowServerSource,
@@ -314,28 +314,31 @@ test("both roles read one project and only the project manager records a discove
   assert.equal(empty.status, 400);
 });
 
-test("discovery stays on the page until the summary bullets exist", async () => {
+test("discovery stays open while the latest reply asks a question", async () => {
   assert.equal(
-    discoverySummaryText("Should the page name be North Pier Fish?"),
-    null,
+    assistantAsksQuestion("Should the page name be North Pier Fish?"),
+    true,
   );
   assert.equal(
-    discoverySummaryText(
-      "<think>## Discovery summary\n- **Page name:** North Pier Fish\n- **One sentence:** A shop.\n- **Page contents:** fish and chips, clam chowder, and iced tea.</think>What is the page name?",
+    assistantAsksQuestion(
+      "<think>Is the name North Pier Fish?</think>The page name is North Pier Fish.",
     ),
-    null,
+    false,
+  );
+  assert.equal(discoveryReady([]), false);
+  assert.equal(
+    discoveryReady([
+      { role: "assistant", content: DISCOVERY_SUMMARY },
+      { role: "assistant", content: "Want to change anything?" },
+    ]),
+    false,
   );
   assert.equal(
-    discoverySummaryText("## Discovery summary\n\nComing soon."),
-    null,
+    discoveryReady([
+      { role: "assistant", content: "The page name is North Pier Fish." },
+    ]),
+    true,
   );
-  assert.equal(
-    discoverySummaryText(
-      "## Discovery summary\n- **Page name:** North Pier Fish\n- **One sentence:** A shop.",
-    ),
-    null,
-  );
-  assert.match(discoverySummaryText(DISCOVERY_SUMMARY), /Page name/);
   const store = memory();
   await call(store, "user_pm", {
     method: "POST",
@@ -351,13 +354,13 @@ test("discovery stays on the page until the summary bullets exist", async () => 
       ],
     },
   });
-  assert.equal(hasDiscoverySummary(store.messages), false);
+  assert.equal(discoveryReady(store.messages), false);
   const blocked = await call(store, "user_pm", {
     method: "POST",
     json: { command: "transition" },
   });
   assert.equal(blocked.status, 403);
-  assert.equal(blocked.body.error, "The Discovery summary is not ready.");
+  assert.equal(blocked.body.error, "Discovery still has a question.");
   assert.equal(store.project.phase, "discovery");
   assert.equal(
     store.questions.some((row) => row.phase === "implementation"),
@@ -371,7 +374,8 @@ test("discovery stays on the page until the summary bullets exist", async () => 
         {
           id: "a-think",
           role: "assistant",
-          content: `<think>\n## Discovery summary\n- **Page name:** North Pier Fish\n- **One sentence:** A shop.\n- **Page contents:** fish and chips, clam chowder, and iced tea.\n</think>\nWhat is the page name?`,
+          content:
+            "<think>Is the name settled?</think>\nWhat one sentence should describe the page?",
         },
       ],
     },
@@ -386,11 +390,10 @@ test("discovery stays on the page until the summary bullets exist", async () => 
     json: {
       command: "record",
       messages: [
-        { id: "a-summary", role: "assistant", content: DISCOVERY_SUMMARY },
         {
-          id: "a-later",
+          id: "a-ready",
           role: "assistant",
-          content: "Want to change anything?",
+          content: "The page name is North Pier Fish.",
         },
       ],
     },
@@ -657,9 +660,9 @@ test("the walkthrough page uses the builder chat and one gate", () => {
   assert.match(gate, /data-testid="shared-gate"/);
   assert.match(gate, /snapshot\.canSend && showTransition/);
   assert.match(gate, /extractFactoryPhaseSummary/);
-  assert.equal(gate.includes("message.role === 'user'"), false);
-  assert.match(server, /The Discovery summary is not ready/);
-  assert.match(server, /function hasDiscoverySummary/);
+  assert.match(gate, /message\.role === 'user'/);
+  assert.match(server, /Discovery still has a question/);
+  assert.match(server, /function discoveryReady/);
   assert.equal(existsSync(join(bar, "SharedProject.tsx")), false);
   assert.equal(existsSync(join(bar, "HitlGateList.tsx")), false);
 });
