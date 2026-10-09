@@ -210,7 +210,7 @@ async function clerkJson(url, headers) {
   return response.json();
 }
 
-async function loadDirectory(secret) {
+export async function loadDirectory(secret) {
   const headers = { Authorization: `Bearer ${secret}` };
   const users = [];
   for (let offset = 0; offset < 500; offset += 100) {

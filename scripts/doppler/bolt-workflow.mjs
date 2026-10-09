@@ -110,6 +110,22 @@ export function canRecordMessages(phase, roleId, messages) {
   return true;
 }
 
+export function assistantAsksQuestion(content) {
+  const withoutThinking = String(content ?? "").replace(
+    /<think>[\s\S]*?<\/think>/gi,
+    "",
+  );
+  return withoutThinking.includes("?");
+}
+
+export function discoveryReady(messages) {
+  const latest = [...(messages ?? [])]
+    .reverse()
+    .find((message) => message?.role === "assistant");
+  if (!latest || !String(latest.content ?? "").trim()) return false;
+  return !assistantAsksQuestion(latest.content);
+}
+
 export function presentSnapshot({
   phase,
   messages,
@@ -118,6 +134,7 @@ export function presentSnapshot({
   documentHtml,
 }) {
   const next = nextPhase(phase, roleId);
+  const ready = phase !== "discovery" || discoveryReady(messages);
   const shown = (questions ?? []).filter(isSharedQuestion).map((question) => ({
     id: question.id,
     stepId: question.stepId,
@@ -140,8 +157,8 @@ export function presentSnapshot({
     roleId,
     waitingLabel: waitingLabel(phase, roleId, questions),
     canSend: canSendPrompt(phase, roleId),
-    canTransition: next != null,
-    transitionLabel: next ? transitionLabel(phase) : null,
+    canTransition: next != null && ready,
+    transitionLabel: next && ready ? transitionLabel(phase) : null,
     canDownload:
       phase === "delivered" &&
       typeof documentHtml === "string" &&
@@ -297,6 +314,12 @@ export async function handleProject(input) {
       return {
         status: 403,
         body: { error: "Your role can't move this phase." },
+      };
+    }
+    if (state.phase === "discovery" && !discoveryReady(state.messages)) {
+      return {
+        status: 403,
+        body: { error: "Discovery still has a question." },
       };
     }
     const document =
@@ -515,12 +538,23 @@ export function patchWalkthroughComposer(source) {
 
 const chatImport = "import { BaseChat } from './BaseChat';";
 const chatImportFixed = `import { BaseChat } from './BaseChat';
-import { recordSharedFinish, useSharedChat } from '~/lib/hitl/session';`;
+import { recordSharedFinish, sharedSnapshot, useSharedChat } from '~/lib/hitl/session';`;
 const chatFinish = `      onFinish: ({ message }) => {
         setProgressAnnotations([]);`;
 const chatFinishFixed = `      onFinish: ({ message }) => {
         setProgressAnnotations([]);
         recordSharedFinish(message);`;
+const chatBody = "        body: () => bodyRef.current,";
+const chatBodyFixed = `        body: () => {
+          const sharedPhase = sharedSnapshot.get()?.phase;
+          if (sharedPhase === 'implementation') {
+            return { ...bodyRef.current, factoryPhase: 'implementation', chatMode: 'build' };
+          }
+          if (sharedPhase === 'delivery' || sharedPhase === 'delivered') {
+            return { ...bodyRef.current, factoryPhase: 'delivery', chatMode: 'discuss' };
+          }
+          return bodyRef.current;
+        },`;
 const chatReturn = `    return (
       <BaseChat`;
 const chatReturnFixed = `    useSharedChat({
@@ -546,9 +580,13 @@ export function patchSharedChat(source) {
     if (!next.includes(chatImport) || !next.includes(chatFinish)) {
       throw new Error("walkthrough chat was not found");
     }
+    if (!next.includes(chatBody)) {
+      throw new Error("walkthrough chat transport was not found");
+    }
     next = next
       .replace(chatImport, chatImportFixed)
       .replace(chatFinish, chatFinishFixed)
+      .replace(chatBody, chatBodyFixed)
       .replace(chatReturn, chatReturnFixed);
   }
   return next;
@@ -670,6 +708,21 @@ function canRecordMessages(phase: string, roleId: RoleId, messages: IncomingMess
   return true;
 }
 
+function assistantAsksQuestion(content: string): boolean {
+  const withoutThinking = content.replace(/<think>[\\s\\S]*?<\\/think>/gi, '');
+  return withoutThinking.includes('?');
+}
+
+function discoveryReady(messages: { role: string; content: string }[]): boolean {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role !== 'assistant') continue;
+    if (!message.content.trim()) return false;
+    return !assistantAsksQuestion(message.content);
+  }
+  return false;
+}
+
 function isSharedQuestion(question: StoredQuestion): boolean {
   return question.phase === 'implementation' && question.stepId === 'review-approve-dev' && question.targetRoleId === 'developer';
 }
@@ -697,14 +750,15 @@ function presentSnapshot(state: {
   documentHtml: string | null;
 }, roleId: RoleId) {
   const next = nextPhase(state.phase, roleId);
+  const ready = state.phase !== 'discovery' || discoveryReady(state.messages);
   return {
     phase: state.phase,
     messages: state.messages.map((message) => ({ id: message.id, role: message.role, content: message.content })),
     roleId,
     waitingLabel: waitingLabel(state.phase, roleId, state.questions),
     canSend: canSendPrompt(state.phase, roleId),
-    canTransition: next != null,
-    transitionLabel: next ? transitionLabel(state.phase) : null,
+    canTransition: next != null && ready,
+    transitionLabel: next && ready ? transitionLabel(state.phase) : null,
     canDownload: state.phase === 'delivered' && Boolean(state.documentHtml),
     questions: state.questions.filter(isSharedQuestion).map((question) => ({
       id: question.id,
@@ -840,6 +894,9 @@ export async function handleProjectRequest(input: {
       if (!state) return { status: 503, body: { error: 'Project store is unavailable.' } };
       const phase = nextPhase(state.phase, roleId);
       if (!phase) return { status: 403, body: { error: "Your role can't move this phase." } };
+      if (state.phase === 'discovery' && !discoveryReady(state.messages)) {
+        return { status: 403, body: { error: 'Discovery still has a question.' } };
+      }
       const document = phase === 'delivered' ? deliveryDocument(state.messages) : null;
       const updated = await query(CAS_PHASE_SQL, [APP_ID, phase, state.phase, document]);
       if (!updated[0]) return { status: 409, body: { error: 'The phase already changed.' } };
@@ -1174,14 +1231,27 @@ function gateDialogSource() {
     "import { useState } from 'react';",
     "import { useStore } from '@nanostores/react';",
     "import { Dialog, DialogDescription, DialogRoot, DialogTitle } from '~/components/ui/Dialog';",
-    "import { continuePrefill, factoryPhaseKickoff, latestFactoryPhaseSummary } from '~/lib/factoryPhase';",
+    "import { continuePrefill, extractFactoryPhaseSummary, factoryPhaseKickoff, latestFactoryPhaseSummary } from '~/lib/factoryPhase';",
     "import { hitlFetch } from '~/lib/hitl/client';",
     "import { sharedSnapshot, startBuilderTurn } from '~/lib/hitl/session';",
     "import type { ProjectSnapshot } from '~/lib/hitl/session';",
     "",
+    "function discoveryText(messages: { role: string; content: string }[]): string | null {",
+    "  for (let index = messages.length - 1; index >= 0; index -= 1) {",
+    "    const message = messages[index];",
+    "    if (message.role !== 'assistant') continue;",
+    "    const summary = extractFactoryPhaseSummary(message.content, 'discovery');",
+    "    if (summary) return summary;",
+    "  }",
+    "  const approved = messages",
+    "    .filter((message) => message.role === 'user' && message.content.trim())",
+    "    .map((message) => message.content.trim());",
+    "  return approved.length > 0 ? approved.join('\\n\\n') : null;",
+    "}",
+    "",
     "function kickoffFor(phase: string, messages: { role: string; content: string }[]): string {",
     "  if (phase === 'implementation') {",
-    "    return continuePrefill('implementation', latestFactoryPhaseSummary(messages, 'discovery')) ?? '';",
+    "    return continuePrefill('implementation', discoveryText(messages)) ?? '';",
     "  }",
     "  if (phase === 'delivery') {",
     "    return factoryPhaseKickoff('delivery', latestFactoryPhaseSummary(messages, 'implementation')) ?? '';",
@@ -1225,6 +1295,22 @@ function gateDialogSource() {
     "      })",
     "      .finally(() => setPending(false));",
     "  };",
+    "",
+    "  if (snapshot.canSend && showTransition) {",
+    "    return (",
+    '      <div className="mb-2 flex justify-end" data-testid="shared-gate">',
+    "        <button",
+    '          type="button"',
+    '          className="rounded-md bg-accent-500 px-2.5 py-1 text-sm text-white disabled:opacity-60"',
+    '          data-testid="shared-gate-transition"',
+    "          disabled={pending}",
+    "          onClick={() => send('transition')}",
+    "        >",
+    "          {snapshot.transitionLabel}",
+    "        </button>",
+    "      </div>",
+    "    );",
+    "  }",
     "",
     "  const title = open ? 'Implementation review' : showTransition ? (snapshot.transitionLabel ?? 'Shared project') : 'Shared project';",
     "  const answeredLine = answered",

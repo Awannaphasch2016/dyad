@@ -14,12 +14,21 @@ import {
   applyBoltWorkflowPatches,
   canSendPrompt,
   deliveryDocument,
+  assistantAsksQuestion,
+  discoveryReady,
   handleProject,
   nextPhase,
   presentSnapshot,
   workflowServerSource,
   WORKFLOW_SQL,
 } from "./bolt-workflow.mjs";
+
+const DISCOVERY_SUMMARY = [
+  "## Discovery summary",
+  "- **Page name:** North Pier Fish",
+  "- **One sentence:** A fish shop on the pier.",
+  "- **Page contents:** fish and chips, clam chowder, and iced tea.",
+].join("\n");
 
 const env = {
   WEWEBPLUS_DATABASE_URL: "postgres://user:secret@ep.example.neon.tech/neondb",
@@ -216,8 +225,31 @@ test("the snapshot hides the seeded discovery question", () => {
   });
   assert.deepEqual(view.questions, []);
   assert.equal(view.canSend, true);
-  assert.equal(view.transitionLabel, "Move to Implementation");
+  assert.equal(view.canTransition, false);
+  assert.equal(view.transitionLabel, null);
+  assert.equal(view.waitingLabel, null);
   assert.equal(view.canDownload, false);
+  const ready = presentSnapshot({
+    phase: "discovery",
+    roleId: "project-manager",
+    documentHtml: null,
+    messages: [
+      { role: "user", content: "North Pier Fish" },
+      { role: "assistant", content: DISCOVERY_SUMMARY },
+    ],
+    questions: [],
+  });
+  assert.equal(ready.canTransition, true);
+  assert.equal(ready.transitionLabel, "Move to Implementation");
+  const developer = presentSnapshot({
+    phase: "discovery",
+    roleId: "developer",
+    documentHtml: null,
+    messages: [{ role: "assistant", content: DISCOVERY_SUMMARY }],
+    questions: [],
+  });
+  assert.equal(developer.canTransition, false);
+  assert.equal(developer.waitingLabel, "Waiting on the Project Manager.");
 });
 
 test("both roles read one project and only the project manager records a discovery prompt", async () => {
@@ -282,6 +314,103 @@ test("both roles read one project and only the project manager records a discove
   assert.equal(empty.status, 400);
 });
 
+test("discovery stays open while the latest reply asks a question", async () => {
+  assert.equal(
+    assistantAsksQuestion("Should the page name be North Pier Fish?"),
+    true,
+  );
+  assert.equal(
+    assistantAsksQuestion(
+      "<think>Is the name North Pier Fish?</think>The page name is North Pier Fish.",
+    ),
+    false,
+  );
+  assert.equal(discoveryReady([]), false);
+  assert.equal(
+    discoveryReady([
+      { role: "assistant", content: DISCOVERY_SUMMARY },
+      { role: "assistant", content: "Want to change anything?" },
+    ]),
+    false,
+  );
+  assert.equal(
+    discoveryReady([
+      { role: "assistant", content: "The page name is North Pier Fish." },
+    ]),
+    true,
+  );
+  const store = memory();
+  await call(store, "user_pm", {
+    method: "POST",
+    json: {
+      command: "record",
+      messages: [
+        { id: "u1", role: "user", content: "North Pier Fish" },
+        {
+          id: "a1",
+          role: "assistant",
+          content: "Should the page name be North Pier Fish?",
+        },
+      ],
+    },
+  });
+  assert.equal(discoveryReady(store.messages), false);
+  const blocked = await call(store, "user_pm", {
+    method: "POST",
+    json: { command: "transition" },
+  });
+  assert.equal(blocked.status, 403);
+  assert.equal(blocked.body.error, "Discovery still has a question.");
+  assert.equal(store.project.phase, "discovery");
+  assert.equal(
+    store.questions.some((row) => row.phase === "implementation"),
+    false,
+  );
+  await call(store, "user_pm", {
+    method: "POST",
+    json: {
+      command: "record",
+      messages: [
+        {
+          id: "a-think",
+          role: "assistant",
+          content:
+            "<think>Is the name settled?</think>\nWhat one sentence should describe the page?",
+        },
+      ],
+    },
+  });
+  const thinking = await call(store, "user_pm", {
+    method: "POST",
+    json: { command: "transition" },
+  });
+  assert.equal(thinking.status, 403);
+  await call(store, "user_pm", {
+    method: "POST",
+    json: {
+      command: "record",
+      messages: [
+        {
+          id: "a-ready",
+          role: "assistant",
+          content: "The page name is North Pier Fish.",
+        },
+      ],
+    },
+  });
+  const view = await call(store, "user_pm", { method: "GET" });
+  assert.equal(view.body.canSend, true);
+  assert.equal(view.body.canTransition, true);
+  assert.equal(view.body.transitionLabel, "Move to Implementation");
+  const moved = await call(store, "user_pm", {
+    method: "POST",
+    json: { command: "transition" },
+  });
+  assert.equal(moved.status, 200);
+  assert.equal(moved.body.snapshot.phase, "implementation");
+  assert.equal(moved.body.snapshot.waitingLabel, "Waiting on the Developer.");
+});
+
 test("implementation belongs to the developer and delivery to the project manager", async () => {
   const store = memory();
   await call(store, "user_pm", {
@@ -290,7 +419,7 @@ test("implementation belongs to the developer and delivery to the project manage
       command: "record",
       messages: [
         { id: "u-fish", role: "user", content: "North Pier <Fish>." },
-        { id: "a-fish", role: "assistant", content: "A fish shop." },
+        { id: "a-fish", role: "assistant", content: DISCOVERY_SUMMARY },
       ],
     },
   });
@@ -462,6 +591,7 @@ test("the walkthrough page uses the builder chat and one gate", () => {
       "import { BaseChat } from './BaseChat';",
       "      onFinish: ({ message }) => {",
       "        setProgressAnnotations([]);",
+      "        body: () => bodyRef.current,",
       "    return (",
       "      <BaseChat",
     ].join("\n"),
@@ -502,6 +632,7 @@ test("the walkthrough page uses the builder chat and one gate", () => {
   const client = readFileSync(join(chatDir, "Chat.client.tsx"), "utf8");
   assert.match(client, /useSharedChat\(/);
   assert.match(client, /recordSharedFinish\(message\)/);
+  assert.match(client, /chatMode: 'build'/);
   const base = readFileSync(join(chatDir, "BaseChat.tsx"), "utf8");
   assert.match(base, /SharedGateDialog/);
   const parser = readFileSync(
@@ -527,6 +658,11 @@ test("the walkthrough page uses the builder chat and one gate", () => {
     "utf8",
   );
   assert.match(gate, /data-testid="shared-gate"/);
+  assert.match(gate, /snapshot\.canSend && showTransition/);
+  assert.match(gate, /extractFactoryPhaseSummary/);
+  assert.match(gate, /message\.role === 'user'/);
+  assert.match(server, /Discovery still has a question/);
+  assert.match(server, /function discoveryReady/);
   assert.equal(existsSync(join(bar, "SharedProject.tsx")), false);
   assert.equal(existsSync(join(bar, "HitlGateList.tsx")), false);
 });
