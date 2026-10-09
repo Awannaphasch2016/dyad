@@ -147,3 +147,63 @@ export async function pressComposerEnter(page: Page, prompt: string) {
 }
 
 export const sendWalkthroughPrompt = pressComposerEnter;
+
+// The live preview keeps Move to Implementation off while the latest assistant
+// reply still asks a question. These are the fixed answers for that case.
+export const DISCOVERY_FOLLOW_UPS = [
+  "Yes. The page name is North Pier Fish.",
+  "Welcome to North Pier Fish.",
+  "The page shows the restaurant name, a welcome line, and a menu of fish and chips, clam chowder, and iced tea.",
+];
+
+export function assistantAsksQuestion(content: string) {
+  return content.replace(/<think>[\s\S]*?<\/think>/gi, "").includes("?");
+}
+
+export function latestAssistant(
+  messages: { id: string; role: string; content: string }[] | undefined,
+) {
+  for (let index = (messages ?? []).length - 1; index >= 0; index -= 1) {
+    const message = messages?.[index];
+    if (message && message.role === "assistant" && message.content.trim()) {
+      return message;
+    }
+  }
+  return null;
+}
+
+// Send the fixed answers while Discovery's latest reply asks a question and
+// the transition is still closed. Stop when the server opens the transition.
+export async function finishDiscovery(page: Page) {
+  let followUps = 0;
+  const deadline = Date.now() + 12 * 60 * 1000;
+  let previousAssistantId = "";
+  while (Date.now() < deadline) {
+    const probe = await projectSnapshot(page);
+    const body = (probe.body ?? {}) as {
+      canTransition?: boolean;
+      messages?: { id: string; role: string; content: string }[];
+    };
+    if (probe.status === 200 && body.canTransition === true) {
+      return { messages: body.messages ?? [], followUps };
+    }
+    const latest = latestAssistant(body.messages);
+    if (
+      probe.status === 200 &&
+      latest &&
+      latest.id !== previousAssistantId &&
+      assistantAsksQuestion(latest.content)
+    ) {
+      if (followUps >= DISCOVERY_FOLLOW_UPS.length) {
+        throw new Error(
+          `Discovery still has a question after the fixed answers: ${latest.content.slice(0, 180)}`,
+        );
+      }
+      previousAssistantId = latest.id;
+      await sendWalkthroughPrompt(page, DISCOVERY_FOLLOW_UPS[followUps]);
+      followUps += 1;
+    }
+    await page.waitForTimeout(2_000);
+  }
+  throw new Error("Move to Implementation did not open");
+}

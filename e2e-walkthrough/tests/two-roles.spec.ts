@@ -6,6 +6,7 @@ import {
   openWalkthrough,
   pressComposerEnter,
   projectSnapshot,
+  finishDiscovery,
   sendWalkthroughPrompt,
   signInAs,
   writeReport,
@@ -19,7 +20,6 @@ const BLOCKED_PROMPT = "Developer should not send.";
 // The page polls every 2 seconds. A handover has to show up on the other
 // screen within a handful of those polls.
 const HANDOVER_MS = 15_000;
-const MODEL_MS = 3 * 60 * 1000;
 
 interface Snapshot {
   phase?: string;
@@ -81,6 +81,8 @@ async function untilSnapshot(
           detail = JSON.stringify({
             status: probe.status,
             phase: body.phase,
+            roleId: body.roleId,
+            canSend: body.canSend,
             canTransition: body.canTransition,
             waitingLabel: body.waitingLabel,
             messages: (body.messages ?? []).map((item) => item.id),
@@ -128,7 +130,7 @@ function contextOptions(videoDir: string) {
 }
 
 test("both roles walk one shared project", async ({ browser }) => {
-  test.setTimeout(8 * 60 * 1000);
+  test.setTimeout(16 * 60 * 1000);
   test.skip(
     !ROLES.pm.userId || !ROLES.dev.userId,
     "a walkthrough user id is absent",
@@ -162,10 +164,7 @@ test("both roles walk one shared project", async ({ browser }) => {
 
     await untilSnapshot(
       pmPage,
-      (body) =>
-        body.phase === "discovery" &&
-        body.canSend === true &&
-        body.canTransition === true,
+      (body) => body.phase === "discovery" && body.canSend === true,
       30_000,
       "Discovery did not open for the Project Manager",
     );
@@ -210,20 +209,9 @@ test("both roles walk one shared project", async ({ browser }) => {
     expect(blocked).toBe(403);
 
     const sent = await sendWalkthroughPrompt(pmPage, PROMPT);
-    const replied = await untilSnapshot(
-      pmPage,
-      (body) =>
-        (body.messages ?? []).some(
-          (message) =>
-            message.role === "user" && message.content.includes(PROMPT),
-        ) &&
-        (body.messages ?? []).some(
-          (message) => message.role === "assistant" && message.content.trim(),
-        ),
-      MODEL_MS,
-      "the assistant reply was not stored",
-    );
-    const ids = (replied.messages ?? []).map((message) => message.id);
+    const finished = await finishDiscovery(pmPage);
+    const replied = { messages: finished.messages };
+    const ids = finished.messages.map((message) => message.id);
     const devReply = await untilSnapshot(
       devPage,
       (body) =>
@@ -246,7 +234,10 @@ test("both roles walk one shared project", async ({ browser }) => {
     await shot(pmPage, "two-roles-2-reply-pm");
     await shot(devPage, "two-roles-2-reply-dev");
 
-    await pmPage.getByTestId("shared-gate-transition").click();
+    const move = pmPage.getByTestId("shared-gate-transition");
+    await expect(move).toBeVisible();
+    await expect(move).toContainText("Move to Implementation");
+    await move.click();
     await untilSnapshot(
       devPage,
       (body) =>
@@ -451,7 +442,7 @@ test("both roles walk one shared project", async ({ browser }) => {
     expect(devInstalls.length).toBeLessThan(2);
 
     writeReport("two-roles", {
-      summary: `both roles · composer covered: ${sent.covered} · developer record before the prompt: ${blocked} · second answer ${repeat} stored nothing new · project manager transition ${pmMove} · developer approval ${devApprove} · messages ${devReply.messages?.length ?? 0} · files ${files.join(",") || "none"} · dev install logs ${devInstalls.length} · downloads ${pmFile.length} bytes and identical · reload kept the prompt · signed out 401`,
+      summary: `both roles · composer covered: ${sent.covered} · discovery follow-ups ${finished.followUps} · developer record before the prompt: ${blocked} · second answer ${repeat} stored nothing new · project manager transition ${pmMove} · developer approval ${devApprove} · messages ${devReply.messages?.length ?? 0} · files ${files.join(",") || "none"} · dev install logs ${devInstalls.length} · downloads ${pmFile.length} bytes and identical · reload kept the prompt · signed out 401`,
       prompt: PROMPT,
       answer: ANSWER,
       secondAnswerStatus: repeat,

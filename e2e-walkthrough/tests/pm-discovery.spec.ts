@@ -4,6 +4,7 @@ import {
   ROLES,
   openWalkthrough,
   projectSnapshot,
+  finishDiscovery,
   sendWalkthroughPrompt,
   signInAs,
   writeReport,
@@ -52,7 +53,7 @@ test("pm: discovery prompt moves the shared project to implementation", async ({
   page,
   context,
 }) => {
-  test.setTimeout(8 * 60 * 1000);
+  test.setTimeout(16 * 60 * 1000);
   const role = ROLES.pm;
   test.skip(!role.userId, "WALKTHROUGH_PM_USER_ID is absent");
 
@@ -62,37 +63,23 @@ test("pm: discovery prompt moves the shared project to implementation", async ({
 
   const discovery = await untilSnapshot(
     page,
-    (body) =>
-      body.phase === "discovery" &&
-      body.canSend === true &&
-      body.canTransition === true,
+    (body) => body.phase === "discovery" && body.canSend === true,
     30_000,
     "Discovery did not open for the Project Manager",
   );
   await expect(page.getByTestId("factory-phase-discovery")).toBeVisible();
-  const gate = page.getByTestId("shared-gate-transition");
-  await expect(gate).toBeVisible();
-  await expect(gate).toContainText("Move to Implementation");
   await page.screenshot({
     path: "artifacts/pm-discovery-1-gate.png",
     fullPage: true,
   });
 
   const sent = await sendWalkthroughPrompt(page, PROMPT);
-  const replied = await untilSnapshot(
-    page,
-    (body) =>
-      (body.messages ?? []).some(
-        (message) =>
-          message.role === "user" && message.content.includes(PROMPT),
-      ) &&
-      (body.messages ?? []).some(
-        (message) => message.role === "assistant" && message.content.trim(),
-      ),
-    3 * 60 * 1000,
-    "the assistant reply was not stored on the shared project",
-  );
+  const finished = await finishDiscovery(page);
+  const replied = { messages: finished.messages };
   await expect(page.getByText(PROMPT).first()).toBeVisible();
+  const gate = page.getByTestId("shared-gate-transition");
+  await expect(gate).toBeVisible();
+  await expect(gate).toContainText("Move to Implementation");
   await page.screenshot({
     path: "artifacts/pm-discovery-2-reply.png",
     fullPage: true,
@@ -144,7 +131,7 @@ test("pm: discovery prompt moves the shared project to implementation", async ({
   expect(signedOut.status).toBe(401);
 
   writeReport("pm-discovery", {
-    summary: `pm · prompt stored · assistant stored · composer covered by the gate: ${sent.covered} · phase ${discovery.phase} → ${implementation.phase} · waiting: ${implementation.waitingLabel} · reload keeps ${reloaded.phase} · signed-out status ${signedOut.status} · messages ${replied.messages?.length ?? 0}`,
+    summary: `pm · prompt stored · assistant stored · discovery follow-ups ${finished.followUps} · composer covered by the gate: ${sent.covered} · phase ${discovery.phase} → ${implementation.phase} · waiting: ${implementation.waitingLabel} · reload keeps ${reloaded.phase} · signed-out status ${signedOut.status} · messages ${replied.messages?.length ?? 0}`,
     prompt: PROMPT,
     composerCoveredByGate: sent.covered,
     discoveryPhase: discovery.phase,

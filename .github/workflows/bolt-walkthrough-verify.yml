@@ -28,7 +28,7 @@ jobs:
   verify:
     if: github.ref == 'refs/heads/cursor/automated-hitl-verification-851d'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Check out the scripts
         uses: actions/checkout@v4
