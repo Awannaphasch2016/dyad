@@ -8,7 +8,7 @@ import { GhError } from "./gh.js";
 const RESULT_LINE = /^([A-Za-z_][A-Za-z0-9_]*)=(\S.*)$/;
 const SENSITIVE_KEY = /TOKEN|KEY|SECRET|PASSWORD|ARN/i;
 const SAFE_VALUE =
-  /^(present|absent|ok|broken|missing|present-but-not-a-private-key|http-\d{3}|[0-9]+|true|false)(\s+[a-z_]+=\S+)*$/;
+  /^(present|absent|stored|ok|broken|missing|present-but-not-a-private-key|http-\d{3}|[0-9]+|true|false)(\s+[a-z_]+=\S+)*$/;
 
 export function parseResultLines(log) {
   const results = new Map();

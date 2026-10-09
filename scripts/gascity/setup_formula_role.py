@@ -404,8 +404,10 @@ def main():
         role_arn = ensure_role(aws, env, account_id)
         status = store_role_arn(dyad_token, role_arn, project, config)
         print(f"doppler {SECRET_NAME} http {status} project={project or 'unknown'} config={config or 'unknown'}")
+        print(f"doppler_write=http-{status} project={project or 'unknown'} config={config or 'unknown'}")
         if status not in (200, 201):
             raise SystemExit(f"doppler write failed ({status})")
+        print(f"{SECRET_NAME}=stored")
         print("setup-formula-role done")
     finally:
         shutil.rmtree(work, ignore_errors=True)

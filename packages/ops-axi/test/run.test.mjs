@@ -40,6 +40,7 @@ test("redact keeps status words and hides anything else under a secret-looking k
     redact("dyad_token", "http-401 project=dyad config=prd"),
     "http-401 project=dyad config=prd",
   );
+  assert.equal(redact("AWS_PREVIEW_FORMULA_ROLE_ARN", "stored"), "stored");
   assert.equal(redact("GH_TOKEN", "ghp_abcdef"), "<redacted>");
   assert.equal(redact("role_arn", "arn:aws:iam::1:role/x"), "<redacted>");
   assert.equal(redact("url", "http://x"), "http://x");
