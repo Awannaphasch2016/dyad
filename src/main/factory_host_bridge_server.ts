@@ -24,6 +24,7 @@ import {
   createHitlQuestion,
   getHitlQuestion,
   listHitlQuestions,
+  resumeAnsweredFactoryQuestions,
   syncRemote,
 } from "@/control_plane/hitl_device";
 import type { HitlCaller } from "@/control_plane/hitl";
@@ -359,6 +360,13 @@ export async function startFactoryHostBridgeFromEnv(): Promise<void> {
     });
   });
   activeServer = server;
+  // The bridge is already listening. A database that is not ready, or one
+  // follow-up that fails, must not take it down. The next start retries.
+  try {
+    await resumeAnsweredFactoryQuestions(db);
+  } catch {
+    return;
+  }
 }
 
 export function stopFactoryHostBridge(): void {

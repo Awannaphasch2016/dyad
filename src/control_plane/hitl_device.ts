@@ -271,6 +271,44 @@ async function resumeLocalRun(
   return resume?.acceptance === "accepted";
 }
 
+/** Start follow-ups for answers that were stored and then lost the dispatch. An accepted follow-up is left alone. */
+export async function resumeAnsweredFactoryQuestions(
+  database: DeviceDb,
+  dispatch?: FactoryRunDispatch,
+): Promise<number> {
+  const answered = database
+    .select()
+    .from(hitlQuestions)
+    .where(eq(hitlQuestions.status, "answered"))
+    .all();
+  let started = 0;
+  for (const question of answered) {
+    const existing = database
+      .select()
+      .from(factoryHostRuns)
+      .where(eq(factoryHostRuns.idempotencyKey, `${question.id}:resume`))
+      .get();
+    if (existing?.acceptance === "accepted") continue;
+    const answer = database
+      .select()
+      .from(hitlAnswers)
+      .where(eq(hitlAnswers.questionId, question.id))
+      .get();
+    if (!answer) continue;
+    const ok = await resumeLocalRun(database, {
+      appId: question.appId,
+      phase: question.phase,
+      runId: question.runId,
+      questionId: question.id,
+      questionBody: question.body,
+      answerBody: answer.body,
+      dispatch,
+    });
+    if (ok) started += 1;
+  }
+  return started;
+}
+
 export async function syncRemote(
   question: HitlQuestionRecord,
   answer?: { userId: string; body: string; createdAt: Date },

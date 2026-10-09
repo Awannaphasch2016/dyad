@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { apps, chats, hitlQuestions } from "@/db/schema";
 import { createInMemoryTestDb, type TestDb } from "@/testing/test_db";
 import { createFactoryHostBridgeServer } from "./factory_host_bridge_server";
+import { resumeAnsweredFactoryQuestions } from "@/control_plane/hitl_device";
 import type { HitlCaller } from "@/control_plane/hitl";
 
 const ORG = "org_wewebplus";
@@ -15,6 +16,7 @@ describe("factory host HITL questions", () => {
   let baseUrl: string;
   let server: ReturnType<typeof createFactoryHostBridgeServer>;
   let dispatched: { prompt: string }[];
+  let crashResume: boolean;
   const callers = new Map<string, HitlCaller>([
     [
       "pm",
@@ -60,11 +62,15 @@ describe("factory host HITL questions", () => {
       database.insert(chats).values({ appId, title }).run();
     }
     dispatched = [];
+    crashResume = false;
     server = createFactoryHostBridgeServer({
       token: "machine-token",
       database,
       resolveCaller: async (token) => callers.get(token) ?? null,
       dispatchChatIntent: async (intent) => {
+        if (crashResume && intent.prompt.includes("Use Tiny Bakery")) {
+          throw new Error("crash");
+        }
         dispatched.push({ prompt: intent.prompt });
         return "accepted";
       },
@@ -258,5 +264,54 @@ describe("factory host HITL questions", () => {
     expect(again.status).toBe(200);
     expect(again.body.resolved).toBe(false);
     expect(dispatched).toHaveLength(before + 1);
+  });
+
+  it("resumes one accepted run after the dispatch crashes", async () => {
+    crashResume = true;
+    await request(`/v1/apps/${appId}/link`, {
+      method: "PUT",
+      body: { gasCityProjectId: "gc-crash" },
+    });
+    const started = await request(
+      `/v1/apps/${appId}/phases/implementation/runs`,
+      {
+        method: "POST",
+        body: { idempotencyKey: "build-crash", prompt: "Build the page" },
+      },
+    );
+    expect(started.status).toBe(202);
+    const asked = await request(
+      `/v1/apps/${appId}/phases/implementation/questions`,
+      {
+        method: "POST",
+        body: {
+          idempotencyKey: "build-crash:question",
+          runId: started.body.runId,
+          stepId: "question",
+          targetRoleId: "developer",
+          body: "Which name should the page use?",
+        },
+      },
+    );
+    const answered = await request(
+      `/v1/apps/${appId}/phases/implementation/questions/${asked.body.id}/answers`,
+      { method: "POST", body: { body: "Use Tiny Bakery" } },
+      "dev",
+    );
+    expect(answered.body.resolved).toBe(false);
+    expect(
+      dispatched.some((intent) => intent.prompt.includes("Use Tiny Bakery")),
+    ).toBe(false);
+
+    const recovered: { prompt: string }[] = [];
+    const recover = async (intent: { prompt: string }) => {
+      recovered.push({ prompt: intent.prompt });
+      return "accepted" as const;
+    };
+    expect(await resumeAnsweredFactoryQuestions(database, recover)).toBe(1);
+    expect(recovered).toHaveLength(1);
+    expect(recovered[0]?.prompt).toContain("Use Tiny Bakery");
+    expect(await resumeAnsweredFactoryQuestions(database, recover)).toBe(0);
+    expect(recovered).toHaveLength(1);
   });
 });

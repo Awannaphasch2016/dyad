@@ -6,7 +6,7 @@ Branch `cursor/hitl-experiment-a-d072`. Evidence for the verification list in `p
 
 2026-10-09. `npm test -- src/control_plane/hitl.test.ts src/main/factory_host_bridge_hitl.test.ts src/main/factory_host_bridge_server.test.ts`: 12 tests passed.
 
-Confirmed in code, unchanged by this branch: `answerHitlQuestion` returns `resolved: false`; `QuestionBody` requires `gateBeadId`; `factoryHost.approvePhase` has no permission check; `factory.approve` requires `approve-<phase>`, which only the project manager holds.
+Baseline, before the steps below: `answerHitlQuestion` returned `resolved: false`; `QuestionBody` required `gateBeadId`; `factoryHost.approvePhase` has no permission check; `factory.approve` requires `approve-<phase>`, which only the project manager holds. A3 and A4 change the first two. The two approval paths are unchanged.
 
 ## P3 two sign-ins
 
@@ -29,3 +29,7 @@ The three phase prompts tell the agent to write `## Request for project-manager`
 ## A4 resume from an answer
 
 Answering a question whose `runId` is a local factory run starts one follow-up. The prompt contains the question and the answer. The idempotency key is `<question id>:resume`. A second answer does not start another run. `resolved` is true only when that follow-up was accepted. A question with no local run, including the existing gate test, still returns `resolved: false`. The follow-up does not require the app to be linked to GasCity. Asserted by "starts one resume run from an answer and ignores a second answer".
+
+## A5 restart
+
+`resumeAnsweredFactoryQuestions` runs when the factory bridge starts. An answer whose follow-up dispatch threw is started once on the next call, and a second call does not start another. Asserted by "resumes one accepted run after the dispatch crashes". The bridge still listens when the database is not initialized yet.
