@@ -127,7 +127,7 @@ jobs:
     needs: deploy
     if: github.ref == 'refs/heads/cursor/bolt-doppler-55d6' || github.ref == 'refs/heads/cursor/shared-hitl-workflow-851d' || github.ref == 'refs/heads/cursor/builder-session-hitl-851d' || github.ref == 'refs/heads/cursor/preview-ui-verify-851d'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     permissions:
       contents: read
       actions: write

@@ -169,6 +169,11 @@ test("the contract matches the product labels and does not follow them by import
   );
   assert.equal(WALKTHROUGH_EXPECTATIONS.answer, "The menu is on the page.");
   assert.equal(
+    WALKTHROUGH_EXPECTATIONS.discoveryPrompt,
+    "A one-page site for North Pier Fish with the restaurant name, a welcome line, and a menu of fish and chips, clam chowder, and iced tea.",
+  );
+  assert.equal(FUNCTIONAL_STEPS.includes("send-discovery-description"), true);
+  assert.equal(
     WALKTHROUGH_EXPECTATIONS.projectManager,
     "Wewebplus · Project Manager",
   );

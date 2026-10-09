@@ -22,5 +22,5 @@ The shared Bolt walkthrough is not ready for review until the `verify` job in `.
 - It resets `wewebplus` app `bolt-walkthrough`: answers, questions, messages, and `project_state` go back to Discovery. Memberships, the app row, and the chat row stay. Say that a run replaces the shared preview people may already be viewing.
 - It signs in the existing Project Manager and Developer with short-lived Clerk sign-in tokens (`strategy: "ticket"`). Development keys only. Stop on `sk_live_` or `pk_live_`. Never log a token.
 - It does not open Google or Microsoft, and it does not complete Microsoft Authenticator.
-- Two browser contexts stay isolated. The job checks who can send, who can answer, who can move each phase, and that both downloads match and contain the Developer answer.
+- Two browser contexts stay isolated. The Project Manager types the Discovery description in the page box before Move to Implementation. That card does not cover the box. The job checks who can send, who can answer, who can move each phase, and that both downloads match and contain the typed description and the Developer answer.
 - Playwright on the GitHub-hosted runner is the functional gate. Do not add Browserbase, Stagehand, Skyvern, Momentic, mabl, or QA Wolf unless an account is already available. A model's opinion of the layout is not a pass gate.

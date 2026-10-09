@@ -515,12 +515,23 @@ export function patchWalkthroughComposer(source) {
 
 const chatImport = "import { BaseChat } from './BaseChat';";
 const chatImportFixed = `import { BaseChat } from './BaseChat';
-import { recordSharedFinish, useSharedChat } from '~/lib/hitl/session';`;
+import { recordSharedFinish, sharedSnapshot, useSharedChat } from '~/lib/hitl/session';`;
 const chatFinish = `      onFinish: ({ message }) => {
         setProgressAnnotations([]);`;
 const chatFinishFixed = `      onFinish: ({ message }) => {
         setProgressAnnotations([]);
         recordSharedFinish(message);`;
+const chatBody = "        body: () => bodyRef.current,";
+const chatBodyFixed = `        body: () => {
+          const sharedPhase = sharedSnapshot.get()?.phase;
+          if (sharedPhase === 'implementation') {
+            return { ...bodyRef.current, factoryPhase: 'implementation', chatMode: 'build' };
+          }
+          if (sharedPhase === 'delivery' || sharedPhase === 'delivered') {
+            return { ...bodyRef.current, factoryPhase: 'delivery', chatMode: 'discuss' };
+          }
+          return bodyRef.current;
+        },`;
 const chatReturn = `    return (
       <BaseChat`;
 const chatReturnFixed = `    useSharedChat({
@@ -546,9 +557,13 @@ export function patchSharedChat(source) {
     if (!next.includes(chatImport) || !next.includes(chatFinish)) {
       throw new Error("walkthrough chat was not found");
     }
+    if (!next.includes(chatBody)) {
+      throw new Error("walkthrough chat transport was not found");
+    }
     next = next
       .replace(chatImport, chatImportFixed)
       .replace(chatFinish, chatFinishFixed)
+      .replace(chatBody, chatBodyFixed)
       .replace(chatReturn, chatReturnFixed);
   }
   return next;
@@ -1179,9 +1194,16 @@ function gateDialogSource() {
     "import { sharedSnapshot, startBuilderTurn } from '~/lib/hitl/session';",
     "import type { ProjectSnapshot } from '~/lib/hitl/session';",
     "",
+    "function discoveryText(messages: { role: string; content: string }[]): string | null {",
+    "  const summary = latestFactoryPhaseSummary(messages, 'discovery');",
+    "  if (summary) return summary;",
+    "  const typed = [...messages].reverse().find((message) => message.role === 'user')?.content?.trim();",
+    "  return typed || null;",
+    "}",
+    "",
     "function kickoffFor(phase: string, messages: { role: string; content: string }[]): string {",
     "  if (phase === 'implementation') {",
-    "    return continuePrefill('implementation', latestFactoryPhaseSummary(messages, 'discovery')) ?? '';",
+    "    return continuePrefill('implementation', discoveryText(messages)) ?? '';",
     "  }",
     "  if (phase === 'delivery') {",
     "    return factoryPhaseKickoff('delivery', latestFactoryPhaseSummary(messages, 'implementation')) ?? '';",
@@ -1225,6 +1247,22 @@ function gateDialogSource() {
     "      })",
     "      .finally(() => setPending(false));",
     "  };",
+    "",
+    "  if (snapshot.canSend && showTransition) {",
+    "    return (",
+    '      <div className="mb-2 flex justify-end" data-testid="shared-gate">',
+    "        <button",
+    '          type="button"',
+    '          className="rounded-md bg-accent-500 px-2.5 py-1 text-sm text-white disabled:opacity-60"',
+    '          data-testid="shared-gate-transition"',
+    "          disabled={pending}",
+    "          onClick={() => send('transition')}",
+    "        >",
+    "          {snapshot.transitionLabel}",
+    "        </button>",
+    "      </div>",
+    "    );",
+    "  }",
     "",
     "  const title = open ? 'Implementation review' : showTransition ? (snapshot.transitionLabel ?? 'Shared project') : 'Shared project';",
     "  const answeredLine = answered",

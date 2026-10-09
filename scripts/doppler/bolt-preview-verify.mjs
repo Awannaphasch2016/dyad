@@ -28,6 +28,8 @@ export const WALKTHROUGH_EXPECTATIONS = {
   projectManager: "Wewebplus · Project Manager",
   developer: "Wewebplus · Developer",
   placeholder: "Describe the page",
+  discoveryPrompt:
+    "A one-page site for North Pier Fish with the restaurant name, a welcome line, and a menu of fish and chips, clam chowder, and iced tea.",
   moveToImplementation: "Move to Implementation",
   waitingOnProjectManager: "Waiting on the Project Manager.",
   waitingOnDeveloper: "Waiting on the Developer.",
@@ -44,6 +46,7 @@ export const FUNCTIONAL_STEPS = [
   "sign-in-developer",
   "discovery-role-isolation",
   "developer-cannot-send",
+  "send-discovery-description",
   "move-to-implementation",
   "manager-cannot-answer",
   "developer-answers",
@@ -54,6 +57,8 @@ export const FUNCTIONAL_STEPS = [
 ];
 
 const UI_TIMEOUT_MS = 30_000;
+const DISCOVERY_REPLY_MS = 240_000;
+const PREVIEW_WAIT_MS = 120_000;
 
 export function resetStatements(
   appId = WALKTHROUGH_APP_ID,
@@ -421,11 +426,57 @@ async function captureDownload(page, file) {
   return readFileSync(file, "utf8");
 }
 
+async function projectSnapshot(page) {
+  return page.evaluate(async () => {
+    const token = await window.Clerk?.session?.getToken();
+    const response = await fetch("/api/project", {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) return null;
+    return response.json();
+  });
+}
+
+async function sendDiscoveryDescription(page, dir) {
+  const prompt = WALKTHROUGH_EXPECTATIONS.discoveryPrompt;
+  const box = page.getByPlaceholder(WALKTHROUGH_EXPECTATIONS.placeholder);
+  await box.fill(prompt);
+  await box.press("Enter");
+  const deadline = Date.now() + DISCOVERY_REPLY_MS;
+  while (Date.now() < deadline) {
+    const snapshot = await projectSnapshot(page);
+    const messages = snapshot?.messages ?? [];
+    const stored = messages.some(
+      (message) =>
+        message?.role === "user" &&
+        String(message.content ?? "").includes(prompt),
+    );
+    const replied = messages.some(
+      (message) =>
+        message?.role === "assistant" && String(message.content ?? "").trim(),
+    );
+    if (stored && replied) {
+      await shoot(page, dir, "discovery-reply-project-manager.png");
+      return;
+    }
+    await page.waitForTimeout(2000);
+  }
+  throw new Error("Discovery reply was not stored");
+}
+
 async function readPreview(page) {
   const frame = page.locator('iframe[title="preview"]');
-  if ((await frame.count()) === 0)
-    return { src: "", text: "", readable: false };
-  const src = (await frame.first().getAttribute("src")) ?? "";
+  const deadline = Date.now() + PREVIEW_WAIT_MS;
+  let src = "";
+  while (Date.now() < deadline) {
+    if ((await frame.count()) > 0) {
+      src = (await frame.first().getAttribute("src")) ?? "";
+      if (src && src !== "about:blank") break;
+    }
+    await page.waitForTimeout(2000);
+  }
+  if (!src || src === "about:blank") return { src, text: "", readable: false };
   try {
     const text = await page
       .frameLocator('iframe[title="preview"]')
@@ -451,6 +502,10 @@ async function walk(report, pages, dir) {
 
   await step(report, "developer-cannot-send", () =>
     assertDeveloperCannotSend(dev),
+  );
+
+  await step(report, "send-discovery-description", () =>
+    sendDiscoveryDescription(pm, dir),
   );
 
   await step(report, "move-to-implementation", async () => {
@@ -529,9 +584,10 @@ async function walk(report, pages, dir) {
     }
     if (
       !managerHtml.includes("<h1>Delivered</h1>") ||
-      !managerHtml.includes(expected.answer)
+      !managerHtml.includes(expected.answer) ||
+      !managerHtml.includes(expected.discoveryPrompt)
     ) {
-      throw new Error("Download did not contain the Developer answer");
+      throw new Error("Download did not contain the typed Discovery text");
     }
   });
 }

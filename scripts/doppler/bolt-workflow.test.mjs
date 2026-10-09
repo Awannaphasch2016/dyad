@@ -462,6 +462,7 @@ test("the walkthrough page uses the builder chat and one gate", () => {
       "import { BaseChat } from './BaseChat';",
       "      onFinish: ({ message }) => {",
       "        setProgressAnnotations([]);",
+      "        body: () => bodyRef.current,",
       "    return (",
       "      <BaseChat",
     ].join("\n"),
@@ -502,6 +503,7 @@ test("the walkthrough page uses the builder chat and one gate", () => {
   const client = readFileSync(join(chatDir, "Chat.client.tsx"), "utf8");
   assert.match(client, /useSharedChat\(/);
   assert.match(client, /recordSharedFinish\(message\)/);
+  assert.match(client, /chatMode: 'build'/);
   const base = readFileSync(join(chatDir, "BaseChat.tsx"), "utf8");
   assert.match(base, /SharedGateDialog/);
   const parser = readFileSync(
@@ -527,6 +529,8 @@ test("the walkthrough page uses the builder chat and one gate", () => {
     "utf8",
   );
   assert.match(gate, /data-testid="shared-gate"/);
+  assert.match(gate, /snapshot\.canSend && showTransition/);
+  assert.match(gate, /message\.role === 'user'/);
   assert.equal(existsSync(join(bar, "SharedProject.tsx")), false);
   assert.equal(existsSync(join(bar, "HitlGateList.tsx")), false);
 });
