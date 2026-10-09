@@ -32,6 +32,14 @@ The Cursor carrier and the Cursor follow-up are not decided.
 
 ## P2
 
-2026-10-09. Still blocked. The process environment has no `CURSOR_API_KEY`. Doppler is not installed. The GitHub CLI token is a GitHub token. C1–C4 stay unstarted, because the runbook starts them only after P2.
+2026-10-09. GitHub Actions run [38003629139](https://github.com/Awannaphasch2016/dyad/actions/runs/38003629139) on `.github/workflows/hitl-cursor-probe.yml`. The job fetched Doppler project `dyad` config `preview` and project `aws` config `dev` with `DOPPLER_SERVICE_IDENTITY_ID`. `CURSOR_API_KEY` is present in `dyad/preview`. The log does not contain the token.
+
+`GET /v1/me` returned a user key: `userId` and `userEmail` are present, and the key name is `sdd-coordinator`. It is not a service-account key and the payload has no admin role.
+
+`GET /v1/webhooks`, `GET /v0/webhooks`, and `GET /v0/hooks` each returned 404. No webhook exists on those routes. The v1 docs still say webhooks are coming soon.
+
+A no-repo plan agent (`bc-ef4536d3-9314-4a74-9b67-a051b72cabb0`) was created so the probe did not clone or push a repository. The first run was `run-97f4bbd7-0af8-483f-8c5d-c6c5059787bf` and finished with `pong`. The follow-up was a new run id, `run-24e499a3-50ef-48aa-9e4f-b69c9a42804b`, and finished with `pong-2`. Statuses seen: `CREATING`, `RUNNING`, `FINISHED`. The agent was deleted (`DELETE` 200).
+
+C1–C4 can start. They have not started.
 
 The diff from `cursor/galan-software-factory-2fff` does not touch `scripts/gascity/`, GasCity, the Neon schema, or Paperclip.
