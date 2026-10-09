@@ -123,6 +123,12 @@ The first image is published from commit `5e952bb`:
 
 Tags `0.1.36` and `sha-5e952bbca6729cfc2383e23f182788a8d3d8cd6b`, for `linux/amd64` and `linux/arm64`. `toolbox.test.sh` passed in the run before the push. The package is public on GHCR.
 
+The second image, from commit `ecbd5b3`, carries `packages/ops-axi` in the slot, and `toolbox.test.sh` now fails if the stub took it instead:
+
+`ghcr.io/awannaphasch2016/axi-toolbox@sha256:49e83dc64a665870cb28ab55a10ef63b2e2df7369519f4c02086cfdfb5e28b12`
+
+Tags `0.1.36` (moved) and `sha-ecbd5b34…`.
+
 ## What you do
 
 1. Try check 3 with your own token against the digest above.
@@ -133,8 +139,7 @@ Nothing in AWS, Doppler, or Cloudflare changes.
 
 ## Out of scope
 
-- Adding `workflow_dispatch` inputs to the group 4 workflows. That is the prerequisite for the operations AXI and has its own plan.
-- Writing `packages/ops-axi`. This image only reserves the slot.
+- Adding `workflow_dispatch` inputs to the group 4 workflows. `ops-axi` works around the default-branch refusal by rerunning the latest run; see `packages/ops-axi/README.md`.
 - `chrome-devtools-axi`, `lavish-axi`, `tasks-axi`, `quota-axi`.
 - Replacing `gh` in any workflow file. Workflows keep calling `gh`; agents call `gh-axi`.
 - Making this image the dev container for building Dyad. `.devcontainer/devcontainer.json` stays on the universal image.
