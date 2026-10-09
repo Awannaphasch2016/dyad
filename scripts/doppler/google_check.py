@@ -224,10 +224,10 @@ def classify(project, config, names):
     return None, None
 
 
-def drive(token, path, **params):
+def drive(token, path, raw=False, **params):
     params.setdefault("supportsAllDrives", "true")
     query = urllib.parse.urlencode(params)
-    return http("GET", f"https://www.googleapis.com/drive/v3/{path}?{query}", {"Authorization": "Bearer " + token})
+    return http("GET", f"https://www.googleapis.com/drive/v3/{path}?{query}", {"Authorization": "Bearer " + token}, raw=raw)
 
 
 def probe_drive(label, token):
