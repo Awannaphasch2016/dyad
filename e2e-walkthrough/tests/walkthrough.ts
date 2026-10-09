@@ -131,7 +131,9 @@ export async function sendWalkthroughPrompt(page: Page, prompt: string) {
     setter?.call(element, text);
     element.dispatchEvent(new Event("input", { bubbles: true }));
   }, prompt);
-  await expect(box.locator("xpath=parent::div//button")).toBeAttached();
+  await expect(
+    box.locator("xpath=parent::div//button[contains(@class,'absolute')]"),
+  ).toBeAttached();
   await box.evaluate((element) => {
     element.dispatchEvent(
       new KeyboardEvent("keydown", {
