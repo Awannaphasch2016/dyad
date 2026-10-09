@@ -3,7 +3,15 @@
 // Usage: node start-worker.mjs --run-id <id> [--dry-run]
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { cursor, arg, readRun, writeRun, nowIso, SDD_ROOT } from "./lib.mjs";
+import {
+  cursor,
+  sh,
+  arg,
+  readRun,
+  writeRun,
+  nowIso,
+  SDD_ROOT,
+} from "./lib.mjs";
 
 const runId = arg("run-id");
 const dryRun = arg("dry-run", false) === true;
@@ -44,14 +52,31 @@ SPEC>>>
 `;
 }
 
+// The Cloud Agents API accepts a branch name or a commit SHA. A tag name is rejected.
+function resolveStartingRef(repo, ref) {
+  if (/^[0-9a-f]{40}$/.test(ref)) return ref;
+  const listed = sh("git", [
+    "ls-remote",
+    `https://github.com/${repo}`,
+    `refs/heads/${ref}`,
+    `refs/tags/${ref}`,
+  ]);
+  const lines = listed.split("\n").filter(Boolean);
+  const head = lines.find((line) => line.endsWith(`refs/heads/${ref}`));
+  const tag = lines.find((line) => line.endsWith(`refs/tags/${ref}`));
+  return (head ?? tag ?? "").split(/\s+/)[0] || ref;
+}
+
 const prompt = buildPrompt(spec, runId);
+const startingRef = resolveStartingRef(run.impl_repo, run.baseline_ref);
+run.baseline_sha = startingRef;
 const body = {
   prompt: { text: prompt },
   model: { id: run.worker.model },
   repos: [
     {
       url: `https://github.com/${run.impl_repo}`,
-      startingRef: run.baseline_ref,
+      startingRef,
     },
   ],
   autoCreatePR: true,

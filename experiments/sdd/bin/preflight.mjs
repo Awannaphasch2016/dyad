@@ -4,7 +4,7 @@
 //        [--baseline baseline/speckit-1.1.2] [--spec gitcon-v1] [--wall-clock 90] [--usd-cap 25]
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { cursor, sh, arg, writeRun, nowIso, SDD_ROOT } from "./lib.mjs";
+import { cursor, sh, arg, writeRun, nowIso, sleep, SDD_ROOT } from "./lib.mjs";
 import { specSha256, renderSpec } from "./build-spec.mjs";
 import { readFileSync } from "node:fs";
 
@@ -82,7 +82,15 @@ try {
 // 4. Repositories: implementation present, ground truth absent.
 let groundTruthListed = null;
 try {
-  const repos = await cursor("/v1/repositories");
+  let repos;
+  try {
+    repos = await cursor("/v1/repositories");
+  } catch (err) {
+    if (err.status !== 429) throw err;
+    console.log("repository list is rate limited; waiting 60s");
+    await sleep(60_000);
+    repos = await cursor("/v1/repositories");
+  }
   const urls = (repos.items ?? repos.repositories ?? [])
     .map((r) => (typeof r === "string" ? r : (r.repository ?? r.url ?? "")))
     .map((u) =>

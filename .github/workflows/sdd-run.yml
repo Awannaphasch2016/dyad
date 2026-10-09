@@ -2,6 +2,7 @@
 # preflight, starts a Cloud Agent worker on the implementation repository,
 # and waits for it. The run record is pushed with the stored user token so
 # sdd-verify.yml starts; a GITHUB_TOKEN push would not trigger that workflow.
+# The worker starts from the commit of tag baseline/speckit-1.1.2.
 name: SDD run
 
 on:
