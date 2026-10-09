@@ -489,6 +489,21 @@ function createCommandRunner(
             paused: queue.queuePaused,
             entries: queue.queue,
           });
+          if (
+            command.error === undefined &&
+            command.response?.wasCancelled !== true
+          ) {
+            try {
+              const { openFactoryRequestForRun } =
+                await import("@/main/factory_host_request");
+              openFactoryRequestForRun(db, active.intent.intentId);
+            } catch (requestError) {
+              console.error(
+                "[factory-host] request was not opened",
+                requestError,
+              );
+            }
+          }
         } catch (error) {
           const queue = loadAuthoritativeQueue();
           emit({
