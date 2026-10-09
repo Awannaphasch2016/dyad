@@ -7,6 +7,8 @@ import {
   pressComposerEnter,
   projectSnapshot,
   finishDiscovery,
+  newAssistantMessages,
+  replyProof,
   sendWalkthroughPrompt,
   signInAs,
   writeReport,
@@ -20,6 +22,8 @@ const BLOCKED_PROMPT = "Developer should not send.";
 // The page polls every 2 seconds. A handover has to show up on the other
 // screen within a handful of those polls.
 const HANDOVER_MS = 15_000;
+const BUILD_MS = 3 * 60 * 1000;
+const PREVIEW_MS = 60_000;
 
 interface Snapshot {
   phase?: string;
@@ -130,7 +134,7 @@ function contextOptions(videoDir: string) {
 }
 
 test("both roles walk one shared project", async ({ browser }) => {
-  test.setTimeout(16 * 60 * 1000);
+  test.setTimeout(20 * 60 * 1000);
   test.skip(
     !ROLES.pm.userId || !ROLES.dev.userId,
     "a walkthrough user id is absent",
@@ -210,7 +214,6 @@ test("both roles walk one shared project", async ({ browser }) => {
 
     const sent = await sendWalkthroughPrompt(pmPage, PROMPT);
     const finished = await finishDiscovery(pmPage);
-    const replied = { messages: finished.messages };
     const ids = finished.messages.map((message) => message.id);
     const devReply = await untilSnapshot(
       devPage,
@@ -222,15 +225,6 @@ test("both roles walk one shared project", async ({ browser }) => {
       "the Developer did not receive the discovery messages",
     );
     await expect(devPage.getByText(PROMPT).first()).toBeVisible();
-    const files = filePaths(replied);
-    if (files.length > 0) {
-      const name = files[0].split("/").pop() ?? files[0];
-      await expect(
-        devPage.getByText(name, { exact: true }).first(),
-      ).toBeAttached({
-        timeout: 20_000,
-      });
-    }
     await shot(pmPage, "two-roles-2-reply-pm");
     await shot(devPage, "two-roles-2-reply-dev");
 
@@ -265,6 +259,62 @@ test("both roles walk one shared project", async ({ browser }) => {
     );
     await expect(pmPage.getByLabel("Implementation answer")).toHaveCount(0);
     await expect(devPage.getByLabel("Implementation answer")).toBeVisible();
+
+    const discoveryIds = new Set(ids);
+    let prose = "";
+    let built: Snapshot;
+    try {
+      built = await untilSnapshot(
+        pmPage,
+        (body) => {
+          const fresh = newAssistantMessages(body.messages, discoveryIds);
+          if (fresh.length === 0) return false;
+          prose = fresh.map((message) => message.content).join("\n");
+          return filePaths({ messages: fresh }).length > 0;
+        },
+        BUILD_MS,
+        "the Implementation reply was not stored",
+      );
+    } catch (error) {
+      if (prose.trim()) {
+        throw new Error(
+          `the Implementation reply has no filePath: ${prose.slice(0, 180)}`,
+          { cause: error },
+        );
+      }
+      throw error;
+    }
+    const fresh = newAssistantMessages(built.messages, discoveryIds);
+    const files = filePaths({ messages: fresh });
+    const implementationReply =
+      fresh.find((message) => /filePath="/.test(message.content)) ?? fresh[0];
+    const implementationId = implementationReply?.id ?? "";
+    const filePath = files[0] ?? "";
+    const proof = replyProof(implementationReply?.content ?? "", filePath);
+    await untilSnapshot(
+      devPage,
+      (body) =>
+        (body.messages ?? []).some(
+          (message) => message.id === implementationId,
+        ),
+      HANDOVER_MS,
+      "the Developer did not receive the Implementation reply",
+    );
+    await expect(pmPage.getByText(proof).first()).toBeAttached();
+    await expect(devPage.getByText(proof).first()).toBeAttached();
+    const fileName = filePath.split("/").pop() ?? filePath;
+    await expect(
+      devPage.getByText(fileName, { exact: true }).first(),
+    ).toBeAttached({
+      timeout: 20_000,
+    });
+    await expect
+      .poll(async () => previewState(devPage), {
+        timeout: PREVIEW_MS,
+        intervals: [2_000],
+        message: "the preview did not show North Pier Fish",
+      })
+      .toBe("ready");
     await shot(pmPage, "two-roles-3-implementation-pm");
     await shot(devPage, "two-roles-3-implementation-dev");
 
@@ -427,6 +477,8 @@ test("both roles walk one shared project", async ({ browser }) => {
     );
     await expect(pmPage.getByText(PROMPT).first()).toBeAttached();
     await expect(devPage.getByText(PROMPT).first()).toBeAttached();
+    await expect(pmPage.getByText(proof).first()).toBeAttached();
+    await expect(devPage.getByText(proof).first()).toBeAttached();
     await expect(pmPage.getByTestId("factory-phase-delivery")).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -442,7 +494,9 @@ test("both roles walk one shared project", async ({ browser }) => {
     expect(devInstalls.length).toBeLessThan(2);
 
     writeReport("two-roles", {
-      summary: `both roles · composer covered: ${sent.covered} · discovery follow-ups ${finished.followUps} · developer record before the prompt: ${blocked} · second answer ${repeat} stored nothing new · project manager transition ${pmMove} · developer approval ${devApprove} · messages ${devReply.messages?.length ?? 0} · files ${files.join(",") || "none"} · dev install logs ${devInstalls.length} · downloads ${pmFile.length} bytes and identical · reload kept the prompt · signed out 401`,
+      summary: `both roles · composer covered: ${sent.covered} · discovery follow-ups ${finished.followUps} · developer record before the prompt: ${blocked} · implementation reply ${implementationId} · files ${files.join(",") || "none"} · preview North Pier Fish · second answer ${repeat} stored nothing new · project manager transition ${pmMove} · developer approval ${devApprove} · messages ${devReply.messages?.length ?? 0} · dev install logs ${devInstalls.length} · downloads ${pmFile.length} bytes and identical · reload kept the prompt and the implementation reply · signed out 401`,
+      implementationReplyId: implementationId,
+      preview: "North Pier Fish",
       prompt: PROMPT,
       answer: ANSWER,
       secondAnswerStatus: repeat,
@@ -461,6 +515,28 @@ test("both roles walk one shared project", async ({ browser }) => {
     await devContext.close();
   }
 });
+
+async function previewState(page: Page): Promise<string> {
+  const frame = page.locator('iframe[title="preview"]');
+  if ((await frame.count()) > 0) {
+    const text = await frame
+      .first()
+      .contentFrame()
+      .locator("body")
+      .innerText({ timeout: 5_000 })
+      .catch((error: unknown) =>
+        error instanceof Error ? error.message : String(error),
+      );
+    if (text.includes("North Pier Fish")) return "ready";
+    return `frame:${text.slice(0, 180)}`;
+  }
+  if (
+    (await page.getByText("No preview available", { exact: true }).count()) > 0
+  ) {
+    return "No preview available";
+  }
+  return "preview pane missing";
+}
 
 async function openBoth(
   pmContext: BrowserContext,

@@ -160,6 +160,28 @@ export function assistantAsksQuestion(content: string) {
   return content.replace(/<think>[\s\S]*?<\/think>/gi, "").includes("?");
 }
 
+export function newAssistantMessages(
+  messages: { id: string; role: string; content: string }[] | undefined,
+  knownIds: ReadonlySet<string>,
+) {
+  return (messages ?? []).filter(
+    (message) =>
+      message.role === "assistant" &&
+      message.content.trim() &&
+      !knownIds.has(message.id),
+  );
+}
+
+export function replyProof(content: string, filePath: string) {
+  const plain = content
+    .replace(/<boltAction[\s\S]*?<\/boltAction>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (plain.length >= 20) return plain.slice(0, 60);
+  return filePath.split("/").pop() || filePath;
+}
+
 export function latestAssistant(
   messages: { id: string; role: string; content: string }[] | undefined,
 ) {
