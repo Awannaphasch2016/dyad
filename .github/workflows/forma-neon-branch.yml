@@ -1,0 +1,45 @@
+# Create an empty Neon project named forma and point Doppler forma/dev at it.
+# Wewebplus-hitl has no room for another root branch, so this is not a child
+# of the Dyad dev branch. The job does not print connection URLs.
+# This job does not read the production dyad config and does not print URLs.
+
+name: Forma Neon branch
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cursor/forma-doppler-5014
+    paths:
+      - .github/workflows/forma-neon-branch.yml
+      - scripts/gascity/forma-neon-branch.mjs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: forma-neon-branch
+  cancel-in-progress: false
+
+jobs:
+  branch:
+    if: github.ref == 'refs/heads/cursor/forma-doppler-5014'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out the branch script
+        uses: actions/checkout@v4
+
+      - name: Install Doppler CLI
+        run: |
+          set -euo pipefail
+          curl -fsSL https://cli.doppler.com/install.sh | sudo sh
+          doppler --version
+
+      - name: Create the forma Neon branch
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+        run: |
+          set -euo pipefail
+          set +x
+          node scripts/gascity/forma-neon-branch.mjs

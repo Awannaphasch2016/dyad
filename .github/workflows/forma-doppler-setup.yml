@@ -1,0 +1,45 @@
+# Create Doppler project forma and organize forma/dev.
+# forma/dev inherits aws.dev. Selected names are copied from dyad/preview.
+# This job does not read or write the production dyad config, does not print
+# secret values, and does not change the empty forms project.
+
+name: Forma Doppler setup
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cursor/forma-doppler-5014
+    paths:
+      - .github/workflows/forma-doppler-setup.yml
+      - scripts/gascity/forma-doppler.mjs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: forma-doppler-setup
+  cancel-in-progress: false
+
+jobs:
+  setup:
+    if: github.ref == 'refs/heads/cursor/forma-doppler-5014'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the setup script
+        uses: actions/checkout@v4
+
+      - name: Install Doppler CLI
+        run: |
+          set -euo pipefail
+          curl -fsSL https://cli.doppler.com/install.sh | sudo sh
+          doppler --version
+
+      - name: Organize forma
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+        run: |
+          set -euo pipefail
+          set +x
+          node scripts/gascity/forma-doppler.mjs
