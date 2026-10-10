@@ -214,4 +214,17 @@ if grep -q '/usr/local/sbin/gascity-rollout' .github/workflows/gascity-rollout.y
   exit 1
 fi
 
+if ! grep -q 'docker builder prune -af' scripts/gascity/rollout.sh; then
+  echo "rollout.sh does not drop the Docker build cache" >&2
+  exit 1
+fi
+if ! grep -q 'docker image prune -af' scripts/gascity/rollout.sh; then
+  echo "rollout.sh does not drop unused images" >&2
+  exit 1
+fi
+if grep -q -- '--volumes' scripts/gascity/rollout.sh || grep -q 'volume prune' scripts/gascity/rollout.sh; then
+  echo "rollout.sh prunes volumes" >&2
+  exit 1
+fi
+
 echo "rollout helpers ok"
