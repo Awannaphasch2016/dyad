@@ -1,6 +1,7 @@
 # Publish the bare domain onto the canary tunnel.
-# A normal canary deploy cannot write this name. This file's push trigger
-# runs the writer once. It does not stop gascity-server.
+# A normal canary deploy cannot write this name. The one-shot push already
+# published it, so this file now runs only from a manual dispatch.
+# It does not stop gascity-server.
 # The canary OIDC identity trusts only canary-verify.yml, so this job reads
 # dyad/canary with the admin token and never requests dyad/prd.
 # A Vercel token that names a team scope is retried by reading that team.
@@ -10,11 +11,7 @@
 name: Promote apex
 
 on:
-  push:
-    branches:
-      - cursor/ecs-hitl-cutover-bbea
-    paths:
-      - .github/workflows/promote-apex.yml
+  workflow_dispatch:
 
 permissions:
   contents: read
