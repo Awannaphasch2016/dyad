@@ -68,6 +68,18 @@ Question `16a4462f-814c-41c1-b535-5ac3c06c8302` is the project-manager request. 
 
 Both request runs wrote the marker. The summary run did not. Follow-ups produced new run ids, matching P2. `classifyCursorFactoryStop` is the A2 entry point the poller called.
 
+### Second pass
+
+2026-10-10. [Run 38027897774](https://github.com/Awannaphasch2016/dyad/actions/runs/38027897774) is the same job again. It passed. The token was still only in the poller (`agent_env_has_token=false`). The agent was `bc-c0322d61-2ba4-47ae-b348-0434643dfda2` and was deleted (`DELETE` 200).
+
+| n | marker | status | polls | role | stop | run id |
+| - | ------ | ------ | ----- | ---- | ---- | ------ |
+| 1 | present | FINISHED | 3 | project-manager | human-required | `run-84b0c86c-51b3-466a-8f88-68d8e564f467` |
+| 2 | present | FINISHED | 3 | developer | human-required | `run-d31a3328-d419-4e59-97d1-37839ae088e1` |
+| 3 | absent | FINISHED | 3 | none | ready-for-approval | `run-7412ddd5-57fe-48b8-bd5e-33fd0f456f38` |
+
+Question `2e33b30a-34d9-4286-8e4a-c039fb6d908d` is the project-manager request. The project-manager caller saw the body and the developer caller did not. Question `439b5770-97e6-4dac-99cb-47b2e0adbe08` is the developer request. The developer caller saw that body and the project-manager caller did not. Both follow-ups were new run ids on the same agent. Both request runs wrote the marker again (0 missing of 2). The third run was the implementation summary.
+
 ## Section 8 after C4
 
 The Cursor carrier is the request marker, read by the poller. The token is not placed in the agent environment. The resume edge stays in the bridge: a `cursor-run:` answer sends a follow-up through the registered sender and does not start a local chat. C2 did not need a role outside `project-manager` and `developer`.
