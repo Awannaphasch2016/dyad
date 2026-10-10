@@ -1,0 +1,110 @@
+# Read-only inspection of the GIT Conference ground-truth fork from GitHub
+# Actions, because this agent's own token sees only the dyad repository.
+# The fork is reached with a Dyad GitHub App installation token, so the app
+# must have repository access to the fork. The report (tree, cloc, file
+# heads with secret-looking lines masked) is sealed with the session public
+# key before upload; nothing from the fork is printed to the public log
+# except counts and HTTP statuses.
+name: GIT Conference inspect
+
+on:
+  push:
+    branches: [cursor/doppler-google-check-be23]
+    paths:
+      - .github/workflows/gitcon-inspect.yml
+      - scripts/gitcon/**
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Set to the fork's full name once known; empty means discover by name.
+      GITCON_REPO: ""
+      GITCON_REF: main
+    steps:
+      - name: Checkout dyad
+        uses: actions/checkout@v5
+
+      # Preferred: a fine-grained PAT with Contents: read on the fork only,
+      # stored as the repository secret GITCON_READ_TOKEN. Fallback: a Dyad
+      # GitHub App installation token when DYAD_GITHUB_APP_ID is configured.
+      - name: Mint a Dyad GitHub App token
+        id: app
+        if: ${{ vars.DYAD_GITHUB_APP_ID != '' }}
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.DYAD_GITHUB_APP_ID }}
+          private-key: ${{ secrets.DYAD_GITHUB_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          permission-contents: read
+          permission-metadata: read
+
+      - name: Choose a token and find the fork
+        id: find
+        env:
+          PAT: ${{ secrets.GITCON_READ_TOKEN }}
+          APP_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          token="${PAT:-$APP_TOKEN}"
+          if [ -z "$token" ]; then
+            echo "::error::no credential reaches the fork. Add a fine-grained PAT (Contents: read on the fork) as repository secret GITCON_READ_TOKEN, or configure DYAD_GITHUB_APP_ID and DYAD_GITHUB_APP_PRIVATE_KEY."
+            exit 1
+          fi
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+          export GH_TOKEN="$token"
+          if [ -n "$GITCON_REPO" ]; then
+            echo "repo=$GITCON_REPO" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [ -n "$PAT" ]; then
+            names=$(gh api --paginate 'user/repos?affiliation=owner,organization_member&per_page=100' --jq '.[].full_name')
+          else
+            names=$(gh api --paginate installation/repositories --jq '.repositories[].full_name')
+          fi
+          echo "repositories visible: $(wc -l <<<"$names")"
+          match=$(grep -iE 'git[-_]?con|dec25|dev25' <<<"$names" | head -n1 || true)
+          if [ -z "$match" ]; then
+            echo "::error::no repository matching git-con/dev25 is visible to this credential."
+            exit 1
+          fi
+          echo "found: $match"
+          echo "repo=$match" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout the fork read-only
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ steps.find.outputs.repo }}
+          ref: ${{ env.GITCON_REF }}
+          token: ${{ steps.find.outputs.token }}
+          path: gitcon
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install cloc
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq cloc >/dev/null
+
+      - name: Inspect
+        env:
+          GITCON_REPO: ${{ steps.find.outputs.repo }}
+        run: python3 scripts/gitcon/inspect.py gitcon report.json
+
+      - name: Seal the report
+        run: |
+          set -euo pipefail
+          mkdir -p sealed
+          openssl rand -hex 32 > sealed/aes.key
+          openssl enc -aes-256-cbc -pbkdf2 -pass file:sealed/aes.key -in report.json -out sealed/report.enc
+          openssl pkeyutl -encrypt -pubin -inkey scripts/doppler/google-check-public.pem -in sealed/aes.key -out sealed/aes.key.enc
+          rm -f sealed/aes.key report.json
+
+      - name: Upload the sealed report
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitcon-inspect
+          path: sealed
+          retention-days: 3

@@ -1,0 +1,96 @@
+# Confirm the CURSOR_API_KEY in Doppler dyad/preview can call the Cloud Agents
+# API, can see the implementation repository, and cannot see the ground-truth
+# fork. The key is masked and never printed. Repository names other than the
+# two under test are not printed either. Re-run after sdd-gitcon-impl was added to the Cursor GitHub App.
+name: Cursor API key check
+
+on:
+  push:
+    branches: [cursor/doppler-google-check-be23]
+    paths:
+      - .github/workflows/cursor-key-check.yml
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DOPPLER_IDENTITY_ID: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+      IMPL_REPO: Awannaphasch2016/sdd-gitcon-impl
+      GROUND_TRUTH: dev25-git-con
+    steps:
+      - name: Exchange the GitHub OIDC token for a Doppler token
+        id: auth
+        run: |
+          set -euo pipefail
+          oidc=$(curl -sS -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL" | jq -r .value)
+          echo "::add-mask::$oidc"
+          resp=$(curl -sS -X POST https://api.doppler.com/v3/auth/oidc -H 'Content-Type: application/json' \
+            -d "$(jq -n --arg i "$DOPPLER_IDENTITY_ID" --arg t "$oidc" '{identity:$i, token:$t}')")
+          token=$(jq -r '.token // empty' <<<"$resp")
+          if [ -z "$token" ]; then
+            echo "OIDC exchange failed: $(jq -c 'del(.token)' <<<"$resp")"
+            exit 1
+          fi
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+
+      - name: Read the key and probe the Cloud Agents API
+        env:
+          DOPPLER_TOKEN: ${{ steps.auth.outputs.token }}
+        run: |
+          set -euo pipefail
+          echo "dyad configs this identity can read:"
+          for c in $(curl -sS -u "$DOPPLER_TOKEN:" "https://api.doppler.com/v3/configs?project=dyad&per_page=100" | jq -r '.configs[].name'); do
+            names=$(curl -sS -u "$DOPPLER_TOKEN:" "https://api.doppler.com/v3/configs/config/secrets/names?project=dyad&config=$c" | jq -r '.names[]?' 2>/dev/null || true)
+            if [ -z "$names" ]; then echo "  $c: unreadable"; continue; fi
+            echo "  $c: $(wc -l <<<"$names") names"
+            tr '\n' ' ' <<<"$names"
+            echo
+          done
+          raw=$(curl -sS -u "$DOPPLER_TOKEN:" \
+            "https://api.doppler.com/v3/configs/config/secret?project=dyad&config=preview&name=CURSOR_API_KEY" \
+            | jq -r '.value.raw // empty')
+          if [ -z "$raw" ]; then
+            echo "dyad/preview CURSOR_API_KEY is missing or empty"
+            exit 1
+          fi
+          echo "::add-mask::$raw"
+          printf '%s' "$raw" | tr -cs 'A-Za-z0-9_-' '\n' | awk 'length>=8' | while read -r part; do echo "::add-mask::$part"; done
+          echo "key length: ${#raw}"
+          auth="Authorization: Basic $(printf '%s:' "$raw" | base64 -w0)"
+          me=$(curl -sS -w '\n%{http_code}' -H "$auth" https://api.cursor.com/v1/me)
+          code=$(tail -n1 <<<"$me")
+          body=$(sed '$d' <<<"$me")
+          echo "GET /v1/me: $code user=$(jq -r '.userEmail // .email // "-"' <<<"$body" 2>/dev/null || echo '-')"
+          if [ "$code" != "200" ]; then
+            echo "body: $(jq -c 'del(.apiKey,.token,.key)' <<<"$body" 2>/dev/null || echo unparsed)"
+            exit 1
+          fi
+          models=$(curl -sS -w '\n%{http_code}' -H "$auth" https://api.cursor.com/v1/models)
+          mcode=$(tail -n1 <<<"$models")
+          mbody=$(sed '$d' <<<"$models")
+          echo "GET /v1/models: $mcode count=$(jq '(.items // .models // []) | length' <<<"$mbody" 2>/dev/null || echo 0)"
+          jq -r '(.items // .models // [])[].id' <<<"$mbody" 2>/dev/null | head -n 30 | sed 's/^/  model /'
+          # This endpoint is limited to one call per user per minute.
+          page=$(curl -sS --max-time 120 -w '\n%{http_code}' -H "$auth" https://api.cursor.com/v1/repositories)
+          echo "GET /v1/repositories status: $(tail -n1 <<<"$page")"
+          page=$(sed '$d' <<<"$page")
+          names=$(jq -r '(.items // .repositories // [])[] | (.url // .repository // "")' <<<"$page" 2>/dev/null || true)
+          total=$(grep -c . <<<"$names" || true)
+          impl=no; ground=no
+          grep -q "sdd-gitcon-impl" <<<"$names" && impl=yes
+          grep -qi "dev25-git-con" <<<"$names" && ground=yes
+          echo "GET /v1/repositories: $total repositories, impl=$impl, ground_truth=$ground"
+
+      - name: Revoke the Doppler token
+        if: always() && steps.auth.outputs.token != ''
+        env:
+          DOPPLER_TOKEN: ${{ steps.auth.outputs.token }}
+        run: |
+          curl -sS -o /dev/null -w 'revoke status %{http_code}\n' -X POST https://api.doppler.com/v3/auth/revoke \
+            -H 'Content-Type: application/json' -d "$(jq -n --arg t "$DOPPLER_TOKEN" '{token:$t}')"

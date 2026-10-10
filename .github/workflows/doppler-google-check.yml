@@ -1,0 +1,47 @@
+# Read the Doppler configs the preview identity can reach, report Google
+# credential names only, and test whether one of them reaches two Drive ids.
+# Values are masked and never printed. File names and document text go into
+# a sealed artifact that only the matching private key can open.
+name: Doppler Google Drive check
+
+on:
+  push:
+    branches: [cursor/doppler-google-check-be23]
+    paths:
+      - .github/workflows/doppler-google-check.yml
+      - scripts/doppler/**
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Read Doppler and probe Drive
+        env:
+          DOPPLER_IDENTITY_ID: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          DOC_ID: 10GhhSmsrvTDXINiKgu6yotpX6bC3wiP0okuUZm5rwA8
+          FOLDER_ID: 1Ti4bk4OBcazwM_OextrA-0OEVknJPagW
+        run: python3 scripts/doppler/google_check.py
+
+      - name: Seal the report
+        run: |
+          set -euo pipefail
+          mkdir -p sealed
+          openssl rand -hex 32 > sealed/aes.key
+          openssl enc -aes-256-cbc -pbkdf2 -pass file:sealed/aes.key -in report.json -out sealed/report.enc
+          openssl pkeyutl -encrypt -pubin -inkey scripts/doppler/google-check-public.pem -in sealed/aes.key -out sealed/aes.key.enc
+          rm -f sealed/aes.key report.json
+
+      - name: Upload the sealed report
+        uses: actions/upload-artifact@v4
+        with:
+          name: doppler-google-check
+          path: sealed
+          retention-days: 3

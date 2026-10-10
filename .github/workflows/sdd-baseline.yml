@@ -1,0 +1,115 @@
+# Push the Spec Kit 1.1.2 baseline to the empty implementation repository.
+# Authenticates with the existing classic PAT in Doppler blog/dev GITHUB_TOKEN,
+# masked and never printed. Idempotent: exits when the tag already exists.
+name: SDD baseline
+
+on:
+  push:
+    branches: [cursor/doppler-google-check-be23]
+    paths:
+      - .github/workflows/sdd-baseline.yml
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DOPPLER_IDENTITY_ID: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID_THEHUT }}
+      IMPL_REPO: Awannaphasch2016/sdd-gitcon-impl
+    steps:
+      - name: Exchange the GitHub OIDC token for a Doppler token
+        id: auth
+        run: |
+          set -euo pipefail
+          oidc=$(curl -sS -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL" | jq -r .value)
+          echo "::add-mask::$oidc"
+          resp=$(curl -sS -X POST https://api.doppler.com/v3/auth/oidc -H 'Content-Type: application/json' \
+            -d "$(jq -n --arg i "$DOPPLER_IDENTITY_ID" --arg t "$oidc" '{identity:$i, token:$t}')")
+          token=$(jq -r '.token // empty' <<<"$resp")
+          if [ -z "$token" ]; then
+            echo "OIDC exchange failed: $(jq -c 'del(.token)' <<<"$resp")"
+            exit 1
+          fi
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+
+      - name: Read the stored GitHub token
+        id: gh
+        env:
+          DOPPLER_TOKEN: ${{ steps.auth.outputs.token }}
+        run: |
+          set -euo pipefail
+          raw=$(curl -sS -u "$DOPPLER_TOKEN:" \
+            "https://api.doppler.com/v3/configs/config/secret?project=blog&config=dev&name=GITHUB_TOKEN" \
+            | jq -r '.value.raw // empty')
+          if [ -z "$raw" ]; then echo "blog/dev GITHUB_TOKEN is empty"; exit 1; fi
+          echo "::add-mask::$raw"
+          echo "token=$raw" >> "$GITHUB_OUTPUT"
+
+      - name: Install Spec Kit 1.1.2
+        run: |
+          set -euo pipefail
+          pip install --user uv >/dev/null
+          export PATH="$HOME/.local/bin:$PATH"
+          uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@v1.1.2
+          specify version || specify --help | head -n 20
+
+      - name: Initialise the baseline and push the tag
+        env:
+          GH_TOKEN: ${{ steps.gh.outputs.token }}
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.local/bin:$PATH"
+          gh auth setup-git
+          if git ls-remote "https://github.com/$IMPL_REPO" refs/tags/baseline/speckit-1.1.2 | grep -q .; then
+            echo "tag baseline/speckit-1.1.2 already exists"
+            exit 0
+          fi
+          speckit_sha=$(git ls-remote https://github.com/github/spec-kit.git 'refs/tags/v1.1.2^{}' | awk '{print $1}')
+          echo "spec-kit v1.1.2 is $speckit_sha"
+          rm -rf impl
+          mkdir impl && cd impl
+          git init -q -b main
+          git remote add origin "https://github.com/$IMPL_REPO.git"
+          specify init --here --force --integration cursor-agent --non-interactive --script sh --ignore-agent-tools
+          mkdir -p .specify/memory .cursor
+          cat > .specify/memory/constitution.md <<'EOF'
+          # Constitution
+
+          - PHP 8.2 or newer.
+          - One Dockerfile at the repository root. The image serves HTTP on port 80 and needs no network access at runtime.
+          - No external services: no database server, no mail, no CAPTCHA, no analytics, no CDN.
+          - SPEC.md is immutable. Never edit it after it is written.
+          - Tests inside the repository are optional.
+          - Do not search for or copy an existing implementation of this site.
+          EOF
+          # The heredoc above is indented by the workflow; strip it.
+          sed -i 's/^          //' .specify/memory/constitution.md
+          printf '%s\n' '{"install":"sudo apt-get update && sudo apt-get install -y php8.2-cli php8.2-sqlite3 composer","terminals":[]}' > .cursor/environment.json
+          cat > README.md <<EOF
+          Implementation workspace for SDD experiments. \`main\` is the baseline; every experiment is a pull request from a branch named \`exp/<run-id>\`.
+
+          Spec Kit [v1.1.2](https://github.com/github/spec-kit/releases/tag/v1.1.2) (${speckit_sha}), integration \`cursor-agent\`.
+          EOF
+          test -d .cursor/skills/speckit-specify
+          test -d .cursor/skills/speckit-implement
+          login=$(gh api user --jq .login)
+          id=$(gh api user --jq .id)
+          git add -A
+          git -c user.name="$login" -c user.email="${id}+${login}@users.noreply.github.com" commit -q -m "Spec Kit 1.1.2 baseline for Cursor"
+          git tag baseline/speckit-1.1.2
+          git push -u origin main
+          git push origin baseline/speckit-1.1.2
+          echo "pushed $(git rev-parse --short HEAD) with skills: $(ls .cursor/skills | tr '\n' ' ')"
+
+      - name: Revoke the Doppler token
+        if: always() && steps.auth.outputs.token != ''
+        env:
+          DOPPLER_TOKEN: ${{ steps.auth.outputs.token }}
+        run: |
+          curl -sS -o /dev/null -w 'revoke status %{http_code}\n' -X POST https://api.doppler.com/v3/auth/revoke \
+            -H 'Content-Type: application/json' -d "$(jq -n --arg t "$DOPPLER_TOKEN" '{token:$t}')"
