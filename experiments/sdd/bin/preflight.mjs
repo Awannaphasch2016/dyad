@@ -17,6 +17,9 @@ const baseline = arg("baseline", "baseline/speckit-1.1.2");
 const specVersion = arg("spec", "gitcon-v1");
 const wallClock = Number(arg("wall-clock", 90));
 const usdCap = Number(arg("usd-cap", 25));
+const followUp = arg("follow-up", false) === true;
+const startingSha = arg("starting-sha", "");
+const parentRun = arg("parent-run", "");
 if (
   !runId ||
   typeof runId !== "string" ||
@@ -135,6 +138,14 @@ note(
   `runs/${runId}/run.json does not exist yet`,
 );
 
+// 7. A fix run names the commit it starts from.
+if (followUp) {
+  note(
+    typeof startingSha === "string" && /^[0-9a-f]{40}$/.test(startingSha),
+    `starting commit ${startingSha || "(missing)"} is a 40-character sha`,
+  );
+}
+
 if (failures.length) {
   console.error(
     `\n${failures.length} preflight failure(s); run.json not written`,
@@ -166,5 +177,12 @@ writeRun(runId, {
   isolation: { ground_truth_listed: groundTruthListed, leak_markers: [] },
   interventions: [],
   caps: { wall_clock_minutes: wallClock, estimated_usd: usdCap },
+  ...(followUp
+    ? {
+        follow_up: true,
+        starting_sha: startingSha,
+        parent_run_id: parentRun || null,
+      }
+    : {}),
 });
 console.log(`\nwrote runs/${runId}/run.json`);

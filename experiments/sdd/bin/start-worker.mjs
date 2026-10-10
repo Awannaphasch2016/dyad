@@ -2,7 +2,8 @@
 // Create the implementation worker with POST /v1/agents and record it in run.json.
 // Usage: node start-worker.mjs --run-id <id> [--dry-run]
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import {
   cursor,
   sh,
@@ -11,26 +12,8 @@ import {
   writeRun,
   nowIso,
   SDD_ROOT,
+  LEAK_MARKERS,
 } from "./lib.mjs";
-
-const runId = arg("run-id");
-const dryRun = arg("dry-run", false) === true;
-if (!runId || typeof runId !== "string") {
-  console.error("usage: start-worker.mjs --run-id <id> [--dry-run]");
-  process.exit(2);
-}
-const run = readRun(runId);
-if (run.worker.agent_id) {
-  console.error(`worker already started: ${run.worker.agent_id}`);
-  process.exit(1);
-}
-
-const specDir = join(
-  SDD_ROOT,
-  "specs",
-  ...run.spec_version.replace(/-v(\d+)$/, "/v$1").split("/"),
-);
-const spec = readFileSync(join(specDir, "requirements.md"), "utf8");
 
 export function buildPrompt(specText, runIdForBranch) {
   return `You are implementing a website from the fixed specification below. Follow these steps in order and do not skip any.
@@ -52,6 +35,41 @@ SPEC>>>
 `;
 }
 
+// A fix run starts from an existing commit. The first-run prompt would tell
+// the worker to write SPEC.md again and to treat php -S as proof.
+export function buildFollowUpPrompt(runIdForBranch) {
+  return `You are fixing an existing website. The repository already contains SPEC.md and the PHP site. Follow these steps in order.
+
+1. Create and switch to a new branch named exp/${runIdForBranch}. Do not commit on the branch that was already open. Open a new pull request against main.
+2. Leave SPEC.md byte-identical. Do not search for the live conference site. Do not add analytics, email, or a captcha. Do not fetch any other repository.
+3. AC-10 through AC-13 failed. The container log shows POST /contact answered 301, and GET /contact also answered 301 to /contact/. The browser then loaded the empty form, so nothing was validated or stored.
+4. The form is posted to /contact. Apache redirects that path before the PHP contact handler runs, because public/contact/ is a directory. php -S does not add that redirect, so a built-in server check is not evidence.
+5. Make POST /contact reach the contact handler. Keep the field errors, the confirmation, and GET /contact/submissions.json required by SPEC.md section 4.4.
+6. Build the Docker image from the repository Dockerfile and run it. Re-check these requests against that container: an empty POST /contact, a POST with an invalid email, a valid POST, and a second valid POST whose subject then appears in GET /contact/submissions.json. Fix any failure you see there.
+7. Commit, push exp/${runIdForBranch}, and open the pull request.
+
+Do not modify SPEC.md.
+`;
+}
+
+export function promptFor(run, specText, runIdForBranch) {
+  const text = run.follow_up
+    ? buildFollowUpPrompt(runIdForBranch)
+    : buildPrompt(specText, runIdForBranch);
+  const hit = LEAK_MARKERS.find((marker) =>
+    text.toLowerCase().includes(marker.toLowerCase()),
+  );
+  if (hit) throw new Error(`prompt contains leak marker ${hit}`);
+  return text;
+}
+
+export function explicitStartingSha(run) {
+  return typeof run.starting_sha === "string" &&
+    /^[0-9a-f]{40}$/.test(run.starting_sha)
+    ? run.starting_sha
+    : null;
+}
+
 // The Cloud Agents API accepts a branch name or a commit SHA. A tag name is rejected.
 function resolveStartingRef(repo, ref) {
   if (/^[0-9a-f]{40}$/.test(ref)) return ref;
@@ -67,47 +85,80 @@ function resolveStartingRef(repo, ref) {
   return (head ?? tag ?? "").split(/\s+/)[0] || ref;
 }
 
-const prompt = buildPrompt(spec, runId);
-const startingRef = resolveStartingRef(run.impl_repo, run.baseline_ref);
-run.baseline_sha = startingRef;
-const body = {
-  prompt: { text: prompt },
-  model: { id: run.worker.model },
-  repos: [
-    {
-      url: `https://github.com/${run.impl_repo}`,
-      startingRef,
-    },
-  ],
-  autoCreatePR: true,
-  skipReviewerRequest: true,
-};
-
-if (dryRun) {
-  console.log(
-    JSON.stringify(
-      {
-        ...body,
-        prompt: { text: `${prompt.slice(0, 400)}... (${prompt.length} chars)` },
-      },
-      null,
-      2,
-    ),
-  );
-  process.exit(0);
+function invokedDirectly() {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  return import.meta.url === pathToFileURL(resolve(entry)).href;
 }
 
-// Response shape per https://cursor.com/docs/cloud-agent/api/endpoints: { agent: {...}, run: {...} }
-const created = await cursor("/v1/agents", { method: "POST", body });
-const agent = created.agent ?? created;
-const workerRun = created.run ?? {};
-run.worker.agent_id = agent.id;
-run.worker.run_id = workerRun.id ?? agent.latestRunId ?? null;
-run.worker.created_at = workerRun.createdAt ?? agent.createdAt ?? nowIso();
-run.worker.status = workerRun.status ?? "CREATING";
-run.worker.url = agent.url ?? null;
-run.worker.prompt_chars = prompt.length;
-writeRun(runId, run);
-console.log(
-  `worker ${agent.id} (run ${run.worker.run_id}) created on ${run.impl_repo}@${run.baseline_ref}`,
-);
+if (invokedDirectly()) {
+  const runId = arg("run-id");
+  const dryRun = arg("dry-run", false) === true;
+  if (!runId || typeof runId !== "string") {
+    console.error("usage: start-worker.mjs --run-id <id> [--dry-run]");
+    process.exit(2);
+  }
+  const run = readRun(runId);
+  if (run.worker.agent_id) {
+    console.error(`worker already started: ${run.worker.agent_id}`);
+    process.exit(1);
+  }
+  const specDir = join(
+    SDD_ROOT,
+    "specs",
+    ...run.spec_version.replace(/-v(\d+)$/, "/v$1").split("/"),
+  );
+  const spec = readFileSync(join(specDir, "requirements.md"), "utf8");
+  if (run.follow_up && !explicitStartingSha(run)) {
+    console.error("follow-up run requires starting_sha");
+    process.exit(1);
+  }
+  const prompt = promptFor(run, spec, runId);
+  const startingRef =
+    explicitStartingSha(run) ??
+    resolveStartingRef(run.impl_repo, run.baseline_ref);
+  run.baseline_sha = startingRef;
+  const body = {
+    prompt: { text: prompt },
+    model: { id: run.worker.model },
+    repos: [
+      {
+        url: `https://github.com/${run.impl_repo}`,
+        startingRef,
+      },
+    ],
+    autoCreatePR: true,
+    skipReviewerRequest: true,
+  };
+
+  if (dryRun) {
+    console.log(
+      JSON.stringify(
+        {
+          ...body,
+          prompt: {
+            text: `${prompt.slice(0, 400)}... (${prompt.length} chars)`,
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    process.exit(0);
+  }
+
+  // Response shape per https://cursor.com/docs/cloud-agent/api/endpoints: { agent: {...}, run: {...} }
+  const created = await cursor("/v1/agents", { method: "POST", body });
+  const agent = created.agent ?? created;
+  const workerRun = created.run ?? {};
+  run.worker.agent_id = agent.id;
+  run.worker.run_id = workerRun.id ?? agent.latestRunId ?? null;
+  run.worker.created_at = workerRun.createdAt ?? agent.createdAt ?? nowIso();
+  run.worker.status = workerRun.status ?? "CREATING";
+  run.worker.url = agent.url ?? null;
+  run.worker.prompt_chars = prompt.length;
+  writeRun(runId, run);
+  console.log(
+    `worker ${agent.id} (run ${run.worker.run_id}) created on ${run.impl_repo}@${startingRef}`,
+  );
+}

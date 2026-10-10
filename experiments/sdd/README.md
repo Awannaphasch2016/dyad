@@ -39,6 +39,10 @@ git add experiments/sdd/runs/"$RUN" && git commit -m "sdd: results for $RUN" && 
 
 Pushing `evidence/` is optional; it holds the Playwright report, traces and videos and can be large. `results/` is always committed.
 
+## Follow-up
+
+`.github/workflows/sdd-run-02.yml` starts `2026-10-10-gitcon-v1-speckit-02` from commit `bc32948` on the implementation repository. The prompt leaves `SPEC.md` unchanged and asks the worker to make `POST /contact` reach PHP inside the Docker image. Run 01's record is left as it is. A push of `sdd-run.yml` does not start this worker.
+
 ## Smoke test (plan D.4)
 
 `experiments/sdd/smoke/` is a small PHP site that implements the shared layout, the home page, and the 404 page, and leaves program, fees, and contact empty on purpose. `.github/workflows/sdd-parallel.yml` copied it to `harness-smoke` on `Awannaphasch2016/sdd-gitcon-impl` ([pull request 2](https://github.com/Awannaphasch2016/sdd-gitcon-impl/pull/2)).

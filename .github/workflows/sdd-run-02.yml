@@ -1,0 +1,178 @@
+# One follow-up for run 2026-10-09-gitcon-v1-speckit-01. Starts from that
+# run's commit, with a prompt that leaves SPEC.md unchanged. Pushing this
+# file starts the worker. Pushing sdd-run.yml does not. The run record is
+# pushed with the stored user token so sdd-verify.yml starts.
+name: SDD run 02
+
+on:
+  push:
+    branches: [cursor/sdd-experiment-harness-be23]
+    paths:
+      - .github/workflows/sdd-run-02.yml
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      RUN_ID: 2026-10-10-gitcon-v1-speckit-02
+      MODEL: grok-4.7
+      STARTING_SHA: bc32948cb4dd2b5cfa051c24d92ff0771f053a93
+      PARENT_RUN: 2026-10-09-gitcon-v1-speckit-01
+    steps:
+      - name: Checkout harness
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Stop when this run is already finished
+        id: gate
+        run: |
+          set -euo pipefail
+          record="experiments/sdd/runs/$RUN_ID/run.json"
+          skip=false
+          if [ -f "$record" ]; then
+            status=$(jq -r '.worker.status // empty' "$record")
+            head=$(jq -r '.pr.head_sha // empty' "$record")
+            if [ "$status" = "FINISHED" ] && [ -n "$head" ]; then
+              echo "run $RUN_ID is already FINISHED at $head; not starting another worker"
+              skip=true
+            fi
+          fi
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.skip != 'true'
+        with:
+          node-version: 22
+
+      - name: Exchange GitHub OIDC tokens for Doppler tokens
+        id: doppler
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          PREVIEW_IDENTITY: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          THEHUT_IDENTITY: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID_THEHUT }}
+        run: |
+          set -euo pipefail
+          mint_oidc() {
+            curl -sS -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL" | jq -r .value
+          }
+          exchange() {
+            local identity="$1" oidc="$2" resp token
+            echo "::add-mask::$oidc" >&2
+            resp=$(curl -sS -X POST https://api.doppler.com/v3/auth/oidc -H 'Content-Type: application/json' \
+              -d "$(jq -n --arg i "$identity" --arg t "$oidc" '{identity:$i, token:$t}')")
+            token=$(jq -r '.token // empty' <<<"$resp")
+            if [ -z "$token" ]; then
+              echo "OIDC exchange failed: $(jq -c 'del(.token)' <<<"$resp")" >&2
+              return 1
+            fi
+            echo "::add-mask::$token" >&2
+            printf '%s' "$token"
+          }
+          preview=$(exchange "$PREVIEW_IDENTITY" "$(mint_oidc)") || exit 1
+          # The repository variable was empty on 2026-10-10. This is the same
+          # identity id the Doppler workflows used that morning. It is not a
+          # secret; Doppler still requires a GitHub OIDC token from this repo.
+          thehut_id="${THEHUT_IDENTITY:-95a2f818-cee7-4d49-9d9f-49fec38ec891}"
+          thehut=$(exchange "$thehut_id" "$(mint_oidc)") || exit 1
+          echo "preview=$preview" >> "$GITHUB_OUTPUT"
+          echo "thehut=$thehut" >> "$GITHUB_OUTPUT"
+
+      - name: Read the Cursor key and the GitHub push token
+        id: secrets
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          PREVIEW: ${{ steps.doppler.outputs.preview }}
+          THEHUT: ${{ steps.doppler.outputs.thehut }}
+        run: |
+          set -euo pipefail
+          read_secret() {
+            local token="$1" project="$2" config="$3" name="$4"
+            curl -sS -u "$token:" \
+              "https://api.doppler.com/v3/configs/config/secret?project=${project}&config=${config}&name=${name}" \
+              | jq -r '.value.raw // empty'
+          }
+          cursor_key=$(read_secret "$PREVIEW" dyad preview CURSOR_API_KEY)
+          github_token=$(read_secret "$THEHUT" blog dev GITHUB_TOKEN)
+          if [ -z "$cursor_key" ] || [ -z "$github_token" ]; then
+            echo "a required secret is missing"
+            exit 1
+          fi
+          echo "::add-mask::$cursor_key"
+          echo "::add-mask::$github_token"
+          echo "cursor_key=$cursor_key" >> "$GITHUB_OUTPUT"
+          echo "github_token=$github_token" >> "$GITHUB_OUTPUT"
+
+      - name: Preflight
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          CURSOR_API_KEY: ${{ steps.secrets.outputs.cursor_key }}
+        run: >
+          node experiments/sdd/bin/preflight.mjs
+          --run-id "$RUN_ID"
+          --model "$MODEL"
+          --follow-up
+          --starting-sha "$STARTING_SHA"
+          --parent-run "$PARENT_RUN"
+
+      - name: Start the worker
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          CURSOR_API_KEY: ${{ steps.secrets.outputs.cursor_key }}
+        run: node experiments/sdd/bin/start-worker.mjs --run-id "$RUN_ID"
+
+      - name: Watch the worker
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          CURSOR_API_KEY: ${{ steps.secrets.outputs.cursor_key }}
+          GH_TOKEN: ${{ steps.secrets.outputs.github_token }}
+        run: node experiments/sdd/bin/watch-worker.mjs --run-id "$RUN_ID" --interval 30
+
+      - name: Push the run record so the verifier starts
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ steps.secrets.outputs.github_token }}
+        run: |
+          set -euo pipefail
+          record="experiments/sdd/runs/$RUN_ID/run.json"
+          head=$(jq -r '.pr.head_sha // empty' "$record")
+          status=$(jq -r '.worker.status' "$record")
+          echo "worker status: $status"
+          echo "pull request: $(jq -r '.pr.url // "none"' "$record")"
+          if [ -z "$head" ]; then
+            echo "no pull request head; leaving the record as an artifact"
+            exit 0
+          fi
+          git config --local --unset-all http.https://github.com/.extraheader || true
+          gh auth setup-git
+          git config user.name "$(gh api user --jq .login)"
+          git config user.email "$(gh api user --jq '.id')+$(gh api user --jq .login)@users.noreply.github.com"
+          git add "$record"
+          git commit -m "sdd: run $RUN_ID"
+          git push origin HEAD
+
+      - name: Upload the run directory
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdd-run-${{ env.RUN_ID }}
+          path: experiments/sdd/runs/${{ env.RUN_ID }}
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Revoke the Doppler tokens
+        if: always() && steps.doppler.outputs.preview != ''
+        env:
+          PREVIEW: ${{ steps.doppler.outputs.preview }}
+          THEHUT: ${{ steps.doppler.outputs.thehut }}
+        run: |
+          for token in "$PREVIEW" "$THEHUT"; do
+            [ -n "$token" ] || continue
+            curl -sS -o /dev/null -w 'revoke status %{http_code}\n' -X POST https://api.doppler.com/v3/auth/revoke \
+              -H 'Content-Type: application/json' -d "$(jq -n --arg t "$token" '{token:$t}')"
+          done
