@@ -244,7 +244,24 @@ export function teamIdFromDenied(error) {
   return typeof id === "string" && id.startsWith("team_") ? id : "";
 }
 
+function teamRecordId(body) {
+  const id = body?.id || body?.team?.id || "";
+  return typeof id === "string" && id.startsWith("team_") ? id : "";
+}
+
 async function teamIdForSlug(fetchImpl, token, slug) {
+  try {
+    const one = await vercelRequest(
+      fetchImpl,
+      token,
+      `/v2/teams/${encodeURIComponent(slug)}`,
+    );
+    const id = teamRecordId(one);
+    if (id) return id;
+  } catch (error) {
+    const text = error instanceof Error ? error.message : String(error);
+    if (!text.includes(" 403 ")) throw error;
+  }
   const listed = await vercelRequest(fetchImpl, token, "/v2/teams");
   const team = (listed.teams || []).find((item) => item.slug === slug);
   if (!team?.id) {

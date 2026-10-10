@@ -96,13 +96,19 @@ async function main() {
     process.env.AWS_DEFAULT_REGION ||
     "ap-southeast-1";
   await waitForImage();
-  const removed = await removeProjectDatabaseEnv({
-    token: process.env.VERCEL_TOKEN,
-    teamId: process.env.VERCEL_TEAM_ID || process.env.VERCEL_ORG_ID || "",
-  });
-  console.log(
-    `vercel_database_env_removed=${removed.removed} targets=${removed.targets.join(",") || "none"}`,
-  );
+  try {
+    const removed = await removeProjectDatabaseEnv({
+      token: process.env.VERCEL_TOKEN,
+      teamId: process.env.VERCEL_TEAM_ID || process.env.VERCEL_ORG_ID || "",
+    });
+    console.log(
+      `vercel_database_env_removed=${removed.removed} targets=${removed.targets.join(",") || "none"}`,
+    );
+  } catch (error) {
+    const text = error instanceof Error ? error.message : String(error);
+    if (!text.includes(" 403 ")) throw error;
+    console.log("vercel_database_env=unreadable");
+  }
   process.env.PREVIEW_ORIGIN = "https://anakwannaphaschaiyong.com";
   await allowClerkOrigin();
   if (process.exitCode) process.exit(process.exitCode);

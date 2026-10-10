@@ -75,6 +75,16 @@ test("a team scope error is retried with the team id", async () => {
           }),
       };
     }
+    if (url.endsWith("/v2/teams/anak2")) {
+      return {
+        ok: false,
+        status: 403,
+        text: async () =>
+          JSON.stringify({
+            error: { message: "You don't have permission to read the team." },
+          }),
+      };
+    }
     if (url.endsWith("/v2/teams")) {
       return json({ teams: [{ id: "team_anak", slug: "anak2" }] });
     }
