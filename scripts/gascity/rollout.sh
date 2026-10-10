@@ -107,8 +107,16 @@ rollback() {
 }
 trap rollback ERR
 
-echo "Removing dangling images before the build"
-docker image prune -f >/dev/null
+echo "Reclaiming Docker disk before the build"
+df -h /
+docker system df || true
+# The failed extract leaves build cache and images no container is using.
+# The rollback tag stays: the running container still references that image.
+# Volumes are left alone.
+docker builder prune -af >/dev/null || echo "builder prune failed"
+docker image prune -af >/dev/null || echo "image prune failed"
+docker container prune -f >/dev/null || echo "container prune failed"
+df -h /
 
 echo "Building and starting $IMAGE"
 docker compose --env-file "$ENV_FILE" -p "$PROJECT" -f "$COMPOSE_FILE" up --build -d
