@@ -1,12 +1,16 @@
 {
   "worker_tokens": {
-    "error": "CURSOR_API_KEY is not set (add it as a Cloud Agent Runtime Secret)"
+    "inputTokens": 415036,
+    "outputTokens": 118386,
+    "cacheWriteTokens": 0,
+    "cacheReadTokens": 8122496,
+    "totalTokens": 8655918
   },
   "coordinator_tokens": null,
   "pricing_source": "experiments/sdd/pricing.json",
-  "pricing_pinned": null,
-  "note": "USD figures are estimates from pinned list prices; tokens are measured",
-  "worker_usd_estimate": null,
+  "pricing_pinned": "2026-10-10",
+  "note": "USD figures are estimates from pinned list prices; tokens are measured. Priced at the under-200k grok-4.7 list rate ($2 input, $0.50 cache read, $6 output per million). Cache reads are 8.1 million tokens, so some requests may have used the doubled long-context rate; this estimate does not apply that doubling. Cursor may bill a different schedule.",
+  "worker_usd_estimate": 5.6016,
   "coordinator_usd_estimate": null,
   "actions_minutes": 1.53,
   "verifier": {

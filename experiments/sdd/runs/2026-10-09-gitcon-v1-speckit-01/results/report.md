@@ -6,7 +6,7 @@ Final status: **partially_completed**. Approach speckit 1.1.2, spec gitcon-v1 (3
 - Verification pass rate: 16/20, 0 not measurable
 - Build: docker build ok, container healthy true, no-network GET / 200
 - Worker: FINISHED in 33 min, 7 implement round(s), 7 converge round(s)
-- Tokens: unknown total; estimated USD unknown (list prices, estimate)
+- Tokens: 8655918 total (input 415036, output 118386, cache read 8122496); estimated USD 5.6016 at the under-200k list rate (estimate; the long-context rate would be higher if it applied)
 - Human interventions: 0
 - Source lines (cloc, exclusions listed in results.json): PHP 528, HTML 0, CSS 173, JS 0
 - Isolation: ground truth listed false, leak markers 0; SPEC.md unchanged true
@@ -51,5 +51,5 @@ Final status: **partially_completed**. Approach speckit 1.1.2, spec gitcon-v1 (3
 
 - Apache answered `POST /contact` with 301 (four times in `container.log`). The browser then loaded the empty form with GET, so AC-10 through AC-13 saw no `data-error`, no `data-confirmation`, and no new submission. `GET /contact` also returned 301 to `/contact/`. The worker's own check used `php -S`, which does not add that directory slash redirect.
 - The verifier artifact's `cloc.json` was `{}`. The same cloc flags on `bc32948` locally counted PHP 528, CSS 173, Dockerfile 26, 727 code lines in 8 files. Those are the numbers in `results.json`.
-- Token totals were not read here. This environment has no `CURSOR_API_KEY`, and `pricing.json` has no `grok-4.7` price, so the USD estimate stays null.
+- Token totals come from `GET /v1/agents/bc-97a6039b-d16c-4957-8324-107c45ce50e3/usage` for run `run-48f4a751-b46c-40ca-bf91-4c43627f45b0`, read in Actions run 38050193960. The USD figure uses the pinned under-200k list price. Cache reads are 8.1 million tokens, so part of the run may have been priced at the doubled long-context rate; that doubling is not applied here.
 - The "7 implement rounds" and "7 converge rounds" figures are `speckit-implement` and `speckit-converge` mentions in the worker stream, divided by two. The worker's own closing text said one convergence pass.
