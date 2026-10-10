@@ -1,0 +1,18 @@
+{
+  "name": "bolt-walkthrough-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Playwright checks for the shared Bolt walkthrough. Runs in GitHub Actions with Doppler credentials; nothing here holds a secret.",
+  "scripts": {
+    "test": "playwright test",
+    "summary": "node summarize.mjs",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@clerk/testing": "^2.2.44",
+    "@playwright/test": "^1.64.0",
+    "@types/node": "^22.14.0",
+    "typescript": "^5.9.0",
+    "@clerk/backend": "^3.23.1"
+  }
+}
