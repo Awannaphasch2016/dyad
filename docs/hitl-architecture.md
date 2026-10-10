@@ -59,16 +59,16 @@ flowchart TB
   worker -.-> gascity
 ```
 
-| Container | Code | How it talks |
-| --- | --- | --- |
-| Human Loop website | `hitl-web/` on `main` | Browser calls same-origin `/api/questions`. Server uses Clerk and Postgres. |
-| Vercel | Project created from `Awannaphasch2016/dyad`, root `hitl-web`, production branch `main`. Deploy completion is outside this repository. | Hosts the Next.js app. |
-| Clerk | Not in this repository. Keys in Doppler project `dyad`, config `dev`. | HTTPS. The page passes `CLERK_PUBLISHABLE_KEY` into Clerk. |
-| Postgres `wewebplus` | Table definitions in `src/control_plane/schema.ts` on `main`. The page issues raw SQL from `hitl-web/lib/store.ts`. | SQL. |
-| Dyad / Electron | `src/` on `main`, including question handling. | IPC inside the app. Host bridge is local HTTP. |
-| Local sqlite | `src/db/schema.ts`. `hitl_questions` and `hitl_answers` are on `main`. | Read and written by the Electron main process. |
-| EC2 / Gas City | The rig is not in this repository. `scripts/gascity/resolve_hitl_answer.py` runs `hitl.py respond` and then `hitl.py release` with rig `multi tenant HITL`. `defaultGateCloser` is not in the tree. `answerHitlQuestion` does not invoke `bd`. | Child process `hitl.py`, when that script is run. |
-| Answer closer | `scripts/gascity/resolve_hitl_answer.py` on `main`. | Selects answers with `gate_resolved_at` null. This repository does not start it on a timer. |
+| Container            | Code                                                                                                                                                                                                                                           | How it talks                                                                                |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Human Loop website   | `hitl-web/` on `main`                                                                                                                                                                                                                          | Browser calls same-origin `/api/questions`. Server uses Clerk and Postgres.                 |
+| Vercel               | Project created from `Awannaphasch2016/dyad`, root `hitl-web`, production branch `main`. Deploy completion is outside this repository.                                                                                                         | Hosts the Next.js app.                                                                      |
+| Clerk                | Not in this repository. Keys in Doppler project `dyad`, config `dev`.                                                                                                                                                                          | HTTPS. The page passes `CLERK_PUBLISHABLE_KEY` into Clerk.                                  |
+| Postgres `wewebplus` | Table definitions in `src/control_plane/schema.ts` on `main`. The page issues raw SQL from `hitl-web/lib/store.ts`.                                                                                                                            | SQL.                                                                                        |
+| Dyad / Electron      | `src/` on `main`, including question handling.                                                                                                                                                                                                 | IPC inside the app. Host bridge is local HTTP.                                              |
+| Local sqlite         | `src/db/schema.ts`. `hitl_questions` and `hitl_answers` are on `main`.                                                                                                                                                                         | Read and written by the Electron main process.                                              |
+| EC2 / Gas City       | The rig is not in this repository. `scripts/gascity/resolve_hitl_answer.py` runs `hitl.py respond` and then `hitl.py release` with rig `multi tenant HITL`. `defaultGateCloser` is not in the tree. `answerHitlQuestion` does not invoke `bd`. | Child process `hitl.py`, when that script is run.                                           |
+| Answer closer        | `scripts/gascity/resolve_hitl_answer.py` on `main`.                                                                                                                                                                                            | Selects answers with `gate_resolved_at` null. This repository does not start it on a timer. |
 
 The page does not call the host bridge. The host bridge does not call the page.
 
@@ -106,20 +106,20 @@ flowchart TB
   device --> mirror
 ```
 
-| Piece | Where it lives | What it does now |
-| --- | --- | --- |
-| Sign-in | `hitl-web/app/sign-in`, `hitl-web/app/sign-up`, `hitl-web/middleware.ts`, `hitl-web/app/layout.tsx` | Clerk. The home page is protected. `/api` is public to the middleware; each route then requires a session. |
-| Caller | `hitl-web/lib/caller.ts` | Reads the Clerk user id and `session.orgId`, then loads memberships. |
-| Organization choice | `hitl-web/lib/membership.ts` `chooseMembership` | A session organization must match a membership row. With no session organization, the hardcoded Wewebplus organization is preferred. |
-| Role gate | `hitl-web/lib/hitl.ts` `GATE_ROLE`, `presentQuestion`, `decideAnswer` | `plan-approve` and `review-approve-pm` require `project-manager`. `review-approve-dev` requires `developer`. A matching role sees the body and can answer an open question. Another role in the same organization sees status only. A different organization is not found. |
-| Questions API | `hitl-web/app/api/questions/route.ts` and `hitl-web/app/api/questions/[id]/answers/route.ts` | List and one answer. A second answer for the same question does not insert another row. |
-| Database access | `hitl-web/lib/db.ts`, `hitl-web/lib/store.ts` | One Postgres connection from `WEWEBPLUS_DATABASE_URL`. Raw SQL. |
-| Refresh | `hitl-web/app/question-board.tsx` | `setInterval` of 4 seconds calls `GET /api/questions`. No subscription. |
-| Projects | No project type in `hitl-web`. A question carries `app_id`, `phase`, and `run_id`. | The page does not list apps. |
-| Talk to Electron | No module in `hitl-web`. | The page never calls Dyad. |
-| Electron question UI | `src/components/chat/HitlQuestionList.tsx` on `main` | Same role rules, rendered inside the Electron chat. An answer there calls the main process. `answerHitlQuestion` writes sqlite, mirrors to Postgres, and returns `resolved: false`. It does not run `bd`. |
-| Create question | `scripts/gascity/post_hitl_question.py` posts to `http://127.0.0.1:32100/v1/apps/{id}/phases/{phase}/questions` | The factory talks to Electron. Electron writes sqlite, then mirrors to Postgres. |
-| Approve the gate from the web page | Not built | An answer saved by the page stays in Postgres. |
+| Piece                              | Where it lives                                                                                                  | What it does now                                                                                                                                                                                                                                                           |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sign-in                            | `hitl-web/app/sign-in`, `hitl-web/app/sign-up`, `hitl-web/middleware.ts`, `hitl-web/app/layout.tsx`             | Clerk. The home page is protected. `/api` is public to the middleware; each route then requires a session.                                                                                                                                                                 |
+| Caller                             | `hitl-web/lib/caller.ts`                                                                                        | Reads the Clerk user id and `session.orgId`, then loads memberships.                                                                                                                                                                                                       |
+| Organization choice                | `hitl-web/lib/membership.ts` `chooseMembership`                                                                 | A session organization must match a membership row. With no session organization, the hardcoded Wewebplus organization is preferred.                                                                                                                                       |
+| Role gate                          | `hitl-web/lib/hitl.ts` `GATE_ROLE`, `presentQuestion`, `decideAnswer`                                           | `plan-approve` and `review-approve-pm` require `project-manager`. `review-approve-dev` requires `developer`. A matching role sees the body and can answer an open question. Another role in the same organization sees status only. A different organization is not found. |
+| Questions API                      | `hitl-web/app/api/questions/route.ts` and `hitl-web/app/api/questions/[id]/answers/route.ts`                    | List and one answer. A second answer for the same question does not insert another row.                                                                                                                                                                                    |
+| Database access                    | `hitl-web/lib/db.ts`, `hitl-web/lib/store.ts`                                                                   | One Postgres connection from `WEWEBPLUS_DATABASE_URL`. Raw SQL.                                                                                                                                                                                                            |
+| Refresh                            | `hitl-web/app/question-board.tsx`                                                                               | `setInterval` of 4 seconds calls `GET /api/questions`. No subscription.                                                                                                                                                                                                    |
+| Projects                           | No project type in `hitl-web`. A question carries `app_id`, `phase`, and `run_id`.                              | The page does not list apps.                                                                                                                                                                                                                                               |
+| Talk to Electron                   | No module in `hitl-web`.                                                                                        | The page never calls Dyad.                                                                                                                                                                                                                                                 |
+| Electron question UI               | `src/components/chat/HitlQuestionList.tsx` on `main`                                                            | Same role rules, rendered inside the Electron chat. An answer there calls the main process. `answerHitlQuestion` writes sqlite, mirrors to Postgres, and returns `resolved: false`. It does not run `bd`.                                                                  |
+| Create question                    | `scripts/gascity/post_hitl_question.py` posts to `http://127.0.0.1:32100/v1/apps/{id}/phases/{phase}/questions` | The factory talks to Electron. Electron writes sqlite, then mirrors to Postgres.                                                                                                                                                                                           |
+| Approve the gate from the web page | Not built                                                                                                       | An answer saved by the page stays in Postgres.                                                                                                                                                                                                                             |
 
 ## 3. Class — how the code is structured
 
@@ -350,17 +350,17 @@ erDiagram
 
 Tenant and run fields:
 
-| Boundary | Column | Who uses it |
-| --- | --- | --- |
-| Organization | `memberships.org_id`, `questions.org_id`, `roles.org_id` | The page loads memberships for the Clerk user, picks one organization, and lists questions with that `org_id`. |
-| Account that owns an app | `apps.owner_type` plus `apps.owner_id` | Electron. `user` is the private account. `org` is the shared organization. The page does not read `apps`. |
-| App | `questions.app_id` | Stored on the question. The page does not filter by it. |
-| Phase | `questions.phase` | `discovery`, `implementation`, or `delivery` when created through the host bridge. |
-| Run | `questions.run_id` | Stored. The page does not show it. |
-| Gate step | `questions.step_id` and `questions.target_role_id` | Role check uses `target_role_id`. `GATE_ROLE` maps the three step ids onto that role. |
-| Gas City bead | `questions.bead_id` | Stored on the question. The web view does not include it. `resolve_hitl_answer.py` closes the gate with `run_id`, `step_id`, and `answered_by_name`. |
-| Person | `memberships.user_id`, `answers.user_id`, `questions.answered_by_user_id` | Clerk user id. |
-| One answer | unique `answers.question_id` | A second insert does nothing. |
+| Boundary                 | Column                                                                    | Who uses it                                                                                                                                          |
+| ------------------------ | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Organization             | `memberships.org_id`, `questions.org_id`, `roles.org_id`                  | The page loads memberships for the Clerk user, picks one organization, and lists questions with that `org_id`.                                       |
+| Account that owns an app | `apps.owner_type` plus `apps.owner_id`                                    | Electron. `user` is the private account. `org` is the shared organization. The page does not read `apps`.                                            |
+| App                      | `questions.app_id`                                                        | Stored on the question. The page does not filter by it.                                                                                              |
+| Phase                    | `questions.phase`                                                         | `discovery`, `implementation`, or `delivery` when created through the host bridge.                                                                   |
+| Run                      | `questions.run_id`                                                        | Stored. The page does not show it.                                                                                                                   |
+| Gate step                | `questions.step_id` and `questions.target_role_id`                        | Role check uses `target_role_id`. `GATE_ROLE` maps the three step ids onto that role.                                                                |
+| Gas City bead            | `questions.bead_id`                                                       | Stored on the question. The web view does not include it. `resolve_hitl_answer.py` closes the gate with `run_id`, `step_id`, and `answered_by_name`. |
+| Person                   | `memberships.user_id`, `answers.user_id`, `questions.answered_by_user_id` | Clerk user id.                                                                                                                                       |
+| One answer               | unique `answers.question_id`                                              | A second insert does nothing.                                                                                                                        |
 
 Local sqlite on `main` mirrors the question shape in `hitl_questions` and `hitl_answers`. There `app_id` is an integer foreign key to `apps.id`. `apps.remote_id` points at `wewebplus.apps.id`. `apps.owner_type` and `apps.owner_id` are the same account boundary.
 

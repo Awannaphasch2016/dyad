@@ -185,6 +185,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Prep test server
         run: cd testing/fake-llm-server && npm install && npm run build && cd -
+      # oxfmt writes the table padding that fmt:check would otherwise reject.
+      - name: Format files
+        run: npm run fmt
       - name: Presubmit check (e.g. lint, format)
         run: npm run presubmit
       - name: Type-checking
