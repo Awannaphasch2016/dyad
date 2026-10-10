@@ -1,0 +1,17 @@
+{
+  "worker_tokens": {
+    "error": "CURSOR_API_KEY is not set (add it as a Cloud Agent Runtime Secret)"
+  },
+  "coordinator_tokens": null,
+  "pricing_source": "experiments/sdd/pricing.json",
+  "pricing_pinned": null,
+  "note": "USD figures are estimates from pinned list prices; tokens are measured",
+  "worker_usd_estimate": null,
+  "coordinator_usd_estimate": null,
+  "actions_minutes": 1.53,
+  "verifier": {
+    "run_url": "https://github.com/Awannaphasch2016/dyad/actions/runs/38006952958",
+    "conclusion": "success",
+    "seconds": 92
+  }
+}

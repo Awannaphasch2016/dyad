@@ -127,11 +127,15 @@ jobs:
         continue-on-error: true
         run: |
           sudo apt-get install -y -qq cloc >/dev/null
-          cloc --vcs=git --json --quiet \
+          if ! cloc --vcs=git --json --quiet \
             --exclude-dir=vendor,node_modules,.specify,.cursor,specs,data \
             --not-match-f='(\.min\.(js|css)|composer\.lock|package-lock\.json|yarn\.lock)$' \
             --exclude-lang=JSON,YAML,Markdown,Text,SVG,XML \
-            impl > "$EVIDENCE_DIR/cloc.json" || echo '{}' > "$EVIDENCE_DIR/cloc.json"
+            impl > "$EVIDENCE_DIR/cloc.json" 2> "$EVIDENCE_DIR/cloc.err"; then
+            echo "cloc failed" >&2
+            cat "$EVIDENCE_DIR/cloc.err" >&2 || true
+            echo '{}' > "$EVIDENCE_DIR/cloc.json"
+          fi
 
       - name: Leak scan (AC-20)
         run: node experiments/sdd/bin/leak-scan.mjs impl --out "$EVIDENCE_DIR/leak-scan.json"
