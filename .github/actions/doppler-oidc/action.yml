@@ -1,0 +1,85 @@
+# Exchange this run's GitHub OIDC token for a short-lived Doppler API token.
+# Needs `permissions: id-token: write` on the job and a Doppler Service
+# Account Identity whose claims accept this repository. No stored secret.
+# On success DOPPLER_TOKEN is masked and exported to later steps. On failure
+# the action prints why and sets ok=false; it does not fail the job, so the
+# caller decides.
+name: Doppler OIDC login
+description: Turn the GitHub OIDC token into a short-lived Doppler API token
+
+inputs:
+  identity-id:
+    description: Doppler Service Account Identity ID. Falls back to deploy/doppler/identity.
+    required: false
+    default: ""
+  audience:
+    description: The aud claim the identity expects.
+    required: false
+    default: ""
+
+outputs:
+  ok:
+    description: "true when DOPPLER_TOKEN was exported"
+    value: ${{ steps.login.outputs.ok }}
+
+runs:
+  using: composite
+  steps:
+    - id: login
+      shell: bash
+      env:
+        INPUT_IDENTITY: ${{ inputs.identity-id }}
+        INPUT_AUDIENCE: ${{ inputs.audience }}
+        OWNER: ${{ github.repository_owner }}
+      run: |
+        set -euo pipefail
+        identity="${INPUT_IDENTITY:-}"
+        if [[ -z "$identity" && -f deploy/doppler/identity ]]; then
+          identity="$(grep -Eo '^[0-9a-fA-F-]{36}$' deploy/doppler/identity | head -n 1 || true)"
+        fi
+        if [[ -z "$identity" ]]; then
+          echo "doppler_identity=absent"
+          echo "ok=false" >> "$GITHUB_OUTPUT"
+          echo "No Doppler Service Account Identity ID. Set the DOPPLER_SERVICE_IDENTITY_ID repository variable or put the ID in deploy/doppler/identity." >&2
+          exit 0
+        fi
+        echo "doppler_identity=present"
+        if [[ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]]; then
+          echo "github_oidc=unavailable"
+          echo "ok=false" >> "$GITHUB_OUTPUT"
+          echo "This job has no id-token: write permission." >&2
+          exit 0
+        fi
+        audience="${INPUT_AUDIENCE:-https://github.com/${OWNER}}"
+        oidc="$(curl -sS -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+          "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${audience}" | jq -r '.value // empty')"
+        if [[ -z "$oidc" ]]; then
+          echo "github_oidc=failed"
+          echo "ok=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        echo "github_oidc=ok audience=${audience}"
+        body="$(jq -cn --arg identity "$identity" --arg token "$oidc" '{identity: $identity, token: $token}')"
+        status="$(curl -sS -o "$RUNNER_TEMP/doppler-oidc.json" -w '%{http_code}' \
+          -X POST -H 'Content-Type: application/json' -d "$body" \
+          https://api.doppler.com/v3/auth/oidc || echo 000)"
+        if [[ "$status" != "200" ]]; then
+          messages="$(jq -r '(.messages // []) | join("; ")' "$RUNNER_TEMP/doppler-oidc.json" 2>/dev/null || true)"
+          echo "doppler_oidc=http-${status}"
+          [[ -n "$messages" ]] && echo "doppler_oidc_message=${messages}"
+          rm -f "$RUNNER_TEMP/doppler-oidc.json"
+          echo "ok=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        token="$(jq -r '.token // empty' "$RUNNER_TEMP/doppler-oidc.json")"
+        expires="$(jq -r '.expires_at // "unknown"' "$RUNNER_TEMP/doppler-oidc.json")"
+        rm -f "$RUNNER_TEMP/doppler-oidc.json"
+        if [[ -z "$token" ]]; then
+          echo "doppler_oidc=http-200-without-token"
+          echo "ok=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        echo "::add-mask::${token}"
+        echo "DOPPLER_TOKEN=${token}" >> "$GITHUB_ENV"
+        echo "doppler_oidc=http-200 expires_at=${expires}"
+        echo "ok=true" >> "$GITHUB_OUTPUT"
