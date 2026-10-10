@@ -20,7 +20,7 @@
   },
   "pr": {
     "number": 2,
-    "head_sha": "12680df6178a1268d8f4464adc505f145760062a",
+    "head_sha": "0c3d63b287029431c8f361fef0ea5658b9c6603e",
     "url": "https://github.com/Awannaphasch2016/sdd-gitcon-impl/pull/2",
     "branch": "harness-smoke"
   },
@@ -36,6 +36,7 @@
   "smoke": {
     "without_spec_sha": "12680df6178a1268d8f4464adc505f145760062a",
     "with_spec_sha": "0c3d63b287029431c8f361fef0ea5658b9c6603e",
-    "purpose": "Prove the verifier fails the stub pages and reports a missing SPEC.md."
+    "purpose": "Prove the verifier fails the stub pages and reports a missing SPEC.md, then checks the commit that adds the unchanged specification.",
+    "without_spec_verifier": "https://github.com/Awannaphasch2016/dyad/actions/runs/38050212050"
   }
 }

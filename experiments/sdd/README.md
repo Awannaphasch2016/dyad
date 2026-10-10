@@ -41,7 +41,11 @@ Pushing `evidence/` is optional; it holds the Playwright report, traces and vide
 
 ## Smoke test (plan D.4)
 
-`experiments/sdd/smoke/` is a small PHP site that implements the shared layout, the home page, and the 404 page, and leaves program, fees, and contact empty on purpose. `.github/workflows/sdd-parallel.yml` copies it to `harness-smoke` on `Awannaphasch2016/sdd-gitcon-impl` and records `runs/0000-harness-smoke/run.json`. The first verifier pass checks the commit that has no `SPEC.md`. A second pass, after that result is in, checks the commit that adds the unchanged specification.
+`experiments/sdd/smoke/` is a small PHP site that implements the shared layout, the home page, and the 404 page, and leaves program, fees, and contact empty on purpose. `.github/workflows/sdd-parallel.yml` copied it to `harness-smoke` on `Awannaphasch2016/sdd-gitcon-impl` ([pull request 2](https://github.com/Awannaphasch2016/sdd-gitcon-impl/pull/2)).
+
+The first verifier pass checked `12680df`, the commit without `SPEC.md`: https://github.com/Awannaphasch2016/dyad/actions/runs/38050212050. The specification check reported the file missing. Eleven checks passed (AC-01 through AC-05, AC-14 through AC-18, and AC-20), eight failed (AC-06 through AC-13), and AC-19 was not measurable because `data/program.json` is absent. The leak scan was clean. `cloc.json` was still `{}` and `cloc.err` was empty.
+
+The run record then points `pr.head_sha` at `0c3d63b`, the commit that adds the unchanged specification, so the verifier checks that hash.
 
 ## Leak markers
 
