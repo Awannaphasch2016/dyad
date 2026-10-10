@@ -646,7 +646,9 @@ Executed 2026-10-09. Run id `2026-10-09-gitcon-v1-speckit-01`. Final status **pa
 
 ## H. Fix run, to reach 20 of 20
 
-Started 2026-10-10. Workflow: https://github.com/Awannaphasch2016/dyad/actions/runs/38053041905. One follow-up, then stop. Run 1 is not edited and its pull request is not merged. Do not re-push `.github/workflows/sdd-run.yml`: that file is gated on run 01 and a new push skips the worker.
+Done. One follow-up, then stop. Run 1 is not edited and its pull request is not merged.
+
+The follow-up `2026-10-10-gitcon-v1-speckit-02` finished **completed**. Worker https://cursor.com/agents/bc-4ca2a3c4-7c9f-40b8-959e-fbc30d886abd pushed `exp/2026-10-10-gitcon-v1-speckit-02` at `1b0784ea` (Dockerfile only). Verifier https://github.com/Awannaphasch2016/dyad/actions/runs/38055724182: 20 of 20 passed, specification hash matched, leak scan clean. The worker could not open a pull request; the coordinator recorded that commit and did not start another worker.
 
 1. New run id `2026-10-10-gitcon-v1-speckit-02`. Same specification hash `30916614bd4380d1a93c92432e9753f3038ecfacd6e976906332ad4086485127`, same acceptance suite, same verifier, same caps (90 minutes, estimated USD 25), model `grok-4.7`.
 2. The run record sets the starting commit to `bc32948cb4dd2b5cfa051c24d92ff0771f053a93` on `Awannaphasch2016/sdd-gitcon-impl`. The worker's only repository stays that one. Branch `exp/2026-10-10-gitcon-v1-speckit-02`.
