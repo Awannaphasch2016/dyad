@@ -1,6 +1,6 @@
 # Experiment B log
 
-Branch `cursor/hitl-experiment-b-d072`. Evidence for items 11 and 12 in `plans/hitl-experiments-runbook.md`.
+Branch `cursor/hitl-experiment-b-d072`. Scaffolding evidence for the approval paths and the locked Delivery fixture. The app run in `plans/hitl-experiments-runbook.md` is the proof and is still open.
 
 ## B1 one approval check
 
@@ -24,7 +24,7 @@ The project manager approves Discovery through `factory:approve`. A developer ap
 
 ## Section 8
 
-2026-10-09. A and B are done, so the decisions those runs can settle are filled in `plans/hitl-experiments-runbook.md` section 8.
+2026-10-09. A and B's bridge findings are kept in `plans/hitl-experiments-runbook.md` under "What the scaffolding already established." They are not the app run.
 
 A request does not need a bead. The local resume edge stays in the bridge. `resolve_hitl_answer.py` stays for bead-backed gates and was not used here. The `stepId: "question"` relaxation stays; A6 did not need a role outside `project-manager` and `developer`. Both approval paths stay, behind `requirePhaseApproval`.
 
