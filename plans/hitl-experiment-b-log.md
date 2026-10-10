@@ -50,4 +50,26 @@ A Cursor run is a `factory_host_runs` row. `run_id` and `intent_id` are `cursor-
 
 `0056_hitl_questions` has no Drizzle snapshot, so `db:generate` first emitted those tables again. The committed `0057_cursor_agent_id.sql` keeps only `ALTER TABLE factory_host_runs ADD cursor_agent_id`. A second `db:generate` reported no schema changes. The snapshot still includes the HITL tables and the new column.
 
+## C2–C4 Cursor loop
+
+2026-10-10. GitHub Actions run [38007957688](https://github.com/Awannaphasch2016/dyad/actions/runs/38007957688) on `.github/workflows/hitl-cursor-factory.yml`. The job fetched Doppler `dyad/preview` and `aws/dev`, then ran `src/main/factory_host_cursor_live.test.ts` with `HITL_CURSOR_LIVE=1`. The log does not contain the token. The agent create body has no `env` block (`agent_env_has_token=false`). The poller alone called the API.
+
+The question store is the factory bridge started in that job, with the machine token. It is not a desktop Dyad window. The project-manager caller saw the question body. The developer caller saw status only (`dev_body=absent`, HTTP 200).
+
+Agent `bc-b1b5f8c7-d484-4eaa-a0d1-3a69d396019e`. No repository, plan mode, `autoCreatePR: false`. Deleted at the end (`DELETE` 200).
+
+| n | marker | status | polls | role | stop | run id |
+| - | ------ | ------ | ----- | ---- | ---- | ------ |
+| 1 | present | FINISHED | 3 | project-manager | human-required | `run-b227bec7-aa95-418d-ae3b-f1c1bb7c1267` |
+| 2 | present | FINISHED | 2 | developer | human-required | `run-a7ddd23a-a62b-4ca0-abe6-1b39566535a0` |
+| 3 | absent | FINISHED | 4 | none | ready-for-approval | `run-205d0218-d5db-4ff2-99aa-53969493c3c3` |
+
+Question `16a4462f-814c-41c1-b535-5ac3c06c8302` is the project-manager request. The answer was `Tiny Bakery`. The follow-up was a new run id on the same agent and wrote `## Request for developer`. Question `17c7f0ca-ea39-4c6a-82a2-3351dc177423` is that request. The developer answer was `Use Source Serif for the headings.` The next follow-up was another new run id and classified as `ready-for-approval` (`## Implementation summary`, no request marker).
+
+Both request runs wrote the marker. The summary run did not. Follow-ups produced new run ids, matching P2. `classifyCursorFactoryStop` is the A2 entry point the poller called.
+
+## Section 8 after C4
+
+The Cursor carrier is the request marker, read by the poller. The token is not placed in the agent environment. The resume edge stays in the bridge: a `cursor-run:` answer sends a follow-up through the registered sender and does not start a local chat. C2 did not need a role outside `project-manager` and `developer`.
+
 The diff from `cursor/galan-software-factory-2fff` does not touch `scripts/gascity/`, GasCity, the Neon schema, or Paperclip.
