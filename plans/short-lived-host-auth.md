@@ -2,6 +2,12 @@
 
 > Written 2026-10-10. Replaces the two expired token files on the EC2 host with the short-lived token GitHub Actions already mints. No new credential is created and nothing long-lived is stored on the host.
 
+## Status
+
+Pieces 2 to 5 are implemented on `cursor/axi-toolbox-image-plan-531e`. The wrapper reads `DOPPLER_TOKEN` for both configs and falls back to the files. `gascity-rollout.yml` mints the token, fetches the SSH key by OIDC, and pipes the wrapper over SSH. The role script and the EC2 check do the same with the script they already pipe.
+
+Not done, and still required before a rollout succeeds: piece 1 (service account can read `aws`/`dev`, write `dyad`/`preview`, and the `sub` claim includes `cursor/browser-dyad-ui-bbea`). Pieces 2 and 3 take effect on the host only once they are on `cursor/browser-dyad-ui-bbea`, which is the branch that workflow runs on and the branch the host checks out. The token files stay until a rollout and a role run have succeeded.
+
 ## Problem
 
 GitHub Actions can reach the EC2 host, but the script it launches there cannot authenticate to Doppler, so no rollout can be built and the formula IAM role cannot be created.
