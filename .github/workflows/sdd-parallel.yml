@@ -53,7 +53,11 @@ jobs:
             printf '%s' "$token"
           }
           preview=$(exchange "$PREVIEW_IDENTITY" "$(mint_oidc)") || exit 1
-          thehut=$(exchange "$THEHUT_IDENTITY" "$(mint_oidc)") || exit 1
+          # The repository variable was empty on 2026-10-10. This is the same
+          # identity id the Doppler workflows used that morning. It is not a
+          # secret; Doppler still requires a GitHub OIDC token from this repo.
+          thehut_id="${THEHUT_IDENTITY:-95a2f818-cee7-4d49-9d9f-49fec38ec891}"
+          thehut=$(exchange "$thehut_id" "$(mint_oidc)") || exit 1
           echo "preview=$preview" >> "$GITHUB_OUTPUT"
           echo "thehut=$thehut" >> "$GITHUB_OUTPUT"
 
@@ -179,6 +183,7 @@ jobs:
           git push origin HEAD:cursor/sdd-experiment-harness-be23
 
       - name: Read worker token usage
+        if: always() && steps.secrets.outputs.cursor_key != ''
         env:
           CURSOR_API_KEY: ${{ steps.secrets.outputs.cursor_key }}
         run: node experiments/sdd/bin/collect-usage.mjs --run-id 2026-10-09-gitcon-v1-speckit-01 --verifier-run 38006952958
