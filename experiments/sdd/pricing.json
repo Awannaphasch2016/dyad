@@ -7,5 +7,14 @@
     "cache_write_per_m": 0,
     "source": "https://",
     "pinned": "2026-10-09"
+  },
+  "grok-4.7": {
+    "input_per_m": 2,
+    "output_per_m": 6,
+    "cache_read_per_m": 0.5,
+    "cache_write_per_m": 0,
+    "source": "https://docs.x.ai/developers/models/grok-4.7",
+    "pinned": "2026-10-10",
+    "note": "xAI list price for prompts under 200k tokens. At or above 200k the published rates double. Cursor may bill this model on a different schedule; the USD figure is an estimate, not an invoice."
   }
 }

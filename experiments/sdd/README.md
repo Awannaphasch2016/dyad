@@ -41,7 +41,7 @@ Pushing `evidence/` is optional; it holds the Playwright report, traces and vide
 
 ## Smoke test (plan D.4)
 
-Not yet executed. Until a run id under `runs/` carries a verifier URL and a `results.json`, this harness is not claimed to work.
+`experiments/sdd/smoke/` is a small PHP site that implements the shared layout, the home page, and the 404 page, and leaves program, fees, and contact empty on purpose. `.github/workflows/sdd-parallel.yml` copies it to `harness-smoke` on `Awannaphasch2016/sdd-gitcon-impl` and records `runs/0000-harness-smoke/run.json`. The first verifier pass checks the commit that has no `SPEC.md`. A second pass, after that result is in, checks the commit that adds the unchanged specification.
 
 ## Leak markers
 
