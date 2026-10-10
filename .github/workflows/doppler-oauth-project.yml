@@ -1,0 +1,116 @@
+# Read ai-pilot/dev GOOGLE_OAUTH_TOKEN and print only its Google Cloud
+# project id and project number. The secret itself is masked and never logged.
+name: Doppler OAuth project
+
+on:
+  push:
+    branches: [cursor/doppler-google-check-be23]
+    paths:
+      - .github/workflows/doppler-oauth-project.yml
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  identify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Exchange a GitHub OIDC token for a Doppler token
+        id: auth
+        env:
+          DOPPLER_IDENTITY_ID: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID_THEHUT }}
+        run: |
+          set -euo pipefail
+          oidc=$(curl -sS -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL" | jq -r .value)
+          echo "::add-mask::$oidc"
+          resp=$(curl -sS -X POST https://api.doppler.com/v3/auth/oidc \
+            -H 'Content-Type: application/json' \
+            -d "$(jq -n --arg i "$DOPPLER_IDENTITY_ID" --arg t "$oidc" '{identity:$i, token:$t}')")
+          token=$(jq -r '.token // empty' <<<"$resp")
+          if [ -z "$token" ]; then
+            echo "Doppler OIDC exchange failed: $(jq -c 'del(.token)' <<<"$resp")" >&2
+            exit 1
+          fi
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+
+      - name: Print the project id inside the credential
+        id: project
+        env:
+          DOPPLER_TOKEN: ${{ steps.auth.outputs.token }}
+        run: |
+          set -euo pipefail
+          raw=$(curl -sS -u "$DOPPLER_TOKEN:" \
+            "https://api.doppler.com/v3/configs/config/secret?project=ai-pilot&config=dev&name=GOOGLE_OAUTH_TOKEN" \
+            | jq -r '.value.raw // empty')
+          if [ -z "$raw" ]; then
+            echo "secret is empty or unreadable"
+            exit 1
+          fi
+          while IFS= read -r line; do
+            [ -n "$line" ] || continue
+            echo "::add-mask::$line"
+            rest="$line"
+            rest=${rest//\"/ }
+            rest=${rest//,/ }
+            for token in $rest; do
+              token=${token%\"}
+              token=${token#\"}
+              if [ "${#token}" -ge 8 ]; then
+                echo "::add-mask::$token"
+              fi
+            done
+          done <<< "$raw"
+          printf '%s' "$raw" | python3 scripts/doppler/oauth_project.py | tee /tmp/project.txt
+          {
+            echo "project_id=$(awk -F= '$1=="project_id"{print $2}' /tmp/project.txt)"
+            echo "project_number=$(awk -F= '$1=="project_number"{print $2}' /tmp/project.txt)"
+            echo "shape=$(awk -F= '$1=="shape"{print $2}' /tmp/project.txt)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Resolve the project display name
+        if: steps.project.outputs.project_id != '' || steps.project.outputs.project_number != ''
+        env:
+          PREVIEW_IDENTITY: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          PROJECT_ID: ${{ steps.project.outputs.project_id }}
+          PROJECT_NUMBER: ${{ steps.project.outputs.project_number }}
+        run: |
+          set -euo pipefail
+          oidc=$(curl -sS -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL" | jq -r .value)
+          echo "::add-mask::$oidc"
+          resp=$(curl -sS -X POST https://api.doppler.com/v3/auth/oidc \
+            -H 'Content-Type: application/json' \
+            -d "$(jq -n --arg i "$PREVIEW_IDENTITY" --arg t "$oidc" '{identity:$i, token:$t}')")
+          token=$(jq -r '.token // empty' <<<"$resp")
+          if [ -z "$token" ]; then
+            echo "preview identity exchange failed: $(jq -c 'del(.token)' <<<"$resp")"
+            exit 0
+          fi
+          echo "::add-mask::$token"
+          sa=$(curl -sS -u "$token:" \
+            "https://api.doppler.com/v3/configs/config/secret?project=dyad&config=preview&name=GOOGLE_DRIVE_SA_JSON" \
+            | jq -r '.value.raw // empty')
+          curl -sS -o /dev/null -X POST https://api.doppler.com/v3/auth/revoke \
+            -H 'Content-Type: application/json' -d "$(jq -n --arg t "$token" '{token:$t}')" || true
+          if [ -z "$sa" ]; then
+            echo "drive service account is unreadable; project id above is the identifier"
+            exit 0
+          fi
+          while IFS= read -r line; do
+            [ -n "$line" ] || continue
+            echo "::add-mask::$line"
+          done <<< "$sa"
+          printf '%s' "$sa" > /tmp/sa.json
+          python3 scripts/doppler/resolve_project.py
+
+      - name: Revoke the Doppler token
+        if: always() && steps.auth.outputs.token != ''
+        env:
+          DOPPLER_TOKEN: ${{ steps.auth.outputs.token }}
+        run: |
+          curl -sS -o /dev/null -w 'revoke status: %{http_code}\n' -X POST https://api.doppler.com/v3/auth/revoke \
+            -H 'Content-Type: application/json' -d "$(jq -n --arg t "$DOPPLER_TOKEN" '{token:$t}')"
