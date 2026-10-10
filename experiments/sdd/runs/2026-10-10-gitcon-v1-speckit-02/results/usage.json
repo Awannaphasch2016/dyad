@@ -1,0 +1,15 @@
+{
+  "worker_tokens": null,
+  "coordinator_tokens": null,
+  "pricing_source": "experiments/sdd/pricing.json",
+  "pricing_pinned": "2026-10-10",
+  "note": "USD figures are estimates from pinned list prices; tokens are measured. Token totals for this follow-up were not read.",
+  "worker_usd_estimate": null,
+  "coordinator_usd_estimate": null,
+  "actions_minutes": 1.07,
+  "verifier": {
+    "run_url": "https://github.com/Awannaphasch2016/dyad/actions/runs/38055724182",
+    "conclusion": "success",
+    "seconds": 64
+  }
+}

@@ -1,0 +1,409 @@
+{
+  "run_id": "2026-10-10-gitcon-v1-speckit-02",
+  "approach": "speckit",
+  "approach_version": "1.1.2",
+  "spec_version": "gitcon-v1",
+  "spec_sha256": "30916614bd4380d1a93c92432e9753f3038ecfacd6e976906332ad4086485127",
+  "spec_unchanged_by_worker": true,
+  "final_status": "completed",
+  "spec_coverage": {
+    "implemented": 8,
+    "total": 8,
+    "ratio": 1,
+    "implemented_frs": [
+      "FR-01",
+      "FR-02",
+      "FR-03",
+      "FR-04",
+      "FR-05",
+      "FR-06",
+      "FR-07",
+      "FR-08"
+    ]
+  },
+  "acceptance": [
+    {
+      "id": "AC-01",
+      "fr": [
+        "FR-08"
+      ],
+      "status": "passed",
+      "expected": "`docker build -t sdd-site impl` exits 0",
+      "actual": "docker build ok in 11s",
+      "evidence": [
+        "build.json",
+        "docker-build.log"
+      ]
+    },
+    {
+      "id": "AC-02",
+      "fr": [
+        "FR-08"
+      ],
+      "status": "passed",
+      "expected": "`GET /` returns 200 within 60 s of container start; `/`, `/program`, `/registration-fee`, `/contact`, `/no-such-page` return no 5xx",
+      "actual": "{\"/\":200,\"/program\":200,\"/registration-fee\":200,\"/contact\":200,\"/no-such-page\":404}",
+      "evidence": [
+        "test-results/layout-AC-02-every-page-answers-without-a-server-error/trace.zip"
+      ]
+    },
+    {
+      "id": "AC-03",
+      "fr": [
+        "FR-01"
+      ],
+      "status": "passed",
+      "expected": "Header has \"GIT 2025\" linking to `/`; nav links with texts Home, Program, Registration Fee, Contact pointing at the four routes",
+      "actual": "as expected",
+      "evidence": [
+        "test-results/layout-AC-03-header-shows--8846a-d-the-four-navigation-links/test-finished-1.png",
+        "test-results/layout-AC-03-header-shows--8846a-d-the-four-navigation-links/video.webm",
+        "test-results/layout-AC-03-header-shows--8846a-d-the-four-navigation-links/trace.zip"
+      ]
+    },
+    {
+      "id": "AC-04",
+      "fr": [
+        "FR-01"
+      ],
+      "status": "passed",
+      "expected": "Footer contains the organiser name, \"gitconference@git.or.th\" as `mailto:`, \"(+66) 2634 4999\" and the copyright line",
+      "actual": "as expected",
+      "evidence": [
+        "test-results/layout-AC-04-footer-carrie-8d5f9-r-email-phone-and-copyright/test-finished-1.png",
+        "test-results/layout-AC-04-footer-carrie-8d5f9-r-email-phone-and-copyright/video.webm",
+        "test-results/layout-AC-04-footer-carrie-8d5f9-r-email-phone-and-copyright/trace.zip"
+      ]
+    },
+    {
+      "id": "AC-05",
+      "fr": [
+        "FR-02"
+      ],
+      "status": "passed",
+      "expected": "Home `<h1>` is \"GIT 2025\"; page shows the theme, \"8 - 9 September 2025\" (whitespace-insensitive) and \"Bangkok, Thailand\"; title tag matches 4.1.1",
+      "actual": "as expected",
+      "evidence": [
+        "test-results/home-AC-05-home-shows-the-title-theme-dates-and-place/test-finished-1.png",
+        "test-results/home-AC-05-home-shows-the-title-theme-dates-and-place/video.webm",
+        "test-results/home-AC-05-home-shows-the-title-theme-dates-and-place/trace.zip"
+      ]
+    },
+    {
+      "id": "AC-06",
+      "fr": [
+        "FR-03"
+      ],
+      "status": "passed",
+      "expected": "Program has `<h2>` headings equal to both day titles in `program.json`, in order",
+      "actual": "Monday 8 September 2025 | Tuesday 9 September 2025",
+      "evidence": [
+        "test-results/program-AC-06-program-has-a-heading-per-day-in-fixture-order/test-finished-1.png",
+        "test-results/program-AC-06-program-has-a-heading-per-day-in-fixture-order/video.webm",
+        "test-results/program-AC-06-program-has-a-heading-per-day-in-fixture-order/trace.zip"
+      ]
+    },
+    {
+      "id": "AC-07",
+      "fr": [
+        "FR-03"
+      ],
+      "status": "passed",
+      "expected": "Each day table has exactly as many body rows as fixture sessions; each row's time, title and speaker cells match the fixture",
+      "actual": "all sessions present",
+      "evidence": [
+        "test-results/program-AC-07-every-fixtur-92aef-with-time-title-and-speaker/test-finished-1.png",
+        "test-results/program-AC-07-every-fixtur-92aef-with-time-title-and-speaker/video.webm",
+        "test-results/program-AC-07-every-fixtur-92aef-with-time-title-and-speaker/trace.zip"
+      ]
+    },
+    {
+      "id": "AC-08",
+      "fr": [
+        "FR-04"
+      ],
+      "status": "passed",
+      "expected": "Fee page shows both table titles, the column headers, and every cell of `fees.json` including \"USD 150\", \"USD 425\", \"14,900 Baht\"",
+      "actual": "all cells present",
+      "evidence": [
+        "test-results/fees-AC-08-fee-page-renders-both-tables-cell-for-cell/test-finished-1.png",
+        "test-results/fees-AC-08-fee-page-renders-both-tables-cell-for-cell/video.webm",
+        "test-results/fees-AC-08-fee-page-renders-both-tables-cell-for-cell/trace.zip"
+      ]
+    },
+    {
+      "id": "AC-09",
+      "fr": [
+        "FR-05"
+      ],
+      "status": "passed",
+      "expected": "Contact form posts to `/contact` and has controls named group (select with the four options), subject, message, name, email, phone, and a submit",
+      "actual": "as expected",
+      "evidence": [
+        "test-results/contact-AC-09-contact-form-has-the-required-controls/test-finished-1.png",
+        "test-results/contact-AC-09-contact-form-has-the-required-controls/video.webm",
+        "test-results/contact-AC-09-contact-form-has-the-required-controls/trace.zip"
+      ]
+    },
+    {
+      "id": "AC-10",
+      "fr": [
+        "FR-05"
+      ],
+      "status": "passed",
+      "expected": "Submitting an empty form (group cleared) returns 200 with at least four `[data-error]` messages and no `[data-confirmation]`",
+      "actual": "5 data-error elements, confirmation absent",
+      "evidence": [
+        "test-results/contact-AC-10-empty-submis-fec4e--errors-and-no-confirmation/test-finished-1.png",
+        "test-results/contact-AC-10-empty-submis-fec4e--errors-and-no-confirmation/video.webm",
+        "test-results/contact-AC-10-empty-submis-fec4e--errors-and-no-confirmation/trace.zip"
+      ]
+    },
+    {
+      "id": "AC-11",
+      "fr": [
+        "FR-05"
+      ],
+      "status": "passed",
+      "expected": "`email=not-an-email` with other fields valid shows `[data-error=\"email\"]` and preserves subject, message, name, phone values",
+      "actual": "as expected",
+      "evidence": [
+        "test-results/contact-AC-11-invalid-emai-7549b--other-values-are-preserved/test-finished-1.png",
+        "test-results/contact-AC-11-invalid-emai-7549b--other-values-are-preserved/video.webm",
+        "test-results/contact-AC-11-invalid-emai-7549b--other-values-are-preserved/trace.zip"
+      ]
+    },
+    {
+      "id": "AC-12",
+      "fr": [
+        "FR-06"
+      ],
+      "status": "passed",
+      "expected": "A valid submission shows `[data-confirmation]` with the subject; `GET /contact/submissions.json` is JSON and contains an object with that subject",
+      "actual": "1 stored, match found",
+      "evidence": [
+        "test-results/contact-AC-12-valid-submis-e8dfe--listed-in-submissions-json/test-finished-1.png",
+        "test-results/contact-AC-12-valid-submis-e8dfe--listed-in-submissions-json/video.webm",
+        "test-results/contact-AC-12-valid-submis-e8dfe--listed-in-submissions-json/trace.zip"
+      ]
+    },
+    {
+      "id": "AC-13",
+      "fr": [
+        "FR-06"
+      ],
+      "status": "passed",
+      "expected": "A second valid submission makes the array length increase by one; keys are exactly group, subject, message, name, email, phone, submitted_at",
+      "actual": "before 1, after 2",
+      "evidence": [
+        "test-results/contact-AC-13-second-submi-4113e-cord-with-the-exact-key-set/trace.zip"
+      ]
+    },
+    {
+      "id": "AC-14",
+      "fr": [
+        "FR-07"
+      ],
+      "status": "passed",
+      "expected": "`GET /no-such-page` is 404, has the nav, `<h1>` \"Page not found\" and a link to `/` with text \"Back to Home\"",
+      "actual": "as expected",
+      "evidence": [
+        "test-results/not-found-AC-14-unknown-pa-cd894-04-inside-the-shared-layout/test-finished-1.png",
+        "test-results/not-found-AC-14-unknown-pa-cd894-04-inside-the-shared-layout/video.webm",
+        "test-results/not-found-AC-14-unknown-pa-cd894-04-inside-the-shared-layout/trace.zip"
+      ]
+    },
+    {
+      "id": "AC-15",
+      "fr": [
+        "FR-01"
+      ],
+      "status": "passed",
+      "expected": "At 375 px on Home the four nav links are visible, or become visible after clicking one button; no horizontal overflow",
+      "actual": "as expected",
+      "evidence": [
+        "test-results/layout-AC-15-navigation-is-08be6-without-horizontal-overflow/test-finished-1.png",
+        "test-results/layout-AC-15-navigation-is-08be6-without-horizontal-overflow/video.webm",
+        "test-results/layout-AC-15-navigation-is-08be6-without-horizontal-overflow/trace.zip"
+      ]
+    },
+    {
+      "id": "AC-16",
+      "fr": [
+        "all"
+      ],
+      "status": "passed",
+      "expected": "Full-page screenshot of the five pages at 1280 px saved under `evidence/screenshots/`",
+      "actual": "5 screenshots",
+      "evidence": [
+        "test-results/screenshots-AC-16-full-page-screenshots-of-the-five-pages/attachments/home-png-cf494b30de14f74d745965cff493d10a243013e9.png",
+        "test-results/screenshots-AC-16-full-page-screenshots-of-the-five-pages/attachments/program-png-310cd30d01f8cdcb428b510987ca1734079f34fd.png",
+        "test-results/screenshots-AC-16-full-page-screenshots-of-the-five-pages/attachments/registration-fee-png-fd26ab73922367944276ca1725fd10f4537c240b.png",
+        "test-results/screenshots-AC-16-full-page-screenshots-of-the-five-pages/attachments/contact-png-d6e4fa2510e9d425338ac16f2f2fb10b9cb19146.png",
+        "test-results/screenshots-AC-16-full-page-screenshots-of-the-five-pages/attachments/no-such-page-png-45b8834d89205450dc9d67ff24c6060d89849447.png",
+        "test-results/screenshots-AC-16-full-page-screenshots-of-the-five-pages/test-finished-1.png",
+        "test-results/screenshots-AC-16-full-page-screenshots-of-the-five-pages/video.webm",
+        "test-results/screenshots-AC-16-full-page-screenshots-of-the-five-pages/trace.zip"
+      ]
+    },
+    {
+      "id": "AC-17",
+      "fr": [
+        "FR-08"
+      ],
+      "status": "passed",
+      "expected": "`docker run --network none` of the same image serves `GET /` with 200",
+      "actual": "GET / with --network none returned 200",
+      "evidence": [
+        "build.json"
+      ]
+    },
+    {
+      "id": "AC-18",
+      "fr": [
+        "all"
+      ],
+      "status": "passed",
+      "expected": "Each of the five pages has exactly one `<h1>`, one `<main>`, and no duplicate `id` attributes",
+      "actual": "all pages well-formed",
+      "evidence": [
+        "test-results/layout-AC-18-each-page-has-one-h1-one-main-and-unique-ids/test-finished-1.png",
+        "test-results/layout-AC-18-each-page-has-one-h1-one-main-and-unique-ids/video.webm",
+        "test-results/layout-AC-18-each-page-has-one-h1-one-main-and-unique-ids/trace.zip"
+      ]
+    },
+    {
+      "id": "AC-19",
+      "fr": [
+        "FR-03"
+      ],
+      "status": "passed",
+      "expected": "Editing one title in `data/program.json` inside the running container and reloading `/program` shows the new title; \"not measurable\" when the file is not at that path",
+      "actual": "edited title rendered",
+      "evidence": [
+        "test-results/program-AC-19-program-is-r-3bcc8-rogram-json-at-request-time/test-finished-1.png",
+        "test-results/program-AC-19-program-is-r-3bcc8-rogram-json-at-request-time/video.webm",
+        "test-results/program-AC-19-program-is-r-3bcc8-rogram-json-at-request-time/trace.zip"
+      ]
+    },
+    {
+      "id": "AC-20",
+      "fr": [
+        "all"
+      ],
+      "status": "passed",
+      "expected": "`leak-scan.mjs` over the implementation tree finds no marker",
+      "actual": "no marker in 55 files",
+      "evidence": [
+        "leak-scan.json"
+      ]
+    }
+  ],
+  "verification_pass_rate": {
+    "passed": 20,
+    "total": 20,
+    "ratio": 1,
+    "not_measurable": 0
+  },
+  "ui_verification": {
+    "pages_visited": 5,
+    "screenshots": [
+      "test-results/screenshots-AC-16-full-page-screenshots-of-the-five-pages/attachments/home-png-cf494b30de14f74d745965cff493d10a243013e9.png",
+      "test-results/screenshots-AC-16-full-page-screenshots-of-the-five-pages/attachments/program-png-310cd30d01f8cdcb428b510987ca1734079f34fd.png",
+      "test-results/screenshots-AC-16-full-page-screenshots-of-the-five-pages/attachments/registration-fee-png-fd26ab73922367944276ca1725fd10f4537c240b.png",
+      "test-results/screenshots-AC-16-full-page-screenshots-of-the-five-pages/attachments/contact-png-d6e4fa2510e9d425338ac16f2f2fb10b9cb19146.png",
+      "test-results/screenshots-AC-16-full-page-screenshots-of-the-five-pages/attachments/no-such-page-png-45b8834d89205450dc9d67ff24c6060d89849447.png",
+      "test-results/screenshots-AC-16-full-page-screenshots-of-the-five-pages/test-finished-1.png"
+    ],
+    "failures": []
+  },
+  "build": {
+    "docker_build": "ok",
+    "container_healthy": true,
+    "build_seconds": 11,
+    "network_none_status": 200
+  },
+  "execution_time": {
+    "worker_seconds": 2440,
+    "verifier_seconds": 64,
+    "total_seconds": 2504,
+    "started_at": "2026-10-10T12:44:18.281Z",
+    "verified_at": "2026-10-10T13:28:26.494Z"
+  },
+  "cost": {
+    "worker_tokens": {},
+    "worker_usd_estimate": null,
+    "coordinator_tokens": {},
+    "coordinator_usd_estimate": null,
+    "actions_minutes": 1.07,
+    "pricing_source": "experiments/sdd/pricing.json",
+    "note": "USD figures are estimates from pinned list prices; tokens are measured. Token totals for this follow-up were not read."
+  },
+  "human_intervention": {
+    "count": 0,
+    "actions": [
+      {
+        "at": "2026-10-10T13:26:29.149Z",
+        "by": "coordinator",
+        "action": "record the pushed branch head",
+        "reason": "The worker pushed exp/2026-10-10-gitcon-v1-speckit-02 and could not open a pull request. The verifier uses this commit.",
+        "automated": true
+      }
+    ]
+  },
+  "source_lines": {
+    "tool": "cloc",
+    "php": 0,
+    "html": 0,
+    "css": 0,
+    "js": 0,
+    "total_code": 0,
+    "excluded": [
+      "vendor",
+      "node_modules",
+      ".specify",
+      ".cursor",
+      "specs",
+      "data",
+      "*.lock",
+      "*.min.*",
+      "JSON",
+      "YAML",
+      "Markdown",
+      "Text",
+      "SVG",
+      "XML"
+    ]
+  },
+  "iterations": {
+    "implement_rounds": 10,
+    "converge_rounds": 5,
+    "follow_up_runs": 0,
+    "raw_mentions": {
+      "implement": 20,
+      "converge": 10,
+      "clarify": 10
+    }
+  },
+  "isolation": {
+    "ground_truth_listed": false,
+    "leak_markers": []
+  },
+  "worker": {
+    "agent_id": "bc-4ca2a3c4-7c9f-40b8-959e-fbc30d886abd",
+    "run_id": "run-1b36ebbc-347e-4521-bf71-f4aa5c8649ee",
+    "model": "grok-4.7",
+    "status": "FINISHED",
+    "url": "https://cursor.com/agents/bc-4ca2a3c4-7c9f-40b8-959e-fbc30d886abd"
+  },
+  "pr": {
+    "number": null,
+    "head_sha": "1b0784eabf7e3f334cdd7b8bf58822cb1dd1979c",
+    "url": null,
+    "branch": "exp/2026-10-10-gitcon-v1-speckit-02"
+  },
+  "verifier": {
+    "run_url": "https://github.com/Awannaphasch2016/dyad/actions/runs/38055724182",
+    "artifact": "sdd-2026-10-10-gitcon-v1-speckit-02-evidence"
+  }
+}

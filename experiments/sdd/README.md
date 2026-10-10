@@ -41,7 +41,7 @@ Pushing `evidence/` is optional; it holds the Playwright report, traces and vide
 
 ## Follow-up
 
-`.github/workflows/sdd-run-02.yml` starts `2026-10-10-gitcon-v1-speckit-02` from commit `bc32948` on the implementation repository. The prompt leaves `SPEC.md` unchanged and asks the worker to make `POST /contact` reach PHP inside the Docker image. Run 01's record is left as it is. A push of `sdd-run.yml` does not start this worker.
+`.github/workflows/sdd-run-02.yml` started `2026-10-10-gitcon-v1-speckit-02` from commit `bc32948`. The worker finished in 41 minutes: https://cursor.com/agents/bc-4ca2a3c4-7c9f-40b8-959e-fbc30d886abd. It pushed `exp/2026-10-10-gitcon-v1-speckit-02` at `1b0784ea` and changed only the Dockerfile. The verifier passed 20 of 20, the specification hash matched, and the leak scan was clean: https://github.com/Awannaphasch2016/dyad/actions/runs/38055724182. Run 01 stays 16 of 20. A push of `sdd-run.yml` does not start this worker.
 
 ## Smoke test (plan D.4)
 

@@ -1,0 +1,56 @@
+# Run 2026-10-10-gitcon-v1-speckit-02
+
+Final status: **completed**. Approach speckit 1.1.2, spec gitcon-v1 (30916614bd43), worker model grok-4.7.
+
+- Spec coverage: 8/8 FRs (FR-01, FR-02, FR-03, FR-04, FR-05, FR-06, FR-07, FR-08)
+- Verification pass rate: 20/20, 0 not measurable
+- Build: docker build ok, container healthy true, no-network GET / 200
+- Worker: FINISHED in 41 min, 10 implement round(s), 5 converge round(s)
+- Tokens: unknown total; estimated USD unknown (list prices, estimate)
+- Human interventions: 0
+- Source lines (cloc, exclusions listed in results.json): PHP 0, HTML 0, CSS 0, JS 0
+- Isolation: ground truth listed false, leak markers 0; SPEC.md unchanged true
+- Pull request: none at 1b0784eabf7e3f334cdd7b8bf58822cb1dd1979c
+- Verifier: https://github.com/Awannaphasch2016/dyad/actions/runs/38055724182, artifact sdd-2026-10-10-gitcon-v1-speckit-02-evidence
+
+## Acceptance
+
+| AC | FR | Status | Expected | Actual | Evidence |
+| --- | --- | --- | --- | --- | --- |
+| AC-01 | FR-08 | pass | `docker build -t sdd-site impl` exits 0 | docker build ok in 11s | build.json, docker-build.log |
+| AC-02 | FR-08 | pass | `GET /` returns 200 within 60 s of container start; `/`, `/program`, `/registration-fee`, `/contact`, `/no-such-page` return no 5xx | {"/":200,"/program":200,"/registration-fee":200,"/contact":200,"/no-such-page":404} | test-results/layout-AC-02-every-page-answers-without-a-server-error/trace.zip |
+| AC-03 | FR-01 | pass | Header has "GIT 2025" linking to `/`; nav links with texts Home, Program, Registration Fee, Contact pointing at the four routes | as expected | test-results/layout-AC-03-header-shows--8846a-d-the-four-navigation-links/test-finished-1.png, test-results/layout-AC-03-header-shows--8846a-d-the-four-navigation-links/video.webm, test-results/layout-AC-03-header-shows--8846a-d-the-four-navigation-links/trace.zip |
+| AC-04 | FR-01 | pass | Footer contains the organiser name, "gitconference@git.or.th" as `mailto:`, "(+66) 2634 4999" and the copyright line | as expected | test-results/layout-AC-04-footer-carrie-8d5f9-r-email-phone-and-copyright/test-finished-1.png, test-results/layout-AC-04-footer-carrie-8d5f9-r-email-phone-and-copyright/video.webm, test-results/layout-AC-04-footer-carrie-8d5f9-r-email-phone-and-copyright/trace.zip |
+| AC-05 | FR-02 | pass | Home `<h1>` is "GIT 2025"; page shows the theme, "8 - 9 September 2025" (whitespace-insensitive) and "Bangkok, Thailand"; title tag matches 4.1.1 | as expected | test-results/home-AC-05-home-shows-the-title-theme-dates-and-place/test-finished-1.png, test-results/home-AC-05-home-shows-the-title-theme-dates-and-place/video.webm, test-results/home-AC-05-home-shows-the-title-theme-dates-and-place/trace.zip |
+| AC-06 | FR-03 | pass | Program has `<h2>` headings equal to both day titles in `program.json`, in order | Monday 8 September 2025 \| Tuesday 9 September 2025 | test-results/program-AC-06-program-has-a-heading-per-day-in-fixture-order/test-finished-1.png, test-results/program-AC-06-program-has-a-heading-per-day-in-fixture-order/video.webm, test-results/program-AC-06-program-has-a-heading-per-day-in-fixture-order/trace.zip |
+| AC-07 | FR-03 | pass | Each day table has exactly as many body rows as fixture sessions; each row's time, title and speaker cells match the fixture | all sessions present | test-results/program-AC-07-every-fixtur-92aef-with-time-title-and-speaker/test-finished-1.png, test-results/program-AC-07-every-fixtur-92aef-with-time-title-and-speaker/video.webm, test-results/program-AC-07-every-fixtur-92aef-with-time-title-and-speaker/trace.zip |
+| AC-08 | FR-04 | pass | Fee page shows both table titles, the column headers, and every cell of `fees.json` including "USD 150", "USD 425", "14,900 Baht" | all cells present | test-results/fees-AC-08-fee-page-renders-both-tables-cell-for-cell/test-finished-1.png, test-results/fees-AC-08-fee-page-renders-both-tables-cell-for-cell/video.webm, test-results/fees-AC-08-fee-page-renders-both-tables-cell-for-cell/trace.zip |
+| AC-09 | FR-05 | pass | Contact form posts to `/contact` and has controls named group (select with the four options), subject, message, name, email, phone, and a submit | as expected | test-results/contact-AC-09-contact-form-has-the-required-controls/test-finished-1.png, test-results/contact-AC-09-contact-form-has-the-required-controls/video.webm, test-results/contact-AC-09-contact-form-has-the-required-controls/trace.zip |
+| AC-10 | FR-05 | pass | Submitting an empty form (group cleared) returns 200 with at least four `[data-error]` messages and no `[data-confirmation]` | 5 data-error elements, confirmation absent | test-results/contact-AC-10-empty-submis-fec4e--errors-and-no-confirmation/test-finished-1.png, test-results/contact-AC-10-empty-submis-fec4e--errors-and-no-confirmation/video.webm, test-results/contact-AC-10-empty-submis-fec4e--errors-and-no-confirmation/trace.zip |
+| AC-11 | FR-05 | pass | `email=not-an-email` with other fields valid shows `[data-error="email"]` and preserves subject, message, name, phone values | as expected | test-results/contact-AC-11-invalid-emai-7549b--other-values-are-preserved/test-finished-1.png, test-results/contact-AC-11-invalid-emai-7549b--other-values-are-preserved/video.webm, test-results/contact-AC-11-invalid-emai-7549b--other-values-are-preserved/trace.zip |
+| AC-12 | FR-06 | pass | A valid submission shows `[data-confirmation]` with the subject; `GET /contact/submissions.json` is JSON and contains an object with that subject | 1 stored, match found | test-results/contact-AC-12-valid-submis-e8dfe--listed-in-submissions-json/test-finished-1.png, test-results/contact-AC-12-valid-submis-e8dfe--listed-in-submissions-json/video.webm, test-results/contact-AC-12-valid-submis-e8dfe--listed-in-submissions-json/trace.zip |
+| AC-13 | FR-06 | pass | A second valid submission makes the array length increase by one; keys are exactly group, subject, message, name, email, phone, submitted_at | before 1, after 2 | test-results/contact-AC-13-second-submi-4113e-cord-with-the-exact-key-set/trace.zip |
+| AC-14 | FR-07 | pass | `GET /no-such-page` is 404, has the nav, `<h1>` "Page not found" and a link to `/` with text "Back to Home" | as expected | test-results/not-found-AC-14-unknown-pa-cd894-04-inside-the-shared-layout/test-finished-1.png, test-results/not-found-AC-14-unknown-pa-cd894-04-inside-the-shared-layout/video.webm, test-results/not-found-AC-14-unknown-pa-cd894-04-inside-the-shared-layout/trace.zip |
+| AC-15 | FR-01 | pass | At 375 px on Home the four nav links are visible, or become visible after clicking one button; no horizontal overflow | as expected | test-results/layout-AC-15-navigation-is-08be6-without-horizontal-overflow/test-finished-1.png, test-results/layout-AC-15-navigation-is-08be6-without-horizontal-overflow/video.webm, test-results/layout-AC-15-navigation-is-08be6-without-horizontal-overflow/trace.zip |
+| AC-16 | all | pass | Full-page screenshot of the five pages at 1280 px saved under `evidence/screenshots/` | 5 screenshots | test-results/screenshots-AC-16-full-page-screenshots-of-the-five-pages/attachments/home-png-cf494b30de14f74d745965cff493d10a243013e9.png, test-results/screenshots-AC-16-full-page-screenshots-of-the-five-pages/attachments/program-png-310cd30d01f8cdcb428b510987ca1734079f34fd.png, test-results/screenshots-AC-16-full-page-screenshots-of-the-five-pages/attachments/registration-fee-png-fd26ab73922367944276ca1725fd10f4537c240b.png, test-results/screenshots-AC-16-full-page-screenshots-of-the-five-pages/attachments/contact-png-d6e4fa2510e9d425338ac16f2f2fb10b9cb19146.png, test-results/screenshots-AC-16-full-page-screenshots-of-the-five-pages/attachments/no-such-page-png-45b8834d89205450dc9d67ff24c6060d89849447.png, test-results/screenshots-AC-16-full-page-screenshots-of-the-five-pages/test-finished-1.png, test-results/screenshots-AC-16-full-page-screenshots-of-the-five-pages/video.webm, test-results/screenshots-AC-16-full-page-screenshots-of-the-five-pages/trace.zip |
+| AC-17 | FR-08 | pass | `docker run --network none` of the same image serves `GET /` with 200 | GET / with --network none returned 200 | build.json |
+| AC-18 | all | pass | Each of the five pages has exactly one `<h1>`, one `<main>`, and no duplicate `id` attributes | all pages well-formed | test-results/layout-AC-18-each-page-has-one-h1-one-main-and-unique-ids/test-finished-1.png, test-results/layout-AC-18-each-page-has-one-h1-one-main-and-unique-ids/video.webm, test-results/layout-AC-18-each-page-has-one-h1-one-main-and-unique-ids/trace.zip |
+| AC-19 | FR-03 | pass | Editing one title in `data/program.json` inside the running container and reloading `/program` shows the new title; "not measurable" when the file is not at that path | edited title rendered | test-results/program-AC-19-program-is-r-3bcc8-rogram-json-at-request-time/test-finished-1.png, test-results/program-AC-19-program-is-r-3bcc8-rogram-json-at-request-time/video.webm, test-results/program-AC-19-program-is-r-3bcc8-rogram-json-at-request-time/trace.zip |
+| AC-20 | all | pass | `leak-scan.mjs` over the implementation tree finds no marker | no marker in 55 files | leak-scan.json |
+
+## Screenshots
+
+- test-results/screenshots-AC-16-full-page-screenshots-of-the-five-pages/attachments/home-png-cf494b30de14f74d745965cff493d10a243013e9.png
+- test-results/screenshots-AC-16-full-page-screenshots-of-the-five-pages/attachments/program-png-310cd30d01f8cdcb428b510987ca1734079f34fd.png
+- test-results/screenshots-AC-16-full-page-screenshots-of-the-five-pages/attachments/registration-fee-png-fd26ab73922367944276ca1725fd10f4537c240b.png
+- test-results/screenshots-AC-16-full-page-screenshots-of-the-five-pages/attachments/contact-png-d6e4fa2510e9d425338ac16f2f2fb10b9cb19146.png
+- test-results/screenshots-AC-16-full-page-screenshots-of-the-five-pages/attachments/no-such-page-png-45b8834d89205450dc9d67ff24c6060d89849447.png
+- test-results/screenshots-AC-16-full-page-screenshots-of-the-five-pages/test-finished-1.png
+
+## Notes
+
+- The worker changed only `Dockerfile`, in commit `1b0784ea`. Apache was redirecting `POST /contact` to `/contact/` before PHP. The image now rewrites `/contact` to the front controller during URL translation.
+- `SPEC.md` hash matches the pinned specification. The leak scan found no markers in 55 files.
+- The worker pushed `exp/2026-10-10-gitcon-v1-speckit-02` and could not open a pull request. The verifier used that commit. Run 1 and its pull request were left as recorded.
+- The verifier artifact's `cloc.json` was `{}` again, so the line counts above are zero. Token totals for this follow-up were not read.
+- The implement and converge round counts are mention counts from the worker stream, the same heuristic as run 1.
