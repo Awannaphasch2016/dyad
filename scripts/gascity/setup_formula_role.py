@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Create the formula preview role from the production host and store its ARN in Doppler.
 
-Reads Doppler token files on this machine. Does not print token values, AWS keys, or the role ARN.
+Uses DOPPLER_TOKEN when the workflow forwarded one (it can read both configs),
+and otherwise the token files on this machine. Does not print token values, AWS keys, or the role ARN.
 """
 
 import json
@@ -12,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 
@@ -215,18 +217,41 @@ def doppler_json(token, url, payload=None):
         return error.code, {}
 
 
-def doppler_config(token):
-    status, body = doppler_json(token, "https://api.doppler.com/v3/configs/config")
+def credential_source():
+    """Where the Doppler credential comes from.
+
+    A forwarded token is a service-account token, so the project and config
+    are named explicitly. A file token is bound to one config and the API
+    reports which one.
+    """
+    forwarded = os.environ.get("DOPPLER_TOKEN", "").strip()
+    if forwarded:
+        return "env", forwarded, "dyad", "preview", "aws", "dev"
+    return "file", "", "", "", "", ""
+
+
+def config_query(project, config):
+    if not project or not config:
+        return ""
+    return f"&project={urllib.parse.quote(project)}&config={urllib.parse.quote(config)}"
+
+
+def doppler_config(token, project="", config=""):
+    status, body = doppler_json(
+        token,
+        "https://api.doppler.com/v3/configs/config?" + config_query(project, config).lstrip("&"),
+    )
     config = body.get("config") if isinstance(body, dict) else None
     if status != 200 or not isinstance(config, dict):
         return status, "", ""
     return status, str(config.get("project") or ""), str(config.get("name") or "")
 
 
-def doppler_download(token):
+def doppler_download(token, project="", config=""):
     status, body = doppler_json(
         token,
-        "https://api.doppler.com/v3/configs/config/secrets/download?format=json",
+        "https://api.doppler.com/v3/configs/config/secrets/download?format=json"
+        + config_query(project, config),
     )
     if status != 200 or not isinstance(body, dict):
         raise SystemExit(f"doppler download failed ({status})")
@@ -375,11 +400,20 @@ def ensure_role(aws, env, account_id):
 
 def main():
     print("setup-formula-role start", flush=True)
-    dyad_token = read_root_file(DYAD_TOKEN_FILE)
-    aws_token = read_root_file(AWS_TOKEN_FILE)
-    dyad_status, project, config = doppler_config(dyad_token)
+    source, forwarded, dyad_project, dyad_config, aws_project, aws_config = credential_source()
+    print(f"doppler_source={source}")
+    if source == "env":
+        dyad_token = aws_token = forwarded
+        dyad_status, project, config = doppler_config(dyad_token, dyad_project, dyad_config)
+        aws_env = doppler_download(aws_token, aws_project, aws_config)
+    else:
+        dyad_token = read_root_file(DYAD_TOKEN_FILE)
+        aws_token = read_root_file(AWS_TOKEN_FILE)
+        dyad_status, project, config = doppler_config(dyad_token)
+        aws_env = doppler_download(aws_token)
     print(f"dyad token http {dyad_status} project={project or 'unknown'} config={config or 'unknown'}")
-    aws_env = doppler_download(aws_token)
+    if source == "env" and dyad_status != 200:
+        raise SystemExit(f"forwarded token cannot read dyad/preview ({dyad_status})")
     for name in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION"):
         if not aws_env.get(name):
             raise SystemExit(f"aws doppler config is missing {name}")

@@ -157,4 +157,93 @@ if command -v node >/dev/null 2>&1; then
   fi
 fi
 
+# The forwarded token is used for both configs and never printed.
+cat > "$tmp/doppler" << 'EOF'
+#!/bin/sh
+printf '%s %s\n' "$DOPPLER_PROJECT" "$DOPPLER_CONFIG" >> "$DOPPLER_LOG"
+if [ -z "$DOPPLER_TOKEN" ]; then
+  echo "doppler: no token" >&2
+  exit 1
+fi
+printf '%s\n' '{}'
+EOF
+chmod 755 "$tmp/doppler"
+secret='dp.st.super-secret-token'
+set +e
+dry_out="$(
+  DOPPLER_LOG="$tmp/doppler.log" \
+    DOPPLER_TOKEN="$secret" \
+    DOPPLER_BIN="$tmp/doppler" \
+    GAS_CITY_WRAPPER_DRY=1 \
+    bash scripts/gascity/host-wrapper.sh abcdef1
+)"
+dry_status=$?
+set -e
+if [[ "$dry_status" -ne 0 ]]; then
+  echo "host-wrapper.sh dry run failed ($dry_status): $dry_out" >&2
+  exit 1
+fi
+if [[ "$dry_out" != *"doppler_source=env"* ]]; then
+  echo "host-wrapper.sh did not report doppler_source=env: $dry_out" >&2
+  exit 1
+fi
+if [[ "$dry_out" == *"$secret"* ]]; then
+  echo "host-wrapper.sh printed the Doppler token" >&2
+  exit 1
+fi
+if [[ "$(cat "$tmp/doppler.log")" != $'dyad preview\naws dev' ]]; then
+  echo "host-wrapper.sh did not download both configs: $(cat "$tmp/doppler.log")" >&2
+  exit 1
+fi
+
+set +e
+env -u DOPPLER_TOKEN GAS_CITY_WRAPPER_DRY=1 bash scripts/gascity/host-wrapper.sh abcdef1 >/dev/null
+dry_status=$?
+set -e
+if [[ "$dry_status" -ne 2 ]]; then
+  echo "host-wrapper.sh without a token skipped the file check (status $dry_status)" >&2
+  exit 1
+fi
+
+python3 - << 'PY'
+import importlib.util
+import os
+
+def load(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+role = load("setup_formula_role", "scripts/gascity/setup_formula_role.py")
+os.environ["DOPPLER_TOKEN"] = "dp.st.super-secret-token"
+source, token, dyad_project, dyad_config, aws_project, aws_config = role.credential_source()
+if source != "env" or token != "dp.st.super-secret-token":
+    raise SystemExit("forwarded token was not selected")
+if (dyad_project, dyad_config, aws_project, aws_config) != ("dyad", "preview", "aws", "dev"):
+    raise SystemExit("forwarded token configs are wrong")
+os.environ["DOPPLER_TOKEN"] = "   "
+if role.credential_source()[0] != "file":
+    raise SystemExit("blank token was treated as forwarded")
+del os.environ["DOPPLER_TOKEN"]
+if role.credential_source()[0] != "file":
+    raise SystemExit("missing token was treated as forwarded")
+
+check = load("check_host_access", "scripts/gascity/check_host_access.py")
+if not check.host_is_ok(False, True) or not check.host_is_ok(True, False):
+    raise SystemExit("a working credential was reported as a failure")
+if check.host_is_ok(False, False):
+    raise SystemExit("no credential was reported as success")
+print("forwarded token selection ok")
+PY
+
+if ! grep -q 'preserve-env=DOPPLER_TOKEN' .github/workflows/gascity-rollout.yml; then
+  echo "gascity-rollout.yml does not forward the token" >&2
+  exit 1
+fi
+if grep -q '/usr/local/sbin/gascity-rollout' .github/workflows/gascity-rollout.yml; then
+  echo "gascity-rollout.yml still calls the installed wrapper" >&2
+  exit 1
+fi
+
 echo "rollout helpers ok"

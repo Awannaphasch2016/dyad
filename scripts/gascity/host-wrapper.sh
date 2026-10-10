@@ -12,37 +12,43 @@ if [[ ! "$COMMIT" =~ ^[0-9a-fA-F]{7,40}$ ]]; then
   exit 2
 fi
 
-if [[ "$(id -u)" -ne 0 ]]; then
+# GAS_CITY_WRAPPER_DRY=1 exercises the Doppler calls without root, git, or Dagger.
+if [[ "${GAS_CITY_WRAPPER_DRY:-}" != 1 && "$(id -u)" -ne 0 ]]; then
   echo "gascity-rollout must run as root" >&2
   exit 2
 fi
 
 REPO=/opt/gascity/weaver-plus
 BRANCH=cursor/browser-dyad-ui-bbea
-# A service token is bound to one config, so the file decides what is
-# downloaded. Phase 3 of plans/doppler-organization.md installs the prd file;
-# until it exists the preview file is used as before.
+# Phase 3 of plans/doppler-organization.md installs the prd file; until it
+# exists the preview file is used as before.
 PRD_TOKEN_FILE=/etc/doppler/dyad-prd.token
 PREVIEW_TOKEN_FILE=/etc/doppler/dyad-preview.token
 AWS_TOKEN_FILE=/etc/doppler/aws-dev.token
 ENV_FILE=/run/gascity-rollout.env
 
-if [[ -f "$PRD_TOKEN_FILE" ]]; then
-  TOKEN_FILE="$PRD_TOKEN_FILE"
-  TOKEN_CONFIG=prd
-elif [[ -f "$PREVIEW_TOKEN_FILE" ]]; then
-  TOKEN_FILE="$PREVIEW_TOKEN_FILE"
-  TOKEN_CONFIG=preview
-else
-  echo "Missing Doppler token file $PRD_TOKEN_FILE or $PREVIEW_TOKEN_FILE" >&2
-  exit 2
-fi
-if [[ ! -f "$AWS_TOKEN_FILE" ]]; then
-  echo "Missing Doppler token file $AWS_TOKEN_FILE" >&2
-  exit 2
+# A token forwarded by the workflow covers both configs and nothing is read
+# from disk. With no token, a service token is bound to one config, so the
+# file decides what is downloaded.
+FORWARDED="${DOPPLER_TOKEN:-}"
+if [[ -z "$FORWARDED" ]]; then
+  if [[ -f "$PRD_TOKEN_FILE" ]]; then
+    TOKEN_FILE="$PRD_TOKEN_FILE"
+    TOKEN_CONFIG=prd
+  elif [[ -f "$PREVIEW_TOKEN_FILE" ]]; then
+    TOKEN_FILE="$PREVIEW_TOKEN_FILE"
+    TOKEN_CONFIG=preview
+  else
+    echo "Missing Doppler token file $PRD_TOKEN_FILE or $PREVIEW_TOKEN_FILE" >&2
+    exit 2
+  fi
+  if [[ ! -f "$AWS_TOKEN_FILE" ]]; then
+    echo "Missing Doppler token file $AWS_TOKEN_FILE" >&2
+    exit 2
+  fi
 fi
 
-if [[ "${GAS_CITY_WRAPPER_INNER:-}" != 1 ]]; then
+if [[ "${GAS_CITY_WRAPPER_DRY:-}" != 1 && "${GAS_CITY_WRAPPER_INNER:-}" != 1 ]]; then
   dirty="$(runuser -u ubuntu -- git -C "$REPO" status --porcelain)"
   if [[ -n "$dirty" ]]; then
     echo "Host checkout is not clean; refusing to roll out" >&2
@@ -59,14 +65,27 @@ preview="$(mktemp)"
 aws_json="$(mktemp)"
 merged="$(mktemp)"
 trap 'rm -f "$preview" "$aws_json" "$merged" "$ENV_FILE"' EXIT
-DOPPLER_TOKEN="$(<"$TOKEN_FILE")"
-DOPPLER_PROJECT=dyad DOPPLER_CONFIG="$TOKEN_CONFIG" DOPPLER_TOKEN="$DOPPLER_TOKEN" \
-  /usr/bin/doppler secrets download --no-file --format json > "$preview"
-unset DOPPLER_TOKEN
-DOPPLER_TOKEN="$(<"$AWS_TOKEN_FILE")"
-DOPPLER_PROJECT=aws DOPPLER_CONFIG=dev DOPPLER_TOKEN="$DOPPLER_TOKEN" \
-  /usr/bin/doppler secrets download --no-file --format json > "$aws_json"
-unset DOPPLER_TOKEN
+doppler_bin="${DOPPLER_BIN:-/usr/bin/doppler}"
+if [[ -n "$FORWARDED" ]]; then
+  echo "doppler_source=env"
+  DOPPLER_PROJECT=dyad DOPPLER_CONFIG=preview DOPPLER_TOKEN="$FORWARDED" \
+    "$doppler_bin" secrets download --no-file --format json > "$preview"
+  DOPPLER_PROJECT=aws DOPPLER_CONFIG=dev DOPPLER_TOKEN="$FORWARDED" \
+    "$doppler_bin" secrets download --no-file --format json > "$aws_json"
+else
+  echo "doppler_source=file"
+  DOPPLER_TOKEN="$(<"$TOKEN_FILE")"
+  DOPPLER_PROJECT=dyad DOPPLER_CONFIG="$TOKEN_CONFIG" DOPPLER_TOKEN="$DOPPLER_TOKEN" \
+    "$doppler_bin" secrets download --no-file --format json > "$preview"
+  unset DOPPLER_TOKEN
+  DOPPLER_TOKEN="$(<"$AWS_TOKEN_FILE")"
+  DOPPLER_PROJECT=aws DOPPLER_CONFIG=dev DOPPLER_TOKEN="$DOPPLER_TOKEN" \
+    "$doppler_bin" secrets download --no-file --format json > "$aws_json"
+fi
+unset DOPPLER_TOKEN FORWARDED
+if [[ "${GAS_CITY_WRAPPER_DRY:-}" == 1 ]]; then
+  exit 0
+fi
 python3 - "$preview" "$aws_json" "$merged" << 'PY'
 import json
 import sys

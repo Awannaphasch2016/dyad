@@ -138,6 +138,10 @@ jobs:
         if: steps.secrets.outputs.ssh_key_ok == '1'
         run: |
           set -euo pipefail
+          prefix=""
+          if [[ -n "${DOPPLER_TOKEN:-}" ]]; then
+            prefix="DOPPLER_TOKEN=$(printf '%q' "$DOPPLER_TOKEN") "
+          fi
           ssh -i "$RUNNER_TEMP/gascity-ec2" \
             -o UserKnownHostsFile="$GITHUB_WORKSPACE/.github/gascity_known_hosts" \
             -o StrictHostKeyChecking=yes \
@@ -145,5 +149,5 @@ jobs:
             -o ConnectTimeout=20 \
             -o BatchMode=yes \
             ubuntu@13.251.216.187 \
-            "python3 -" < scripts/gascity/check_host_access.py
+            "${prefix}python3 -" < scripts/gascity/check_host_access.py
           echo "ec2_ssh=ok"

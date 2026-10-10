@@ -78,6 +78,7 @@ test("the Doppler workflows authenticate by OIDC and store no token", () => {
   for (const file of [
     "doppler-organize.yml",
     "ec2-access-check.yml",
+    "gascity-rollout.yml",
     "preview-formula-role.yml",
   ]) {
     const text = readFileSync(
