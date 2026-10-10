@@ -1,3 +1,4 @@
+// @vitest-environment node
 /**
  * C2–C4. Skipped unless HITL_CURSOR_LIVE=1. The Actions job sets that after
  * Doppler injects CURSOR_API_KEY. The key stays in this process: the agent
