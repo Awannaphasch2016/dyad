@@ -226,8 +226,12 @@ if ! grep -q 'docker image prune -f' scripts/gascity/rollout.sh; then
   echo "rollout.sh does not drop dangling images" >&2
   exit 1
 fi
-if ! grep -q 'control_plane_sync' scripts/gascity/rollout.sh; then
+if ! grep -q 'control_plane_' scripts/gascity/rollout.sh; then
   echo "rollout.sh does not record the account sync log" >&2
+  exit 1
+fi
+if ! grep -q 'print_sync_log "after the failure"' scripts/gascity/rollout.sh; then
+  echo "rollout.sh does not record the sync log after a failure" >&2
   exit 1
 fi
 if grep -q -- '--volumes' scripts/gascity/rollout.sh || grep -q 'volume prune' scripts/gascity/rollout.sh; then
