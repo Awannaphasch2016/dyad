@@ -400,6 +400,13 @@
       "when": 1790838000000,
       "tag": "0056_hitl_questions",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "6",
+      "when": 1791590151528,
+      "tag": "0057_cursor_agent_id",
+      "breakpoints": true
     }
   ]
 }

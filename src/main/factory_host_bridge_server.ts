@@ -26,8 +26,10 @@ import {
   listHitlQuestions,
   resumeAnsweredFactoryQuestions,
   syncRemote,
+  type CursorFollowUpSender,
 } from "@/control_plane/hitl_device";
 import type { HitlCaller } from "@/control_plane/hitl";
+import { cursorFollowUpForDesktop } from "@/main/cursor_factory_host";
 
 const MAX_BODY_BYTES = 256 * 1024;
 const LinkBody = z.object({
@@ -97,6 +99,7 @@ export function createFactoryHostBridgeServer(options: {
   database?: FactoryHostDatabase;
   dispatchChatIntent?: typeof dispatchChatIntentAndWait;
   resolveCaller?: (token: string) => Promise<HitlCaller | null>;
+  cursorFollowUp?: CursorFollowUpSender;
 }): Server {
   const database = options.database ?? db;
   const resolveCaller =
@@ -220,6 +223,7 @@ export function createFactoryHostBridgeServer(options: {
             caller,
             body: body.body,
             dispatch: options.dispatchChatIntent,
+            cursorFollowUp: options.cursorFollowUp,
           });
           json(response, 200, result);
           return;
@@ -351,7 +355,10 @@ export async function startFactoryHostBridgeFromEnv(): Promise<void> {
     );
   }
   const host = resolveFactoryHostBridgeHost();
-  const server = createFactoryHostBridgeServer({ token });
+  const server = createFactoryHostBridgeServer({
+    token,
+    cursorFollowUp: cursorFollowUpForDesktop(),
+  });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(port, host, () => {
@@ -363,7 +370,11 @@ export async function startFactoryHostBridgeFromEnv(): Promise<void> {
   // The bridge is already listening. A database that is not ready, or one
   // follow-up that fails, must not take it down. The next start retries.
   try {
-    await resumeAnsweredFactoryQuestions(db);
+    await resumeAnsweredFactoryQuestions(
+      db,
+      undefined,
+      cursorFollowUpForDesktop(),
+    );
   } catch {
     return;
   }

@@ -143,9 +143,7 @@ export function FactoryPhaseBar() {
         queryKey: queryKeys.chats.detail({ chatId: phaseChatId }),
         queryFn: () => ipc.chat.getChat(phaseChatId!),
         enabled: phaseChatId !== null,
-        refetchInterval: factoryStateQuery.data?.factoryHostManaged
-          ? 1_000
-          : false,
+        refetchInterval: enabled ? 2_000 : false,
       };
     }),
   });
@@ -181,6 +179,7 @@ export function FactoryPhaseBar() {
       const result = await ipc.factory.listQuestions({ appId, phase });
       return result.questions;
     },
+    refetchInterval: 2_000,
   });
   const phaseUnlocked =
     phase != null && isFactoryPhaseUnlocked(phase, progress);
@@ -226,6 +225,7 @@ export function FactoryPhaseBar() {
   useEffect(() => {
     if (
       kickoff == null ||
+      phase == null ||
       factoryStateQuery.data?.factoryHostManaged === true ||
       chatId == null ||
       appId == null ||
@@ -238,12 +238,17 @@ export function FactoryPhaseBar() {
       return;
     }
     kickedOffChatIds.current.add(chatId);
-    void streamMessage({ prompt: kickoff, chatId, appId });
+    void ipc.factory.ensureCursorPhase({ appId, phase }).then((result) => {
+      if (!result.started) {
+        return streamMessage({ prompt: kickoff, chatId, appId });
+      }
+    });
   }, [
     kickoff,
     factoryStateQuery.data?.factoryHostManaged,
     chatId,
     appId,
+    phase,
     phaseUnlocked,
     progressLoaded,
     streamIdle,
@@ -326,10 +331,16 @@ export function FactoryPhaseBar() {
   const approveAndContinue = async () => {
     if (!next || !nextChat) return;
     await recordApproval();
+    const cursor =
+      next === "implementation"
+        ? await ipc.factory.ensureCursorPhase({ appId, phase: next })
+        : { started: false };
     selectChat({
       chatId: nextChat.id,
       appId,
-      prefillInput: continuePrefill(next, phaseSummary),
+      prefillInput: cursor.started
+        ? undefined
+        : continuePrefill(next, phaseSummary),
     });
   };
 

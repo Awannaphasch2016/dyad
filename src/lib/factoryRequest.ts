@@ -27,18 +27,19 @@ export function extractFactoryRequest(
   const lines = withoutThinking.split(/\r?\n/);
   let fenced = false;
   let last: { role: AdminRoleId; start: number } | null = null;
-  lines.forEach((line, index) => {
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index] ?? "";
     if (FENCE.test(line)) {
       fenced = !fenced;
-      return;
+      continue;
     }
-    if (fenced) return;
+    if (fenced) continue;
     const text = headingText(line);
-    if (!text) return;
+    if (!text) continue;
     const role = /^request for\s+(.+)$/.exec(text)?.[1];
-    if (!role || !isAdminRoleId(role)) return;
+    if (!role || !isAdminRoleId(role)) continue;
     last = { role, start: index };
-  });
+  }
   if (!last) return null;
 
   fenced = false;
