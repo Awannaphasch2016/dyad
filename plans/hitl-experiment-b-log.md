@@ -85,3 +85,9 @@ Question `2e33b30a-34d9-4286-8e4a-c039fb6d908d` is the project-manager request. 
 The Cursor carrier is the request marker, read by the poller. The token is not placed in the agent environment. The resume edge stays in the bridge: a `cursor-run:` answer sends a follow-up through the registered sender and does not start a local chat. C2 did not need a role outside `project-manager` and `developer`.
 
 The diff from `cursor/galan-software-factory-2fff` does not touch `scripts/gascity/`, GasCity, the Neon schema, or Paperclip.
+
+## Desktop path
+
+2026-10-10. The phase bar now calls `factory:ensure-cursor-phase` for Discovery, for Implementation when the project manager approves Discovery, and for Delivery. The desktop poller writes a summary into the phase chat and a request into the question list. `answerQuestion` passes the follow-up sender. Tests: `src/main/cursor_factory_host.test.ts`, `src/components/chat/FactoryPhaseBar.test.tsx`.
+
+The two signed-in windows have not been run. This environment has no `CURSOR_API_KEY` and no two Clerk sessions, so steps 1–9 of the revised plan are still open.

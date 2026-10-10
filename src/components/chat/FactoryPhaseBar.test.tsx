@@ -14,6 +14,9 @@ const approvePhase = vi.hoisted(() => vi.fn());
 const approveAccountPhase = vi.hoisted(() => vi.fn());
 const listApprovals = vi.hoisted(() => vi.fn());
 const getChat = vi.hoisted(() => vi.fn());
+const ensureCursorPhase = vi.hoisted(() =>
+  vi.fn(async () => ({ started: false })),
+);
 const downloadFactoryDocument = vi.hoisted(() => vi.fn());
 
 vi.mock("@/hooks/useStreamChat", () => ({
@@ -66,6 +69,7 @@ vi.mock("@/ipc/types", () => ({
       addComment: vi.fn(),
       listQuestions: vi.fn(async () => ({ questions: [] })),
       answerQuestion: vi.fn(),
+      ensureCursorPhase,
     },
     chat: {
       getChat: (...args: unknown[]) => getChat(...args),
@@ -127,6 +131,8 @@ describe("FactoryPhaseBar", () => {
     listApprovals.mockResolvedValue({ approvals: [] });
     approveAccountPhase.mockResolvedValue(undefined);
     getChat.mockReset();
+    ensureCursorPhase.mockReset();
+    ensureCursorPhase.mockResolvedValue({ started: false });
     downloadFactoryDocument.mockReset();
     approvePhase.mockResolvedValue({
       appId: 7,
@@ -196,8 +202,13 @@ describe("FactoryPhaseBar", () => {
         appId: 7,
       });
     });
+    expect(ensureCursorPhase).toHaveBeenCalledWith({
+      appId: 7,
+      phase: "discovery",
+    });
     unlinked.unmount();
     streamMessage.mockClear();
+    ensureCursorPhase.mockResolvedValue({ started: true });
 
     getState.mockResolvedValue({
       appId: 7,

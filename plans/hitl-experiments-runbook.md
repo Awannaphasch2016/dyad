@@ -39,14 +39,19 @@ Two dev instances, distinct `DYAD_DEV_USER_DATA_DIR`, one organization app, thre
 
 The Cursor agent is a normal agent for this app, not a no-repo plan agent whose prompt lists the two questions and the phase. The marker format may be in the phase prompt. The script must not say "Discovery is already approved" or "ask these two questions, then stop."
 
-## What has to be connected
+## What the desktop process now does
 
-These are missing today. Each one is how the window joins the loop. Building them without the run above does not finish the plan.
+The phase bar is on the path. This is not the run in "The run".
 
-- `FactoryPhaseBar` already lists questions with `ipc.factory.listQuestions` and answers with `ipc.factory.answerQuestion`. Those IPC handlers are the UI path. The test must not post the question or the answer beside them.
-- `answerQuestion` calls `answerHitlQuestion` with no Cursor follow-up sender. `startFactoryHostBridge` calls `resumeAnsweredFactoryQuestions` with no sender. A click in the app stores the answer and leaves a `cursor-run:` question unresolved. The desktop process registers the sender. The sender posts the follow-up and records the new run id. The token stays in that process.
-- The host classifies the finished Cursor message and creates the question the phase bar already knows how to list. The Action may hold the key. The question still has to arrive through the app's store, and the answer still has to leave through the app's button.
-- Phase shade, Continue, and the question list read the same approvals, summaries, and questions the run just wrote. The recording is the two instances during steps 1–9.
+- Discovery and Delivery kickoff call `factory:ensure-cursor-phase`. Implementation does too, when the project manager approves Discovery. With no key, the local chat starts as it did before.
+- The prompt is the phase prompt plus that phase's kickoff. It does not say Discovery is already approved and it does not name the questions.
+- When the app has a GitHub repository, the agent is created for that repository. The key stays in the desktop process.
+- The desktop poller classifies a finished Cursor run. A request becomes one question in the phase list and is not copied into the shared chat. A summary is written into the phase chat, which is what Continue reads.
+- `answerQuestion` and the bridge resume pass the desktop follow-up sender. A click in the window continues the same agent.
+
+## What the window run still has to show
+
+Steps 1–9 in the two signed-in instances, recorded from those windows. The phase bar refetches the phase chat and the question list so a stop, an answer, and a summary show up while the run is moving.
 
 ## Evidence
 
