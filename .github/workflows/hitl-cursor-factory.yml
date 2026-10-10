@@ -11,6 +11,8 @@ on:
     paths:
       - .github/workflows/hitl-cursor-factory.yml
       - src/main/factory_host_cursor_live.test.ts
+      - src/lib/cursorFactoryStop.ts
+      - src/control_plane/hitl_device.ts
 
 permissions:
   contents: read

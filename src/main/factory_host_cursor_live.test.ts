@@ -6,7 +6,13 @@
 import type { AddressInfo } from "node:net";
 import { request as httpRequest } from "node:http";
 import { eq } from "drizzle-orm";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("node-pty", () => ({
+  spawn: () => {
+    throw new Error("node-pty is not used by the Cursor poller");
+  },
+}));
 import type { HitlCaller } from "@/control_plane/hitl";
 import { apps, chats, factoryHostRuns } from "@/db/schema";
 import { classifyCursorFactoryStop } from "@/lib/cursorFactoryStop";
