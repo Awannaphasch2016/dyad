@@ -1,0 +1,32 @@
+# Isolated vibeSDK lab deploy. Start it manually. It does not deploy
+# vibesdk-production or build.cloudflare.dev.
+
+name: VibeSDK lab deploy
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vibesdk-lab-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Deploy the isolated lab
+        env:
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+        run: node scripts/doppler/deploy-vibesdk-lab.mjs
