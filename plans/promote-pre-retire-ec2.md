@@ -3,6 +3,16 @@
 > Written 2026-10-08 after Discovery → Implementation → Delivery worked on `https://pre.anakwannaphaschaiyong.com`.
 > The earlier cutover note `plans/ecs-two-container-cutover.md` describes a cluster that had no task yet. This plan starts from the task that is already serving pre.
 
+## Important points
+
+1. Production is the task already running on `wewebplus-ecs`. The bare domain `anakwannaphaschaiyong.com` starts opening that same task. `pre` stays a second name for it.
+2. The database, the volumes, and the Gas City container stay the ones on pre. The production Doppler database is not swapped in.
+3. There is no traffic split. This host can run one Dyad task.
+4. Before the bare domain is published, the bridge and the preview must allow that hostname. A normal pre deploy still cannot write that DNS record.
+5. Two Wewebplus accounts are required. The Project Manager and the Developer each answer only their own question. The other account cannot read or answer it, including through a direct API request. One signed-in walkthrough does not pass.
+6. That two-account check runs on pre, then again on the bare domain. An automated test uses those two user ids.
+7. `gascity-server` is stopped only after the bare domain and the two-account check still work without it. It is snapshotted first and terminated later.
+
 ## Summary
 
 Production becomes the two containers that are already running on `wewebplus-ecs`. The apex name starts opening that same task. The promotion is complete only when two Wewebplus users have shown that a human-in-the-loop question belongs to one of them. `gascity-server` is stopped only after that proof, the apex, and the preview still work while that instance is out of the path. The instance is terminated only after it has stayed stopped through one more successful session.
