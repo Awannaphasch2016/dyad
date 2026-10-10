@@ -2,9 +2,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { drizzle as drizzlePostgres } from "drizzle-orm/postgres-js";
 import { migrate as migratePostgres } from "drizzle-orm/postgres-js/migrator";
+import log from "electron-log";
 import postgres from "postgres";
 import { migrationBaselineWhen } from "./migration_baseline";
 import * as schema from "./schema";
+
+const logger = log.scope("control_plane_sync");
 
 export type ControlPlaneDb = ReturnType<typeof drizzlePostgres<typeof schema>>;
 
@@ -29,38 +32,56 @@ export async function getControlPlaneDb(): Promise<ControlPlaneDb | null> {
   return ready;
 }
 
+function asPresent(value: unknown): boolean {
+  return value === true || value === "t" || value === "true" || value === 1;
+}
+
+async function relationPresent(
+  client: postgres.Sql,
+  table: string,
+): Promise<boolean> {
+  const rows = await client<{ present: unknown }[]>`
+    select exists (
+      select 1
+      from pg_catalog.pg_class c
+      join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'wewebplus'
+        and c.relname = ${table}
+        and c.relkind in ('r', 'p')
+    ) as present
+  `;
+  return asPresent(rows[0]?.present);
+}
+
+async function columnPresent(
+  client: postgres.Sql,
+  table: string,
+  column: string,
+): Promise<boolean> {
+  const rows = await client<{ present: unknown }[]>`
+    select exists (
+      select 1
+      from pg_catalog.pg_attribute a
+      join pg_catalog.pg_class c on c.oid = a.attrelid
+      join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'wewebplus'
+        and c.relname = ${table}
+        and a.attname = ${column}
+        and a.attnum > 0
+        and not a.attisdropped
+    ) as present
+  `;
+  return asPresent(rows[0]?.present);
+}
+
 async function probePresent(
   client: postgres.Sql,
   tag: string,
 ): Promise<boolean | null> {
-  if (tag === "0000_control_plane") {
-    const rows = await client<{ present: boolean }[]>`
-      select exists (
-        select 1 from information_schema.tables
-        where table_schema = 'wewebplus' and table_name = 'apps'
-      ) as present
-    `;
-    return Boolean(rows[0]?.present);
-  }
-  if (tag === "0001_hitl") {
-    const rows = await client<{ present: boolean }[]>`
-      select exists (
-        select 1 from information_schema.tables
-        where table_schema = 'wewebplus' and table_name = 'roles'
-      ) as present
-    `;
-    return Boolean(rows[0]?.present);
-  }
+  if (tag === "0000_control_plane") return relationPresent(client, "apps");
+  if (tag === "0001_hitl") return relationPresent(client, "roles");
   if (tag === "0002_gate_resolved_at") {
-    const rows = await client<{ present: boolean }[]>`
-      select exists (
-        select 1 from information_schema.columns
-        where table_schema = 'wewebplus'
-          and table_name = 'answers'
-          and column_name = 'gate_resolved_at'
-      ) as present
-    `;
-    return Boolean(rows[0]?.present);
+    return columnPresent(client, "answers", "gate_resolved_at");
   }
   return null;
 }
@@ -77,6 +98,9 @@ async function baselineExistingSchema(client: postgres.Sql): Promise<void> {
     present[entry.tag] = true;
   }
   const stamp = migrationBaselineWhen(journal.entries, present);
+  logger.info(
+    `control_plane_baseline apps=${present["0000_control_plane"] === true} roles=${present["0001_hitl"] === true} gate=${present["0002_gate_resolved_at"] === true} stamp=${stamp ?? "none"}`,
+  );
   if (stamp == null) return;
 
   await client`CREATE SCHEMA IF NOT EXISTS drizzle`;
@@ -100,12 +124,25 @@ async function baselineExistingSchema(client: postgres.Sql): Promise<void> {
   `;
 }
 
+function alreadyExists(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("already exists");
+}
+
 async function openControlPlane(): Promise<ControlPlaneDb> {
   const client = postgres(process.env.WEWEBPLUS_DATABASE_URL!, { max: 4 });
   await client`CREATE SCHEMA IF NOT EXISTS wewebplus`;
   await baselineExistingSchema(client);
   const db = drizzlePostgres(client, { schema });
-  await migratePostgres(db, { migrationsFolder });
+  try {
+    await migratePostgres(db, { migrationsFolder });
+  } catch (error) {
+    if (!alreadyExists(error)) throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn(`control_plane_migrate retry after ${message.split("\n")[0]}`);
+    await baselineExistingSchema(client);
+    await migratePostgres(db, { migrationsFolder });
+  }
   const { seedWewebplusMemberships } = await import("./hitl_store");
   await seedWewebplusMemberships(db);
   cached = db;

@@ -87,6 +87,32 @@ docker image inspect "$IMAGE" >/dev/null
 before_id="$(docker image inspect --format '{{.Id}}' "$IMAGE")"
 docker tag "$IMAGE" "$PREVIOUS"
 
+print_sync_log() {
+  local label="$1"
+  echo "Account sync lines ${label}"
+  mapfile -t running < <(docker compose -p "$PROJECT" -f "$COMPOSE_FILE" ps -q weaver-plus || true)
+  if [[ -z "${running[0]:-}" ]]; then
+    echo "no running weaver-plus container"
+    return 0
+  fi
+  docker exec "${running[0]}" sh -c '
+    found=0
+    for f in /home/weaver/.config/*/logs/main.log /home/weaver/.config/*/*/logs/main.log; do
+      [ -f "$f" ] || continue
+      found=1
+      echo "log=$f"
+      grep -F "control_plane_" "$f" | tail -n 40
+    done
+    if [ "$found" -eq 0 ]; then
+      echo "main log absent"
+    fi
+  ' | sed -E \
+    -e 's#(postgres(ql)?://)[^[:space:]]+#\1redacted#g' \
+    -e 's#(Bearer )[^[:space:]]+#\1redacted#g' \
+    -e 's#dp\.(st|sa|ct|pt)\.[^[:space:]]+#dp.\1.redacted#g' \
+    || echo "could not read the account sync log"
+}
+
 ROLLED_BACK=0
 rollback() {
   local status=$?
@@ -95,6 +121,7 @@ rollback() {
     exit "$status"
   fi
   ROLLED_BACK=1
+  print_sync_log "after the failure"
   echo "Rollout failed (status $status). Restoring $PREVIOUS"
   set +e
   if docker image inspect "$PREVIOUS" >/dev/null 2>&1; then
@@ -107,28 +134,7 @@ rollback() {
 }
 trap rollback ERR
 
-echo "Account sync lines from the running container"
-mapfile -t running < <(docker compose -p "$PROJECT" -f "$COMPOSE_FILE" ps -q weaver-plus || true)
-if [[ -n "${running[0]:-}" ]]; then
-  docker exec "${running[0]}" sh -c '
-    found=0
-    for f in /home/weaver/.config/*/logs/main.log /home/weaver/.config/*/*/logs/main.log; do
-      [ -f "$f" ] || continue
-      found=1
-      echo "log=$f"
-      grep -F "control_plane_sync" "$f" | tail -n 30
-    done
-    if [ "$found" -eq 0 ]; then
-      echo "main log absent"
-    fi
-  ' | sed -E \
-    -e 's#(postgres(ql)?://)[^[:space:]]+#\1redacted#g' \
-    -e 's#(Bearer )[^[:space:]]+#\1redacted#g' \
-    -e 's#dp\.(st|sa|ct|pt)\.[^[:space:]]+#dp.\1.redacted#g' \
-    || echo "could not read the account sync log"
-else
-  echo "no running weaver-plus container"
-fi
+print_sync_log "from the running container"
 
 echo "Reclaiming Docker disk before the build"
 df -h /
