@@ -1,0 +1,74 @@
+# C2–C4: run the Cursor factory poller with the Doppler Cursor key.
+# The job prints run ids, statuses, and the attempt table. It does not
+# print the token. The agent request has no env block.
+name: HITL Cursor factory poller
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cursor/hitl-experiment-b-d072
+    paths:
+      - .github/workflows/hitl-cursor-factory.yml
+      - src/main/factory_host_cursor_live.test.ts
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: hitl-cursor-factory
+  cancel-in-progress: false
+
+jobs:
+  poller:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out the experiment branch
+        uses: actions/checkout@v4
+
+      - name: Require the Doppler identity
+        env:
+          DOPPLER_IDENTITY: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "$DOPPLER_IDENTITY" ]; then
+            echo "DOPPLER_SERVICE_IDENTITY_ID absent"
+            exit 1
+          fi
+          echo "DOPPLER_SERVICE_IDENTITY_ID present"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies without native rebuilds
+        run: npm ci --ignore-scripts
+
+      - name: Rebuild the test database module
+        run: npm rebuild better-sqlite3
+
+      - name: Fetch dyad preview secrets
+        uses: dopplerhq/secrets-fetch-action@v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          doppler-project: dyad
+          doppler-config: preview
+          inject-env-vars: true
+
+      - name: Fetch aws dev secrets
+        uses: dopplerhq/secrets-fetch-action@v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          doppler-project: aws
+          doppler-config: dev
+          inject-env-vars: true
+
+      - name: Run the Cursor factory poller
+        env:
+          HITL_CURSOR_LIVE: "1"
+        run: npm test -- src/main/factory_host_cursor_live.test.ts

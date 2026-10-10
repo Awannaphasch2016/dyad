@@ -26,6 +26,7 @@ import {
   listHitlQuestions,
   resumeAnsweredFactoryQuestions,
   syncRemote,
+  type CursorFollowUpSender,
 } from "@/control_plane/hitl_device";
 import type { HitlCaller } from "@/control_plane/hitl";
 
@@ -97,6 +98,7 @@ export function createFactoryHostBridgeServer(options: {
   database?: FactoryHostDatabase;
   dispatchChatIntent?: typeof dispatchChatIntentAndWait;
   resolveCaller?: (token: string) => Promise<HitlCaller | null>;
+  cursorFollowUp?: CursorFollowUpSender;
 }): Server {
   const database = options.database ?? db;
   const resolveCaller =
@@ -220,6 +222,7 @@ export function createFactoryHostBridgeServer(options: {
             caller,
             body: body.body,
             dispatch: options.dispatchChatIntent,
+            cursorFollowUp: options.cursorFollowUp,
           });
           json(response, 200, result);
           return;
