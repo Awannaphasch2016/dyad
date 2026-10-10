@@ -107,14 +107,37 @@ rollback() {
 }
 trap rollback ERR
 
+echo "Account sync lines from the running container"
+mapfile -t running < <(docker compose -p "$PROJECT" -f "$COMPOSE_FILE" ps -q weaver-plus || true)
+if [[ -n "${running[0]:-}" ]]; then
+  docker exec "${running[0]}" sh -c '
+    found=0
+    for f in /home/weaver/.config/*/logs/main.log /home/weaver/.config/*/*/logs/main.log; do
+      [ -f "$f" ] || continue
+      found=1
+      echo "log=$f"
+      grep -F "control_plane_sync" "$f" | tail -n 30
+    done
+    if [ "$found" -eq 0 ]; then
+      echo "main log absent"
+    fi
+  ' | sed -E \
+    -e 's#(postgres(ql)?://)[^[:space:]]+#\1redacted#g' \
+    -e 's#(Bearer )[^[:space:]]+#\1redacted#g' \
+    -e 's#dp\.(st|sa|ct|pt)\.[^[:space:]]+#dp.\1.redacted#g' \
+    || echo "could not read the account sync log"
+else
+  echo "no running weaver-plus container"
+fi
+
 echo "Reclaiming Docker disk before the build"
 df -h /
 docker system df || true
-# The failed extract leaves build cache and images no container is using.
-# The rollback tag stays: the running container still references that image.
-# Volumes are left alone.
+# Build cache from the failed extract. Dangling images only: `image prune -af`
+# deletes a tagged rollback image when the container points at a manifest child.
+# Volumes stay.
 docker builder prune -af >/dev/null || echo "builder prune failed"
-docker image prune -af >/dev/null || echo "image prune failed"
+docker image prune -f >/dev/null || echo "image prune failed"
 docker container prune -f >/dev/null || echo "container prune failed"
 df -h /
 
