@@ -36,17 +36,17 @@ For each failed run, determine if it is **expected** or **actionable** by checki
    - Upload to Flakiness.io (fails when no flakiness reports exist)
    - Merge PR when ready (skipped/fails when CI hasn't passed)
 
-3. **CLA Assistant**: Failures just mean a contributor hasn't signed the CLA yet. This resolves on its own.
+3. **Cancelled runs**: Runs cancelled due to concurrency groups (newer push cancels older run) are normal.
 
-4. **Cancelled runs**: Runs cancelled due to concurrency groups (newer push cancels older run) are normal.
+4. **`action_required` / `neutral` conclusions**: Standard GitHub behavior for fork PRs or first-time contributors needing manual approval.
 
-5. **`action_required` / `neutral` conclusions**: Standard GitHub behavior for fork PRs or first-time contributors needing manual approval.
+5. **CI failures on non-main branches**: Individual PR CI failures are expected — contributors may have formatting issues, lockfile mismatches, test failures, etc. These are the contributor's responsibility.
 
-6. **CI failures on non-main branches**: Individual PR CI failures are expected — contributors may have formatting issues, lockfile mismatches, test failures, etc. These are the contributor's responsibility.
-
-7. **Claude Deflake E2E**: This workflow is expected to sometimes have long runs or partial failures as it investigates flaky tests.
+6. **Claude Deflake E2E**: This workflow is expected to sometimes have long runs or partial failures as it investigates flaky tests.
 
 #### Actionable failures (FLAG these):
+
+This fork does not run CLA Assistant. If that check appears, `.github/workflows/cla.yml` was restored. Delete it again. Do not create a `cla` branch and do not allowlist `cursoragent`.
 
 1. **Permission errors**: Workflow can't access secrets, missing `GITHUB_TOKEN`, 403/401 errors on API calls that should be authenticated, `Resource not accessible by integration` errors.
 
