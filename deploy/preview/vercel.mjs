@@ -229,6 +229,59 @@ export async function deletePreviewDatabase(options) {
   return deletePreviewVariable({ ...options, key: previewDatabaseKey });
 }
 
+export async function removeProjectDatabaseEnv(options) {
+  const fetchImpl = options.fetchImpl || fetch;
+  const token = options.token;
+  if (!token) throw new Error("VERCEL_TOKEN is not set");
+  const projectName = options.project || defaultVercelProject;
+  const project = await vercelRequest(
+    fetchImpl,
+    token,
+    `/v9/projects/${encodeURIComponent(projectName)}`,
+  );
+  const projectId = project.id || projectName;
+  const teamId = String(project.accountId || "").startsWith("team_")
+    ? project.accountId
+    : "";
+  const query = teamQuery(teamId);
+  const listed = await vercelRequest(
+    fetchImpl,
+    token,
+    `/v9/projects/${encodeURIComponent(projectId)}/env${query}`,
+  );
+  const matches = (listed.envs || []).filter(
+    (env) => env.key === previewDatabaseKey,
+  );
+  const targets = [];
+  for (const env of matches) {
+    for (const target of env.target || []) targets.push(target);
+    await vercelRequest(
+      fetchImpl,
+      token,
+      `/v9/projects/${encodeURIComponent(projectId)}/env/${encodeURIComponent(env.id)}${query}`,
+      { method: "DELETE" },
+    );
+  }
+  const confirmed = await vercelRequest(
+    fetchImpl,
+    token,
+    `/v9/projects/${encodeURIComponent(projectId)}/env${query}`,
+  );
+  const left = (confirmed.envs || []).filter(
+    (env) => env.key === previewDatabaseKey,
+  );
+  if (left.length > 0) {
+    throw new Error(
+      "WEWEBPLUS_DATABASE_URL is still set on the Vercel project",
+    );
+  }
+  return {
+    project: project.name || projectName,
+    removed: matches.length,
+    targets: [...new Set(targets)].sort(),
+  };
+}
+
 export function assignmentLog(record) {
   return `Assigned ${record.key} for pull request ${record.pr} git branch ${record.gitBranch} to Neon ${record.neonBranch} at ${record.host} on Vercel project ${record.project} target ${record.targets} env ${record.envId}`;
 }

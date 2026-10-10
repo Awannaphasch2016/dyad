@@ -1,0 +1,50 @@
+# Publish the bare domain onto the canary tunnel.
+# A normal canary deploy cannot write this name. This file's push trigger
+# runs the writer once. It does not stop gascity-server.
+
+name: Promote apex
+
+on:
+  push:
+    branches:
+      - cursor/ecs-hitl-cutover-bbea
+    paths:
+      - .github/workflows/promote-apex.yml
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  promote:
+    if: github.ref == 'refs/heads/cursor/ecs-hitl-cutover-bbea'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Use the configured canary identity
+        id: ensure
+        env:
+          CONFIGURED_IDENTITY: ${{ vars.DOPPLER_CANARY_IDENTITY_ID }}
+          DEFAULT_IDENTITY: e2e3ffc6-5280-4cc4-b831-751f3ffb6d0d
+        run: |
+          set -euo pipefail
+          identity="$CONFIGURED_IDENTITY"
+          if [[ ! "$identity" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
+            identity="$DEFAULT_IDENTITY"
+          fi
+          echo "identity_id=$identity" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch dyad canary secrets
+        uses: dopplerhq/secrets-fetch-action@v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ steps.ensure.outputs.identity_id }}
+          doppler-project: dyad
+          doppler-config: canary
+          inject-env-vars: true
+
+      - name: Publish the apex after the running image matches
+        run: node deploy/preview/publish-apex.mjs
