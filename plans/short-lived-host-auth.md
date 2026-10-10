@@ -6,7 +6,7 @@
 
 Pieces 2 to 5 are implemented on `cursor/axi-toolbox-image-plan-531e`. The wrapper reads `DOPPLER_TOKEN` for both configs and falls back to the files. `gascity-rollout.yml` mints the token, fetches the SSH key by OIDC, and pipes the wrapper over SSH. The role script and the EC2 check do the same with the script they already pipe.
 
-Not done, and still required before a rollout succeeds: piece 1 (service account can read `aws`/`dev`, write `dyad`/`preview`, and the `sub` claim includes `cursor/browser-dyad-ui-bbea`). Pieces 2 and 3 take effect on the host only once they are on `cursor/browser-dyad-ui-bbea`, which is the branch that workflow runs on and the branch the host checks out. The token files stay until a rollout and a role run have succeeded.
+[EC2 check run 38044003667](https://github.com/Awannaphasch2016/dyad/actions/runs/38044003667) passed with the forwarded token: `forwarded_token=http-200 project=dyad config=preview`, `aws_token_via_forwarded=http-200 project=aws config=dev`, `AWS_PREVIEW_FORMULA_ROLE_ARN=present`, `EC2_SSH_KEY=present`, `host_doppler=ok`. The two files on the host still answer `http-401`. Read access for piece 1 is in place. Write access and the `sub` claim for `cursor/browser-dyad-ui-bbea` are still untested. Pieces 2 and 3 take effect on the host only once they are on that branch, which is the branch the rollout workflow runs on and the branch the host checks out. The token files stay until a rollout and a role run have succeeded.
 
 ## Problem
 
