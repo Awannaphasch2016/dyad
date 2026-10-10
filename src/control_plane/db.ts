@@ -5,6 +5,7 @@ import { migrate as migratePostgres } from "drizzle-orm/postgres-js/migrator";
 import log from "electron-log";
 import postgres from "postgres";
 import { migrationBaselineWhen } from "./migration_baseline";
+import { repairStatements } from "./repair_sql";
 import * as schema from "./schema";
 
 const logger = log.scope("control_plane_sync");
@@ -78,7 +79,11 @@ async function probePresent(
   client: postgres.Sql,
   tag: string,
 ): Promise<boolean | null> {
-  if (tag === "0000_control_plane") return relationPresent(client, "apps");
+  if (tag === "0000_control_plane") {
+    const apps = await relationPresent(client, "apps");
+    const knowledge = await relationPresent(client, "knowledge_items");
+    return apps && knowledge;
+  }
   if (tag === "0001_hitl") return relationPresent(client, "roles");
   if (tag === "0002_gate_resolved_at") {
     return columnPresent(client, "answers", "gate_resolved_at");
@@ -129,9 +134,26 @@ function alreadyExists(error: unknown): boolean {
   return message.includes("already exists");
 }
 
+async function repairExistingSchema(client: postgres.Sql): Promise<void> {
+  const files = fs
+    .readdirSync(migrationsFolder)
+    .filter((name) => name.endsWith(".sql"))
+    .sort();
+  let count = 0;
+  for (const name of files) {
+    const text = fs.readFileSync(path.join(migrationsFolder, name), "utf8");
+    for (const statement of repairStatements(text)) {
+      await client.unsafe(statement);
+      count += 1;
+    }
+  }
+  logger.info(`control_plane_repair statements=${count}`);
+}
+
 async function openControlPlane(): Promise<ControlPlaneDb> {
   const client = postgres(process.env.WEWEBPLUS_DATABASE_URL!, { max: 4 });
   await client`CREATE SCHEMA IF NOT EXISTS wewebplus`;
+  await repairExistingSchema(client);
   await baselineExistingSchema(client);
   const db = drizzlePostgres(client, { schema });
   try {
