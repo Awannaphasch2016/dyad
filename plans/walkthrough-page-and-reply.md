@@ -106,33 +106,33 @@ None. The test keeps using `GET /api/project` and the existing transition comman
 
 ### Phase 1: See the Implementation reply
 
-- [ ] Record the Discovery message ids before the click.
-- [ ] After the click, poll the Project Manager snapshot for up to 3 minutes until an assistant message with a new id has non-empty text.
-- [ ] Within 15 seconds, require that id on the Developer snapshot.
-- [ ] Require that text attached in both chat columns.
-- [ ] On the Delivered reload, require that same text still attached.
+- [x] Record the Discovery message ids before the click.
+- [x] After the click, poll the Project Manager snapshot for up to 3 minutes until an assistant message with a new id has non-empty text.
+- [x] Within 15 seconds, require that id on the Developer snapshot.
+- [x] Require that text attached in both chat columns.
+- [x] On the Delivered reload, require that same text still attached.
 
 ### Phase 2: Require the page file and the preview
 
-- [ ] Scan the new Implementation assistant messages for `filePath="..."`.
-- [ ] Fail the run when none is present, and include the first 180 characters of the reply in the error.
-- [ ] When one is present, require its basename attached in the Developer workbench within 20 seconds. Do not click Code.
-- [ ] Require the Developer console to contain fewer than two install logs.
-- [ ] Poll the Preview pane for up to 60 seconds. Fail while its text is exactly “No preview available” or a boot error. Pass when the text includes `North Pier Fish`.
-- [ ] Put the message id, the file path, and the preview result on the `two-roles` report line.
+- [x] Scan the new Implementation assistant messages for `filePath="..."`.
+- [x] Fail the run when none is present, and include the first 180 characters of the reply in the error.
+- [x] When one is present, require its basename attached in the Developer workbench within 20 seconds. Do not click Code.
+- [x] Require the Developer console to contain fewer than two install logs.
+- [x] Poll the Project Manager Preview pane for up to 60 seconds. Fail while its text is exactly “No preview available” or a boot error. Pass when the text includes `North Pier Fish`. The Developer replays files and skips shell, so that browser does not start the dev server.
+- [x] Put the message id, the file path, and the preview result on the `two-roles` report line.
 
 ### Phase 3: Only if the reply has no file
 
-- [ ] Run Phase 1 and Phase 2 once against the current preview.
-- [ ] If the failure is “no filePath,” change the deployed implementation kickoff so the build turn asks for one file action that renders the Discovery summary. Do that in the bolt patch the preview deploy already applies. Do not change Discovery.
-- [ ] Re-run the walk. The same assertions stay.
+- [x] Run Phase 1 and Phase 2 once against the current preview. [38006544545](https://github.com/Awannaphasch2016/dyad/actions/runs/38006544545) passed.
+- [x] The reply contained `package.json`, `index.html`, and `src/style.css`. The kickoff sentence stayed.
+- [x] No second kickoff change. The same assertions passed on that run.
 
 ## Testing Strategy
 
-- [ ] `npx tsc -p e2e-walkthrough/tsconfig.json --noEmit` for the spec.
-- [ ] The existing unit tests for `continuePrefill` stay green. This plan does not change that function unless Phase 3 of this plan runs.
-- [ ] One GitHub Actions run of `bolt-walkthrough-verify.yml` on `cursor/automated-hitl-verification-851d`. The job resets to Discovery, runs both roles, and `check-delivered` still requires one answer row.
-- [ ] The report line names the new assistant id, the file path, and whether the preview included `North Pier Fish`.
+- [x] `npx tsc -p e2e-walkthrough/tsconfig.json --noEmit` for the spec.
+- [x] `continuePrefill` stayed unchanged. The reply already contained a `filePath`.
+- [x] [38006544545](https://github.com/Awannaphasch2016/dyad/actions/runs/38006544545) on `cursor/automated-hitl-verification-851d` reset to Discovery, ran both roles, and `check-delivered` reported `phase=delivered answers=1`.
+- [x] The report line names assistant id `bRzV6hIHLf6blp7N`, files `package.json,index.html,src/style.css`, and preview `North Pier Fish`.
 
 ## Risks & Mitigations
 
@@ -146,7 +146,7 @@ None. The test keeps using `GET /api/project` and the existing transition comman
 
 ## Open Questions
 
-- If the first run’s Implementation reply has a `filePath` and the Preview pane still says “No preview available” after 60 seconds, the next change belongs in the bolt workbench, not in a looser test. That follow-up is out of this plan until the run shows it.
+- Closed. [38005787887](https://github.com/Awannaphasch2016/dyad/actions/runs/38005787887) had the file and still read “No preview available” because the poll used the Developer page. That browser skips `npm run dev`. [38006544545](https://github.com/Awannaphasch2016/dyad/actions/runs/38006544545) read the Project Manager pane and the iframe text included `North Pier Fish`.
 
 ## Decision Log
 
