@@ -1,0 +1,28 @@
+# Remove WEWEBPLUS_DATABASE_URL from Vercel project dyad.
+# The token is project-scoped to team anak2. This push runs the delete once.
+
+name: Remove Vercel database env
+
+on:
+  push:
+    branches:
+      - cursor/ecs-hitl-cutover-bbea
+    paths:
+      - .github/workflows/remove-vercel-database-env.yml
+
+permissions:
+  contents: read
+
+jobs:
+  remove:
+    if: github.ref == 'refs/heads/cursor/ecs-hitl-cutover-bbea'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Delete the database variable
+        env:
+          VERCEL_ANAK2_TOKEN: ${{ secrets.VERCEL_ANAK2_TOKEN }}
+        run: node deploy/preview/remove-vercel-database-env.mjs
