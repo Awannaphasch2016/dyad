@@ -1,6 +1,6 @@
 # Spec-driven development experiment 1: GitHub Spec Kit on GIT Conference
 
-Plan only. Nothing in this document has been executed. Every "verified" statement names the command or URL it came from and the date, 2026-10-09. Every "assumed" statement is marked.
+Written before implementation. Run 1 has since been executed; its result is in "Run 1 outcome". Section H is the unstarted follow-up. Every "verified" statement names the command or URL it came from and the date, 2026-10-09, unless a later date is given. Every "assumed" statement is marked.
 
 Question the first run answers: can a Cursor Cloud Agent coordinate a second agent that uses GitHub Spec Kit to implement a website slice from a fixed specification, and then verify the result against acceptance criteria written before implementation, with no person walking through the UI?
 
@@ -626,13 +626,39 @@ sequenceDiagram
 
 ## Assumptions, listed
 
-- The live site is the deployed form of `dev25-git-con`. Inferred from naming and the CSP origin; unverified.
-- Cloud Agents created through the API load `.cursor/skills/*` from the repository and can invoke them when the prompt names them. Documented; not yet exercised by us.
-- The worker's default image has or can install PHP 8.2. Unknown until the first stream is read.
-- One user or service-account key can create agents on `sdd-gitcon-impl` after the GitHub App installation. Documented; not yet exercised.
-- Public prices for the chosen model are available to pin in `pricing.json`. If not, cost stays in tokens only.
-- Twenty ACs and a 40-minute verifier budget fit in `ubuntu-latest` without a self-hosted runner.
+- The live site is the deployed form of `dev25-git-con`. Confirmed during the fork inspection in B.1; the earlier "inferred" note is superseded.
+- Cloud Agents created through the API load `.cursor/skills/*` and run them when the prompt names them. Exercised by run 1: the worker committed the Spec Kit specify, plan, and tasks files, then the PHP site.
+- The worker image can install PHP 8.2. Exercised: the implementation image is `php:8.2-apache` and the verifier built it.
+- One user key can create agents on `sdd-gitcon-impl` after the GitHub App installation. Exercised: preflight saw the repository and did not see `dev25-git-con`.
+- Public list prices for `grok-4.7` are pinned in `pricing.json` from the xAI model page on 2026-10-10 ($2 / $0.50 cached / $6 per million, prompts under 200k). Cursor may bill a different schedule. The USD figure is an estimate.
+- Twenty ACs and the verifier fit on `ubuntu-latest`. Exercised: the verifier finished in about 90 seconds.
+
+## Run 1 outcome
+
+Executed 2026-10-09. Run id `2026-10-09-gitcon-v1-speckit-01`. Final status **partially_completed**. Report: `experiments/sdd/runs/2026-10-09-gitcon-v1-speckit-01/results/report.md` on branch `cursor/sdd-experiment-harness-be23`.
+
+- Worker model `grok-4.7`, finished in 33 minutes. https://cursor.com/agents/bc-97a6039b-d16c-4957-8324-107c45ce50e3
+- Implementation pull request, unmerged: https://github.com/Awannaphasch2016/sdd-gitcon-impl/pull/1 at `bc32948`. `SPEC.md` matches the pinned specification. No leak markers.
+- Verifier: https://github.com/Awannaphasch2016/dyad/actions/runs/38006952958. 16 of 20 checks passed. Coverage 6 of 8 requirements.
+- AC-10 through AC-13 failed. Apache logged `POST /contact` as 301. The browser then loaded the empty form with GET, so nothing was validated or stored. `public/contact/` is a real directory, and Apache's directory-slash redirect runs before PHP. The worker's own check used `php -S`, which does not add that redirect.
+- Source lines on that commit, same cloc exclusions: PHP 528, CSS 173, 727 code lines. The verifier's `cloc.json` was empty; the workflow now keeps cloc's error output.
+- This failure record stays as it is. A fix is a new run, section H.
+
+## H. Fix run, to reach 20 of 20
+
+Not started. One follow-up, then stop. Run 1 is not edited and its pull request is not merged. Do not re-push `.github/workflows/sdd-run.yml`: that file is gated on run 01 and a new push skips the worker.
+
+1. New run id `2026-10-10-gitcon-v1-speckit-02`. Same specification hash `30916614bd4380d1a93c92432e9753f3038ecfacd6e976906332ad4086485127`, same acceptance suite, same verifier, same caps (90 minutes, estimated USD 25), model `grok-4.7`.
+2. The run record sets the starting commit to `bc32948cb4dd2b5cfa051c24d92ff0771f053a93` on `Awannaphasch2016/sdd-gitcon-impl`. The worker's only repository stays that one. Branch `exp/2026-10-10-gitcon-v1-speckit-02`.
+3. Do not send the prompt that `experiments/sdd/bin/start-worker.mjs` builds today. That prompt tells the worker to write `SPEC.md` from scratch and to self-check with `php -S`. Both are wrong here: `SPEC.md` already matches, and `php -S` is what hid the failure. Add a follow-up prompt, used only when the run record asks for it, that says:
+   - Start from `bc32948`. Leave `SPEC.md` byte-identical.
+   - Do not search for the live conference site. Do not add analytics, email, or a captcha.
+   - AC-10 through AC-13 failed. The container log shows `POST /contact` answered 301, and `GET /contact` also answered 301 to `/contact/`. The browser then loaded the empty form, so no `[data-error]`, no `[data-confirmation]`, and no new row in `submissions.json`.
+   - The form posts to `/contact`. Apache redirects that path before the PHP contact handler runs, because `public/contact/` is a directory. A built-in-server check is not evidence.
+   - Make `POST /contact` reach the contact handler. Keep the field errors, the confirmation, and `GET /contact/submissions.json`. Re-check those four requests against the built Docker image.
+4. Launch from a one-shot workflow for this run id only. The coordinator watches, commits `runs/<id>/run.json` when a pull-request head exists, and the existing verifier runs. A commit that changes run 01's `run.json` would verify the failure again; leave that file alone.
+5. Done when the new verifier artifact shows 20 of 20 passed, `SPEC.md` still matches, and the leak scan is clean. If any check still fails, record that result and stop. No third run in this plan.
 
 ## What this plan does not do
 
-It does not create the branch, the repository, the workflow, the scripts, the specification, or the tests. It does not touch any existing workflow. It does not read the ground truth. It stops here for review.
+It does not merge the implementation pull request. It does not give the worker the original conference repository. It does not change Dyad application code or an existing production workflow. Section D.9 stays out of run 1 and out of the fix run.
