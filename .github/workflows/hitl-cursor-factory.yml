@@ -47,8 +47,8 @@ jobs:
       - name: Install dependencies without native rebuilds
         run: npm ci --ignore-scripts
 
-      - name: Rebuild the test database module
-        run: npm rebuild better-sqlite3
+      - name: Rebuild Electron and the test database module
+        run: npm rebuild electron better-sqlite3
 
       - name: Fetch dyad preview secrets
         uses: dopplerhq/secrets-fetch-action@v2.0.0
