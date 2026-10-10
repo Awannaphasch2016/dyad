@@ -193,6 +193,8 @@ jobs:
         run: npm test -- src/main/browser_bridge.test.ts src/control_plane/file_sync.test.ts
       - name: Rollout helper tests
         run: bash scripts/gascity/rollout.test.sh
+      - name: Privileged exec harness tests
+        run: bash scripts/privileged-exec/dispatch.test.sh
 
   ts-pg-schema-diff-tests:
     needs: [check-changes]
