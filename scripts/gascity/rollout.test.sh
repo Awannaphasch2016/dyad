@@ -157,4 +157,61 @@ if command -v node >/dev/null 2>&1; then
   fi
 fi
 
+# The forwarded token is used for both configs and never printed.
+cat > "$tmp/doppler" << 'EOF'
+#!/bin/sh
+printf '%s %s\n' "$DOPPLER_PROJECT" "$DOPPLER_CONFIG" >> "$DOPPLER_LOG"
+if [ -z "$DOPPLER_TOKEN" ]; then
+  echo "doppler: no token" >&2
+  exit 1
+fi
+printf '%s\n' '{}'
+EOF
+chmod 755 "$tmp/doppler"
+secret='dp.st.super-secret-token'
+set +e
+dry_out="$(
+  DOPPLER_LOG="$tmp/doppler.log" \
+    DOPPLER_TOKEN="$secret" \
+    DOPPLER_BIN="$tmp/doppler" \
+    GAS_CITY_WRAPPER_DRY=1 \
+    bash scripts/gascity/host-wrapper.sh abcdef1
+)"
+dry_status=$?
+set -e
+if [[ "$dry_status" -ne 0 ]]; then
+  echo "host-wrapper.sh dry run failed ($dry_status): $dry_out" >&2
+  exit 1
+fi
+if [[ "$dry_out" != *"doppler_source=env"* ]]; then
+  echo "host-wrapper.sh did not report doppler_source=env: $dry_out" >&2
+  exit 1
+fi
+if [[ "$dry_out" == *"$secret"* ]]; then
+  echo "host-wrapper.sh printed the Doppler token" >&2
+  exit 1
+fi
+if [[ "$(cat "$tmp/doppler.log")" != $'dyad preview\naws dev' ]]; then
+  echo "host-wrapper.sh did not download both configs: $(cat "$tmp/doppler.log")" >&2
+  exit 1
+fi
+
+set +e
+env -u DOPPLER_TOKEN GAS_CITY_WRAPPER_DRY=1 bash scripts/gascity/host-wrapper.sh abcdef1 >/dev/null
+dry_status=$?
+set -e
+if [[ "$dry_status" -ne 2 ]]; then
+  echo "host-wrapper.sh without a token skipped the file check (status $dry_status)" >&2
+  exit 1
+fi
+
+if ! grep -q 'preserve-env=DOPPLER_TOKEN' .github/workflows/gascity-rollout.yml; then
+  echo "gascity-rollout.yml does not forward the token" >&2
+  exit 1
+fi
+if grep -q '/usr/local/sbin/gascity-rollout' .github/workflows/gascity-rollout.yml; then
+  echo "gascity-rollout.yml still calls the installed wrapper" >&2
+  exit 1
+fi
+
 echo "rollout helpers ok"

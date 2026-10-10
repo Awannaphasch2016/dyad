@@ -2,8 +2,9 @@
 #
 # workflow_run only fires from the default branch, so this workflow triggers
 # on a push to the Gas City branch and waits until ci.yml succeeds for the
-# same SHA. GitHub Actions SSHs with the Doppler-synced EC2_SSH_KEY and does
-# not receive the rest of the Doppler config. The host runs doppler and Dagger.
+# same SHA. GitHub Actions SSHs to the host and forwards the short-lived
+# Doppler token from .github/actions/doppler-oidc. The host runs doppler and
+# Dagger. The token is not written to disk.
 name: Gas City rollout
 
 on:
@@ -21,6 +22,7 @@ permissions:
   contents: read
   actions: read
   checks: read
+  id-token: write
 
 concurrency:
   group: gascity-rollout
@@ -83,6 +85,33 @@ jobs:
             sleep 30
           done
 
+      - name: Log in to Doppler by OIDC
+        id: doppler
+        uses: ./.github/actions/doppler-oidc
+        with:
+          identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+
+      - name: Fetch the SSH key from Doppler when GitHub has none
+        if: steps.doppler.outputs.ok == 'true'
+        env:
+          SYNCED_EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${SYNCED_EC2_SSH_KEY//[[:space:]]/}" ]]; then
+            echo "ec2_ssh_key_fetch=skipped reason=github-secret-present"
+            exit 0
+          fi
+          status="$(curl -sS -o "$RUNNER_TEMP/key.json" -w '%{http_code}' \
+            -H "Authorization: Bearer ${DOPPLER_TOKEN}" \
+            "https://api.doppler.com/v3/configs/config/secret?project=dyad&config=preview&name=EC2_SSH_KEY" || echo 000)"
+          echo "ec2_ssh_key_fetch=http-${status} project=dyad config=preview"
+          if [[ "$status" == "200" ]]; then
+            umask 077
+            jq -r '.value.computed // empty' "$RUNNER_TEMP/key.json" > "$RUNNER_TEMP/gascity-ec2"
+            [[ -s "$RUNNER_TEMP/gascity-ec2" ]] || rm -f "$RUNNER_TEMP/gascity-ec2"
+          fi
+          rm -f "$RUNNER_TEMP/key.json"
+
       - name: Roll out over SSH
         env:
           EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
@@ -90,7 +119,16 @@ jobs:
         run: |
           set -euo pipefail
           keyfile="$RUNNER_TEMP/gascity-ec2"
-          python3 scripts/gascity/write_ssh_key.py "$keyfile"
+          if [[ ! -f "$keyfile" ]]; then
+            python3 scripts/gascity/write_ssh_key.py "$keyfile"
+          fi
+          # The wrapper is piped so the outer phase is this commit's script.
+          # It fast-forwards the host checkout and re-execs that copy. sudo
+          # keeps only DOPPLER_TOKEN; the token is masked and not written down.
+          prefix=""
+          if [[ -n "${DOPPLER_TOKEN:-}" ]]; then
+            prefix="DOPPLER_TOKEN=$(printf '%q' "$DOPPLER_TOKEN") "
+          fi
           ssh -i "$keyfile" \
             -o UserKnownHostsFile="$GITHUB_WORKSPACE/.github/gascity_known_hosts" \
             -o StrictHostKeyChecking=yes \
@@ -99,4 +137,5 @@ jobs:
             -o ServerAliveInterval=30 \
             -o ServerAliveCountMax=20 \
             ubuntu@13.251.216.187 \
-            sudo /usr/local/sbin/gascity-rollout "$TARGET_SHA"
+            "${prefix}sudo --preserve-env=DOPPLER_TOKEN bash -s -- ${TARGET_SHA}" \
+            < scripts/gascity/host-wrapper.sh
