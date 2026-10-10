@@ -63,10 +63,11 @@ if [[ "$1" == "run" && "$2" == "view" && "$*" == *"--jq"* ]]; then
 fi
 if [[ "$1" == "run" && "$2" == "view" && "$*" == *"--log"* ]]; then
   printf '%s\n' \
-    'exec	Report Doppler status	dyad_preview=http-200 project=dyad config=preview' \
-    'exec	Report Doppler status	CURSOR_API_KEY=present' \
-    'exec	Report Doppler status	secret=super-secret-value' \
-    'exec	Report Doppler status	DOPPLER_TOKEN=dp.st.should-not-print'
+    'exec	Log in to Doppler by OIDC	2026-10-10T11:44:51.2463688Z echo "doppler_identity=absent"' \
+    'exec	Report Doppler status	2026-10-10T11:44:52.4849808Z dyad_preview=http-200 project=dyad config=preview' \
+    'exec	Report Doppler status	2026-10-10T11:44:52.4850256Z CURSOR_API_KEY=present' \
+    'exec	Report Doppler status	2026-10-10T11:44:52.4850388Z secret=super-secret-value' \
+    'exec	Report Doppler status	2026-10-10T11:44:52.4850527Z DOPPLER_TOKEN=dp.st.should-not-print'
   exit 0
 fi
 if [[ "$1" == "run" && "$2" == "view" ]]; then

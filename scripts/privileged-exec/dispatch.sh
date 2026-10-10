@@ -74,9 +74,11 @@ else
   echo "run_conclusion=success"
 fi
 
-gh run view "$run_id" --repo "$repo" --log 2>/dev/null | grep -E \
-  '(doppler_identity|github_oidc|doppler_oidc|doppler_oidc_message|doppler_token|dyad_preview|aws_dev|secret_names|CURSOR_API_KEY|EC2_SSH_KEY|forwarded_token|aws_token_via_forwarded|host_doppler|ec2_ssh|ec2_ssh_key_source|github_ec2_ssh_key|ec2_ssh_key_fetch|operation)=' \
-  | sed -E 's/.*((doppler_identity|github_oidc|doppler_oidc|doppler_oidc_message|doppler_token|dyad_preview|aws_dev|secret_names|CURSOR_API_KEY|EC2_SSH_KEY|forwarded_token|aws_token_via_forwarded|host_doppler|ec2_ssh|ec2_ssh_key_source|github_ec2_ssh_key|ec2_ssh_key_fetch|operation)=.*)/\1/' \
+# Actions logs include the step script. Keep a line only when the message
+# after the timestamp is a status assignment, not an echo of the script.
+gh run view "$run_id" --repo "$repo" --log 2>/dev/null | sed -E 's/\x1b\[[0-9;]*m//g' | grep -E \
+  'Z (doppler_identity|github_oidc|doppler_oidc|doppler_oidc_message|doppler_token|dyad_preview|aws_dev|secret_names|CURSOR_API_KEY|EC2_SSH_KEY|forwarded_token|aws_token_via_forwarded|host_doppler|ec2_ssh|ec2_ssh_key_source|github_ec2_ssh_key|ec2_ssh_key_fetch|operation)=' \
+  | sed -E 's/.*Z ((doppler_identity|github_oidc|doppler_oidc|doppler_oidc_message|doppler_token|dyad_preview|aws_dev|secret_names|CURSOR_API_KEY|EC2_SSH_KEY|forwarded_token|aws_token_via_forwarded|host_doppler|ec2_ssh|ec2_ssh_key_source|github_ec2_ssh_key|ec2_ssh_key_fetch|operation)=.*)/\1/' \
   || true
 
 conclusion="$(gh run view "$run_id" --repo "$repo" --json conclusion --jq '.conclusion // "unknown"')"
