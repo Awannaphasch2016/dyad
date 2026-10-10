@@ -167,24 +167,45 @@ if [[ "$run_id" != "$after_id" ]]; then
   exit 1
 fi
 
-echo "Waiting for the container to become healthy"
-healthy=0
-health=""
-for _ in $(seq 1 48); do
-  health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$CID")"
-  if [[ "$health" == "healthy" ]]; then
-    healthy=1
-    break
-  fi
-  if [[ "$health" == "unhealthy" ]]; then
-    echo "Container became unhealthy" >&2
-    exit 1
-  fi
-  sleep 5
-done
-if [[ "$healthy" -ne 1 ]]; then
+wait_for_healthy() {
+  local cid="$1"
+  local health=""
+  echo "Waiting for the container to become healthy"
+  for _ in $(seq 1 48); do
+    health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid")"
+    if [[ "$health" == "healthy" ]]; then
+      return 0
+    fi
+    if [[ "$health" == "unhealthy" ]]; then
+      echo "Container became unhealthy" >&2
+      return 1
+    fi
+    sleep 5
+  done
   echo "Container did not become healthy (last status: ${health})" >&2
-  exit 1
+  return 1
+}
+
+refresh_container_id() {
+  mapfile -t ids < <(docker compose -p "$PROJECT" -f "$COMPOSE_FILE" ps -q weaver-plus)
+  CID="${ids[0]:-}"
+  if [[ -z "$CID" ]]; then
+    echo "Container id not found" >&2
+    return 1
+  fi
+}
+
+wait_for_healthy "$CID"
+
+echo "Pointing saved Bedrock settings at the Singapore profile"
+settings_out="$(docker exec -i -u weaver "$CID" python3 - /home/weaver/.config/weaver-plus/user-settings.json \
+  < "$REPO/scripts/gascity/use_singapore_bedrock_settings.py")"
+printf '%s\n' "$settings_out"
+if [[ "$settings_out" == *"custom_apps_folder_cleared=yes"* ]]; then
+  echo "Restarting so the app reads the default projects directory"
+  docker compose --env-file "$ENV_FILE" -p "$PROJECT" -f "$COMPOSE_FILE" up -d --no-build --force-recreate
+  refresh_container_id
+  wait_for_healthy "$CID"
 fi
 
 python3 - << 'PY'
@@ -193,9 +214,25 @@ sock = socket.create_connection(("127.0.0.1", 8373), 5)
 sock.close()
 PY
 
-echo "Pointing saved Bedrock settings at the Singapore profile"
-docker exec -i -u weaver "$CID" python3 - /home/weaver/.config/weaver-plus/user-settings.json \
-  < "$REPO/scripts/gascity/use_singapore_bedrock_settings.py"
+echo "Project folders on the mount"
+docker exec "$CID" sh -c '
+  if [ ! -d /home/weaver/dyad-apps ]; then
+    echo "projects_mount=missing"
+    exit 0
+  fi
+  count=0
+  for d in /home/weaver/dyad-apps/*/; do
+    [ -d "$d" ] || continue
+    count=$((count + 1))
+    name=$(basename "$d")
+    if [ -e "$d/.git" ]; then
+      echo "project $name git"
+    else
+      echo "project $name no-git"
+    fi
+  done
+  echo "projects_mount_dirs=$count"
+' || echo "could not list project folders"
 
 echo "Verifying org apps for both members"
 docker exec -i "$CID" node --input-type=module - < "$REPO/scripts/gascity/verify_bridge.mjs"

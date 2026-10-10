@@ -38,6 +38,16 @@ def main() -> int:
             del bedrock["apiKey"]
             if not bedrock:
                 del providers["bedrock"]
+    folder = data.get("customAppsFolder")
+    if not isinstance(folder, str) or not folder.strip():
+        print("custom_apps_folder=unset")
+    elif Path(folder).is_dir():
+        print("custom_apps_folder=present")
+    else:
+        # The running app cached this path at startup. Clearing it makes the
+        # next process use ~/dyad-apps, which is the projects mount.
+        data.pop("customAppsFolder", None)
+        print("custom_apps_folder_cleared=yes")
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     print("bedrock settings updated")
     return 0
