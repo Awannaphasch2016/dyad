@@ -1,14 +1,11 @@
 # Snapshot the gascity-server root volume, then stop the instance.
-# This job does not terminate the instance. A push of this file runs it once.
+# The one-shot push already stopped i-0817f3778a5c9e1e2.
+# This file now runs only from a manual dispatch. It does not terminate.
 
 name: Stop gascity-server
 
 on:
-  push:
-    branches:
-      - cursor/ecs-hitl-cutover-bbea
-    paths:
-      - .github/workflows/stop-gascity.yml
+  workflow_dispatch:
 
 permissions:
   contents: read

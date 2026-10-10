@@ -1,14 +1,11 @@
 # Remove WEWEBPLUS_DATABASE_URL from Vercel project dyad.
-# The token is project-scoped to team anak2. This push runs the delete once.
+# The one-shot push already deleted the Production and Preview records.
+# This file now runs only from a manual dispatch.
 
 name: Remove Vercel database env
 
 on:
-  push:
-    branches:
-      - cursor/ecs-hitl-cutover-bbea
-    paths:
-      - .github/workflows/remove-vercel-database-env.yml
+  workflow_dispatch:
 
 permissions:
   contents: read
