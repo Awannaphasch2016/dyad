@@ -1,0 +1,31 @@
+# Snapshot the gascity-server root volume, then stop the instance.
+# This job does not terminate the instance. A push of this file runs it once.
+
+name: Stop gascity-server
+
+on:
+  push:
+    branches:
+      - cursor/ecs-hitl-cutover-bbea
+    paths:
+      - .github/workflows/stop-gascity.yml
+
+permissions:
+  contents: read
+
+jobs:
+  stop:
+    if: github.ref == 'refs/heads/cursor/ecs-hitl-cutover-bbea'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Load dyad canary secrets
+        env:
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+        run: node deploy/preview/load-canary-secrets.mjs
+
+      - name: Snapshot and stop gascity-server
+        run: node deploy/preview/stop-gascity.mjs
