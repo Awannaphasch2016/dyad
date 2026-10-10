@@ -118,6 +118,46 @@ if isinstance(bedrock, dict) and "apiKey" in bedrock:
 if "expired-bearer-value" in text:
     raise SystemExit("bearer value was left in the file")
 print("bedrock settings ok")
+if "customAppsFolder" in data:
+    raise SystemExit("unset projects folder was written")
+PY
+
+python3 - "$tmp/missing-folder.json" "$tmp/kept-folder" << 'PY'
+import json, os, sys
+os.makedirs(sys.argv[2], exist_ok=True)
+json.dump({
+    "customAppsFolder": "/tmp/gascity-projects-missing",
+    "selectedModel": {"provider": "bedrock", "name": "global.anthropic.claude-sonnet-4-5-20250929-v1:0"},
+}, open(sys.argv[1], "w", encoding="utf-8"))
+kept = sys.argv[1] + ".kept"
+json.dump({
+    "customAppsFolder": sys.argv[2],
+    "selectedModel": {"provider": "bedrock", "name": "global.anthropic.claude-sonnet-4-5-20250929-v1:0"},
+}, open(kept, "w", encoding="utf-8"))
+PY
+missing_out="$(python3 scripts/gascity/use_singapore_bedrock_settings.py "$tmp/missing-folder.json")"
+if [[ "$missing_out" != *"custom_apps_folder_cleared=yes"* ]]; then
+  echo "missing projects folder was not cleared: $missing_out" >&2
+  exit 1
+fi
+python3 - "$tmp/missing-folder.json" << 'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+if "customAppsFolder" in data:
+    raise SystemExit("missing projects folder remains")
+print("missing projects folder cleared")
+PY
+kept_out="$(python3 scripts/gascity/use_singapore_bedrock_settings.py "$tmp/missing-folder.json.kept")"
+if [[ "$kept_out" != *"custom_apps_folder=present"* ]]; then
+  echo "existing projects folder was not kept: $kept_out" >&2
+  exit 1
+fi
+python3 - "$tmp/missing-folder.json.kept" "$tmp/kept-folder" << 'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+if data.get("customAppsFolder") != sys.argv[2]:
+    raise SystemExit("existing projects folder changed")
+print("existing projects folder kept")
 PY
 
 EC2_SSH_KEY='line-one\nline-two' python3 scripts/gascity/write_ssh_key.py "$tmp/key"
@@ -232,6 +272,14 @@ if ! grep -q 'control_plane_' scripts/gascity/rollout.sh; then
 fi
 if ! grep -q 'print_sync_log "after the failure"' scripts/gascity/rollout.sh; then
   echo "rollout.sh does not record the sync log after a failure" >&2
+  exit 1
+fi
+if ! grep -q 'projects_mount_dirs' scripts/gascity/rollout.sh; then
+  echo "rollout.sh does not list project folders" >&2
+  exit 1
+fi
+if ! grep -q 'custom_apps_folder_cleared=yes' scripts/gascity/rollout.sh; then
+  echo "rollout.sh does not restart after clearing a missing projects folder" >&2
   exit 1
 fi
 if grep -q -- '--volumes' scripts/gascity/rollout.sh || grep -q 'volume prune' scripts/gascity/rollout.sh; then

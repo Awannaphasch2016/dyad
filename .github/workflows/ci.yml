@@ -194,7 +194,7 @@ jobs:
       - name: Type-checking
         run: npm run ts
       - name: Browser bridge and file sync tests
-        run: npm test -- src/main/browser_bridge.test.ts src/control_plane/file_sync.test.ts src/control_plane/migration_baseline.test.ts src/control_plane/repair_sql.test.ts
+        run: npm test -- src/main/browser_bridge.test.ts src/control_plane/file_sync.test.ts src/control_plane/migration_baseline.test.ts src/control_plane/repair_sql.test.ts src/ipc/handlers/version_handlers.branch.test.ts
       - name: Rollout helper tests
         run: bash scripts/gascity/rollout.test.sh
 

@@ -11,6 +11,7 @@ import type { GitCommit } from "../git_types";
 import fs from "node:fs";
 import path from "node:path";
 import { getDyadAppPath } from "../../paths/paths";
+import { ensureProjectFiles } from "@/control_plane/file_sync";
 import {
   appOperationCoordinator,
   readAppResource,
@@ -958,8 +959,19 @@ export function registerVersionHandlers() {
 
     const appPath = getDyadAppPath(app.path);
 
-    // Return appropriate result if the app is not a git repo
+    // A shared app row can exist before its checkout does. Prepare the
+    // repository the same way opening the app does, then read the branch.
     if (!fs.existsSync(path.join(appPath, ".git"))) {
+      try {
+        await ensureProjectFiles(app);
+      } catch (error) {
+        logger.warn(`control_plane_branch app=${appId} prepare failed`, error);
+      }
+    }
+    if (!fs.existsSync(path.join(appPath, ".git"))) {
+      logger.warn(
+        `control_plane_branch app=${appId} git=false github=${app.githubOrg ? "yes" : "no"}`,
+      );
       throw new DyadError("Not a git repository", DyadErrorKind.External);
     }
 
