@@ -3,6 +3,7 @@ import {
   isPreviewAppsHost,
   previewPortFromHost,
   publicPreviewUrl,
+  APEX_PAGE_ORIGIN,
   refusesPublicHost,
 } from "./public_preview_url";
 
@@ -36,6 +37,16 @@ describe("publicPreviewUrl", () => {
     );
     expect(publicPreviewUrl(page, null)).toBeNull();
   });
+
+  it("rewrites a loopback proxy when the page is the bare domain", () => {
+    expect(
+      publicPreviewUrl(
+        "https://anakwannaphaschaiyong.com/chat",
+        "http://localhost:42103/",
+      ),
+    ).toBe("https://p42103.anakwannaphaschaiyong.com/");
+    expect(APEX_PAGE_ORIGIN).toBe("https://anakwannaphaschaiyong.com");
+  });
 });
 
 describe("previewPortFromHost", () => {
@@ -52,5 +63,6 @@ describe("previewPortFromHost", () => {
     expect(isPreviewAppsHost("pre.anakwannaphaschaiyong.com")).toBe(false);
     expect(refusesPublicHost("www.anakwannaphaschaiyong.com")).toBe(true);
     expect(refusesPublicHost("pre.anakwannaphaschaiyong.com")).toBe(false);
+    expect(refusesPublicHost("anakwannaphaschaiyong.com")).toBe(false);
   });
 });

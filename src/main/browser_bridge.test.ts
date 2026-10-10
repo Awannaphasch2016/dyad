@@ -678,6 +678,38 @@ describe("browser bridge", () => {
     expect(upgraded.startsWith("HTTP/1.1 101")).toBe(true);
     expect(upgradeUrl).toBe("/vite-hmr");
   });
+
+  it("serves the bare domain as the Dyad page and refuses www", async () => {
+    const page = createServer((_req, res) => {
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      res.end("<html>dyad</html>");
+    });
+    const pagePort = await listen(page);
+    closers.push(
+      () =>
+        new Promise((resolve, reject) => {
+          page.close((error) => (error ? reject(error) : resolve()));
+        }),
+    );
+    const bridge = await startBrowserBridge({
+      devServerUrl: `http://127.0.0.1:${pagePort}`,
+      port: 0,
+    });
+    closers.push(() => bridge.close());
+    const apex = await requestWithHost(
+      bridge.port,
+      "anakwannaphaschaiyong.com",
+      "/",
+    );
+    expect(apex.status).toBe(200);
+    expect(apex.body).toContain("dyad");
+    const www = await requestWithHost(
+      bridge.port,
+      "www.anakwannaphaschaiyong.com",
+      "/",
+    );
+    expect(www.status).toBe(404);
+  });
 });
 
 function listenAt(server: Server, port: number): Promise<number> {

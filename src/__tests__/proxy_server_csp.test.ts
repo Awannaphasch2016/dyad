@@ -4,7 +4,10 @@ import path from "node:path";
 import { Worker } from "node:worker_threads";
 
 import { afterEach, describe, expect, it } from "vitest";
-import { CANARY_PAGE_ORIGIN } from "../preview_iframe/public_preview_url";
+import {
+  APEX_PAGE_ORIGIN,
+  CANARY_PAGE_ORIGIN,
+} from "../preview_iframe/public_preview_url";
 
 const WORKER_PATH = path.resolve(
   __dirname,
@@ -234,7 +237,9 @@ describe("proxy worker Content-Security-Policy", () => {
     expect(allowed.body).toContain("<body>surf</body>");
     expect(
       rawHeaderValues(allowed.rawHeaders, "content-security-policy"),
-    ).toEqual([`${PROXY_FRAME_ANCESTORS_CSP} ${CANARY_PAGE_ORIGIN}`]);
+    ).toEqual([
+      `${PROXY_FRAME_ANCESTORS_CSP} ${CANARY_PAGE_ORIGIN} ${APEX_PAGE_ORIGIN}`,
+    ]);
     expect(allowed.upstreamHeaders["x-dyad-preview-ancestor"]).toBeUndefined();
 
     const refused = await proxyResponse(undefined, {

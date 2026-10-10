@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canaryOrigin, originsWith } from "./clerk-origins.mjs";
+import { apexOrigin, canaryOrigin, originsWith } from "./clerk-origins.mjs";
 
 test("a new preview origin is appended to the existing Clerk list", () => {
   const existing = [
@@ -42,6 +42,16 @@ test("the canary hostname is appended", () => {
   );
   assert.equal(next.added, true);
   assert.equal(next.origins.at(-1), canaryOrigin);
+});
+
+test("the bare domain is appended and www is refused", () => {
+  const next = originsWith([canaryOrigin], apexOrigin);
+  assert.equal(next.added, true);
+  assert.deepEqual(next.origins, [canaryOrigin, apexOrigin]);
+  assert.throws(
+    () => originsWith([canaryOrigin], "https://www.anakwannaphaschaiyong.com"),
+    /pr-<number>/,
+  );
 });
 
 test("a non-preview origin is refused", () => {

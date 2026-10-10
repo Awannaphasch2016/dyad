@@ -4,7 +4,7 @@ import { Worker } from "worker_threads";
 import path from "path";
 import log from "electron-log";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
-import { CANARY_PAGE_ORIGIN } from "@/preview_iframe/public_preview_url";
+import { PUBLIC_PREVIEW_FRAME_ANCESTORS } from "@/preview_iframe/public_preview_url";
 import {
   PROXY_FALLBACK_MAX_ATTEMPTS,
   getProxyFallbackPortStart,
@@ -41,7 +41,7 @@ export async function startProxy(
         maxPortAttempts: PROXY_FALLBACK_MAX_ATTEMPTS,
         fixedHeaders,
         authBootstrapToken,
-        publicPreviewFrameAncestors: [CANARY_PAGE_ORIGIN],
+        publicPreviewFrameAncestors: [...PUBLIC_PREVIEW_FRAME_ANCESTORS],
       },
     },
   );

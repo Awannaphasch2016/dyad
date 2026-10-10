@@ -401,9 +401,11 @@ function rewriteSetCookieHeaders(headers) {
 
 const BASE_FRAME_ANCESTORS_CSP =
   "frame-ancestors 'self' file: http://localhost:* http://127.0.0.1:* http://[::1]:*";
-// Kept in sync with CANARY_PAGE_ORIGIN. A request may name this parent only.
+// Kept in sync with PUBLIC_PREVIEW_FRAME_ANCESTORS. When the bridge names one
+// of these parents, both page origins may frame the preview.
 const DEFAULT_PUBLIC_PREVIEW_FRAME_ANCESTORS = [
   "https://pre.anakwannaphaschaiyong.com",
+  "https://anakwannaphaschaiyong.com",
 ];
 
 function isPublicPreviewAncestor(value) {
@@ -438,7 +440,7 @@ function previewFrameAncestorsCsp(clientReq) {
     typeof requested === "string" &&
     publicPreviewFrameAncestors.has(requested)
   ) {
-    return `${BASE_FRAME_ANCESTORS_CSP} ${requested}`;
+    return `${BASE_FRAME_ANCESTORS_CSP} ${[...publicPreviewFrameAncestors].join(" ")}`;
   }
   return BASE_FRAME_ANCESTORS_CSP;
 }

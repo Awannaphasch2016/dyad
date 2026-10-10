@@ -6,10 +6,12 @@ const PREVIEW_ORIGINS = [
 ];
 
 export const canaryOrigin = "https://pre.anakwannaphaschaiyong.com";
+export const apexOrigin = "https://anakwannaphaschaiyong.com";
 
 export function originsWith(existing, origin) {
   const allowed =
     origin === canaryOrigin ||
+    origin === apexOrigin ||
     PREVIEW_ORIGINS.some((pattern) => pattern.test(origin));
   if (!allowed) {
     throw new Error("Preview origin is not a pr-<number> hostname");
@@ -28,6 +30,7 @@ export async function run() {
   const key = process.env.CLERK_SECRET_KEY ?? "";
   if (
     origin !== canaryOrigin &&
+    origin !== apexOrigin &&
     !PREVIEW_ORIGINS.some((pattern) => pattern.test(origin))
   ) {
     console.error(
