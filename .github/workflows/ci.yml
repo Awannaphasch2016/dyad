@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - main
+      # Gas City rollout waits for a ci.yml run of the same SHA. A merge onto
+      # this branch is not a pull request and is not main, so the push itself
+      # has to start CI.
+      - cursor/browser-dyad-ui-bbea
   pull_request:
     types: [opened, synchronize, reopened, closed]
 
