@@ -1,6 +1,7 @@
 # C2–C4: run the Cursor factory poller with the Doppler Cursor key.
 # The job prints run ids, statuses, and the attempt table. It does not
 # print the token. The agent request has no env block.
+# Rerun: 2026-10-10 second recorded pass.
 name: HITL Cursor factory poller
 
 on:
