@@ -26,9 +26,7 @@ permissions:
 
 concurrency:
   group: gascity-rollout
-  # A newer push replaces a rollout that has not finished. The run this
-  # replaced was waiting on a commit that never started ci.yml.
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   rollout:
