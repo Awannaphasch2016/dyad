@@ -1,0 +1,62 @@
+{
+  "run_id": "2026-10-10-gitcon-v1-speckit-02",
+  "approach": "speckit",
+  "approach_version": "1.1.2",
+  "spec_version": "gitcon-v1",
+  "spec_sha256": "30916614bd4380d1a93c92432e9753f3038ecfacd6e976906332ad4086485127",
+  "impl_repo": "Awannaphasch2016/sdd-gitcon-impl",
+  "baseline_ref": "baseline/speckit-1.1.2",
+  "worker": {
+    "agent_id": "bc-4ca2a3c4-7c9f-40b8-959e-fbc30d886abd",
+    "run_id": "run-1b36ebbc-347e-4521-bf71-f4aa5c8649ee",
+    "model": "grok-4.7",
+    "created_at": "2026-10-10T12:44:18.281Z",
+    "finished_at": "2026-10-10T13:24:58.729Z",
+    "status": "FINISHED",
+    "url": "https://cursor.com/agents/bc-4ca2a3c4-7c9f-40b8-959e-fbc30d886abd",
+    "prompt_chars": 1436,
+    "duration_ms": 2440006,
+    "result": "`POST /contact` now reaches the contact handler in the Apache container. `public/contact/` is a directory, so Apache was answering `/contact` with 301 before PHP ran and the browser dropped the form body. The image rewrites that path to the front controller first. `SPEC.md` is unchanged.\n\nI built the repository image, ran it, and checked the form against that container. An empty post returns 200 with the field errors and no confirmation. An invalid email returns 200 with \"Please enter a valid email\" and the typed values still in the form. A valid post returns 200 and \"Thank you, your message has been sent.\" A second valid post is stored, and `GET /contact/submissions.json` returns `application/json` with that subject in the list.\n\nThe fix is committed and pushed on `exp/2026-10-10-gitcon-v1-speckit-02`. I could not open the pull request: the pull-request integration only accepts `cursor/contact-form-submission-redirect-c282`, and the GitHub token cannot create pull requests. The branch is at https://github.com/Awannaphasch2016/sdd-gitcon-impl/compare/main...exp/2026-10-10-gitcon-v1-speckit-02?expand=1."
+  },
+  "coordinator": {
+    "agent_id": null,
+    "started_at": "2026-10-10T12:44:15.037Z"
+  },
+  "pr": {
+    "number": null,
+    "head_sha": "1b0784eabf7e3f334cdd7b8bf58822cb1dd1979c",
+    "url": null,
+    "branch": "exp/2026-10-10-gitcon-v1-speckit-02"
+  },
+  "isolation": {
+    "ground_truth_listed": false,
+    "leak_markers": []
+  },
+  "interventions": [
+    {
+      "at": "2026-10-10T13:26:29.149Z",
+      "by": "coordinator",
+      "action": "record the pushed branch head",
+      "reason": "The worker pushed exp/2026-10-10-gitcon-v1-speckit-02 and could not open a pull request. The verifier uses this commit.",
+      "automated": true
+    }
+  ],
+  "caps": {
+    "wall_clock_minutes": 90,
+    "estimated_usd": 25
+  },
+  "follow_up": true,
+  "starting_sha": "bc32948cb4dd2b5cfa051c24d92ff0771f053a93",
+  "parent_run_id": "2026-10-09-gitcon-v1-speckit-01",
+  "baseline_sha": "bc32948cb4dd2b5cfa051c24d92ff0771f053a93",
+  "iterations": {
+    "implement_rounds": 10,
+    "converge_rounds": 5,
+    "follow_up_runs": 0,
+    "raw_mentions": {
+      "implement": 20,
+      "converge": 10,
+      "clarify": 10
+    }
+  }
+}

@@ -1,0 +1,157 @@
+# Verifier for spec-driven development experiments (plans/sdd-speckit-experiment.md, D.1).
+# Triggered by the coordinator committing experiments/sdd/runs/<run-id>/run.json
+# with pr.head_sha set. Builds the implementation repository at that SHA,
+# runs the acceptance suite that the worker never saw, and uploads evidence.
+# Results are not committed here; the coordinator downloads the artifact.
+name: SDD verify
+
+on:
+  push:
+    branches: [cursor/sdd-experiment-harness-be23]
+    paths:
+      - experiments/sdd/runs/**/run.json
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sdd-verify-${{ github.sha }}
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      EVIDENCE_DIR: ${{ github.workspace }}/evidence
+      CONTAINER_NAME: sdd-site
+      BASE_URL: http://127.0.0.1:8080
+    steps:
+      - name: Checkout harness
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
+
+      - name: Locate the run record in this push
+        id: run
+        run: node experiments/sdd/bin/find-run.mjs "${{ github.sha }}" "${{ github.event.before }}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout the implementation at the recorded SHA
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ steps.run.outputs.impl_repo }}
+          ref: ${{ steps.run.outputs.head_sha }}
+          path: impl
+          token: ${{ secrets.SDD_IMPL_GITHUB_TOKEN || github.token }}
+          persist-credentials: false
+
+      - name: Check the worker kept the specification unchanged
+        id: spec
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE_DIR"
+          expected="${{ steps.run.outputs.spec_sha256 }}"
+          if [ ! -f impl/SPEC.md ]; then
+            echo "spec_check=missing" >> "$GITHUB_OUTPUT"; echo "::warning::impl/SPEC.md is missing"; exit 0
+          fi
+          actual=$(sha256sum impl/SPEC.md | cut -d' ' -f1)
+          if [ "$actual" = "$expected" ]; then echo "spec_check=match" >> "$GITHUB_OUTPUT"; else echo "spec_check=modified" >> "$GITHUB_OUTPUT"; echo "::warning::SPEC.md sha256 $actual differs from $expected"; fi
+
+      - name: Build the image (AC-01)
+        id: build
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          start=$(date +%s)
+          if docker build -t sdd-site impl 2>&1 | tee "$EVIDENCE_DIR/docker-build.log"; then status=ok; else status=failed; fi
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          echo "seconds=$(( $(date +%s) - start ))" >> "$GITHUB_OUTPUT"
+          [ "$status" = ok ]
+
+      - name: Start the container and wait for GET / (AC-02)
+        id: start
+        if: steps.build.outputs.status == 'ok'
+        continue-on-error: true
+        run: |
+          docker run -d --name "$CONTAINER_NAME" -p 8080:80 sdd-site
+          healthy=false
+          for i in $(seq 1 30); do
+            if curl -fsS -o /dev/null "$BASE_URL/"; then healthy=true; break; fi
+            sleep 2
+          done
+          echo "healthy=$healthy" >> "$GITHUB_OUTPUT"
+          [ "$healthy" = true ]
+
+      - name: Serve with no network (AC-17)
+        id: nonet
+        if: steps.build.outputs.status == 'ok'
+        continue-on-error: true
+        run: |
+          docker run -d --name sdd-nonet --network none sdd-site
+          sleep 5
+          code=$(docker exec sdd-nonet sh -c 'command -v curl >/dev/null && curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1/ || (command -v php >/dev/null && php -r "\$h=@get_headers(\"http://127.0.0.1/\"); echo \$h? (int)substr(\$h[0],9,3) : 0;")' 2>/dev/null || echo 0)
+          echo "status=${code:-0}" >> "$GITHUB_OUTPUT"
+          docker rm -f sdd-nonet >/dev/null 2>&1 || true
+
+      - name: Record build evidence
+        run: |
+          node -e '
+            const fs=require("fs");
+            fs.writeFileSync(process.env.EVIDENCE_DIR+"/build.json", JSON.stringify({
+              docker_build: "${{ steps.build.outputs.status || 'failed' }}",
+              build_seconds: Number("${{ steps.build.outputs.seconds || 0 }}"),
+              container_healthy: "${{ steps.start.outputs.healthy }}" === "true",
+              network_none_status: Number("${{ steps.nonet.outputs.status || 0 }}") || null,
+              spec_check: "${{ steps.spec.outputs.spec_check }}",
+              impl_repo: "${{ steps.run.outputs.impl_repo }}",
+              head_sha: "${{ steps.run.outputs.head_sha }}",
+              run_id: "${{ steps.run.outputs.run_id }}"
+            }, null, 2));'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install the acceptance suite
+        working-directory: ${{ steps.run.outputs.spec_dir }}/acceptance
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Run the acceptance suite
+        if: steps.start.outputs.healthy == 'true'
+        continue-on-error: true
+        working-directory: ${{ steps.run.outputs.spec_dir }}/acceptance
+        run: npx playwright test
+
+      - name: Count source lines
+        continue-on-error: true
+        run: |
+          sudo apt-get install -y -qq cloc >/dev/null
+          if ! cloc --vcs=git --json --quiet \
+            --exclude-dir=vendor,node_modules,.specify,.cursor,specs,data \
+            --not-match-f='(\.min\.(js|css)|composer\.lock|package-lock\.json|yarn\.lock)$' \
+            --exclude-lang=JSON,YAML,Markdown,Text,SVG,XML \
+            impl > "$EVIDENCE_DIR/cloc.json" 2> "$EVIDENCE_DIR/cloc.err"; then
+            echo "cloc failed" >&2
+            cat "$EVIDENCE_DIR/cloc.err" >&2 || true
+            echo '{}' > "$EVIDENCE_DIR/cloc.json"
+          fi
+
+      - name: Leak scan (AC-20)
+        run: node experiments/sdd/bin/leak-scan.mjs impl --out "$EVIDENCE_DIR/leak-scan.json"
+
+      - name: Collect container logs
+        if: always()
+        run: docker logs "$CONTAINER_NAME" > "$EVIDENCE_DIR/container.log" 2>&1 || true
+
+      - name: Build the partial results
+        if: always()
+        run: node ${{ steps.run.outputs.spec_dir }}/acceptance/reporter.mjs "$EVIDENCE_DIR"
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdd-${{ steps.run.outputs.run_id }}-evidence
+          path: evidence
+          retention-days: 90

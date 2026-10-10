@@ -1,0 +1,210 @@
+# Tasks that do not depend on fixing the contact form.
+# Pushes the harness-smoke branch to the implementation repository, records
+# runs/0000-harness-smoke/run.json at the commit without SPEC.md, and reads
+# the Grok 4.7 token usage for the finished worker. A push of run.json starts
+# sdd-verify.yml. This file's own push does not.
+name: SDD parallel
+
+on:
+  push:
+    branches: [cursor/sdd-experiment-harness-be23]
+    paths:
+      - .github/workflows/sdd-parallel.yml
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  parallel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout harness
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Exchange GitHub OIDC tokens for Doppler tokens
+        id: doppler
+        env:
+          PREVIEW_IDENTITY: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          THEHUT_IDENTITY: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID_THEHUT }}
+        run: |
+          set -euo pipefail
+          mint_oidc() {
+            curl -sS -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL" | jq -r .value
+          }
+          exchange() {
+            local identity="$1" oidc="$2" resp token
+            echo "::add-mask::$oidc" >&2
+            resp=$(curl -sS -X POST https://api.doppler.com/v3/auth/oidc -H 'Content-Type: application/json' \
+              -d "$(jq -n --arg i "$identity" --arg t "$oidc" '{identity:$i, token:$t}')")
+            token=$(jq -r '.token // empty' <<<"$resp")
+            if [ -z "$token" ]; then
+              echo "OIDC exchange failed: $(jq -c 'del(.token)' <<<"$resp")" >&2
+              return 1
+            fi
+            echo "::add-mask::$token" >&2
+            printf '%s' "$token"
+          }
+          preview=$(exchange "$PREVIEW_IDENTITY" "$(mint_oidc)") || exit 1
+          # The repository variable was empty on 2026-10-10. This is the same
+          # identity id the Doppler workflows used that morning. It is not a
+          # secret; Doppler still requires a GitHub OIDC token from this repo.
+          thehut_id="${THEHUT_IDENTITY:-95a2f818-cee7-4d49-9d9f-49fec38ec891}"
+          thehut=$(exchange "$thehut_id" "$(mint_oidc)") || exit 1
+          echo "preview=$preview" >> "$GITHUB_OUTPUT"
+          echo "thehut=$thehut" >> "$GITHUB_OUTPUT"
+
+      - name: Read the Cursor key and the GitHub push token
+        id: secrets
+        env:
+          PREVIEW: ${{ steps.doppler.outputs.preview }}
+          THEHUT: ${{ steps.doppler.outputs.thehut }}
+        run: |
+          set -euo pipefail
+          read_secret() {
+            local token="$1" project="$2" config="$3" name="$4"
+            curl -sS -u "$token:" \
+              "https://api.doppler.com/v3/configs/config/secret?project=${project}&config=${config}&name=${name}" \
+              | jq -r '.value.raw // empty'
+          }
+          cursor_key=$(read_secret "$PREVIEW" dyad preview CURSOR_API_KEY)
+          github_token=$(read_secret "$THEHUT" blog dev GITHUB_TOKEN)
+          if [ -z "$cursor_key" ] || [ -z "$github_token" ]; then
+            echo "a required secret is missing"
+            exit 1
+          fi
+          echo "::add-mask::$cursor_key"
+          echo "::add-mask::$github_token"
+          echo "cursor_key=$cursor_key" >> "$GITHUB_OUTPUT"
+          echo "github_token=$github_token" >> "$GITHUB_OUTPUT"
+
+      - name: Push the smoke branch
+        id: smoke
+        env:
+          GH_TOKEN: ${{ steps.secrets.outputs.github_token }}
+        run: |
+          set -euo pipefail
+          gh repo clone Awannaphasch2016/sdd-gitcon-impl /tmp/impl -- --depth 1
+          cd /tmp/impl
+          git checkout -B harness-smoke
+          rm -rf public
+          rm -f Dockerfile .dockerignore SPEC.md
+          cp "$GITHUB_WORKSPACE/experiments/sdd/smoke/Dockerfile" .
+          cp "$GITHUB_WORKSPACE/experiments/sdd/smoke/.dockerignore" .
+          mkdir -p public
+          cp "$GITHUB_WORKSPACE/experiments/sdd/smoke/public/index.php" public/
+          git add Dockerfile .dockerignore public/index.php
+          git config user.name "$(gh api user --jq .login)"
+          git config user.email "$(gh api user --jq '.id')+$(gh api user --jq .login)@users.noreply.github.com"
+          git commit -m "Add a harness smoke site that implements only layout, home, and the 404 page."
+          without=$(git rev-parse HEAD)
+          cp "$GITHUB_WORKSPACE/experiments/sdd/specs/gitcon/v1/requirements.md" SPEC.md
+          git add SPEC.md
+          git commit -m "Add the unchanged specification so the verifier can check its hash."
+          with_spec=$(git rev-parse HEAD)
+          gh auth setup-git
+          git push -u origin harness-smoke
+          if ! gh pr view harness-smoke --repo Awannaphasch2016/sdd-gitcon-impl >/dev/null 2>&1; then
+            gh pr create --repo Awannaphasch2016/sdd-gitcon-impl --base main --head harness-smoke --draft \
+              --title "Harness smoke: layout, home, and 404 only" \
+              --body "Deliberately incomplete fixture for the SDD verifier. Not for merge. Program, fees, and contact are stubs."
+          fi
+          url=$(gh pr view harness-smoke --repo Awannaphasch2016/sdd-gitcon-impl --json number,url --jq '"\(.number) \(.url)"')
+          echo "without_spec=$without" >> "$GITHUB_OUTPUT"
+          echo "with_spec=$with_spec" >> "$GITHUB_OUTPUT"
+          echo "pr_number=$(echo "$url" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "pr_url=$(echo "$url" | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+          echo "smoke commit without SPEC.md: $without"
+          echo "smoke commit with SPEC.md: $with_spec"
+          echo "pull request: $url"
+
+      - name: Record the smoke run at the commit without SPEC.md
+        env:
+          GH_TOKEN: ${{ steps.secrets.outputs.github_token }}
+          WITHOUT: ${{ steps.smoke.outputs.without_spec }}
+          WITH_SPEC: ${{ steps.smoke.outputs.with_spec }}
+          PR_NUMBER: ${{ steps.smoke.outputs.pr_number }}
+          PR_URL: ${{ steps.smoke.outputs.pr_url }}
+        run: |
+          set -euo pipefail
+          mkdir -p experiments/sdd/runs/0000-harness-smoke
+          python3 - <<'PY'
+          import json, os
+          path = "experiments/sdd/runs/0000-harness-smoke/run.json"
+          run = {
+            "run_id": "2026-10-10-harness-smoke",
+            "approach": "speckit",
+            "approach_version": "1.1.2",
+            "spec_version": "gitcon-v1",
+            "spec_sha256": "30916614bd4380d1a93c92432e9753f3038ecfacd6e976906332ad4086485127",
+            "impl_repo": "Awannaphasch2016/sdd-gitcon-impl",
+            "baseline_ref": "baseline/speckit-1.1.2",
+            "worker": {
+              "agent_id": None,
+              "run_id": None,
+              "model": "harness-smoke",
+              "created_at": None,
+              "finished_at": None,
+              "status": "NOT_STARTED",
+            },
+            "coordinator": {"agent_id": None, "started_at": None},
+            "pr": {
+              "number": int(os.environ["PR_NUMBER"]),
+              "head_sha": os.environ["WITHOUT"],
+              "url": os.environ["PR_URL"],
+              "branch": "harness-smoke",
+            },
+            "isolation": {"ground_truth_listed": False, "leak_markers": []},
+            "interventions": [],
+            "caps": {"wall_clock_minutes": 90, "estimated_usd": 25},
+            "smoke": {
+              "without_spec_sha": os.environ["WITHOUT"],
+              "with_spec_sha": os.environ["WITH_SPEC"],
+              "purpose": "Prove the verifier fails the stub pages and reports a missing SPEC.md.",
+            },
+          }
+          with open(path, "w") as fh:
+              json.dump(run, fh, indent=2)
+              fh.write("\n")
+          PY
+          git config user.name "$(gh api user --jq .login)"
+          git config user.email "$(gh api user --jq '.id')+$(gh api user --jq .login)@users.noreply.github.com"
+          git config --local --unset-all http.https://github.com/.extraheader || true
+          gh auth setup-git
+          git add experiments/sdd/runs/0000-harness-smoke/run.json
+          git commit -m "Record the harness smoke run at the commit without SPEC.md."
+          git push origin HEAD:cursor/sdd-experiment-harness-be23
+
+      - name: Read worker token usage
+        if: always() && steps.secrets.outputs.cursor_key != ''
+        env:
+          CURSOR_API_KEY: ${{ steps.secrets.outputs.cursor_key }}
+        run: node experiments/sdd/bin/collect-usage.mjs --run-id 2026-10-09-gitcon-v1-speckit-01 --verifier-run 38006952958
+
+      - name: Upload token usage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdd-usage-2026-10-09-gitcon-v1-speckit-01
+          path: experiments/sdd/runs/2026-10-09-gitcon-v1-speckit-01/results/usage.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Revoke the Doppler tokens
+        if: always() && steps.doppler.outputs.preview != ''
+        env:
+          PREVIEW: ${{ steps.doppler.outputs.preview }}
+          THEHUT: ${{ steps.doppler.outputs.thehut }}
+        run: |
+          for token in "$PREVIEW" "$THEHUT"; do
+            [ -n "$token" ] || continue
+            curl -sS -o /dev/null -w 'revoke status %{http_code}\n' -X POST https://api.doppler.com/v3/auth/revoke \
+              -H 'Content-Type: application/json' -d "$(jq -n --arg t "$token" '{token:$t}')"
+          done
