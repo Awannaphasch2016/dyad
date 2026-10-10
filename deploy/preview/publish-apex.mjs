@@ -98,6 +98,7 @@ async function main() {
   await waitForImage();
   const removed = await removeProjectDatabaseEnv({
     token: process.env.VERCEL_TOKEN,
+    teamId: process.env.VERCEL_TEAM_ID || process.env.VERCEL_ORG_ID || "",
   });
   console.log(
     `vercel_database_env_removed=${removed.removed} targets=${removed.targets.join(",") || "none"}`,

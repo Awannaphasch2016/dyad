@@ -3,6 +3,7 @@
 # runs the writer once. It does not stop gascity-server.
 # The canary OIDC identity trusts only canary-verify.yml, so this job reads
 # dyad/canary with the admin token and never requests dyad/prd.
+# A Vercel token that names a team scope is retried with that team slug.
 
 name: Promote apex
 

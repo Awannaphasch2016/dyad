@@ -229,15 +229,44 @@ export async function deletePreviewDatabase(options) {
   return deletePreviewVariable({ ...options, key: previewDatabaseKey });
 }
 
+export function scopeSlug(error) {
+  const match = /scope "([A-Za-z0-9-]+)"/.exec(
+    error instanceof Error ? error.message : String(error || ""),
+  );
+  return match?.[1] || "";
+}
+
+async function openProject(fetchImpl, token, projectName, teamId) {
+  const path = `/v9/projects/${encodeURIComponent(projectName)}`;
+  if (teamId) {
+    const query = String(teamId).startsWith("team_")
+      ? `?teamId=${encodeURIComponent(teamId)}`
+      : `?slug=${encodeURIComponent(teamId)}`;
+    return vercelRequest(fetchImpl, token, `${path}${query}`);
+  }
+  try {
+    return await vercelRequest(fetchImpl, token, path);
+  } catch (error) {
+    const slug = scopeSlug(error);
+    if (!slug) throw error;
+    return vercelRequest(
+      fetchImpl,
+      token,
+      `${path}?slug=${encodeURIComponent(slug)}`,
+    );
+  }
+}
+
 export async function removeProjectDatabaseEnv(options) {
   const fetchImpl = options.fetchImpl || fetch;
   const token = options.token;
   if (!token) throw new Error("VERCEL_TOKEN is not set");
   const projectName = options.project || defaultVercelProject;
-  const project = await vercelRequest(
+  const project = await openProject(
     fetchImpl,
     token,
-    `/v9/projects/${encodeURIComponent(projectName)}`,
+    projectName,
+    options.teamId || "",
   );
   const projectId = project.id || projectName;
   const teamId = String(project.accountId || "").startsWith("team_")
