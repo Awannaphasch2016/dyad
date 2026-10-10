@@ -57,7 +57,7 @@ test("every database env record is removed and its value is not logged", async (
   assert.equal(JSON.stringify(removed).includes("postgresql"), false);
 });
 
-test("a team scope error is retried with that team slug", async () => {
+test("a team scope error is retried with the team id", async () => {
   const calls = [];
   const fetchImpl = async (url, options = {}) => {
     const method = options.method || "GET";
@@ -75,7 +75,10 @@ test("a team scope error is retried with that team slug", async () => {
           }),
       };
     }
-    if (url.endsWith("/v9/projects/dyad?slug=anak2")) {
+    if (url.endsWith("/v2/teams")) {
+      return json({ teams: [{ id: "team_anak", slug: "anak2" }] });
+    }
+    if (url.endsWith("/v9/projects/dyad?teamId=team_anak")) {
       return json({ id: "prj_dyad", name: "dyad", accountId: "team_anak" });
     }
     if (url.includes("/env") && method === "GET") {
@@ -89,9 +92,14 @@ test("a team scope error is retried with that team slug", async () => {
   });
   assert.equal(removed.removed, 0);
   assert.equal(
-    calls.some((call) => call.includes("slug=anak2")),
+    calls.some((call) => call.includes("/v2/teams")),
     true,
   );
+  assert.equal(
+    calls.some((call) => call.includes("teamId=team_anak")),
+    true,
+  );
+  assert.equal(JSON.stringify(calls).includes("token"), false);
 });
 
 function json(body) {

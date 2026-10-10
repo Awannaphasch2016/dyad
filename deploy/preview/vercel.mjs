@@ -66,9 +66,11 @@ async function vercelRequest(fetchImpl, token, path, options = {}) {
   }
   if (!response.ok) {
     const message = body.error?.message || body.message || "";
-    throw new Error(
+    const failure = new Error(
       `${options.method || "GET"} ${path.split("?")[0]} ${response.status} ${scrub(message)}`,
     );
+    failure.vercelBody = body;
+    throw failure;
   }
   return body;
 }
@@ -236,6 +238,21 @@ export function scopeSlug(error) {
   return match?.[1] || "";
 }
 
+export function teamIdFromDenied(error) {
+  const body = error?.vercelBody;
+  const id = body?.error?.teamId || body?.teamId || "";
+  return typeof id === "string" && id.startsWith("team_") ? id : "";
+}
+
+async function teamIdForSlug(fetchImpl, token, slug) {
+  const listed = await vercelRequest(fetchImpl, token, "/v2/teams");
+  const team = (listed.teams || []).find((item) => item.slug === slug);
+  if (!team?.id) {
+    throw new Error(`Vercel team ${slug} was not found for this token`);
+  }
+  return team.id;
+}
+
 async function openProject(fetchImpl, token, projectName, teamId) {
   const path = `/v9/projects/${encodeURIComponent(projectName)}`;
   if (teamId) {
@@ -248,11 +265,15 @@ async function openProject(fetchImpl, token, projectName, teamId) {
     return await vercelRequest(fetchImpl, token, path);
   } catch (error) {
     const slug = scopeSlug(error);
-    if (!slug) throw error;
+    const id =
+      teamIdFromDenied(error) ||
+      (slug ? await teamIdForSlug(fetchImpl, token, slug) : "");
+    if (!id) throw error;
+    console.log(`vercel_team_retry=${slug || "id"}`);
     return vercelRequest(
       fetchImpl,
       token,
-      `${path}?slug=${encodeURIComponent(slug)}`,
+      `${path}?teamId=${encodeURIComponent(id)}`,
     );
   }
 }
