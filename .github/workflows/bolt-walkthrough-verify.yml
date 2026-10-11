@@ -80,6 +80,21 @@ jobs:
           npm ci --ignore-scripts
           npx playwright install --with-deps chromium
 
+      - name: Run the role visibility check
+        working-directory: e2e-walkthrough
+        env:
+          WALKTHROUGH_URL: https://bolt-walkthrough-55d6.karant-test-egress-canary.workers.dev
+          WALKTHROUGH_PM_USER_ID: ${{ steps.accounts.outputs.pm_user_id }}
+          WALKTHROUGH_DEV_USER_ID: ${{ steps.accounts.outputs.dev_user_id }}
+          WALKTHROUGH_PM_IDENTIFIER: ${{ steps.accounts.outputs.pm_identifier }}
+          WALKTHROUGH_DEV_IDENTIFIER: ${{ steps.accounts.outputs.dev_identifier }}
+          WALKTHROUGH_PM_EMAIL: ${{ steps.accounts.outputs.pm_email }}
+          WALKTHROUGH_DEV_EMAIL: ${{ steps.accounts.outputs.dev_email }}
+        run: |
+          set -euo pipefail
+          set +x
+          npx playwright test tests/zz-p3-role-visibility.spec.ts
+
       - name: Run the single-account checks
         working-directory: e2e-walkthrough
         env:
@@ -155,21 +170,6 @@ jobs:
             cat /tmp/check-delivered.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Run the role visibility check
-        working-directory: e2e-walkthrough
-        env:
-          WALKTHROUGH_URL: https://bolt-walkthrough-55d6.karant-test-egress-canary.workers.dev
-          WALKTHROUGH_PM_USER_ID: ${{ steps.accounts.outputs.pm_user_id }}
-          WALKTHROUGH_DEV_USER_ID: ${{ steps.accounts.outputs.dev_user_id }}
-          WALKTHROUGH_PM_IDENTIFIER: ${{ steps.accounts.outputs.pm_identifier }}
-          WALKTHROUGH_DEV_IDENTIFIER: ${{ steps.accounts.outputs.dev_identifier }}
-          WALKTHROUGH_PM_EMAIL: ${{ steps.accounts.outputs.pm_email }}
-          WALKTHROUGH_DEV_EMAIL: ${{ steps.accounts.outputs.dev_email }}
-        run: |
-          set -euo pipefail
-          set +x
-          npx playwright test tests/zz-p3-role-visibility.spec.ts
 
       - name: Summarize
         if: always()
