@@ -171,16 +171,18 @@ test("sync keeps one service and does not publish the factory port", async () =>
     exportLine("CLOUDFLARE_API_TOKEN", "do-not-store"),
     exportLine("GAS_CITY_CITY_NAME", "wewebplus"),
   ].join("\n");
+  const seenDns = [];
+  const ensureDns = async (input) => {
+    seenDns.push(input);
+  };
   const first = await syncFormulaService(aws.run, {
     image,
     runtimeText,
     sleep: async () => {},
     randomHex: (bytes) => `generated-${bytes}`,
+    ensureDns,
   });
-  assert.equal(
-    first.url,
-    "http://formula-preview-1.ap-southeast-1.elb.amazonaws.com",
-  );
+  assert.equal(first.url, "https://formula.anakwannaphaschaiyong.com");
   const taskGroup = aws.state.groups.find(
     (group) => group.GroupName === "formula-preview-task",
   );
@@ -198,6 +200,7 @@ test("sync keeps one service and does not publish the factory port", async () =>
     randomHex: () => {
       throw new Error("generated secrets are kept");
     },
+    ensureDns,
   });
   assert.equal(aws.state.serviceInputs.length, 2);
   assert.equal(aws.state.serviceInputs[0].desiredCount, 1);
@@ -239,6 +242,30 @@ test("sync keeps one service and does not publish the factory port", async () =>
     ),
     true,
   );
+  assert.equal(seenDns.length, 2);
+  assert.equal(
+    seenDns[0].loadBalancerDns,
+    "formula-preview-1.ap-southeast-1.elb.amazonaws.com",
+  );
+  assert.match(seenDns[0].validationName, /\.formula\.anakwannaphaschaiyong\.com\.?$/);
+  assert.equal(seenDns[0].validationName.includes("pr-79"), false);
+  const albGroup = aws.state.groups.find(
+    (group) => group.GroupName === "formula-preview-alb",
+  );
+  assert.deepEqual(
+    albGroup.IpPermissions.map((permission) => permission.FromPort).sort(
+      (left, right) => left - right,
+    ),
+    [80, 443],
+  );
+  const https = aws.state.listeners.find((listener) => listener.Port === 443);
+  assert.equal(https.Protocol, "HTTPS");
+  assert.match(https.Certificates[0].CertificateArn, /acm/);
+  assert.equal(
+    aws.state.calls.filter((call) => call.startsWith("acm request-certificate"))
+      .length,
+    1,
+  );
 });
 
 test("the formula workflow deploys to ECS and does not cook", () => {
@@ -259,6 +286,8 @@ test("the formula workflow deploys to ECS and does not cook", () => {
   assert.match(workflow, /Dockerfile\.gascity/);
   assert.match(workflow, /formula_ecs\.mjs sync/);
   assert.match(workflow, /data-dyad-browser-bridge/);
+  assert.match(workflow, /https:\/\/formula\.anakwannaphaschaiyong\.com/);
+  assert.equal(workflow.includes("pr-79"), false);
   assert.match(workflow, /\/formulas\/discovery/);
   assert.match(
     workflow,
@@ -327,6 +356,9 @@ test("the production host stores the role address without printing it", () => {
         "text = json.dumps(mod.permissions_policy('123456789012'))",
         "assert 'iam:CreateUser' not in text",
         "assert 'formula-preview-execution' in text",
+        "assert 'acm:RequestCertificate' in text",
+        "assert 'acm:DescribeCertificate' in text",
+        "assert 'acm:ListCertificates' in text",
         "command = mod.doppler_set_command('/usr/bin/doppler')",
         "assert command == ['/usr/bin/doppler', 'secrets', 'set', mod.SECRET_NAME, '--silent']",
         "assert 'arn:aws' not in ' '.join(command)",
@@ -396,6 +428,7 @@ function memoryAws() {
     loadBalancers: [],
     targetGroups: [],
     listeners: [],
+    certificates: [],
     clusters: [],
     logGroups: [],
     roles: [],
@@ -631,11 +664,49 @@ function memoryAws() {
       return { Listeners: state.listeners };
     }
     if (service === "elbv2" && command === "create-listener") {
+      const certificate = flag(args, "--certificates");
       state.listeners.push({
         Port: Number(flag(args, "--port")),
+        Protocol: flag(args, "--protocol"),
         LoadBalancerArn: flag(args, "--load-balancer-arn"),
+        Certificates: certificate
+          ? [{ CertificateArn: certificate.replace(/^CertificateArn=/, "") }]
+          : [],
       });
       return {};
+    }
+    if (service === "acm" && command === "list-certificates") {
+      return {
+        CertificateSummaryList: state.certificates.map((certificate) => ({
+          CertificateArn: certificate.CertificateArn,
+          DomainName: certificate.DomainName,
+          Status: certificate.Status,
+        })),
+      };
+    }
+    if (service === "acm" && command === "request-certificate") {
+      const certificate = {
+        CertificateArn: next("arn:aws:acm:certificate"),
+        DomainName: flag(args, "--domain-name"),
+        Status: "ISSUED",
+        DomainValidationOptions: [
+          {
+            ResourceRecord: {
+              Name: "_validation.formula.anakwannaphaschaiyong.com.",
+              Value: "_validation.acm-validations.aws.",
+            },
+          },
+        ],
+      };
+      state.certificates.push(certificate);
+      return { CertificateArn: certificate.CertificateArn };
+    }
+    if (service === "acm" && command === "describe-certificate") {
+      const certificate = state.certificates.find(
+        (item) => item.CertificateArn === flag(args, "--certificate-arn"),
+      );
+      if (!certificate) throw new AwsError("missing", "ResourceNotFoundException");
+      return { Certificate: certificate };
     }
     if (service === "ecs" && command === "describe-clusters") {
       return { clusters: state.clusters };

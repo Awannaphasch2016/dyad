@@ -219,11 +219,12 @@ jobs:
         id: sync
         env:
           IMAGE: ${{ steps.ecr.outputs.image }}
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
         run: |
           set -euo pipefail
           line="$(node deploy/preview/formula_ecs.mjs sync --image "$IMAGE" --runtime /tmp/preview-runtime.sh)"
-          if [[ ! "$line" =~ ^url=http://[A-Za-z0-9.-]+\.ap-southeast-1\.elb\.amazonaws\.com$ ]]; then
-            echo "Formula preview did not return an ap-southeast-1 load balancer URL" >&2
+          if [[ "$line" != "url=https://formula.anakwannaphaschaiyong.com" ]]; then
+            echo "Formula preview did not return the HTTPS hostname" >&2
             exit 1
           fi
           echo "url=${line#url=}" >> "$GITHUB_OUTPUT"
@@ -234,7 +235,7 @@ jobs:
           URL: ${{ steps.sync.outputs.url }}
         run: |
           set -euo pipefail
-          if [[ ! "$URL" =~ ^http://[A-Za-z0-9.-]+\.ap-southeast-1\.elb\.amazonaws\.com$ ]]; then
+          if [[ "$URL" != "https://formula.anakwannaphaschaiyong.com" ]]; then
             echo "Refusing to request an unexpected preview URL" >&2
             exit 1
           fi

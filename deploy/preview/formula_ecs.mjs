@@ -7,6 +7,13 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
+import {
+  FORMULA_HOSTNAME,
+  FORMULA_PREVIEW_URL,
+  cloudflareFromMaps,
+  cloudflarePresence,
+  ensureFormulaDns,
+} from "./formula_dns.mjs";
 
 export const REGION = "ap-southeast-1";
 export const CLUSTER = "wewebplus-formula-preview";
@@ -249,14 +256,27 @@ export function serviceDefinition({
   };
 }
 
-export function ingressChanges(permissions, expected) {
-  const revoke = [];
-  let present = false;
-  for (const permission of permissions) {
-    if (permissionMatches(permission, expected)) present = true;
-    else revoke.push(permission);
+export function ingressSetChanges(permissions, expectedList) {
+  const authorize = [];
+  for (const expected of expectedList) {
+    const present = (permissions || []).some((permission) =>
+      permissionMatches(permission, expected),
+    );
+    if (!present) authorize.push(expected);
   }
-  return { revoke, authorize: !present };
+  const revoke = [];
+  for (const permission of permissions || []) {
+    const kept = expectedList.some((expected) =>
+      permissionMatches(permission, expected),
+    );
+    if (!kept) revoke.push(permission);
+  }
+  return { revoke, authorize };
+}
+
+export function ingressChanges(permissions, expected) {
+  const { revoke, authorize } = ingressSetChanges(permissions, [expected]);
+  return { revoke, authorize: authorize.length > 0 };
 }
 
 function permissionMatches(permission, expected) {
@@ -583,7 +603,7 @@ async function ensureSecurityGroup(run, { vpcId, name, description }) {
   return created.GroupId;
 }
 
-async function applyIngress(run, groupId, expected) {
+async function applyIngressSet(run, groupId, expectedList) {
   const described = await run([
     "ec2",
     "describe-security-groups",
@@ -593,9 +613,9 @@ async function applyIngress(run, groupId, expected) {
   const group = (described.SecurityGroups || []).find(
     (item) => item.GroupId === groupId,
   );
-  const { revoke, authorize } = ingressChanges(
+  const { revoke, authorize } = ingressSetChanges(
     group?.IpPermissions || [],
-    expected,
+    expectedList,
   );
   for (const permission of revoke) {
     await run([
@@ -607,20 +627,25 @@ async function applyIngress(run, groupId, expected) {
       JSON.stringify([permission]),
     ]);
   }
-  if (!authorize) return;
-  const args = [
-    "ec2",
-    "authorize-security-group-ingress",
-    "--group-id",
-    groupId,
-    "--protocol",
-    "tcp",
-    "--port",
-    String(expected.port),
-  ];
-  if (expected.cidr) args.push("--cidr", expected.cidr);
-  else args.push("--source-group", expected.groupId);
-  await callIgnoring(run, args, ["InvalidPermission.Duplicate"]);
+  for (const expected of authorize) {
+    const args = [
+      "ec2",
+      "authorize-security-group-ingress",
+      "--group-id",
+      groupId,
+      "--protocol",
+      "tcp",
+      "--port",
+      String(expected.port),
+    ];
+    if (expected.cidr) args.push("--cidr", expected.cidr);
+    else args.push("--source-group", expected.groupId);
+    await callIgnoring(run, args, ["InvalidPermission.Duplicate"]);
+  }
+}
+
+async function applyIngress(run, groupId, expected) {
+  await applyIngressSet(run, groupId, [expected]);
 }
 
 async function ensureLoadBalancer(run, { subnets, securityGroupId }) {
@@ -731,6 +756,159 @@ async function ensureListener(run, { loadBalancerArn, targetGroupArn }) {
     "--default-actions",
     JSON.stringify([{ Type: "forward", TargetGroupArn: targetGroupArn }]),
   ]);
+}
+
+async function listFormulaCertificates(run) {
+  const found = [];
+  let token = "";
+  for (let page = 0; page < 5; page += 1) {
+    const args = [
+      "acm",
+      "list-certificates",
+      "--certificate-statuses",
+      "ISSUED",
+      "PENDING_VALIDATION",
+    ];
+    if (token) args.push("--next-token", token);
+    const listed = await run(args);
+    for (const summary of listed.CertificateSummaryList || []) {
+      if (summary.DomainName === FORMULA_HOSTNAME) found.push(summary);
+    }
+    token = listed.NextToken || "";
+    if (!token) break;
+  }
+  return found;
+}
+
+async function describeCertificate(run, certificateArn) {
+  const described = await run([
+    "acm",
+    "describe-certificate",
+    "--certificate-arn",
+    certificateArn,
+  ]);
+  const certificate = described.Certificate;
+  if (!certificate || certificate.DomainName !== FORMULA_HOSTNAME) {
+    throw new Error("ACM certificate is not for the formula hostname");
+  }
+  return certificate;
+}
+
+async function ensureCertificate(run) {
+  const existing = await listFormulaCertificates(run);
+  const issued = existing.find((item) => item.Status === "ISSUED");
+  const pending = existing.find((item) => item.Status === "PENDING_VALIDATION");
+  const chosen = issued || pending;
+  if (chosen) return chosen.CertificateArn;
+  const requested = await run([
+    "acm",
+    "request-certificate",
+    "--domain-name",
+    FORMULA_HOSTNAME,
+    "--validation-method",
+    "DNS",
+  ]);
+  if (!requested.CertificateArn) {
+    throw new Error("ACM did not return a certificate");
+  }
+  return requested.CertificateArn;
+}
+
+async function waitForCertificateRecord(run, certificateArn, sleep) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const certificate = await describeCertificate(run, certificateArn);
+    if (certificate.Status === "FAILED") {
+      throw new Error("ACM certificate request failed");
+    }
+    if (certificate.Status === "ISSUED") return certificate;
+    const record = certificate.DomainValidationOptions?.[0]?.ResourceRecord;
+    if (record?.Name && record?.Value) return certificate;
+    await sleep(3000);
+  }
+  throw new Error("ACM did not return a DNS validation record");
+}
+
+async function waitForIssuedCertificate(run, certificateArn, sleep) {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const certificate = await describeCertificate(run, certificateArn);
+    if (certificate.Status === "ISSUED") return certificate;
+    if (
+      certificate.Status === "FAILED" ||
+      certificate.Status === "VALIDATION_TIMED_OUT" ||
+      certificate.Status === "REVOKED"
+    ) {
+      throw new Error(`ACM certificate is ${certificate.Status}`);
+    }
+    await sleep(15000);
+  }
+  throw new Error("ACM certificate was not issued");
+}
+
+async function ensureHttpsListener(
+  run,
+  { loadBalancerArn, targetGroupArn, certificateArn },
+) {
+  const described = await run([
+    "elbv2",
+    "describe-listeners",
+    "--load-balancer-arn",
+    loadBalancerArn,
+  ]);
+  const existing = (described.Listeners || []).find(
+    (listener) => listener.Port === 443,
+  );
+  if (existing) {
+    const attached = (existing.Certificates || []).some(
+      (item) => item.CertificateArn === certificateArn,
+    );
+    if (!attached) {
+      throw new Error("HTTPS listener is missing the formula certificate");
+    }
+    return;
+  }
+  await run([
+    "elbv2",
+    "create-listener",
+    "--load-balancer-arn",
+    loadBalancerArn,
+    "--protocol",
+    "HTTPS",
+    "--port",
+    "443",
+    "--ssl-policy",
+    "ELBSecurityPolicy-TLS13-1-2-2021-06",
+    "--certificates",
+    `CertificateArn=${certificateArn}`,
+    "--default-actions",
+    JSON.stringify([{ Type: "forward", TargetGroupArn: targetGroupArn }]),
+  ]);
+}
+
+async function publishFormulaHostname(options, loadBalancerDns, certificate) {
+  const record = certificate.DomainValidationOptions?.[0]?.ResourceRecord;
+  const validationName = record?.Name || "";
+  const validationValue = record?.Value || "";
+  if (certificate.Status !== "ISSUED" && (!validationName || !validationValue)) {
+    throw new Error("ACM did not return a DNS validation record");
+  }
+  if (options.ensureDns) {
+    await options.ensureDns({
+      loadBalancerDns,
+      validationName,
+      validationValue,
+    });
+    return;
+  }
+  const cloudflare = options.cloudflare || {};
+  await ensureFormulaDns({
+    fetch: options.fetch,
+    token: cloudflare.token,
+    zoneId: cloudflare.zoneId,
+    accountId: cloudflare.accountId,
+    loadBalancerDns,
+    validationName,
+    validationValue,
+  });
 }
 
 async function ensureCluster(run) {
@@ -956,7 +1134,10 @@ export async function syncFormulaService(run, options) {
     name: TASK_SG,
     description: "Formula preview task",
   });
-  await applyIngress(run, albGroup, { port: 80, cidr: "0.0.0.0/0" });
+  await applyIngressSet(run, albGroup, [
+    { port: 80, cidr: "0.0.0.0/0" },
+    { port: 443, cidr: "0.0.0.0/0" },
+  ]);
   await applyIngress(run, taskGroup, { port: 8373, groupId: albGroup });
   const loadBalancer = await ensureLoadBalancer(run, {
     subnets,
@@ -1028,8 +1209,17 @@ export async function syncFormulaService(run, options) {
     "--services",
     SERVICE,
   ]);
+  const certificateArn = await ensureCertificate(run);
+  const pending = await waitForCertificateRecord(run, certificateArn, sleep);
+  await publishFormulaHostname(options, loadBalancer.dns, pending);
+  await waitForIssuedCertificate(run, certificateArn, sleep);
+  await ensureHttpsListener(run, {
+    loadBalancerArn: loadBalancer.arn,
+    targetGroupArn,
+    certificateArn,
+  });
   console.error(`formula service ${SERVICE} desired count 1`);
-  return { url: `http://${loadBalancer.dns}` };
+  return { url: FORMULA_PREVIEW_URL };
 }
 
 function cliRunner() {
@@ -1163,7 +1353,23 @@ async function main() {
     const runtimePath = arg("--runtime");
     if (!runtimePath) throw new Error("Missing --runtime");
     const runtimeText = readFileSync(runtimePath, "utf8");
-    const result = await syncFormulaService(run, { image, runtimeText });
+    const downloads = [];
+    const admin = process.env.DOPPLER_ADMIN_TOKEN || "";
+    if (admin) {
+      process.stderr.write("doppler admin token present\n");
+      downloads.push(await downloadDoppler(admin, "dyad", "preview"));
+    } else if (process.env.DOPPLER_TOKEN) {
+      downloads.push(await downloadDoppler(process.env.DOPPLER_TOKEN));
+    } else {
+      process.stderr.write("doppler admin token absent\n");
+    }
+    const cloudflare = cloudflareFromMaps(process.env, downloads);
+    process.stderr.write(`${cloudflarePresence(cloudflare)}\n`);
+    const result = await syncFormulaService(run, {
+      image,
+      runtimeText,
+      cloudflare,
+    });
     process.stdout.write(`url=${result.url}\n`);
     return;
   }
