@@ -1,0 +1,52 @@
+name: Publish Forma HITL image
+
+# Pushes the Forma role-pause commit to the image branch. Forma builds it.
+# This job does not deploy and does not read a database.
+
+on:
+  push:
+    branches:
+      - cursor/forma-hitl-image-5014
+    paths:
+      - .github/workflows/publish-forma-hitl-image.yml
+      - .github/scripts/publish-forma-hitl-image.mjs
+      - .github/scripts/publish-forma-hitl-image.test.mjs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-forma-hitl-image
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/cursor/forma-hitl-image-5014'
+    runs-on: ubuntu-latest
+    environment: ai-bots
+    timeout-minutes: 15
+    steps:
+      - name: Check out the publisher
+        uses: actions/checkout@v5
+
+      - name: Check the publisher
+        run: node --test .github/scripts/publish-forma-hitl-image.test.mjs
+
+      - name: Create GitHub App token
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.DYAD_GITHUB_APP_ID || '5221649' }}
+          private-key: ${{ secrets.DYAD_GITHUB_APP_PEM_KEY }}
+          owner: Awannaphasch2016
+          repositories: forma
+          permission-contents: write
+          permission-workflows: write
+
+      - name: Push the image branch
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          set +x
+          node .github/scripts/publish-forma-hitl-image.mjs
