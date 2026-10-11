@@ -94,6 +94,95 @@ test("a push without the preview label does not destroy an existing preview", ()
   );
 });
 
+test("preview and preview-vibesdk match the whole label", () => {
+  const both = {
+    action: "synchronize",
+    labels: ["preview", "preview-vibesdk"],
+  };
+  assert.equal(commandForPullRequest(both), "update");
+  assert.equal(commandForPullRequest(both, "preview"), "update");
+  assert.equal(commandForPullRequest(both, "preview-vibesdk"), "update");
+  assert.equal(
+    commandForPullRequest({
+      action: "labeled",
+      label: "preview-vibesdk",
+      labels: ["preview-vibesdk"],
+    }),
+    "skip",
+  );
+  assert.equal(
+    commandForPullRequest(
+      {
+        action: "labeled",
+        label: "preview-vibesdk-extra",
+        labels: ["preview-vibesdk-extra"],
+      },
+      "preview-vibesdk",
+    ),
+    "skip",
+  );
+
+  const removeDyad = {
+    action: "unlabeled",
+    label: "preview",
+    labels: ["preview-vibesdk"],
+  };
+  assert.equal(commandForPullRequest(removeDyad), "destroy");
+  assert.equal(commandForPullRequest(removeDyad, "preview-vibesdk"), "skip");
+
+  const removeVibe = {
+    action: "unlabeled",
+    label: "preview-vibesdk",
+    labels: ["preview"],
+  };
+  assert.equal(commandForPullRequest(removeVibe), "skip");
+  assert.equal(commandForPullRequest(removeVibe, "preview-vibesdk"), "destroy");
+});
+
+test("preview-vibesdk follows the same close and push rules", () => {
+  assert.equal(
+    commandForPullRequest(
+      { action: "synchronize", labels: ["preview"] },
+      "preview-vibesdk",
+    ),
+    "skip",
+  );
+  assert.equal(
+    commandForPullRequest(
+      { action: "opened", labels: ["preview-vibesdk"] },
+      "preview-vibesdk",
+    ),
+    "update",
+  );
+  assert.equal(
+    commandForPullRequest(
+      { action: "reopened", labels: ["preview-vibesdk"] },
+      "preview-vibesdk",
+    ),
+    "update",
+  );
+  assert.equal(
+    commandForPullRequest({ action: "opened", labels: [] }, "preview-vibesdk"),
+    "skip",
+  );
+  assert.equal(
+    commandForPullRequest({ action: "closed", labels: [] }, "preview-vibesdk"),
+    "destroy",
+  );
+  assert.equal(
+    commandForPullRequest(
+      {
+        action: "labeled",
+        label: "preview-vibesdk",
+        labels: ["preview-vibesdk"],
+        closed: true,
+      },
+      "preview-vibesdk",
+    ),
+    "skip",
+  );
+});
+
 test("the Neon parent must be an explicit sanitized branch", () => {
   assert.throws(() => resolveNeonParentBranchId({}), /sanitized Neon parent/);
   assert.throws(
@@ -484,4 +573,7 @@ test("the label workflow does not target production", () => {
   assert.equal(workflow.includes("13.251.216.187"), false);
   assert.equal(workflow.includes("EC2_SSH_KEY"), false);
   assert.equal(workflow.includes("gascity-rollout"), false);
+  assert.equal(workflow.includes("preview-vibesdk"), false);
+  assert.equal(workflow.includes("wrangler"), false);
+  assert.match(workflow, /pull-requests: read/);
 });

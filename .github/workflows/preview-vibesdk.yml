@@ -1,0 +1,215 @@
+# Create, update, or destroy one Vibe SDK preview from the preview-vibesdk label.
+# This workflow does not use the Dyad devbox, Neon, or preview.yml.
+# It does not deploy vibesdk-lab, vibesdk-production, or build.cloudflare.dev.
+
+name: Vibe SDK preview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed, labeled, unlabeled]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number whose preview should be deleted
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  identify:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      command: ${{ steps.decide.outputs.command }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.pull_request.head.sha }}
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Decide
+        id: decide
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR: ${{ github.event.inputs.pr }}
+          ACTION: ${{ github.event.action }}
+          LABEL: ${{ github.event.label.name }}
+          CLOSED: ${{ github.event.pull_request.state == 'closed' }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: node deploy/preview/vibesdk-preview.mjs decide
+
+  deploy:
+    needs: identify
+    if: needs.identify.outputs.command == 'update'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    concurrency:
+      group: vibesdk-preview-pr-${{ github.event.inputs.pr || github.event.pull_request.number }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Comment that the preview is provisioning
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: node deploy/preview/vibesdk-preview.mjs comment --pr "$PR" --kind provisioning
+
+      - name: Fetch dyad preview secrets
+        uses: dopplerhq/secrets-fetch-action@v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          doppler-project: dyad
+          doppler-config: preview
+          inject-env-vars: true
+
+      - name: Remember the preview account id
+        run: |
+          set -euo pipefail
+          id="${CLOUDFLARE_ACCOUNT_ID:-}"
+          if [[ ! "$id" =~ ^[0-9a-fA-F]{32}$ ]]; then
+            echo "preview_account_id=absent"
+            exit 1
+          fi
+          echo "::add-mask::$id"
+          {
+            echo "PREVIEW_CLOUDFLARE_ACCOUNT_ID<<EOF"
+            echo "$id"
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+          echo "preview_account_id=saved"
+
+      - name: Fetch vibesdk dev secrets
+        uses: dopplerhq/secrets-fetch-action@v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          doppler-project: vibesdk
+          doppler-config: dev
+          inject-env-vars: true
+
+      - name: Deploy the Vibe SDK preview
+        env:
+          PR: ${{ github.event.pull_request.number }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ env.PREVIEW_CLOUDFLARE_ACCOUNT_ID }}
+        run: node deploy/preview/vibesdk-preview.mjs up --pr "$PR"
+
+      - name: Comment the preview URL
+        if: success()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: node deploy/preview/vibesdk-preview.mjs comment --pr "$PR" --kind ready
+
+      - name: Comment that the preview was not updated
+        if: failure()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: node deploy/preview/vibesdk-preview.mjs comment --pr "$PR" --kind failed
+
+  destroy:
+    needs: identify
+    if: needs.identify.outputs.command == 'destroy'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: vibesdk-preview-pr-${{ github.event.inputs.pr || github.event.pull_request.number }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Fetch dyad preview secrets
+        uses: dopplerhq/secrets-fetch-action@v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          doppler-project: dyad
+          doppler-config: preview
+          inject-env-vars: true
+
+      - name: Remember the preview account id
+        run: |
+          set -euo pipefail
+          id="${CLOUDFLARE_ACCOUNT_ID:-}"
+          if [[ ! "$id" =~ ^[0-9a-fA-F]{32}$ ]]; then
+            echo "preview_account_id=absent"
+            exit 1
+          fi
+          echo "::add-mask::$id"
+          {
+            echo "PREVIEW_CLOUDFLARE_ACCOUNT_ID<<EOF"
+            echo "$id"
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+          echo "preview_account_id=saved"
+
+      - name: Fetch vibesdk dev secrets
+        uses: dopplerhq/secrets-fetch-action@v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          doppler-project: vibesdk
+          doppler-config: dev
+          inject-env-vars: true
+
+      - name: Delete the Vibe SDK preview
+        id: delete
+        env:
+          PR: ${{ github.event.inputs.pr || github.event.pull_request.number }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ env.PREVIEW_CLOUDFLARE_ACCOUNT_ID }}
+        run: node deploy/preview/vibesdk-preview.mjs down --pr "$PR"
+
+      - name: Comment that the preview was removed
+        if: success()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR: ${{ github.event.inputs.pr || github.event.pull_request.number }}
+          DELETED: ${{ steps.delete.outputs.deleted }}
+        run: node deploy/preview/vibesdk-preview.mjs comment --pr "$PR" --kind removed
+
+      - name: Comment that cleanup did not finish
+        if: failure()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR: ${{ github.event.inputs.pr || github.event.pull_request.number }}
+        run: node deploy/preview/vibesdk-preview.mjs comment --pr "$PR" --kind cleanup-failed

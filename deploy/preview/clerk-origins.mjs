@@ -3,9 +3,13 @@
 const PREVIEW_ORIGINS = [
   /^https:\/\/pr-[0-9]+\.anakwannaphaschaiyong\.com$/,
   /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/,
+  /^https:\/\/vibesdk-pr-[0-9]+\.karant-test-egress-canary\.workers\.dev$/,
 ];
 
 export function originsWith(existing, origin) {
+  if (String(origin).includes("vibesdk-lab")) {
+    throw new Error("refusing lab host");
+  }
   if (!PREVIEW_ORIGINS.some((pattern) => pattern.test(origin))) {
     throw new Error("Preview origin is not a pr-<number> hostname");
   }
@@ -58,6 +62,45 @@ export async function run() {
     console.error(`Clerk update failed: ${updated.status}`);
     process.exitCode = 1;
     return;
+  }
+  console.log(`Clerk allows ${origin} (${next.origins.length} origins)`);
+}
+
+export async function allowPreviewOrigin({
+  origin,
+  secret,
+  fetchImpl = fetch,
+}) {
+  const nextCheck = originsWith([], origin);
+  if (!nextCheck.added) {
+    throw new Error("Preview origin is not a pr-<number> hostname");
+  }
+  if (!String(secret ?? "").trim()) {
+    throw new Error("CLERK_SECRET_KEY is absent");
+  }
+  const headers = {
+    Authorization: `Bearer ${secret}`,
+    "Content-Type": "application/json",
+  };
+  const current = await fetchImpl("https://api.clerk.com/v1/instance", {
+    headers,
+  });
+  if (!current.ok) {
+    throw new Error(`Clerk read failed: ${current.status}`);
+  }
+  const body = await current.json();
+  const next = originsWith(body.allowed_origins, origin);
+  if (!next.added) {
+    console.log(`Clerk already allows ${origin}`);
+    return;
+  }
+  const updated = await fetchImpl("https://api.clerk.com/v1/instance", {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify({ allowed_origins: next.origins }),
+  });
+  if (updated.status !== 204) {
+    throw new Error(`Clerk update failed: ${updated.status}`);
   }
   console.log(`Clerk allows ${origin} (${next.origins.length} origins)`);
 }
