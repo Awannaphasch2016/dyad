@@ -194,8 +194,9 @@ export function latestAssistant(
   return null;
 }
 
-// Send the fixed answers while Discovery's latest reply asks a question and
-// the transition is still closed. Stop when the server opens the transition.
+// The move control is available to the Project Manager for the whole of
+// Discovery. Wait until a prompt is stored and the latest reply is not still
+// asking a question, and send the fixed answers while it is.
 export async function finishDiscovery(page: Page) {
   let followUps = 0;
   const deadline = Date.now() + 12 * 60 * 1000;
@@ -206,10 +207,20 @@ export async function finishDiscovery(page: Page) {
       canTransition?: boolean;
       messages?: { id: string; role: string; content: string }[];
     };
-    if (probe.status === 200 && body.canTransition === true) {
-      return { messages: body.messages ?? [], followUps };
+    const messages = body.messages ?? [];
+    const hasUser = messages.some(
+      (message) => message.role === "user" && message.content.trim(),
+    );
+    const latest = latestAssistant(messages);
+    if (
+      probe.status === 200 &&
+      body.canTransition === true &&
+      hasUser &&
+      latest &&
+      !assistantAsksQuestion(latest.content)
+    ) {
+      return { messages, followUps };
     }
-    const latest = latestAssistant(body.messages);
     if (
       probe.status === 200 &&
       latest &&
