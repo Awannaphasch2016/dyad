@@ -2,7 +2,14 @@
 
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -354,7 +361,10 @@ export async function provisionPreview(options) {
       join(checkout, "worker/api/controllers/auth/sharedSignIn.ts"),
       sharedSignInSource(),
     );
-    const loginModalPath = join(checkout, "src/components/auth/login-modal.tsx");
+    const loginModalPath = join(
+      checkout,
+      "src/components/auth/login-modal.tsx",
+    );
     await writeFile(
       loginModalPath,
       patchLoginModal(await readFile(loginModalPath, "utf8")),
@@ -364,12 +374,18 @@ export async function provisionPreview(options) {
       authContextPath,
       patchAuthContext(await readFile(authContextPath, "utf8")),
     );
-    const authButtonPath = join(checkout, "src/components/auth/auth-button.tsx");
+    const authButtonPath = join(
+      checkout,
+      "src/components/auth/auth-button.tsx",
+    );
     await writeFile(
       authButtonPath,
       patchAuthButton(await readFile(authButtonPath, "utf8")),
     );
-    const headerPath = join(checkout, "src/components/layout/global-header.tsx");
+    const headerPath = join(
+      checkout,
+      "src/components/layout/global-header.tsx",
+    );
     await writeFile(
       headerPath,
       patchGlobalHeader(await readFile(headerPath, "utf8")),

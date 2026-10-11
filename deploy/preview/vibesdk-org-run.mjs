@@ -84,7 +84,9 @@ export function redactQuestionText(value, role, questions) {
       let next = current;
       for (const question of hidden) {
         if (next.includes(question.body)) {
-          next = next.split(question.body).join(waitingLine(question.targetRole));
+          next = next
+            .split(question.body)
+            .join(waitingLine(question.targetRole));
         }
       }
       return next;
@@ -95,7 +97,11 @@ export function redactQuestionText(value, role, questions) {
     for (const [key, child] of Object.entries(current)) {
       record[key] = walk(child);
     }
-    if (record.name === "ask_questions" && record.args && typeof record.args === "object") {
+    if (
+      record.name === "ask_questions" &&
+      record.args &&
+      typeof record.args === "object"
+    ) {
       const question = firstQuestion(record.args);
       if (question && question.targetRole !== role) {
         record.args = { questions: [] };
@@ -108,7 +114,8 @@ export function redactQuestionText(value, role, questions) {
 }
 
 function requireAnchor(source, anchor, label) {
-  if (!source.includes(anchor)) throw new Error(`organization patch missed ${label}`);
+  if (!source.includes(anchor))
+    throw new Error(`organization patch missed ${label}`);
 }
 
 export function patchRouteIndex(source) {
@@ -149,7 +156,8 @@ export function patchThink(source) {
     "'2. Call the `ask_questions` tool with all the concise, targeted clarifying questions you need answered. Each question can include predefined options and can allow multiple selections and/or a custom free-text answer.',";
   const importAnchor =
     "import { WebSocketMessageResponses } from '../../constants';";
-  const holdReset = "\t\tconst conversationId = IdGenerator.generateConversationId();\n";
+  const holdReset =
+    "\t\tconst conversationId = IdGenerator.generateConversationId();\n";
   const textDelta = `					accumulated.text += delta;
 					this.broadcast(WebSocketMessageResponses.CONVERSATION_RESPONSE, {
 						message: delta,
@@ -197,10 +205,7 @@ export function patchThink(source) {
       prompt,
       "'2. Call the `ask_questions` tool with exactly one question. Set targetRole to project-manager for requirements, product, naming, and UX. Set targetRole to developer for files, code, and technical choices. Do not write the question text in your message.',",
     )
-    .replace(
-      holdReset,
-      `\t\tthis.organizationHold = false;\n${holdReset}`,
-    )
+    .replace(holdReset, `\t\tthis.organizationHold = false;\n${holdReset}`)
     .replace(textDelta, "\t\t\t\t\taccumulated.text += delta;")
     .replace(reasoning, "\t\t\tcase 'reasoning-delta':\n\t\t\t\treturn;")
     .replace(
@@ -276,7 +281,8 @@ import { assertProjectManager, authorizeOrganizationSocket, memberCanAccessApp }
 }
 
 export function patchCodingAgent(source) {
-  const importAnchor = 'import { AppService, ModelConfigService } from "worker/database";';
+  const importAnchor =
+    'import { AppService, ModelConfigService } from "worker/database";';
   const connectAnchor =
     "        this.logger().info(`Agent connected for agent ${this.getAgentId()}`, { connection, ctx });";
   const saveAnchor = `            updatedAt: new Date()
@@ -367,11 +373,13 @@ export function patchHome(source) {
   const queryAnchor = "\tconst { user } = useAuth();\n";
   const createAnchor =
     "\tconst handleCreateApp = (query: string, mode: ProjectType) => {\n";
-  const mountAnchor = "\t\t\t\t\t\t/>\n\t\t\t\t\t</motion.div>\n\t\t\t\t</div>\n\n\t\t\t\t<AnimatePresence mode=\"popLayout\">";
+  const mountAnchor =
+    '\t\t\t\t\t\t/>\n\t\t\t\t\t</motion.div>\n\t\t\t\t</div>\n\n\t\t\t\t<AnimatePresence mode="popLayout">';
   requireAnchor(source, queryAnchor, "home query");
   requireAnchor(source, createAnchor, "home create");
   requireAnchor(source, mountAnchor, "home mount");
-  if (source.includes("HitlRun")) throw new Error("home still mounts the extra card");
+  if (source.includes("HitlRun"))
+    throw new Error("home still mounts the extra card");
   return source
     .replace(
       queryAnchor,
@@ -879,10 +887,18 @@ export function ClarifyingQuestionsPopup({ questions, open }: ClarifyingQuestion
 
 export async function applyOrganizationRun(checkout) {
   await mkdir(join(checkout, "worker/services/org"), { recursive: true });
-  await mkdir(join(checkout, "worker/api/controllers/org"), { recursive: true });
+  await mkdir(join(checkout, "worker/api/controllers/org"), {
+    recursive: true,
+  });
   await writeFile(join(checkout, "worker/services/org/run.ts"), orgRunSource());
-  await writeFile(join(checkout, "worker/api/controllers/org/controller.ts"), orgControllerSource());
-  await writeFile(join(checkout, "worker/api/routes/orgRoutes.ts"), orgRoutesSource());
+  await writeFile(
+    join(checkout, "worker/api/controllers/org/controller.ts"),
+    orgControllerSource(),
+  );
+  await writeFile(
+    join(checkout, "worker/api/routes/orgRoutes.ts"),
+    orgRoutesSource(),
+  );
   await writeFile(
     join(checkout, "src/routes/chat/components/clarifying-questions-popup.tsx"),
     orgPopupSource(),

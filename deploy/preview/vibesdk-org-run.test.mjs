@@ -49,18 +49,31 @@ test("the other role sees a waiting line and not the question", () => {
 
 test("only the named role's first reply is accepted", () => {
   const open = { status: "open", targetRole: DEV_ROLE, body: "Which page?" };
-  assert.equal(acceptTurn({ open, role: PM_ROLE, answer: "home" }).allow, false);
+  assert.equal(
+    acceptTurn({ open, role: PM_ROLE, answer: "home" }).allow,
+    false,
+  );
   assert.equal(
     acceptTurn({ open, role: PM_ROLE, answer: "home" }).message,
     WAITING_DEV,
   );
-  assert.equal(acceptTurn({ open, role: DEV_ROLE, answer: "  " }).message, ENTER_REFUSAL);
-  assert.equal(acceptTurn({ open, role: DEV_ROLE, answer: "The menu page" }).allow, true);
   assert.equal(
-    acceptTurn({ open, role: DEV_ROLE, answer: "again", alreadyAnswered: true }).message,
+    acceptTurn({ open, role: DEV_ROLE, answer: "  " }).message,
+    ENTER_REFUSAL,
+  );
+  assert.equal(
+    acceptTurn({ open, role: DEV_ROLE, answer: "The menu page" }).allow,
+    true,
+  );
+  assert.equal(
+    acceptTurn({ open, role: DEV_ROLE, answer: "again", alreadyAnswered: true })
+      .message,
     SECOND_ANSWER,
   );
-  assert.equal(acceptTurn({ open: null, role: PM_ROLE, answer: "later" }).message, ENTER_REFUSAL);
+  assert.equal(
+    acceptTurn({ open: null, role: PM_ROLE, answer: "later" }).message,
+    ENTER_REFUSAL,
+  );
 });
 
 test("only the project manager can create an organization app", () => {
@@ -86,12 +99,21 @@ test("one question is stored and an unknown role falls back", () => {
 test("the other role's transcript loses the question body", () => {
   const body = "What should the shop sell?";
   const hidden = redactQuestionText(
-    { message: body, tool: { name: "ask_questions", args: { questions: [{ question: body }] } } },
+    {
+      message: body,
+      tool: {
+        name: "ask_questions",
+        args: { questions: [{ question: body }] },
+      },
+    },
     DEV_ROLE,
     [{ body, targetRole: PM_ROLE }],
   );
   assert.equal(JSON.stringify(hidden).includes(body), false);
-  assert.match(JSON.stringify(hidden), new RegExp(WAITING_PM.replace(".", "\\.")));
+  assert.match(
+    JSON.stringify(hidden),
+    new RegExp(WAITING_PM.replace(".", "\\.")),
+  );
 });
 
 test("the generated run does not keep the extra card or a phase", () => {

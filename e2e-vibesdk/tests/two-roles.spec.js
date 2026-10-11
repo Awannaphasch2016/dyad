@@ -8,7 +8,9 @@ const PROMPT = "Build a website for a neighborhood shop.";
 async function loadClerk(page) {
   await page.goto("/");
   await page.evaluate(async () => {
-    const keyResponse = await fetch("/api/auth/clerk", { credentials: "include" });
+    const keyResponse = await fetch("/api/auth/clerk", {
+      credentials: "include",
+    });
     if (!keyResponse.ok) throw new Error("clerk key missing");
     const key = (await keyResponse.json()).data.publishableKey;
     const frontendApi = atob(key.slice("pk_test_".length)).replace(/\$$/, "");
@@ -32,7 +34,9 @@ async function loadClerk(page) {
 async function signIn(page, userId) {
   await setupClerkTestingToken({ context: page.context() });
   await loadClerk(page);
-  const client = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY ?? "" });
+  const client = createClerkClient({
+    secretKey: process.env.CLERK_SECRET_KEY ?? "",
+  });
   const token = await client.signInTokens.createSignInToken({
     userId,
     expiresInSeconds: 300,
@@ -47,30 +51,37 @@ async function signIn(page, userId) {
 
 async function answerQuestion(question) {
   const key = process.env.OPENROUTER_API_KEY ?? "";
-  if (!key) throw new Error("OPENROUTER_API_KEY is required to answer the live question");
-  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
+  if (!key)
+    throw new Error(
+      "OPENROUTER_API_KEY is required to answer the live question",
+    );
+  const response = await fetch(
+    "https://openrouter.ai/api/v1/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "anthropic/claude-sonnet-4.5",
+        max_tokens: 120,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are answering one question from a web builder. Reply with one short sentence the builder can use. No preamble.",
+          },
+          { role: "user", content: question },
+        ],
+      }),
     },
-    body: JSON.stringify({
-      model: "anthropic/claude-sonnet-4.5",
-      max_tokens: 120,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are answering one question from a web builder. Reply with one short sentence the builder can use. No preamble.",
-        },
-        { role: "user", content: question },
-      ],
-    }),
-  });
+  );
   if (!response.ok) throw new Error(`answer model status ${response.status}`);
   const payload = await response.json();
   const text = payload?.choices?.[0]?.message?.content;
-  if (typeof text !== "string" || !text.trim()) throw new Error("answer model returned nothing");
+  if (typeof text !== "string" || !text.trim())
+    throw new Error("answer model returned nothing");
   return text.trim().slice(0, 400);
 }
 
@@ -85,15 +96,23 @@ async function shot(page, name) {
   await page.screenshot({ path: `artifacts/${name}.png` });
 }
 
-test("the project manager starts the organization app and each role answers the live question", async ({ browser }) => {
+test("the project manager starts the organization app and each role answers the live question", async ({
+  browser,
+}) => {
   test.skip(!process.env.VIBESDK_URL, "VIBESDK_URL is required");
   test.setTimeout(1_200_000);
   mkdirSync("artifacts", { recursive: true });
   const pmContext = await browser.newContext({
-    recordVideo: { dir: "videos/project-manager", size: { width: 1280, height: 720 } },
+    recordVideo: {
+      dir: "videos/project-manager",
+      size: { width: 1280, height: 720 },
+    },
   });
   const devContext = await browser.newContext({
-    recordVideo: { dir: "videos/developer", size: { width: 1280, height: 720 } },
+    recordVideo: {
+      dir: "videos/developer",
+      size: { width: 1280, height: 720 },
+    },
   });
   const pm = await pmContext.newPage();
   const dev = await devContext.newPage();
@@ -119,9 +138,13 @@ test("the project manager starts the organization app and each role answers the 
     const appUrl = new URL(pm.url());
     await shot(pm, "project-manager-started");
 
-    await expect(dev.getByTestId("org-app-link")).toBeVisible({ timeout: 60_000 });
+    await expect(dev.getByTestId("org-app-link")).toBeVisible({
+      timeout: 60_000,
+    });
     await dev.getByTestId("org-app-link").click();
-    await dev.waitForURL(new RegExp(appUrl.pathname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    await dev.waitForURL(
+      new RegExp(appUrl.pathname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    );
     await shot(dev, "developer-opened-app");
 
     const deadline = Date.now() + 10 * 60 * 1000;

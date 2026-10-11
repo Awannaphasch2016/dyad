@@ -64,7 +64,8 @@ const pmUserId = await clerkUserId(secret, PM_EMAIL);
 const devUserId = await clerkUserId(secret, DEV_EMAIL);
 const pm = await membership(databaseUrl, pmUserId);
 const dev = await membership(databaseUrl, devUserId);
-if (pm.orgId !== dev.orgId) throw new Error("the two accounts are in different organizations");
+if (pm.orgId !== dev.orgId)
+  throw new Error("the two accounts are in different organizations");
 if (pm.role !== "project-manager" || dev.role !== "developer") {
   throw new Error("the two accounts do not have the two roles");
 }

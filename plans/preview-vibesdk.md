@@ -156,13 +156,13 @@ None.
 
 ## Risks & Mitigations
 
-| Risk | Likelihood | Impact | Mitigation |
-| --- | --- | --- | --- |
-| The `preview` label is added instead of `preview-vibesdk` | Medium | High | Add the full label. Success is the Vibe SDK provisioning comment, not a Dyad URL. |
-| The label is removed while deploy is still running | Medium | Medium | Unlabel only after the deploy job is green and the health GET returned 200. |
-| Doppler `dyad/preview` is missing a Cloudflare or OpenRouter secret | Medium | High | Stop. Do not substitute an admin token. The comment should say the preview was not updated. |
-| Dispatch is started from `main` | Medium | Low | Use branch `cursor/preview-backend-plan-fd29`. |
-| The lab is deleted along with the preview | Low | High | Names are `vibesdk-pr-68` only. Lab and production ids are refused before delete. Confirm lab health after. |
+| Risk                                                                | Likelihood | Impact | Mitigation                                                                                                  |
+| ------------------------------------------------------------------- | ---------- | ------ | ----------------------------------------------------------------------------------------------------------- |
+| The `preview` label is added instead of `preview-vibesdk`           | Medium     | High   | Add the full label. Success is the Vibe SDK provisioning comment, not a Dyad URL.                           |
+| The label is removed while deploy is still running                  | Medium     | Medium | Unlabel only after the deploy job is green and the health GET returned 200.                                 |
+| Doppler `dyad/preview` is missing a Cloudflare or OpenRouter secret | Medium     | High   | Stop. Do not substitute an admin token. The comment should say the preview was not updated.                 |
+| Dispatch is started from `main`                                     | Medium     | Low    | Use branch `cursor/preview-backend-plan-fd29`.                                                              |
+| The lab is deleted along with the preview                           | Low        | High   | Names are `vibesdk-pr-68` only. Lab and production ids are refused before delete. Confirm lab health after. |
 
 ## Open Questions
 
