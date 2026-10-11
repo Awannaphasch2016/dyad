@@ -192,6 +192,7 @@ jobs:
           path: |
             e2e-vibesdk/test-results
             e2e-vibesdk/videos
+            e2e-vibesdk/artifacts
           if-no-files-found: ignore
 
   destroy:
