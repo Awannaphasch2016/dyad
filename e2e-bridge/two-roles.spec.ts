@@ -121,7 +121,11 @@ async function signedInPage(
   };
 }
 
-async function openFactoryApp(page: Page, appName: string): Promise<void> {
+async function openFactoryApp(
+  page: Page,
+  appName: string,
+  chatId: number,
+): Promise<void> {
   await page.goto(BRIDGE_URL);
   await expect(page.getByTestId("title-bar-user-button")).toBeVisible({
     timeout: 60_000,
@@ -136,7 +140,18 @@ async function openFactoryApp(page: Page, appName: string): Promise<void> {
   await expect(item).toBeVisible({ timeout: 30_000 });
   await item.click();
   await expect(page.getByTestId("app-details-page")).toBeVisible();
-  await page.getByTestId("app-details-screenshot-open-in-chat").first().click();
+  // A factory app has no screenshot, and app details hides Open in Chat
+  // once the three phase chats exist. The sidebar lists those chats.
+  const discovery = page.getByTestId(`chat-list-item-${chatId}`);
+  const listed = await discovery
+    .waitFor({ state: "visible", timeout: 15_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!listed) {
+    await page.getByRole("button", { name: "Toggle Menu" }).click();
+  }
+  await expect(discovery).toBeVisible({ timeout: 30_000 });
+  await discovery.click();
   await expect(page.getByTestId("factory-phase-bar")).toBeVisible({
     timeout: 60_000,
   });
@@ -330,8 +345,8 @@ test("two signed-in browsers walk Discovery, Implementation, and Delivery", asyn
     }, appName);
     evidence.appId = created.app.id;
 
-    await openFactoryApp(pm, appName);
-    await openFactoryApp(dev, appName);
+    await openFactoryApp(pm, appName, created.chatId);
+    await openFactoryApp(dev, appName, created.chatId);
     for (const page of [pm, dev]) {
       await assertFactoryChrome(page);
       await expect(page.getByTestId("factory-phase-discovery")).toBeEnabled();

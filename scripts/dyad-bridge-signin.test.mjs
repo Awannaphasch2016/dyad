@@ -45,6 +45,8 @@ test("the bridge sign-in uses the Wewebplus user ids", () => {
 test("opening the shared app uses the Apps link and cannot wait forever", () => {
   assert.match(spec, /getByRole\("link", \{ name: "Apps" \}\)/);
   assert.doesNotMatch(spec, /getByRole\("button", \{ name: "Apps" \}\)/);
+  assert.match(spec, /chat-list-item-/);
+  assert.doesNotMatch(spec, /app-details-screenshot-open-in-chat/);
   assert.match(config, /actionTimeout:\s*30_000/);
   assert.match(signIn, /timeout:\s*60_000/);
 });
