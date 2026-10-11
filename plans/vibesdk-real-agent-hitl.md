@@ -8,7 +8,7 @@
 - The real builder agent asks. The question popup Vibe SDK already has shows that question to the named role.
 - The other role sees a waiting line and does not see the question.
 - The named role types the reply in the prompt box. During the check, an agent reads the question and types that reply, because the question is not known ahead of time.
-- A question stores a role and a body. It has no phase and none of `plan-approve`, `review-approve-dev`, or `review-approve-pm`.
+- Rework the organization schema. An app is owned by `org_id` only. A question stores a role and a body. Drop `owner_type`, `phase`, and the gate step names from the tables this run uses.
 - Leave the three stages, the phase permissions, Gas City, Electron, `hitl-web`, and the Bolt walkthrough as they are. Do not copy them into this run.
 
 ## The run
@@ -32,9 +32,20 @@ Enter is the send button on the existing prompt box.
 - While a question is open, only the named role’s Enter sends the reply.
 - The other person’s Enter does not send.
 
-## Database
+## Schema rework
 
-Four tables. The builder’s files and chat stay in Vibe SDK. These tables are who owns the app, who may press Enter, and which role a question is for.
+The organization store already has `memberships`, `apps`, `questions`, and `answers`. This run changes those tables. It does not add a second set beside them.
+
+- `apps` loses `owner_type`. A private `user` owner is gone. `org_id` is the only owner. `created_by` is the Project Manager who pressed Enter. A Developer insert is refused.
+- `questions` loses `phase`. It also loses the step names `plan-approve`, `review-approve-dev`, and `review-approve-pm`. What remains is `target_role_id`, `body`, `status` (`open` or `answered`), and `assignment` (`declared` or `fallback`).
+- `answers` stays one row per question. `question_id` is unique.
+- `memberships` stays. `role_id` is `project-manager` or `developer`.
+- `phase_approvals` and `phase_comments` are not used.
+- Vibe SDK’s app row stops using one `userId` as the owner. It points at this organization app. The `hitl_*` tables added for the extra card are removed.
+
+The builder’s files and chat stay in Vibe SDK. These four tables are who owns the app, who may press Enter, and which role a question is for.
+
+## Database
 
 ```mermaid
 erDiagram
@@ -70,11 +81,6 @@ erDiagram
   APPS ||--o{ QUESTIONS : "app_id"
   QUESTIONS ||--o| ANSWERS : "one answer"
 ```
-
-- `memberships` already exists. `role_id` is `project-manager` or `developer`.
-- `apps.org_id` is the only owner. `created_by` is the Project Manager who pressed Enter. A Developer insert is refused.
-- `questions` has no `phase` and no step name. `status` is `open` or `answered`. `assignment` is `declared` or `fallback`.
-- `answers.question_id` is unique.
 
 ## Do not copy
 
