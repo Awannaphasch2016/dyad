@@ -1,6 +1,7 @@
 // Compare Cloudflare credential names across Doppler configs.
 // Prints lengths, short hashes, and API results. Never prints secret values.
 // A push of this file rechecks dyad/preview after the token is replaced.
+// Recheck once the replacement has been saved.
 
 import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
