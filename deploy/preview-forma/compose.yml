@@ -1,0 +1,5 @@
+# Pins for a preview in this repository. Add another service to run a second
+# published image. Tags are full commit SHAs. This file is not built here.
+services:
+  forma:
+    image: ghcr.io/awannaphasch2016/forma:sha-80a8e419f6285378b4dfada336ea8213f3089bab

@@ -1,0 +1,18 @@
+{
+  "region": "ap-southeast-1",
+  "accountId": "755283537543",
+  "cluster": "preview-forma",
+  "image": "ghcr.io/awannaphasch2016/forma:sha-80a8e419f6285378b4dfada336ea8213f3089bab",
+  "vpcId": "vpc-0fb04b10ef8c3d18b",
+  "subnetIds": ["subnet-030760a3f13e4eacc", "subnet-0da9ef11b7da7ce3a"],
+  "albSecurityGroupId": "sg-0edd9a24cbd9da2bc",
+  "taskSecurityGroupId": "sg-0eeb87b62ceb7f112",
+  "albArn": "arn:aws:elasticloadbalancing:ap-southeast-1:755283537543:loadbalancer/app/preview-forma/2fcbfcf8514faf6d",
+  "albDns": "preview-forma-2018533952.ap-southeast-1.elb.amazonaws.com",
+  "targetGroupArn": "arn:aws:elasticloadbalancing:ap-southeast-1:755283537543:targetgroup/preview-forma-http/cefa47a61efcf262",
+  "executionRoleArn": "arn:aws:iam::755283537543:role/preview-forma-execution",
+  "taskDefinitionArn": "arn:aws:ecs:ap-southeast-1:755283537543:task-definition/preview-forma:1",
+  "logGroup": "/ecs/preview-forma",
+  "containerPort": 3000,
+  "started": false
+}
