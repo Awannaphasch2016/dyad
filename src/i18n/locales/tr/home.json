@@ -259,6 +259,7 @@
   },
   "preview": {
     "title": "Önizleme",
+    "projectNotReady": "Bu proje önizleme için hazır değil.",
     "problems": "Sorunlar",
     "code": "Kod",
     "diff": "Fark",

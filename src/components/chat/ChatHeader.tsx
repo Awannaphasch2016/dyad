@@ -29,6 +29,7 @@ import { useRenameBranch } from "@/hooks/useRenameBranch";
 import { LoadingBar } from "../ui/LoadingBar";
 import { UncommittedFilesBanner } from "./UncommittedFilesBanner";
 import { terminalOpenByChatIdAtom } from "@/atoms/terminalAtoms";
+import { versionCountVisible } from "@/lib/factoryPhase";
 import { cn } from "@/lib/utils";
 
 interface ChatHeaderProps {
@@ -89,7 +90,8 @@ export function ChatHeader({
   // REMINDER: KEEP UP TO DATE WITH app_handlers.ts
   const versionPostfix = versions.length === 100_000 ? `+` : "";
 
-  const isNotMainBranch = branchInfo && branchInfo.branch !== "main";
+  const isNotMainBranch =
+    branchInfo?.projectReady === true && branchInfo.branch !== "main";
 
   const currentBranchName = branchInfo?.branch;
   const isTerminalOpen = selectedChatId
@@ -206,16 +208,18 @@ export function ChatHeader({
           >
             Workflow
           </Button>
-          <Button
-            onClick={onVersionClick}
-            variant="ghost"
-            className="hidden @6xs:flex cursor-pointer items-center gap-1 text-sm px-2 py-1 rounded-md"
-          >
-            <History size={16} />
-            {versionsLoading
-              ? "..."
-              : `${t("header.versionCount", { count: versions.length })}${versionPostfix}`}
-          </Button>
+          {versionCountVisible(branchInfo?.projectReady) && (
+            <Button
+              onClick={onVersionClick}
+              variant="ghost"
+              className="hidden @6xs:flex cursor-pointer items-center gap-1 text-sm px-2 py-1 rounded-md"
+            >
+              <History size={16} />
+              {versionsLoading
+                ? "..."
+                : `${t("header.versionCount", { count: versions.length })}${versionPostfix}`}
+            </Button>
+          )}
         </div>
 
         <div className="flex items-center gap-1">

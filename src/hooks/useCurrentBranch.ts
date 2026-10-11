@@ -22,6 +22,8 @@ export function useCurrentBranch(appId: number | null) {
       return ipc.version.getCurrentBranch({ appId });
     },
     enabled: appId !== null,
+    // `projectReady: false` is a result, so it does not toast. A thrown error
+    // (the app row is gone) still does.
     meta: { showErrorToast: true },
   });
 

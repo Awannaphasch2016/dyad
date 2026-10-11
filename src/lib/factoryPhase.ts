@@ -39,6 +39,97 @@ export function previewOpenForPhase(phase: FactoryPhase): boolean {
   return phase === "implementation";
 }
 
+export type PreviewVisibility = "unresolved" | "open" | "closed";
+
+/**
+ * The preview cannot be decided until the open chat's title has loaded.
+ * A factory phase follows `previewOpenForPhase`. Any other loaded chat keeps
+ * the ordinary preview.
+ */
+export function previewVisibility(input: {
+  chatTitleKnown: boolean;
+  phase: FactoryPhase | null;
+}): PreviewVisibility {
+  if (!input.chatTitleKnown) return "unresolved";
+  if (!input.phase) return "open";
+  return previewOpenForPhase(input.phase) ? "open" : "closed";
+}
+
+export type PreviewOpenMemory = {
+  /** Implementation chat whose preview was already opened for this visit. */
+  implementationChatId: number | null;
+  /** The unresolved wait closed the panel, so the next ordinary chat opens it. */
+  restoreOrdinaryPreview: boolean;
+};
+
+/**
+ * Applies preview visibility without reopening a preview the person closed
+ * while staying on Implementation.
+ */
+export function applyPreviewVisibility(input: {
+  visibility: PreviewVisibility;
+  phase: FactoryPhase | null;
+  chatId: number | null;
+  isPreviewOpen: boolean;
+  memory: PreviewOpenMemory;
+}): { isPreviewOpen: boolean; memory: PreviewOpenMemory } {
+  if (input.visibility === "unresolved") {
+    return {
+      isPreviewOpen: false,
+      memory: { implementationChatId: null, restoreOrdinaryPreview: true },
+    };
+  }
+  if (input.visibility === "closed") {
+    return {
+      isPreviewOpen: false,
+      memory: { implementationChatId: null, restoreOrdinaryPreview: false },
+    };
+  }
+  if (input.phase === "implementation") {
+    if (input.memory.implementationChatId !== input.chatId) {
+      return {
+        isPreviewOpen: true,
+        memory: {
+          implementationChatId: input.chatId,
+          restoreOrdinaryPreview: false,
+        },
+      };
+    }
+    return {
+      isPreviewOpen: input.isPreviewOpen,
+      memory: {
+        implementationChatId: input.chatId,
+        restoreOrdinaryPreview: false,
+      },
+    };
+  }
+  if (input.memory.restoreOrdinaryPreview) {
+    return {
+      isPreviewOpen: true,
+      memory: { implementationChatId: null, restoreOrdinaryPreview: false },
+    };
+  }
+  return {
+    isPreviewOpen: input.isPreviewOpen,
+    memory: { implementationChatId: null, restoreOrdinaryPreview: false },
+  };
+}
+
+/** The dev server starts only after the preview is open and the project is ready. */
+export function shouldStartAppPreview(input: {
+  visibility: PreviewVisibility;
+  projectReady: boolean;
+}): boolean {
+  return input.visibility === "open" && input.projectReady;
+}
+
+/** "Version 0" is a commit count. Hide it until the project is a Git repo. */
+export function versionCountVisible(
+  projectReady: boolean | undefined,
+): boolean {
+  return projectReady === true;
+}
+
 /**
  * Implementation is the only factory phase that writes a blueprint.
  * Its approved Discovery summary stands in for planning_questionnaire.

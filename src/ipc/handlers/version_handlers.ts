@@ -962,15 +962,20 @@ export function registerVersionHandlers() {
 
     const appPath = getDyadAppPath(app.path);
 
-    // Return appropriate result if the app is not a git repo
-    if (!fs.existsSync(path.join(appPath, ".git"))) {
-      throw new DyadError("Not a git repository", DyadErrorKind.External);
+    // A missing repo is "not ready", not a failed branch lookup. The header
+    // and the preview wait on this instead of toasting.
+    if (
+      !fs.existsSync(path.join(appPath, ".git")) ||
+      !fs.existsSync(path.join(appPath, "package.json"))
+    ) {
+      return { projectReady: false, branch: null };
     }
 
     try {
       const currentBranch = await gitCurrentBranch({ path: appPath });
 
       return {
+        projectReady: true,
         branch: currentBranch || "<no-branch>",
       };
     } catch (error: any) {

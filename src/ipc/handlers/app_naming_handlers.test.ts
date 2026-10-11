@@ -32,6 +32,7 @@ const createFromTemplateMock = vi.hoisted(() =>
     await fs.promises.writeFile(path.join(fullAppPath, "index.ts"), "// app");
   }),
 );
+const gitInitMock = vi.hoisted(() => vi.fn(async () => "fake-commit-hash"));
 const deletionOrder = vi.hoisted(() => [] as string[]);
 const settleChatActorsForDeletionMock = vi.hoisted(() => vi.fn());
 const restoreAppFromTestBranchMock = vi.hoisted(() => vi.fn());
@@ -68,7 +69,7 @@ vi.mock("@/paths/paths", async (importOriginal) => {
 vi.mock("@/ipc/services/git_service", () => {
   class GitService {}
   const fake = {
-    initRepoWithInitialCommit: vi.fn(async () => "fake-commit-hash"),
+    initRepoWithInitialCommit: gitInitMock,
     stageAllAndCommit: vi.fn(async () => "fake-commit-hash"),
     stageAllAndCommitIfChanged: vi.fn(async () => "fake-commit-hash"),
     commitFile: vi.fn(async () => "fake-commit-hash"),
@@ -182,6 +183,8 @@ describe("app naming handlers", () => {
     deletionOrder.length = 0;
     settleChatActorsForDeletionMock.mockClear();
     createFromTemplateMock.mockClear();
+    gitInitMock.mockReset();
+    gitInitMock.mockResolvedValue("fake-commit-hash");
     restoreAppFromTestBranchMock.mockReset();
     restoreAppFromTestBranchMock.mockResolvedValue(true);
     registerAppHandlers();
@@ -281,6 +284,54 @@ describe("app naming handlers", () => {
       }>("create-app", { name: "My App" });
 
       expect(result.app.path).toBe("my-app-2");
+    });
+
+    it("deletes the app when git init fails", async () => {
+      gitInitMock.mockRejectedValueOnce(new Error("git init failed"));
+
+      await expect(
+        harness.invokeHandler("create-app", { name: "Unready App" }),
+      ).rejects.toThrow("git init failed");
+
+      expect(
+        harness.db
+          .select()
+          .from(apps)
+          .where(eq(apps.name, "Unready App"))
+          .get(),
+      ).toBeUndefined();
+      expect(
+        harness.db
+          .select()
+          .from(chats)
+          .all()
+          .some((chat) => chat.title === "Discovery"),
+      ).toBe(false);
+      expect(fs.existsSync(path.join(TEMP_BASE, "unready-app"))).toBe(false);
+    });
+
+    it("keeps the app when git init returns a commit", async () => {
+      const result = await harness.invokeHandler<{ app: { id: number } }>(
+        "create-app",
+        { name: "Ready App" },
+      );
+
+      const row = harness.db
+        .select()
+        .from(apps)
+        .where(eq(apps.id, result.app.id))
+        .get();
+      expect(row?.name).toBe("Ready App");
+      const phaseChats = harness.db
+        .select()
+        .from(chats)
+        .where(eq(chats.appId, result.app.id))
+        .all();
+      expect(
+        phaseChats.every(
+          (chat) => chat.initialCommitHash === "fake-commit-hash",
+        ),
+      ).toBe(true);
     });
 
     it("cleans up a cancelled first-prompt creation when setup fails", async () => {

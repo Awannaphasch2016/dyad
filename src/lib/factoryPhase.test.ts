@@ -23,6 +23,10 @@ import {
   phaseFromTitle,
   factoryChatIdsToDrop,
   previewOpenForPhase,
+  previewVisibility,
+  applyPreviewVisibility,
+  shouldStartAppPreview,
+  versionCountVisible,
   factoryPhaseSkipsBlueprintQuestionnaire,
   userMessageHasApprovedDiscoverySummary,
   shouldSkipFactoryBlueprintQuestionnaire,
@@ -47,6 +51,122 @@ describe("factoryPhase", () => {
     expect(previewOpenForPhase("discovery")).toBe(false);
     expect(previewOpenForPhase("implementation")).toBe(true);
     expect(previewOpenForPhase("delivery")).toBe(false);
+  });
+
+  it("keeps the preview unresolved until the chat title is loaded", () => {
+    expect(previewVisibility({ chatTitleKnown: false, phase: null })).toBe(
+      "unresolved",
+    );
+    expect(
+      previewVisibility({ chatTitleKnown: true, phase: "discovery" }),
+    ).toBe("closed");
+    expect(
+      previewVisibility({ chatTitleKnown: true, phase: "implementation" }),
+    ).toBe("open");
+    expect(previewVisibility({ chatTitleKnown: true, phase: "delivery" })).toBe(
+      "closed",
+    );
+    expect(previewVisibility({ chatTitleKnown: true, phase: null })).toBe(
+      "open",
+    );
+  });
+
+  it("opens Implementation once and leaves a manual close in place", () => {
+    const closed = {
+      implementationChatId: null,
+      restoreOrdinaryPreview: false,
+    };
+    const entered = applyPreviewVisibility({
+      visibility: "open",
+      phase: "implementation",
+      chatId: 4,
+      isPreviewOpen: false,
+      memory: closed,
+    });
+    expect(entered.isPreviewOpen).toBe(true);
+
+    const stayedClosed = applyPreviewVisibility({
+      visibility: "open",
+      phase: "implementation",
+      chatId: 4,
+      isPreviewOpen: false,
+      memory: entered.memory,
+    });
+    expect(stayedClosed.isPreviewOpen).toBe(false);
+
+    const cameBack = applyPreviewVisibility({
+      visibility: "open",
+      phase: "implementation",
+      chatId: 4,
+      isPreviewOpen: false,
+      memory: applyPreviewVisibility({
+        visibility: "closed",
+        phase: "delivery",
+        chatId: 5,
+        isPreviewOpen: true,
+        memory: stayedClosed.memory,
+      }).memory,
+    });
+    expect(cameBack.isPreviewOpen).toBe(true);
+  });
+
+  it("closes Discovery even after another writer opens the preview", () => {
+    const next = applyPreviewVisibility({
+      visibility: "closed",
+      phase: "discovery",
+      chatId: 2,
+      isPreviewOpen: true,
+      memory: { implementationChatId: 9, restoreOrdinaryPreview: true },
+    });
+    expect(next.isPreviewOpen).toBe(false);
+    expect(next.memory.implementationChatId).toBeNull();
+  });
+
+  it("reopens an ordinary chat after the unresolved wait closed it", () => {
+    const waiting = applyPreviewVisibility({
+      visibility: "unresolved",
+      phase: null,
+      chatId: null,
+      isPreviewOpen: true,
+      memory: { implementationChatId: null, restoreOrdinaryPreview: false },
+    });
+    expect(waiting.isPreviewOpen).toBe(false);
+
+    const ordinary = applyPreviewVisibility({
+      visibility: "open",
+      phase: null,
+      chatId: 8,
+      isPreviewOpen: false,
+      memory: waiting.memory,
+    });
+    expect(ordinary.isPreviewOpen).toBe(true);
+
+    const userClosed = applyPreviewVisibility({
+      visibility: "open",
+      phase: null,
+      chatId: 8,
+      isPreviewOpen: false,
+      memory: ordinary.memory,
+    });
+    expect(userClosed.isPreviewOpen).toBe(false);
+  });
+
+  it("starts the app only when the preview is open and the project is ready", () => {
+    expect(
+      shouldStartAppPreview({ visibility: "open", projectReady: true }),
+    ).toBe(true);
+    expect(
+      shouldStartAppPreview({ visibility: "closed", projectReady: true }),
+    ).toBe(false);
+    expect(
+      shouldStartAppPreview({ visibility: "unresolved", projectReady: true }),
+    ).toBe(false);
+    expect(
+      shouldStartAppPreview({ visibility: "open", projectReady: false }),
+    ).toBe(false);
+    expect(versionCountVisible(true)).toBe(true);
+    expect(versionCountVisible(false)).toBe(false);
+    expect(versionCountVisible(undefined)).toBe(false);
   });
 
   it("moves forward only when the person continues", () => {

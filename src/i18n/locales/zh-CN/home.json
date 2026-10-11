@@ -254,6 +254,7 @@
   },
   "preview": {
     "title": "预览",
+    "projectNotReady": "此项目尚未准备好预览。",
     "problems": "问题",
     "code": "代码",
     "diff": "差异",
