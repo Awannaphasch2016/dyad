@@ -77,7 +77,7 @@ test("pm: discovery prompt moves the shared project to implementation", async ({
   const finished = await finishDiscovery(page);
   const replied = { messages: finished.messages };
   await expect(page.getByText(PROMPT).first()).toBeVisible();
-  const gate = page.getByTestId("shared-gate-transition");
+  const gate = page.getByTestId("factory-phase-continue");
   await expect(gate).toBeVisible();
   await expect(gate).toContainText("Move to Implementation");
   await page.screenshot({
@@ -98,11 +98,13 @@ test("pm: discovery prompt moves the shared project to implementation", async ({
     30_000,
     "the project did not move to Implementation",
   );
-  const card = page.getByTestId("shared-gate");
-  await expect(card).toContainText("Implementation review");
+  const card = page.getByTestId("factory-phase-move-waiting");
   await expect(card).toContainText("Waiting on the Developer.");
-  await expect(page.getByTestId("shared-gate-transition")).toHaveCount(0);
-  await expect(page.getByLabel("Implementation answer")).toHaveCount(0);
+  await expect(page.getByTestId("factory-phase-continue")).toHaveCount(0);
+  await expect(page.getByLabel("Answer review-approve-dev")).toHaveCount(0);
+  await expect(page.getByTestId("hitl-questions")).toContainText(
+    "Waiting on the Developer.",
+  );
   await expect(page.getByTestId("factory-phase-implementation")).toBeVisible();
   await page.screenshot({
     path: "artifacts/pm-discovery-3-implementation.png",
@@ -117,7 +119,7 @@ test("pm: discovery prompt moves the shared project to implementation", async ({
     30_000,
     "reload did not keep Implementation",
   );
-  await expect(page.getByTestId("shared-gate")).toContainText(
+  await expect(page.getByTestId("factory-phase-move-waiting")).toContainText(
     "Waiting on the Developer.",
   );
   await page.screenshot({

@@ -10,12 +10,14 @@ on:
     branches:
       - cursor/automated-hitl-verification-851d
       - cursor/hitl-visibility-beside-walk-fd29
+      - cursor/bolt-hitl-inline-bar-fd29
     paths:
       - .github/workflows/bolt-walkthrough-verify.yml
       - scripts/doppler/bolt-test-accounts.mjs
       - scripts/doppler/bolt-reset-project.mjs
       - scripts/doppler/bolt-sign-in.mjs
       - scripts/doppler/export-bolt-preview-env.mjs
+      - scripts/doppler/bolt-workflow.mjs
       - e2e-walkthrough/**
 
 permissions:
@@ -27,7 +29,7 @@ concurrency:
 
 jobs:
   verify:
-    if: github.ref == 'refs/heads/cursor/automated-hitl-verification-851d' || github.ref == 'refs/heads/cursor/hitl-visibility-beside-walk-fd29'
+    if: github.ref == 'refs/heads/cursor/automated-hitl-verification-851d' || github.ref == 'refs/heads/cursor/hitl-visibility-beside-walk-fd29' || github.ref == 'refs/heads/cursor/bolt-hitl-inline-bar-fd29'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:

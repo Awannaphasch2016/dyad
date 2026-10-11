@@ -196,28 +196,53 @@ test("only the matching role changes the phase", () => {
   assert.equal(canSendPrompt("implementation", "project-manager"), false);
 });
 
-test("the snapshot hides the seeded discovery question", () => {
+test("the snapshot shows the current phase question only to its role", () => {
+  const questions = [
+    {
+      id: "old",
+      phase: "discovery",
+      stepId: "plan-approve",
+      targetRoleId: "project-manager",
+      status: "answered",
+      body: "Approve the Discovery plan.",
+      answeredByName: "Anak",
+    },
+    {
+      id: "later",
+      phase: "implementation",
+      stepId: "review-approve-dev",
+      targetRoleId: "developer",
+      status: "open",
+      body: "Approve the Implementation review.",
+      answeredByName: null,
+    },
+  ];
   const view = presentSnapshot({
     phase: "discovery",
     roleId: "project-manager",
     documentHtml: null,
     messages: [{ role: "user", content: "North Pier Fish" }],
-    questions: [
-      {
-        id: "old",
-        phase: "discovery",
-        stepId: "plan-approve",
-        targetRoleId: "project-manager",
-        status: "answered",
-        body: "Approve the Discovery plan.",
-        answeredByName: "Anak",
-      },
-    ],
+    questions,
   });
-  assert.deepEqual(view.questions, []);
+  assert.equal(view.questions.length, 1);
+  assert.equal(view.questions[0].id, "old");
+  assert.equal(view.questions[0].body, "Approve the Discovery plan.");
+  assert.equal(view.questions[0].canAnswer, false);
+  assert.equal(view.waitingLabel, null);
   assert.equal(view.canSend, true);
   assert.equal(view.transitionLabel, "Move to Implementation");
   assert.equal(view.canDownload, false);
+  const developer = presentSnapshot({
+    phase: "discovery",
+    roleId: "developer",
+    documentHtml: null,
+    messages: [{ role: "user", content: "North Pier Fish" }],
+    questions,
+  });
+  assert.equal(developer.questions[0].body, null);
+  assert.equal(developer.questions[0].canAnswer, false);
+  assert.equal(developer.waitingLabel, "Waiting on the Project Manager.");
+  assert.equal(developer.canTransition, false);
 });
 
 test("both roles read one project and only the project manager records a discovery prompt", async () => {
@@ -320,6 +345,16 @@ test("implementation belongs to the developer and delivery to the project manage
   );
   assert.equal(developer.body.canTransition, true);
   assert.equal(developer.body.transitionLabel, "Move to Delivery");
+  const early = await call(store, "user_dev", {
+    method: "POST",
+    json: { command: "transition" },
+  });
+  assert.equal(early.status, 403);
+  assert.equal(
+    early.body.error,
+    "Answer the open question before moving this phase.",
+  );
+  assert.equal(store.project.phase, "implementation");
   const answer = await call(store, "user_dev", {
     method: "POST",
     createId: "a1",
@@ -423,6 +458,58 @@ test("a removed membership and a signed-out request are denied", async () => {
   assert.match(document, /A &amp; B/);
 });
 
+test("an open discovery question blocks the move and does not write a developer message", async () => {
+  const store = memory();
+  store.questions[0].status = "open";
+  const blocked = await call(store, "user_pm", {
+    method: "POST",
+    json: { command: "transition" },
+  });
+  assert.equal(blocked.status, 403);
+  assert.equal(
+    blocked.body.error,
+    "Answer the open question before moving this phase.",
+  );
+  assert.equal(store.project.phase, "discovery");
+  const hidden = await call(store, "user_dev", { method: "GET" });
+  assert.equal(hidden.body.questions[0].body, null);
+  assert.equal(hidden.body.questions[0].canAnswer, false);
+  assert.equal(hidden.body.waitingLabel, "Waiting on the Project Manager.");
+  const manager = await call(store, "user_pm", { method: "GET" });
+  assert.equal(manager.body.questions[0].body, "Approve the Discovery plan.");
+  assert.equal(manager.body.questions[0].canAnswer, true);
+  assert.equal(manager.body.waitingLabel, null);
+  assert.equal(manager.body.canTransition, true);
+  const wrong = await call(store, "user_dev", {
+    method: "POST",
+    json: {
+      command: "answer",
+      questionId: "discovery-q",
+      body: "I should not answer this.",
+    },
+  });
+  assert.equal(wrong.status, 403);
+  const answer = await call(store, "user_pm", {
+    method: "POST",
+    json: {
+      command: "answer",
+      questionId: "discovery-q",
+      body: "North Pier Fish",
+    },
+  });
+  assert.equal(answer.status, 200);
+  assert.equal(
+    store.messages.filter((row) => row.role === "developer").length,
+    0,
+  );
+  const moved = await call(store, "user_pm", {
+    method: "POST",
+    json: { command: "transition" },
+  });
+  assert.equal(moved.status, 200);
+  assert.equal(moved.body.snapshot.phase, "implementation");
+});
+
 test("the walkthrough page uses the builder chat and one gate", () => {
   const root = mkdtempSync(join(tmpdir(), "bolt-workflow-"));
   const bar = join(root, "app/components/factory");
@@ -493,6 +580,12 @@ test("the walkthrough page uses the builder chat and one gate", () => {
   assert.equal(barSource.includes("disabled={!unlocked}"), false);
   assert.match(barSource, /false && showApproval && \(/);
   assert.match(barSource, /data-testid="shared-download"/);
+  assert.match(barSource, /data-testid="factory-phase-continue"/);
+  assert.match(barSource, /data-testid="factory-phase-move-waiting"/);
+  assert.match(barSource, /data-testid="hitl-questions"/);
+  assert.match(barSource, /sendGate\('transition'\)/);
+  assert.match(barSource, /Answer this question to continue\./);
+  assert.equal(barSource.includes("SharedGateDialog"), false);
   assert.match(barSource, /useStore\(sharedSnapshot\)/);
   const chat = readFileSync(join(chatDir, "ChatBox.tsx"), "utf8");
   assert.match(chat, /sharedSendOpen\(\)/);
@@ -503,7 +596,7 @@ test("the walkthrough page uses the builder chat and one gate", () => {
   assert.match(client, /useSharedChat\(/);
   assert.match(client, /recordSharedFinish\(message\)/);
   const base = readFileSync(join(chatDir, "BaseChat.tsx"), "utf8");
-  assert.match(base, /SharedGateDialog/);
+  assert.equal(base.includes("SharedGateDialog"), false);
   const parser = readFileSync(
     join(root, "app/lib/hooks/useMessageParser.ts"),
     "utf8",
@@ -514,6 +607,12 @@ test("the walkthrough page uses the builder chat and one gate", () => {
   assert.match(server, /command === 'record'/);
   assert.match(server, /on conflict \(id\) do nothing/);
   assert.match(server, /resolved: false/);
+  assert.match(
+    server,
+    /Answer the open question before moving this phase\./,
+  );
+  assert.match(server, /question\.phase === state\.phase/);
+  assert.match(server, /if \(isSharedQuestion\(question\)\)/);
   assert.equal(server.includes("DurableObject"), false);
   assert.match(
     server,
@@ -522,11 +621,10 @@ test("the walkthrough page uses the builder chat and one gate", () => {
   const session = readFileSync(join(root, "app/lib/hitl/session.tsx"), "utf8");
   assert.match(session, /setInterval\(load, 2000\)/);
   assert.match(session, /factory-document\.html/);
-  const gate = readFileSync(
-    join(root, "app/components/factory/SharedGateDialog.tsx"),
-    "utf8",
+  assert.equal(
+    existsSync(join(root, "app/components/factory/SharedGateDialog.tsx")),
+    false,
   );
-  assert.match(gate, /data-testid="shared-gate"/);
   assert.equal(existsSync(join(bar, "SharedProject.tsx")), false);
   assert.equal(existsSync(join(bar, "HitlGateList.tsx")), false);
 });
