@@ -85,9 +85,6 @@ test("DNS setup writes the alias and the validation name, not a tunnel", async (
   const fetchImpl = async (url, init = {}) => {
     calls.push({ url, method: init.method ?? "GET", body: init.body ?? "" });
     const path = `${new URL(url).pathname}${new URL(url).search}`;
-    if (path.includes("/accounts/")) {
-      return { ok: true, json: async () => ({ success: true, result: {} }) };
-    }
     if (path.includes("/dns_records") && (init.method ?? "GET") === "GET") {
       return { ok: true, json: async () => ({ success: true, result: [] }) };
     }

@@ -93,7 +93,7 @@ async function cloudflare(fetchImpl, token, path, init = {}) {
     const detail = Array.isArray(body.errors)
       ? body.errors.map((error) => error.message).join("; ")
       : response.statusText;
-    throw new Error(`Cloudflare ${path} failed: ${detail}`);
+    throw new Error(`Cloudflare request failed: ${detail}`);
   }
   return body.result;
 }
@@ -146,7 +146,6 @@ export async function ensureFormulaDns({
       "CLOUDFLARE_API_TOKEN, CLOUDFLARE_ZONE_ID, and CLOUDFLARE_ACCOUNT_ID are required",
     );
   }
-  await cloudflare(fetchImpl, token, `/accounts/${accountId}`);
   const records = [formulaAliasRecord(loadBalancerDns)];
   if (validationName || validationValue) {
     records.push(formulaValidationRecord(validationName, validationValue));
