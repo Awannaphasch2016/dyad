@@ -249,18 +249,34 @@ export function latestFactoryPhaseSummary(
     : null;
 }
 
-/** Discovery and Delivery start with Dyad's turn; Implementation waits for the person to send. */
+/** How often a window rereads the factory app it is showing. */
+export const FACTORY_VIEW_REFETCH_MS = 1_000;
+
+/**
+ * Refetch only while this window is showing a factory app.
+ * The query key is that app, so another app is not polled.
+ */
+export function factoryViewRefetchInterval(
+  viewingFactoryApp: boolean,
+): number | false {
+  return viewingFactoryApp ? FACTORY_VIEW_REFETCH_MS : false;
+}
+
+/** Discovery, Implementation, and Delivery each start when that phase opens. */
 export function factoryPhaseKickoff(
   phase: FactoryPhase,
   previousSummary: string | null,
-): string | null {
+): string {
   if (phase === "discovery") return "Start Discovery.";
-  if (phase === "delivery") {
-    return previousSummary
-      ? `Start Delivery. Approved implementation summary:\n\n${previousSummary}`
-      : "Start Delivery.";
+  if (phase === "implementation") {
+    return (
+      continuePrefill(phase, previousSummary) ??
+      "Build the one-page site from what I approved in Discovery."
+    );
   }
-  return null;
+  return previousSummary
+    ? `Start Delivery. Approved implementation summary:\n\n${previousSummary}`
+    : "Start Delivery.";
 }
 
 export function lockedFactoryPhaseReason(phase: FactoryPhase): string {
@@ -282,6 +298,17 @@ export function continuePrefill(
       : "Build the one-page site from what I approved in Discovery.";
   }
   return undefined;
+}
+
+/**
+ * A factory phase chat has no composer. Home and any chat that is not a
+ * factory phase keep it.
+ */
+export function showFactoryPhaseComposer(
+  chats: readonly { title: string | null }[],
+  chatTitle: string | null | undefined,
+): boolean {
+  return !(hasFactoryPhases(chats) && phaseFromTitle(chatTitle) != null);
 }
 
 /** Factory chats hide the generic "Keep going" suggestion. */

@@ -10,7 +10,6 @@ import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import {
   FACTORY_PHASES,
   type FactoryPhase,
-  continuePrefill,
   factoryPhaseKickoff,
   latestFactoryPhaseSummary,
 } from "@/lib/factoryPhase";
@@ -36,11 +35,7 @@ export function cursorPhasePrompt(
   phase: FactoryPhase,
   previousSummary: string | null,
 ): string {
-  const kickoff =
-    phase === "implementation"
-      ? (continuePrefill(phase, previousSummary) ??
-        "Build the one-page site from what I approved in Discovery.")
-      : (factoryPhaseKickoff(phase, previousSummary) ?? "");
+  const kickoff = factoryPhaseKickoff(phase, previousSummary);
   return `${factoryPhaseSystemPrompt(phase)}\n\n${kickoff}`.trim();
 }
 

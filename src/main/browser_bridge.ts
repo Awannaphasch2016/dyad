@@ -28,7 +28,12 @@ import type { Duplex } from "node:stream";
 import type { IpcMainInvokeEvent } from "electron";
 import log from "electron-log";
 import { WebSocketServer, type WebSocket } from "ws";
-import { WEB_BRIDGE_SENDER_ID } from "@/control_plane/session_store";
+import {
+  closeBridgeConnection,
+  openBridgeConnection,
+  runWithBridgeConnection,
+  WEB_BRIDGE_SENDER_ID,
+} from "@/control_plane/session_store";
 import { getTrustedIpcHandler } from "@/ipc/handlers/trusted_handle";
 import {
   VALID_INVOKE_CHANNELS,
@@ -347,6 +352,7 @@ async function handleSocketMessage(
   raw: unknown,
   push: (event: BrowserBridgePush) => void,
   sender: BridgeSender,
+  connectionId: number,
 ): Promise<BridgeSocketMessage | null> {
   let parsed: unknown;
   try {
@@ -357,17 +363,19 @@ async function handleSocketMessage(
   const message = readMessage(parsed);
   if (!message) return null;
   try {
-    if (message.type === "send") {
-      dispatchBrowserSend(message.channel);
-      return { id: message.id, type: "result", result: null };
-    }
-    const result = await dispatchBrowserInvoke(
-      message.channel,
-      message.args,
-      push,
-      sender,
-    );
-    return { id: message.id, type: "result", result };
+    return await runWithBridgeConnection(connectionId, async () => {
+      if (message.type === "send") {
+        dispatchBrowserSend(message.channel);
+        return { id: message.id, type: "result" as const, result: null };
+      }
+      const result = await dispatchBrowserInvoke(
+        message.channel,
+        message.args,
+        push,
+        sender,
+      );
+      return { id: message.id, type: "result" as const, result };
+    });
   } catch (error) {
     const text = error instanceof Error ? error.message : String(error);
     return { id: message.id, type: "error", message: text };
@@ -629,14 +637,18 @@ export function startBrowserBridge(
     }
   });
   socketServer.on("connection", (socket) => {
+    const connectionId = openBridgeConnection();
     sockets.add(socket);
     sender.noteSocketOpened();
     socket.on("message", (data) => {
-      void handleSocketMessage(data, push, sender).then((response) => {
-        if (response) sendSocketMessage(socket, response);
-      });
+      void handleSocketMessage(data, push, sender, connectionId).then(
+        (response) => {
+          if (response) sendSocketMessage(socket, response);
+        },
+      );
     });
     socket.on("close", () => {
+      closeBridgeConnection(connectionId);
       sockets.delete(socket);
       sender.noteSocketClosed(sockets.size);
     });
