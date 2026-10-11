@@ -101,7 +101,7 @@ async function downloadDoppler(token, project, config) {
     return { ok: false, status: response.status, values: {} };
   }
   const values = await response.json();
-  for (const value of Object.values(values)) maskValue(value);
+  for (const name of CREDENTIAL_NAMES) maskValue(values[name]);
   return { ok: true, status: response.status, values };
 }
 
@@ -137,9 +137,22 @@ async function probeApiToken(label, token, zoneId, accountId) {
       ? verify.result.status
       : "unknown";
   process.stdout.write(
-    `probe ${label} verify=${verify.status} token_status=${verifyStatus} error=${verify.error}\n`,
+    `probe ${label} user_verify=${verify.status} token_status=${verifyStatus} error=${verify.error}\n`,
   );
-  if (!verify.ok) return;
+  if (accountId) {
+    const accountVerify = await cloudflare(
+      token,
+      "GET",
+      `/accounts/${accountId}/tokens/verify`,
+    );
+    const accountStatus =
+      accountVerify.result && typeof accountVerify.result.status === "string"
+        ? accountVerify.result.status
+        : "unknown";
+    process.stdout.write(
+      `probe ${label} account_verify=${accountVerify.status} token_status=${accountStatus} error=${accountVerify.error}\n`,
+    );
+  }
 
   if (zoneId) {
     const listed = await cloudflare(
