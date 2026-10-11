@@ -86,6 +86,43 @@ function sameFingerprint(left, right) {
   return left.sha256_12 === right.sha256_12 ? "yes" : "no";
 }
 
+async function reportSecretShape(admin, project, config, name) {
+  const params = new URLSearchParams({ project, config, name });
+  const response = await fetch(
+    `https://api.doppler.com/v3/configs/config/secret?${params}`,
+    {
+      headers: { Authorization: `Bearer ${admin}`, Accept: "application/json" },
+    },
+  );
+  if (!response.ok) {
+    process.stdout.write(
+      `secret ${project}/${config} ${name} status=${response.status}\n`,
+    );
+    return;
+  }
+  const payload = await response.json();
+  const raw = payload?.value?.raw;
+  const computed = payload?.value?.computed;
+  maskValue(raw);
+  maskValue(computed);
+  const rawText = typeof raw === "string" ? raw.trim() : "";
+  const computedText = typeof computed === "string" ? computed.trim() : "";
+  const safeReference =
+    /^\$\{[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_]+\}$/.test(rawText);
+  const rawKind = safeReference
+    ? rawText
+    : rawText.startsWith("${")
+      ? "unparsed-reference"
+      : rawText
+        ? "literal"
+        : "absent";
+  const rawPrint = fingerprint(rawText);
+  const computedPrint = fingerprint(computedText);
+  process.stdout.write(
+    `secret ${project}/${config} ${name} raw=${rawKind} raw_sha=${rawPrint?.sha256_12 ?? "absent"} computed_sha=${computedPrint?.sha256_12 ?? "absent"}\n`,
+  );
+}
+
 async function downloadDoppler(token, project, config) {
   const params = new URLSearchParams({
     format: "json",
@@ -226,6 +263,12 @@ async function main() {
     process.exit(1);
   }
   process.stdout.write("doppler_admin_token=present\n");
+  await reportSecretShape(
+    admin,
+    "dyad",
+    "preview",
+    "CLOUDFLARE_API_TOKEN",
+  );
 
   const maps = [];
   for (const [project, config] of PLACES) {
