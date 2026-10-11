@@ -1,0 +1,50 @@
+name: Open forma container pull request
+
+# Opens a pull request on Awannaphasch2016/forma with the dyad-harness app.
+# This job does not deploy and does not read the production database.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cursor/forma-container-pr-5014
+    paths:
+      - .github/workflows/open-forma-container-pr.yml
+      - .github/scripts/open-forma-container-pr.mjs
+      - .github/scripts/open-forma-container-pr.test.mjs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: open-forma-container-pr
+  cancel-in-progress: false
+
+jobs:
+  open-pr:
+    if: github.ref == 'refs/heads/cursor/forma-container-pr-5014'
+    runs-on: ubuntu-latest
+    environment: ai-bots
+    timeout-minutes: 15
+    steps:
+      - name: Check out the opener
+        uses: actions/checkout@v5
+
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.DYAD_GITHUB_APP_ID || '5221649' }}
+          private-key: ${{ secrets.DYAD_GITHUB_APP_PEM_KEY }}
+          owner: Awannaphasch2016
+          repositories: forma
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Open the forma pull request
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          set +x
+          node .github/scripts/open-forma-container-pr.mjs
