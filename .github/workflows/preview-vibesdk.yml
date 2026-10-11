@@ -137,9 +137,9 @@ jobs:
 
   hitl:
     needs: deploy
-    if: needs.deploy.result == 'success' && github.event.pull_request.head.ref == 'cursor/vibesdk-agent-hitl-fd29'
+    if: needs.deploy.result == 'success' && github.event.pull_request.head.ref == 'cursor/vibesdk-org-prompt-hitl-0539'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     permissions:
       contents: read
       id-token: write
@@ -188,7 +188,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: vibesdk-hitl-recording
+          name: vibesdk-org-run-recording
           path: |
             e2e-vibesdk/test-results
             e2e-vibesdk/videos
