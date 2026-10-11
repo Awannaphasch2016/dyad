@@ -12,6 +12,12 @@ name: preview-forma
 on:
   pull_request:
     types: [labeled, unlabeled, synchronize, reopened, closed]
+  push:
+    branches:
+      - cursor/forma-hitl-preview-5014
+    paths:
+      - .github/workflows/preview-forma.yml
+      - deploy/preview-forma/**
   workflow_dispatch:
     inputs:
       pr:
@@ -28,7 +34,7 @@ concurrency:
 
 jobs:
   decide:
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/cursor/forma-hitl-preview-5014' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -46,7 +52,8 @@ jobs:
           LABEL: ${{ github.event.label.name }}
           CLOSED: ${{ github.event.pull_request.state == 'closed' }}
           LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
-          PR: ${{ github.event.pull_request.number || inputs.pr }}
+          PR: ${{ github.event.pull_request.number || inputs.pr || '132' }}
+          REF: ${{ github.ref }}
         run: node deploy/preview-forma/run.mjs decide
 
   check:

@@ -23,7 +23,7 @@ import {
   formaPreviewBranchName,
 } from "./target.mjs";
 
-const sha = "80a8e419f6285378b4dfada336ea8213f3089bab";
+const sha = "5ab5a69947eeb0a60d4b3f3305e553b19965763c";
 const formaImage = `ghcr.io/awannaphasch2016/forma:sha-${sha}`;
 
 test("preview-forma ignores the Dyad preview label and unlabeled closes", () => {
@@ -101,6 +101,18 @@ test("a dispatch in this repository updates one numeric pull request", () => {
     () => decideFromEnv({ EVENT: "workflow_dispatch", PR: "" }),
     /digits/,
   );
+  assert.deepEqual(
+    decideFromEnv({
+      EVENT: "push",
+      REF: "refs/heads/cursor/forma-hitl-preview-5014",
+      PR: "132",
+    }),
+    { command: "update", pr: "132" },
+  );
+  assert.equal(
+    decideFromEnv({ EVENT: "push", REF: "refs/heads/main", PR: "132" }).command,
+    "skip",
+  );
 });
 
 test("compose pins published images and rejects a build", () => {
@@ -114,7 +126,7 @@ test("compose pins published images and rejects a build", () => {
   });
   assert.equal(images.length, 2);
   assert.equal(images[0].repository, "forma");
-  assert.match(manifestUrl(formaImage), /\/forma\/manifests\/sha-80a8e419/);
+  assert.match(manifestUrl(formaImage), /\/forma\/manifests\/sha-5ab5a699/);
   assert.throws(
     () =>
       pinnedImages({
@@ -179,7 +191,7 @@ test("a public image digest is read with a registry pull token", async () => {
   assert.equal(calls[0].authorization, "Bearer github-app-token");
   assert.equal(calls[1].authorization, "");
   assert.equal(calls[2].authorization, "Bearer pull-token");
-  assert.match(calls[2].url, /\/forma\/manifests\/sha-80a8e419/);
+  assert.match(calls[2].url, /\/forma\/manifests\/sha-5ab5a699/);
 });
 
 test("the committed compose file parses without a package install", async () => {

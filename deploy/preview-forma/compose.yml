@@ -2,4 +2,4 @@
 # published image. Tags are full commit SHAs. This file is not built here.
 services:
   forma:
-    image: ghcr.io/awannaphasch2016/forma:sha-80a8e419f6285378b4dfada336ea8213f3089bab
+    image: ghcr.io/awannaphasch2016/forma:sha-5ab5a69947eeb0a60d4b3f3305e553b19965763c
