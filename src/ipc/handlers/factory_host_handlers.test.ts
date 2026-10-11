@@ -127,8 +127,43 @@ describe("factory phase approval", () => {
         memberId: "user_pm",
         roleId: "project-manager",
       }),
-      expect.objectContaining({ phase: "implementation" }),
+      expect.objectContaining({
+        phase: "implementation",
+        memberId: "user_pm",
+        memberName: "Project Manager",
+        roleId: "project-manager",
+      }),
     ]);
+  });
+
+  it("refuses a developer session on the bridge approve route", async () => {
+    const server = createFactoryHostBridgeServer({
+      token: "machine-token",
+      database,
+      resolveCaller: async () => ({
+        orgId: ORG,
+        userId: "user_dev",
+        roleId: "developer",
+        displayName: "Developer",
+      }),
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    try {
+      const address = server.address() as AddressInfo;
+      const approved = await bridgeRequest(
+        address.port,
+        `/v1/apps/${appId}/phases/delivery/approve`,
+        "developer-session",
+      );
+      expect(approved.status).toBe(401);
+      expect(database.select().from(factoryPhaseApprovals).all()).toHaveLength(
+        0,
+      );
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 
   it("still records a machine-token approval from the bridge", async () => {
@@ -162,12 +197,12 @@ function restoreEnv(name: string, value: string | undefined) {
   else process.env[name] = value;
 }
 
-function bridgeRequest(port: number, path: string) {
+function bridgeRequest(port: number, path: string, token = "machine-token") {
   return new Promise<{ status: number; body: { approvedPhases: string[] } }>(
     (resolve, reject) => {
       const request = httpRequest(`http://127.0.0.1:${port}${path}`, {
         method: "POST",
-        headers: { authorization: "Bearer machine-token" },
+        headers: { authorization: `Bearer ${token}` },
       });
       request.on("error", reject);
       request.on("response", (response) => {
