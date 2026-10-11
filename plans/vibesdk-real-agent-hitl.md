@@ -11,6 +11,8 @@
 - The other role sees a waiting line and does not see the question.
 - An agent reads the question that actually appeared and types the reply in the prompt box.
 - A Playwright script alone cannot verify this, because it cannot understand a question it has not seen before.
+- An app has an organization id and the Project Manager who created it. It has no private owner.
+- A question has a role and a body. It has no phase, and it has none of the three old gate names.
 
 ## What went wrong
 
@@ -64,6 +66,66 @@ The agent also checks the other browser. The question text is absent there, and 
 The record of the run is the two browsers on video, encoded so the frames are visible. The video is the proof that the prompt went through the real box and that the reply followed the question the builder asked.
 
 A Playwright script may open the browsers and record them. It cannot be the thing that decides the reply.
+
+## Database
+
+The organization store today is `wewebplus` in Postgres. Two of its columns are leftovers from the three fixed stages.
+
+`questions.phase` is required on every row. A question cannot be saved unless it names Discovery, Implementation, or Delivery. This run has no stages, so that column is not part of the schema below.
+
+The three step names are the old approval buttons, not a general review system.
+
+- `plan-approve` is the Project Manager approving the written plan at the end of Discovery.
+- `review-approve-dev` is the Developer approving the build at the end of Implementation.
+- `review-approve-pm` is the Project Manager approving the result at the end of Delivery.
+
+Those names exist so the old phase strip can record who pressed Continue. This run does not use them.
+
+`apps.owner_type` can be `user` or `org`. A `user` value is a private app. This run keeps only the organization.
+
+The schema this run needs:
+
+```mermaid
+erDiagram
+  MEMBERSHIPS {
+    text user_id
+    text org_id
+    text role_id
+  }
+  APPS {
+    text id
+    text org_id
+    text created_by
+    text name
+    timestamp created_at
+  }
+  QUESTIONS {
+    text id
+    text org_id
+    text app_id
+    text target_role_id
+    text body
+    text status
+    text assignment
+    timestamp created_at
+  }
+  ANSWERS {
+    text question_id
+    text user_id
+    text body
+    timestamp created_at
+  }
+  MEMBERSHIPS ||--o{ APPS : "same org_id"
+  APPS ||--o{ QUESTIONS : "app_id"
+  QUESTIONS ||--o| ANSWERS : "one answer"
+```
+
+- `memberships.role_id` is `project-manager` or `developer`. This table already exists.
+- `apps.org_id` is the only owner. `created_by` is the Project Manager who pressed Enter. A Developer insert is refused.
+- `questions` has no `phase` and no step name. `target_role_id` is the person who may see the body. `status` is `open` or `answered`. `assignment` is `declared` when the agent named the role, and `fallback` when it did not and the question went to the Project Manager.
+- `answers.question_id` is unique. One reply is stored. A second reply does not create another row.
+
+The builder’s files and chat stay in Vibe SDK. These four tables are the organization record: who may see the app, who may press Enter, and which role a question is for.
 
 ## Out of scope
 
