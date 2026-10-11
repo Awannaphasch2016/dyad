@@ -16,6 +16,7 @@ import {
 import { getControlPlaneDb } from "@/control_plane/db";
 import { recordAudit } from "@/control_plane/repository";
 import {
+  bridgeConnectionId,
   rememberSessionToken,
   WEB_BRIDGE_SENDER_ID,
 } from "@/control_plane/session_store";
@@ -240,8 +241,9 @@ export function registerClerkHandlers() {
   );
 
   createTypedHandler(clerkContracts.setSessionToken, async (event, params) => {
+    const connectionId = bridgeConnectionId();
     rememberSessionToken(
-      params.bridge ? WEB_BRIDGE_SENDER_ID : event.sender.id,
+      connectionId ?? (params.bridge ? WEB_BRIDGE_SENDER_ID : event.sender.id),
       params.token,
     );
   });

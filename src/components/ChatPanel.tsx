@@ -40,7 +40,9 @@ import { isFreeProModel } from "@/lib/freeProModel";
 import { terminalOpenByChatIdAtom } from "@/atoms/terminalAtoms";
 import { selectedAppIdAtom } from "@/atoms/appAtoms";
 import { useReducedMotionPref } from "@/hooks/useReducedMotion";
+import { useChats } from "@/hooks/useChats";
 import { useLoadApps } from "@/hooks/useLoadApps";
+import { showFactoryPhaseComposer } from "@/lib/factoryPhase";
 import { useVersionPreview } from "@/hooks/useVersionPreview";
 import { useChatStreamState } from "@/hooks/useChatStream";
 import { useChatStreamManager } from "@/chat_stream/ChatStreamProvider";
@@ -91,7 +93,12 @@ export function ChatPanel({
     terminalOpenByChatIdAtom,
   );
   const selectedAppId = useAtomValue(selectedAppIdAtom);
+  const { chats } = useChats(selectedAppId);
   const { apps } = useLoadApps();
+  const showComposer = showFactoryPhaseComposer(
+    chats,
+    chats.find((chat) => chat.id === chatId)?.title,
+  );
   const currentApp = apps.find((app) => app.id === selectedAppId);
   const reducedMotion = useReducedMotionPref();
   // Pane visibility derives from the version preview machine; open/close are
@@ -346,7 +353,7 @@ export function ChatPanel({
                   )}
                   <SupabaseLegacyKeyBanner appId={selectedAppId} />
                   <NotificationBanner />
-                  <ChatInput chatId={chatId} />
+                  {showComposer && <ChatInput chatId={chatId} />}
                 </motion.div>
               )}
             </AnimatePresence>

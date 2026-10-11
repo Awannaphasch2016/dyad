@@ -15,8 +15,10 @@ vi.mock("electron", () => ({
 }));
 
 import {
+  bridgeConnectionId,
   rememberSessionToken,
   sessionTokenFor,
+  sessionTokenForRequest,
   clearSessionTokensForTesting,
   WEB_BRIDGE_SENDER_ID,
 } from "@/control_plane/session_store";
@@ -72,7 +74,12 @@ function openBridgeSocket(port: number): Promise<WebSocket> {
   });
 }
 
-function invokeOnSocket(socket: WebSocket, id: number): Promise<unknown> {
+function invokeOnSocket(
+  socket: WebSocket,
+  id: number,
+  channel = "get-user-settings",
+  args: unknown[] = [],
+): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const onMessage = (data: { toString(): string }) => {
       const message = JSON.parse(data.toString()) as {
@@ -94,8 +101,8 @@ function invokeOnSocket(socket: WebSocket, id: number): Promise<unknown> {
       JSON.stringify({
         id,
         type: "invoke",
-        channel: "get-user-settings",
-        args: [],
+        channel,
+        args,
       }),
     );
   });
@@ -241,6 +248,53 @@ describe("browser bridge", () => {
       () => {},
     );
     expect(sessionTokenFor(WEB_BRIDGE_SENDER_ID)).toBe("ipad-token");
+    expect(sessionTokenFor(4)).toBe("desktop-token");
+  });
+
+  it("keeps a separate Clerk token for each browser socket", async () => {
+    registerClerkHandlers();
+    rememberSessionToken(4, "desktop-token");
+    rememberSessionToken(WEB_BRIDGE_SENDER_ID, "shared-token");
+    registerTrustedIpcHandler("get-user-settings", async (event) => ({
+      token: sessionTokenForRequest(event.sender.id),
+      connectionId: bridgeConnectionId(),
+    }));
+    const bridge = await startSocketBridge();
+    const projectManager = await openBridgeSocket(bridge.port);
+    const developer = await openBridgeSocket(bridge.port);
+    closers.push(async () => {
+      projectManager.close();
+      developer.close();
+    });
+
+    await invokeOnSocket(projectManager, 1, "clerk:set-session-token", [
+      { token: "pm-token" },
+    ]);
+    await invokeOnSocket(developer, 1, "clerk:set-session-token", [
+      { token: "dev-token" },
+    ]);
+
+    const manager = (await invokeOnSocket(projectManager, 2)) as {
+      token: string;
+      connectionId: number;
+    };
+    const builder = (await invokeOnSocket(developer, 2)) as {
+      token: string;
+      connectionId: number;
+    };
+    expect(manager).toMatchObject({ token: "pm-token" });
+    expect(builder).toMatchObject({ token: "dev-token" });
+    expect(manager.connectionId).not.toBe(builder.connectionId);
+    expect(sessionTokenFor(4)).toBe("desktop-token");
+    expect(sessionTokenFor(WEB_BRIDGE_SENDER_ID)).toBe("shared-token");
+
+    projectManager.close();
+    await waitForSocketClose(projectManager);
+    expect(sessionTokenFor(manager.connectionId)).toBeNull();
+    await expect(invokeOnSocket(developer, 3)).resolves.toMatchObject({
+      token: "dev-token",
+    });
+    expect(sessionTokenFor(builder.connectionId)).toBe("dev-token");
     expect(sessionTokenFor(4)).toBe("desktop-token");
   });
 

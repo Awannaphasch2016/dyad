@@ -4,6 +4,7 @@ import { createStore, Provider } from "jotai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { selectedAppIdAtom } from "@/atoms/appAtoms";
 import { selectedChatIdAtom } from "@/atoms/chatAtoms";
+import { queryKeys } from "@/lib/queryKeys";
 import { ClerkSessionProvider, type ClerkSessionState } from "@/auth/session";
 import { FactoryPhaseBar } from "./FactoryPhaseBar";
 
@@ -88,10 +89,10 @@ const discoverySummary = {
   content: "## Discovery summary\n- **Page name:** Hello",
 };
 
-function renderBar(session?: ClerkSessionState) {
+function renderBar(session?: ClerkSessionState, chatId = 1) {
   const store = createStore();
   store.set(selectedAppIdAtom, 7);
-  store.set(selectedChatIdAtom, 1);
+  store.set(selectedChatIdAtom, chatId);
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -102,11 +103,12 @@ function renderBar(session?: ClerkSessionState) {
   ) : (
     <FactoryPhaseBar />
   );
-  return render(
+  const view = render(
     <QueryClientProvider client={client}>
       <Provider store={store}>{bar}</Provider>
     </QueryClientProvider>,
   );
+  return Object.assign(view, { client });
 }
 
 function signedIn(roleId: "developer" | "project-manager"): ClerkSessionState {
@@ -165,8 +167,19 @@ describe("FactoryPhaseBar", () => {
         phase: "discovery",
       });
     });
+    await waitFor(() => {
+      expect(selectChat).toHaveBeenCalledWith({ chatId: 2, appId: 7 });
+    });
+    expect(selectChat.mock.calls.at(-1)?.[0]).not.toHaveProperty(
+      "prefillInput",
+    );
+    expect(ensureCursorPhase).toHaveBeenCalledWith({
+      appId: 7,
+      phase: "implementation",
+    });
     expect(approvePhase).not.toHaveBeenCalled();
     expect(streamMessage).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("factory-phase-comments")).toBeNull();
 
     listApprovals.mockResolvedValue({
       approvals: [
@@ -249,6 +262,59 @@ describe("FactoryPhaseBar", () => {
     });
     expect(approveAccountPhase).not.toHaveBeenCalled();
     expect(streamMessage).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(selectChat).toHaveBeenCalledWith({ chatId: 2, appId: 7 });
+    });
+    expect(selectChat.mock.calls.at(-1)?.[0]).not.toHaveProperty(
+      "prefillInput",
+    );
+  });
+
+  it("starts implementation from the approved summary without a composer send", async () => {
+    listApprovals.mockResolvedValue({
+      approvals: [
+        { phase: "discovery", memberId: "user_1", memberName: "Ada" },
+      ],
+    });
+    getState.mockResolvedValue({
+      appId: 7,
+      factoryHostManaged: false,
+      gasCityProjectId: null,
+      approvedPhases: [],
+    });
+    getChat.mockImplementation(async (id: number) =>
+      id === 1 ? { messages: [discoverySummary] } : { messages: [] },
+    );
+
+    renderBar(undefined, 2);
+    await waitFor(() => {
+      expect(streamMessage).toHaveBeenCalledWith({
+        prompt:
+          "Build the one-page site from this approved Discovery summary:\n\n- **Page name:** Hello",
+        chatId: 2,
+        appId: 7,
+      });
+    });
+  });
+
+  it("rereads questions and approvals for the factory app on screen", async () => {
+    getState.mockResolvedValue({
+      appId: 7,
+      factoryHostManaged: false,
+      gasCityProjectId: null,
+      approvedPhases: [],
+    });
+    getChat.mockResolvedValue({ messages: [] });
+    const view = renderBar();
+    await screen.findByTestId("factory-phase-bar");
+    const interval = (queryKey: readonly unknown[]) => {
+      const options = view.client.getQueryCache().find({ queryKey })?.options;
+      return options && "refetchInterval" in options
+        ? options.refetchInterval
+        : undefined;
+    };
+    expect(interval(queryKeys.factory.questions(7, "discovery"))).toBe(1_000);
+    expect(interval(queryKeys.factory.approvals(7))).toBe(1_000);
   });
 
   it("keeps Continue closed for a developer after the summary and open for a project manager", async () => {

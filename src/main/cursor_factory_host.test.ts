@@ -67,6 +67,18 @@ describe("cursor phase prompt", () => {
     expect(prompt).not.toContain("already approved");
     expect(prompt).not.toContain("Tiny Bakery");
   });
+
+  it("starts implementation from the approved discovery summary", () => {
+    const prompt = cursorPhasePrompt(
+      "implementation",
+      "- **Page name:** Tiny Bakery",
+    );
+    expect(prompt).toContain(
+      "Build the one-page site from this approved Discovery summary:",
+    );
+    expect(prompt).toContain("- **Page name:** Tiny Bakery");
+    expect(prompt).not.toContain("already approved");
+  });
 });
 
 describe("settleCursorFactoryRun", () => {

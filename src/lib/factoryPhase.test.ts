@@ -4,11 +4,13 @@ import {
   visibleComposerActions,
   showMessageRevisionActions,
   showAssistantModelAttribution,
+  showFactoryPhaseComposer,
   continuePrefill,
   extractFactoryPhaseSummary,
   factoryPhaseChatMode,
   factoryPhaseChats,
   factoryPhaseKickoff,
+  factoryViewRefetchInterval,
   latestFactoryPhaseSummary,
   appIdsMissingFactoryPhases,
   hasFactoryPhases,
@@ -369,12 +371,31 @@ Here is what I understood. Approve to continue, or tell me what to change.
     ).toBe("- **Page name:** X");
   });
 
-  it("starts Discovery and Delivery automatically but not Implementation", () => {
+  it("starts Discovery, Implementation, and Delivery when the phase opens", () => {
     expect(factoryPhaseKickoff("discovery", null)).toBe("Start Discovery.");
-    expect(factoryPhaseKickoff("implementation", "- a")).toBeNull();
+    expect(factoryPhaseKickoff("implementation", "- **Page name:** X")).toBe(
+      "Build the one-page site from this approved Discovery summary:\n\n- **Page name:** X",
+    );
+    expect(factoryPhaseKickoff("implementation", null)).toMatch(/Discovery/);
     expect(factoryPhaseKickoff("delivery", "- **Page:** Index")).toContain(
       "- **Page:** Index",
     );
+  });
+
+  it("refetches only while this window is showing a factory app", () => {
+    expect(factoryViewRefetchInterval(true)).toBe(1_000);
+    expect(factoryViewRefetchInterval(false)).toBe(false);
+  });
+
+  it("hides the composer on a factory phase chat", () => {
+    const chats = [
+      { title: "Discovery" },
+      { title: "Implementation" },
+      { title: "Delivery" },
+    ];
+    expect(showFactoryPhaseComposer(chats, "Discovery")).toBe(false);
+    expect(showFactoryPhaseComposer(chats, "Notes")).toBe(true);
+    expect(showFactoryPhaseComposer([{ title: "Notes" }], "Notes")).toBe(true);
   });
 
   it("prefills Implementation with the approved Discovery summary", () => {

@@ -21,7 +21,6 @@ import {
   FACTORY_PHASES,
   type FactoryPhase,
   canContinueFactoryPhase,
-  continuePrefill,
   factoryPhaseChats,
   factoryPhaseHint,
   factoryPhaseKickoff,
@@ -36,6 +35,7 @@ import {
   nextFactoryPhase,
   phaseFromTitle,
   showFactoryPhaseApproval,
+  factoryViewRefetchInterval,
 } from "@/lib/factoryPhase";
 import {
   buildFactoryDocument,
@@ -73,11 +73,18 @@ export function FactoryPhaseBar() {
   const role = useClerkRole();
   const session = useClerkSession();
   const queryClient = useQueryClient();
-  const [comment, setComment] = useState("");
   const [localApprovalPending, setLocalApprovalPending] = useState(false);
+  const { chats } = useChats(appId);
+  const { app } = useLoadApp(appId);
+  const { selectChat } = useSelectChat();
+  const { streamMessage } = useStreamChat();
+  const streamState = useChatStreamState(chatId ?? undefined);
+  const kickedOffChatIds = useRef(new Set<number>());
+  const enabled = hasFactoryPhases(chats) && appId != null;
   const approvalsQuery = useQuery({
     queryKey: queryKeys.factory.approvals(appId),
     enabled: appId != null,
+    refetchInterval: factoryViewRefetchInterval(enabled),
     queryFn: async () => {
       if (appId == null) return [];
       const stored = readApprovals(appId);
@@ -93,22 +100,6 @@ export function FactoryPhaseBar() {
       return result.approvals;
     },
   });
-  const commentsQuery = useQuery({
-    queryKey: queryKeys.factory.comments(appId),
-    enabled: appId != null,
-    queryFn: async () => {
-      if (appId == null) return [];
-      const result = await ipc.factory.listComments({ appId });
-      return result.comments;
-    },
-  });
-  const { chats } = useChats(appId);
-  const { app } = useLoadApp(appId);
-  const { selectChat } = useSelectChat();
-  const { streamMessage } = useStreamChat();
-  const streamState = useChatStreamState(chatId ?? undefined);
-  const kickedOffChatIds = useRef(new Set<number>());
-  const enabled = hasFactoryPhases(chats) && appId != null;
   const factoryStateQuery = useQuery({
     queryKey: queryKeys.factoryHost.state({ appId }),
     queryFn: () => ipc.factoryHost.getState({ appId: appId! }),
@@ -143,7 +134,7 @@ export function FactoryPhaseBar() {
         queryKey: queryKeys.chats.detail({ chatId: phaseChatId }),
         queryFn: () => ipc.chat.getChat(phaseChatId!),
         enabled: phaseChatId !== null,
-        refetchInterval: enabled ? 2_000 : false,
+        refetchInterval: factoryViewRefetchInterval(enabled),
       };
     }),
   });
@@ -179,7 +170,7 @@ export function FactoryPhaseBar() {
       const result = await ipc.factory.listQuestions({ appId, phase });
       return result.questions;
     },
-    refetchInterval: 2_000,
+    refetchInterval: factoryViewRefetchInterval(appId != null && phase != null),
   });
   const phaseUnlocked =
     phase != null && isFactoryPhaseUnlocked(phase, progress);
@@ -331,17 +322,8 @@ export function FactoryPhaseBar() {
   const approveAndContinue = async () => {
     if (!next || !nextChat) return;
     await recordApproval();
-    const cursor =
-      next === "implementation"
-        ? await ipc.factory.ensureCursorPhase({ appId, phase: next })
-        : { started: false };
-    selectChat({
-      chatId: nextChat.id,
-      appId,
-      prefillInput: cursor.started
-        ? undefined
-        : continuePrefill(next, phaseSummary),
-    });
+    await ipc.factory.ensureCursorPhase({ appId, phase: next });
+    selectChat({ chatId: nextChat.id, appId });
   };
 
   return (
@@ -439,41 +421,6 @@ export function FactoryPhaseBar() {
               );
           }}
         />
-      )}
-      {phase && (
-        <form
-          className="mt-2 flex flex-wrap items-center gap-2"
-          data-testid="factory-phase-comments"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const body = comment.trim();
-            if (!body) return;
-            void ipc.factory.addComment({ appId, phase, body }).then(() => {
-              setComment("");
-              return queryClient.invalidateQueries({
-                queryKey: queryKeys.factory.comments(appId),
-              });
-            });
-          }}
-        >
-          {(commentsQuery.data ?? [])
-            .filter((item) => item.phase === phase)
-            .map((item) => (
-              <p key={item.id} className="w-full text-xs text-muted-foreground">
-                {item.memberName || "Member"}: {item.body}
-              </p>
-            ))}
-          <input
-            aria-label="Phase comment"
-            className="h-8 min-w-0 flex-1 rounded-md border bg-transparent px-2 text-sm"
-            value={comment}
-            onChange={(event) => setComment(event.target.value)}
-            placeholder="Comment on this phase"
-          />
-          <Button type="submit" size="sm" variant="outline">
-            Comment
-          </Button>
-        </form>
       )}
       <p className={cn("mt-2 text-xs text-muted-foreground")}>
         {factoryPhaseHint(phase)}
