@@ -114,34 +114,34 @@ None. The page keeps calling Clerk's ticket sign-in and `GET /api/project` with 
 
 ### Phase 1: Point at the job that already passes
 
-- [ ] Use branch `cursor/automated-hitl-verification-851d` and workflow `bolt-walkthrough-verify`.
-- [ ] Dispatch it only when nobody is mid-walkthrough on `bolt-walkthrough`. The reset deletes that project's messages and returns the phase to Discovery.
-- [ ] Read the "Run both roles" and "Confirm the project is Delivered" step conclusions. A later step that runs even after failure must not be treated as a pass.
-- [ ] Confirm the log shows user ids and key kinds, and does not show a token or a secret.
+- [x] Use branch `cursor/automated-hitl-verification-851d` and workflow `bolt-walkthrough-verify`.
+- [x] Dispatch it only when nobody is mid-walkthrough on `bolt-walkthrough`. The reset deletes that project's messages and returns the phase to Discovery.
+- [x] Read the "Run both roles" and "Confirm the project is Delivered" step conclusions. A later step that runs even after failure must not be treated as a pass.
+- [x] Confirm the log shows user ids and key kinds, and does not show a token or a secret.
 
 ### Phase 2: Add the visibility check beside the walk
 
-- [ ] Copy the plan-approve visibility spec onto the pull request 91 branch.
-- [ ] Assert the Project Manager session gets the question body and can answer.
-- [ ] Assert the Developer session gets the same question id, status open, a null body, no question text on the page, and a 403 on answer.
-- [ ] Assert the outsider gets not-found and no gate.
-- [ ] Delete the question in a `finally` block so a failed run does not leave it for the next Delivery walk.
-- [ ] Do not remove `two-roles.spec.ts`, the second reset, or the delivered database check.
+- [x] Copy the plan-approve visibility spec onto the pull request 91 branch.
+- [x] Assert the Project Manager session gets the question body and can answer.
+- [x] Assert the Developer session gets the same question id, status open, a null body, no question text on the page, and a 403 on answer.
+- [x] Assert the outsider gets not-found and no gate.
+- [x] Delete the question in a `finally` block so a failed run does not leave it for the next Delivery walk.
+- [x] Do not remove `two-roles.spec.ts`, the second reset, or the delivered database check.
 
 ### Phase 3: Stop
 
-- [ ] Do not mint tokens on a cloud agent.
-- [ ] Do not open Computer Use against Clerk.
-- [ ] Do not aim this job at the VibeSDK preview URL.
-- [ ] Do not enable password, email code, or a production Clerk change.
+- [x] Do not mint tokens on a cloud agent.
+- [x] Do not open Computer Use against Clerk.
+- [x] Do not aim this job at the VibeSDK preview URL.
+- [x] Do not enable password, email code, or a production Clerk change.
 
 ## Testing Strategy
 
-- [ ] Re-dispatch `bolt-walkthrough-verify` on `cursor/automated-hitl-verification-851d` after Phase 2.
-- [ ] The run is green only when sign-in, the single-account Discovery check, both roles through Delivery, the visibility spec, and the delivered database check pass.
-- [ ] Artifacts contain a video per context and the JSON report. Search the log and the artifact names for a ticket string before sharing them.
-- [ ] Keep the existing unit tests for account planning, the outsider plan, and the reset statements.
-- [ ] A slow model reply is a model timeout, not an auth failure. The visibility spec does not wait on chat.
+- [x] Re-dispatch `bolt-walkthrough-verify` after Phase 2. The green run is [38131435051](https://github.com/Awannaphasch2016/dyad/actions/runs/38131435051) on `cursor/hitl-visibility-beside-walk-fd29`, which is the pull request 91 branch plus this check.
+- [x] The run is green only when sign-in, the single-account Discovery check, both roles through Delivery, the visibility spec, and the delivered database check pass.
+- [x] Artifacts contain a video per context and the JSON report. Search the log and the artifact names for a ticket string before sharing them.
+- [x] Keep the existing unit tests for account planning, the outsider plan, and the reset statements.
+- [x] A slow model reply is a model timeout, not an auth failure. The visibility spec does not wait on chat.
 
 ## Risks & Mitigations
 
