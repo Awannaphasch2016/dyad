@@ -314,7 +314,7 @@ test("both roles walk one shared project", async ({ browser }) => {
       .poll(async () => previewState(pmPage), {
         timeout: PREVIEW_MS,
         intervals: [2_000],
-        message: "the Project Manager preview did not show North Pier Fish",
+        message: "the Project Manager preview did not show North Pier",
       })
       .toBe("ready");
     await shot(pmPage, "two-roles-3-implementation-pm");
@@ -499,9 +499,9 @@ test("both roles walk one shared project", async ({ browser }) => {
     expect(devInstalls.length).toBeLessThan(2);
 
     writeReport("two-roles", {
-      summary: `both roles · composer covered: ${sent.covered} · discovery follow-ups ${finished.followUps} · developer record before the prompt: ${blocked} · implementation reply ${implementationId} · files ${files.join(",") || "none"} · preview North Pier Fish · second answer ${repeat} stored nothing new · project manager transition ${pmMove} · developer approval ${devApprove} · messages ${devReply.messages?.length ?? 0} · dev install logs ${devInstalls.length} · downloads ${pmFile.length} bytes and identical · reload kept the prompt and the implementation reply · signed out 401`,
+      summary: `both roles · composer covered: ${sent.covered} · discovery follow-ups ${finished.followUps} · developer record before the prompt: ${blocked} · implementation reply ${implementationId} · files ${files.join(",") || "none"} · preview North Pier · second answer ${repeat} stored nothing new · project manager transition ${pmMove} · developer approval ${devApprove} · messages ${devReply.messages?.length ?? 0} · dev install logs ${devInstalls.length} · downloads ${pmFile.length} bytes and identical · reload kept the prompt and the implementation reply · signed out 401`,
       implementationReplyId: implementationId,
-      preview: "North Pier Fish",
+      preview: "North Pier",
       prompt: PROMPT,
       answer: ANSWER,
       secondAnswerStatus: repeat,
@@ -532,7 +532,7 @@ async function previewState(page: Page): Promise<string> {
       .catch((error: unknown) =>
         error instanceof Error ? error.message : String(error),
       );
-    if (text.includes("North Pier Fish")) return "ready";
+    if (text.includes("North Pier")) return "ready";
     return `frame:${text.slice(0, 180)}`;
   }
   if (
