@@ -1,0 +1,80 @@
+name: PR Preview - Forma
+
+# Deploy one Forma commit to the Vercel preview. The image publish runs in
+# the Forma repository. This job does not copy the editor and does not run
+# the container.
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Full Forma commit SHA. Empty uses the walkthrough branch tip.
+        required: false
+      environment:
+        description: Environment name. Only preview is implemented.
+        required: false
+        default: preview
+      pr:
+        description: Forma pull request number
+        required: false
+  push:
+    branches:
+      - cursor/forma-pr-preview-5014
+    paths:
+      - .github/workflows/pr-preview-forma.yml
+      - scripts/gascity/forma-preview.mjs
+      - scripts/gascity/forma-preview.test.mjs
+      - deploy/forma/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-preview-forma
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/cursor/forma-pr-preview-5014'
+    runs-on: ubuntu-latest
+    environment: ai-bots
+    timeout-minutes: 45
+    steps:
+      - name: Check out the preview runner
+        uses: actions/checkout@v5
+
+      - name: Create a Forma app token
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.DYAD_GITHUB_APP_ID || '5221649' }}
+          private-key: ${{ secrets.DYAD_GITHUB_APP_PEM_KEY }}
+          owner: Awannaphasch2016
+          repositories: forma
+          permission-contents: write
+          permission-pull-requests: write
+          permission-workflows: write
+
+      - name: Use Node 24
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: Install pnpm
+        run: |
+          set -euo pipefail
+          set +x
+          corepack enable
+          corepack prepare pnpm@10.34.5 --activate
+
+      - name: Deploy the Forma preview
+        env:
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          FORMA_PR: ${{ inputs.pr }}
+          FORMA_SHA: ${{ inputs.sha }}
+          FORMA_ENVIRONMENT: ${{ inputs.environment || 'preview' }}
+        run: |
+          set -euo pipefail
+          set +x
+          node scripts/gascity/forma-preview.mjs
