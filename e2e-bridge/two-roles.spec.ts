@@ -4,12 +4,10 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import {
-  DEVELOPER_USER_ID,
   installClerkTestingToken,
   membershipRole,
-  PROJECT_MANAGER_USER_ID,
   signInAs,
-  WEWEBPLUS_ORG_ID,
+  factoryAccount,
 } from "./signin";
 
 const BRIDGE_URL = process.env.DYAD_BRIDGE_URL ?? "http://127.0.0.1:8372";
@@ -92,6 +90,7 @@ function phaseLabel(phase: Phase): string {
 async function signedInPage(
   browser: Browser,
   userId: string,
+  organizationId: string,
   videoName: string,
 ): Promise<{ page: Page; close: () => Promise<void> }> {
   const context = await browser.newContext({
@@ -102,7 +101,7 @@ async function signedInPage(
   const page = await context.newPage();
   try {
     await page.goto(BRIDGE_URL);
-    await signInAs(page, userId, WEWEBPLUS_ORG_ID);
+    await signInAs(page, userId, organizationId);
     await expect(page.getByTestId("title-bar-user-button")).toBeVisible({
       timeout: 60_000,
     });
@@ -285,19 +284,31 @@ test("two signed-in browsers walk Discovery, Implementation, and Delivery", asyn
   let manager: { page: Page; close: () => Promise<void> } | undefined;
   let developer: { page: Page; close: () => Promise<void> } | undefined;
   try {
+    const projectManager = await factoryAccount("project-manager");
+    const developerAccount = await factoryAccount("developer");
     manager = await signedInPage(
       browser,
-      PROJECT_MANAGER_USER_ID,
+      projectManager.userId,
+      projectManager.organizationId,
       "project-manager",
     );
-    developer = await signedInPage(browser, DEVELOPER_USER_ID, "developer");
+    developer = await signedInPage(
+      browser,
+      developerAccount.userId,
+      developerAccount.organizationId,
+      "developer",
+    );
     const pm = manager.page;
     const dev = developer.page;
     await expect
-      .poll(() => membershipRole(pm, WEWEBPLUS_ORG_ID), { timeout: 30_000 })
+      .poll(() => membershipRole(pm, projectManager.organizationId), {
+        timeout: 30_000,
+      })
       .toBe("project-manager");
     await expect
-      .poll(() => membershipRole(dev, WEWEBPLUS_ORG_ID), { timeout: 30_000 })
+      .poll(() => membershipRole(dev, developerAccount.organizationId), {
+        timeout: 30_000,
+      })
       .toBe("developer");
 
     const appName = `Bridge Pass ${Date.now().toString().slice(-6)}`;

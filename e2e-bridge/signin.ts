@@ -8,6 +8,95 @@ export const DEVELOPER_USER_ID = "user_3K58joknYZ90Fts4yQC6yq4Enay";
 
 const TESTING_TOKEN_PARAM = "__clerk_testing_token";
 
+type FactoryRole = "project-manager" | "developer";
+
+function clerkClient() {
+  const secretKey = process.env.CLERK_SECRET_KEY?.trim() ?? "";
+  if (!secretKey) throw new Error("CLERK_SECRET_KEY is required.");
+  return createClerkClient({ secretKey });
+}
+
+function isNotFound(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    (error as { status?: unknown }).status === 404
+  );
+}
+
+function roleFromMetadata(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== "object") return null;
+  const role = (metadata as { role?: unknown }).role;
+  return typeof role === "string" ? role : null;
+}
+
+/**
+ * The page role is the membership's publicMetadata.role. The ids in hitl.ts
+ * are preferred when they are members. A preview Clerk instance can hold the
+ * same organization under those ids or under different user ids.
+ */
+let resolvedOrganizationId: string | null = null;
+
+export async function factoryAccount(role: FactoryRole): Promise<{
+  userId: string;
+  organizationId: string;
+}> {
+  const client = clerkClient();
+  const organizationId = await wewebplusOrganizationId(client);
+  const memberships = await client.organizations.getOrganizationMembershipList({
+    organizationId,
+    limit: 100,
+  });
+  const preferred =
+    role === "project-manager" ? PROJECT_MANAGER_USER_ID : DEVELOPER_USER_ID;
+  const matches = memberships.data.filter(
+    (membership) => roleFromMetadata(membership.publicMetadata) === role,
+  );
+  const chosen =
+    matches.find(
+      (membership) => membership.publicUserData?.userId === preferred,
+    ) ?? matches[0];
+  const userId = chosen?.publicUserData?.userId;
+  if (!userId) {
+    const roles = memberships.data.map(
+      (membership) => roleFromMetadata(membership.publicMetadata) ?? "missing",
+    );
+    throw new Error(
+      `No ${role} membership in this Clerk organization. Memberships: ${memberships.data.length}. Roles: ${roles.join(",") || "none"}.`,
+    );
+  }
+  return { userId, organizationId };
+}
+
+async function wewebplusOrganizationId(
+  client: ReturnType<typeof clerkClient>,
+): Promise<string> {
+  if (resolvedOrganizationId) return resolvedOrganizationId;
+  try {
+    await client.organizations.getOrganization({
+      organizationId: WEWEBPLUS_ORG_ID,
+    });
+    resolvedOrganizationId = WEWEBPLUS_ORG_ID;
+    return WEWEBPLUS_ORG_ID;
+  } catch (error) {
+    if (!isNotFound(error)) throw error;
+  }
+  const listed = await client.organizations.getOrganizationList({ limit: 100 });
+  const match = listed.data.find((org) => {
+    const name = org.name?.trim().toLowerCase();
+    const slug = org.slug?.trim().toLowerCase();
+    return name === "wewebplus" || slug === "wewebplus";
+  });
+  if (!match) {
+    throw new Error(
+      `Wewebplus is not in this Clerk instance (${listed.data.length} organizations).`,
+    );
+  }
+  resolvedOrganizationId = match.id;
+  return match.id;
+}
+
 interface ClerkMembership {
   role?: string;
   organization: { id: string };
@@ -66,14 +155,12 @@ export async function installClerkTestingToken(
   context: BrowserContext,
 ): Promise<void> {
   const publishableKey = process.env.CLERK_PUBLISHABLE_KEY?.trim() ?? "";
-  const secretKey = process.env.CLERK_SECRET_KEY?.trim() ?? "";
   const frontendApi = clerkFrontendHost(publishableKey);
   if (!frontendApi) {
     throw new Error("CLERK_PUBLISHABLE_KEY is not a publishable key.");
   }
-  if (!secretKey) throw new Error("CLERK_SECRET_KEY is required.");
   if (!process.env.CLERK_TESTING_TOKEN) {
-    const client = createClerkClient({ secretKey });
+    const client = clerkClient();
     const testing = await client.testingTokens.createTestingToken();
     process.env.CLERK_TESTING_TOKEN = testing.token;
   }
@@ -105,9 +192,7 @@ export async function signInAs(
   userId: string,
   orgId: string,
 ): Promise<void> {
-  const secretKey = process.env.CLERK_SECRET_KEY?.trim() ?? "";
-  if (!secretKey) throw new Error("CLERK_SECRET_KEY is required.");
-  const client = createClerkClient({ secretKey });
+  const client = clerkClient();
   const created = await client.signInTokens.createSignInToken({
     userId,
     expiresInSeconds: 300,
