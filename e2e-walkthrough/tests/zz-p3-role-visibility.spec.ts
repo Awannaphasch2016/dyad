@@ -213,25 +213,26 @@ test("p3: a project-manager question is visible only to that role", async ({
         ?.status,
     ).toBe("open");
 
-    // The posted question must not leak into the developer's page. The
-    // deployed client paints the shared project gate from /api/project.
+    // The posted question is on the phase bar for the Project Manager and
+    // hidden from the Developer. The move control stays visible and disabled.
+    await expect(pm.page.getByText(P3_QUESTION_BODY)).toBeVisible({
+      timeout: 15_000,
+    });
     await expect(dev.page.getByText(P3_QUESTION_BODY)).toHaveCount(0);
-    const implementationBody = "Approve the Implementation review.";
+    await expect(pm.page.getByTestId("factory-phase-continue")).toBeDisabled({
+      timeout: 15_000,
+    });
+    await expect(pm.page.getByTestId("factory-phase-move-waiting")).toContainText(
+      "Answer this question to continue.",
+    );
+    await expect(
+      dev.page.getByTestId("factory-phase-move-waiting"),
+    ).toContainText("Waiting on the Project Manager.");
+    await expect(dev.page.getByTestId("hitl-body-" + questionId)).toHaveCount(0);
     const painted = Array.isArray(pmProject.body?.questions)
       ? (pmProject.body.questions as HitlQuestion[])
       : [];
-    const paintedOpen = painted.find((question) => question.status === "open");
-    if (paintedOpen) {
-      await expect(pm.page.getByTestId("shared-gate")).toContainText(
-        "Waiting on the Developer.",
-      );
-      await expect(pm.page.getByText(implementationBody)).toHaveCount(0);
-      await expect(dev.page.getByTestId("shared-gate")).toContainText(
-        implementationBody,
-      );
-      expect(paintedOpen.body).toBeNull();
-      expect(paintedOpen.canAnswer).toBe(false);
-    }
+    const paintedOpen = painted.find((question) => question.id === questionId);
     await pm.page.screenshot({ path: "artifacts/p3-pm.png", fullPage: true });
     await dev.page.screenshot({
       path: "artifacts/p3-dev.png",

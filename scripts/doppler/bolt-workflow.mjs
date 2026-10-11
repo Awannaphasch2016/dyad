@@ -83,11 +83,25 @@ export function deliveryDocument(messages) {
   return `<!doctype html><html><head><meta charset="utf-8"><title>Delivered</title></head><body><h1>Delivered</h1>\n${items}\n</body></html>`;
 }
 
-export function waitingLabel(phase, roleId, questions) {
-  const open = (questions ?? []).some(
-    (question) => isSharedQuestion(question) && question.status === "open",
+function roleWaitingLabel(roleId) {
+  if (roleId === "project-manager") return "Waiting on the Project Manager.";
+  if (roleId === "developer") return "Waiting on the Developer.";
+  return null;
+}
+
+export function openPhaseQuestions(phase, questions) {
+  return (questions ?? []).filter(
+    (question) => question?.phase === phase && question.status === "open",
   );
-  if (open && roleId !== "developer") return "Waiting on the Developer.";
+}
+
+export function waitingLabel(phase, roleId, questions) {
+  const open = openPhaseQuestions(phase, questions);
+  if (open.some((question) => question.targetRoleId === roleId)) return null;
+  for (const question of open) {
+    const label = roleWaitingLabel(question.targetRoleId);
+    if (label) return label;
+  }
   if (phase === "discovery" && roleId === "developer") {
     return "Waiting on the Project Manager.";
   }
@@ -118,18 +132,18 @@ export function presentSnapshot({
   documentHtml,
 }) {
   const next = nextPhase(phase, roleId);
-  const shown = (questions ?? []).filter(isSharedQuestion).map((question) => ({
-    id: question.id,
-    stepId: question.stepId,
-    targetRoleId: question.targetRoleId,
-    status: question.status,
-    answeredByName: question.answeredByName ?? null,
-    body: roleId === question.targetRoleId ? question.body : null,
-    canAnswer:
-      roleId === "developer" &&
-      question.status === "open" &&
-      phase === "implementation",
-  }));
+  const shown = (questions ?? [])
+    .filter((question) => question.phase === phase)
+    .map((question) => ({
+      id: question.id,
+      stepId: question.stepId,
+      targetRoleId: question.targetRoleId,
+      status: question.status,
+      answeredByName: question.answeredByName ?? null,
+      body: roleId === question.targetRoleId ? question.body : null,
+      canAnswer:
+        roleId === question.targetRoleId && question.status === "open",
+    }));
   return {
     phase,
     messages: (messages ?? []).map((message) => ({
@@ -299,6 +313,14 @@ export async function handleProject(input) {
         body: { error: "Your role can't move this phase." },
       };
     }
+    if (openPhaseQuestions(state.phase, state.questions).length > 0) {
+      return {
+        status: 403,
+        body: {
+          error: "Answer the open question before moving this phase.",
+        },
+      };
+    }
     const document =
       phase === "delivered" ? deliveryDocument(state.messages) : null;
     const updated = await query(WORKFLOW_SQL.casPhase, [
@@ -336,14 +358,12 @@ export async function handleProject(input) {
     const question = questionFromRow(
       (await query(SQL.questionById, [questionId]))[0],
     );
-    if (!question || question.orgId !== orgId || !isSharedQuestion(question)) {
+    if (
+      !question ||
+      question.orgId !== orgId ||
+      question.phase !== state.phase
+    ) {
       return { status: 404, body: { error: "Not found" } };
-    }
-    if (state.phase !== "implementation") {
-      return {
-        status: 403,
-        body: { error: "Your role can't answer this question." },
-      };
     }
     const decision = decideAnswer(question, caller);
     if (decision === "not-found") {
@@ -371,12 +391,14 @@ export async function handleProject(input) {
           userId,
           body,
         ]);
-        await query(WORKFLOW_SQL.insertMessage, [
-          input.createId ? `${input.createId}-answer` : crypto.randomUUID(),
-          WALKTHROUGH_CHAT_ID,
-          "developer",
-          body,
-        ]);
+        if (isSharedQuestion(question)) {
+          await query(WORKFLOW_SQL.insertMessage, [
+            input.createId ? `${input.createId}-answer` : crypto.randomUUID(),
+            WALKTHROUGH_CHAT_ID,
+            "developer",
+            body,
+          ]);
+        }
       }
     }
     const next = await snapshot();
@@ -405,11 +427,155 @@ const sharedImport = "import { SharedProject } from './SharedProject';\n";
 const sharedTag = "      <SharedProject />\n";
 const barImport =
   "import type { FactoryPhaseComment } from '~/lib/factoryRun';";
-const barSessionImport =
-  "import { useStore } from '@nanostores/react';\nimport { downloadSharedDocument, sharedSnapshot } from '~/lib/hitl/session';";
+const barSessionImport = [
+  "import { useStore } from '@nanostores/react';",
+  "import { continuePrefill, factoryPhaseKickoff, latestFactoryPhaseSummary } from '~/lib/factoryPhase';",
+  "import { hitlFetch } from '~/lib/hitl/client';",
+  "import { downloadSharedDocument, sharedSnapshot, startBuilderTurn } from '~/lib/hitl/session';",
+  "import type { ProjectSnapshot } from '~/lib/hitl/session';",
+].join("\n");
 const commentState = "  const [comment, setComment] = useState('');";
 const commentStateFixed = `  const [comment, setComment] = useState('');
-  const shared = useStore(sharedSnapshot);`;
+  const shared = useStore(sharedSnapshot);
+  const [gateAnswers, setGateAnswers] = useState<Record<string, string>>({});
+  const [gatePending, setGatePending] = useState(false);
+  const [gateError, setGateError] = useState('');
+  const sharedQuestions = shared?.questions ?? [];
+  const openQuestion = sharedQuestions.some((question) => question.status === 'open');
+  const owesAnswer = sharedQuestions.some((question) => question.canAnswer);
+  const moveWaiting = owesAnswer ? 'Answer this question to continue.' : (shared?.waitingLabel ?? null);
+  const sendGate = (command: string, extra: Record<string, string> = {}) => {
+    if (gatePending) return;
+    setGatePending(true);
+    setGateError('');
+    void hitlFetch('/api/project', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command, ...extra }),
+    })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return (await response.json()) as { snapshot?: ProjectSnapshot };
+      })
+      .then((payload) => {
+        const next = payload?.snapshot;
+        if (!next?.phase) {
+          setGateError(command === 'answer' ? "Couldn't save the answer. Try again." : "Couldn't move this phase. Try again.");
+          return;
+        }
+        sharedSnapshot.set(next);
+        if (extra.questionId) {
+          setGateAnswers((current) => ({ ...current, [extra.questionId]: '' }));
+        }
+        if (command !== 'transition') return;
+        const prompt = kickoffForPhase(next.phase, next.messages);
+        if (prompt) startBuilderTurn(prompt);
+      })
+      .catch(() => {
+        setGateError(command === 'answer' ? "Couldn't save the answer. Try again." : "Couldn't move this phase. Try again.");
+      })
+      .finally(() => setGatePending(false));
+  };`;
+const kickoffHelper = `function kickoffForPhase(phase: string, messages: { role: string; content: string }[]): string {
+  if (phase === 'implementation') {
+    return continuePrefill('implementation', latestFactoryPhaseSummary(messages, 'discovery')) ?? '';
+  }
+  if (phase === 'delivery') {
+    return factoryPhaseKickoff('delivery', latestFactoryPhaseSummary(messages, 'implementation')) ?? '';
+  }
+  return '';
+}
+
+`;
+const moveButton = `        {shared?.canTransition && shared.transitionLabel ? (
+          <button
+            type="button"
+            className="ml-auto rounded-md bg-accent-500 px-2.5 py-1 text-sm text-white disabled:cursor-not-allowed disabled:opacity-60"
+            data-testid="factory-phase-continue"
+            data-blocked={openQuestion ? 'true' : undefined}
+            disabled={gatePending || openQuestion}
+            aria-describedby={moveWaiting ? 'factory-phase-move-waiting' : undefined}
+            onClick={() => sendGate('transition')}
+          >
+            {shared.transitionLabel}
+          </button>
+        ) : null}
+`;
+const questionCards = `      {moveWaiting ? (
+        <p
+          id="factory-phase-move-waiting"
+          className="mt-2 text-sm text-bolt-elements-textSecondary"
+          data-testid="factory-phase-move-waiting"
+          aria-live="polite"
+        >
+          {moveWaiting}
+        </p>
+      ) : null}
+      {gateError ? (
+        <p tabIndex={-1} ref={(node) => node?.focus()} className="mt-2 text-sm" data-testid="factory-phase-move-error">
+          {gateError}
+        </p>
+      ) : null}
+      {sharedQuestions.length > 0 ? (
+        <div className="mt-2 space-y-2" data-testid="hitl-questions">
+          {sharedQuestions.map((question) => {
+            const roleLabel = question.targetRoleId === 'project-manager' ? 'Project Manager' : 'Developer';
+            const draft = gateAnswers[question.id] ?? '';
+            return (
+              <div
+                key={question.id}
+                className="rounded-md border border-bolt-elements-borderColor px-2 py-2 text-sm"
+                data-testid={\`hitl-question-\${question.id}\`}
+              >
+                {question.body != null ? (
+                  <p className="whitespace-pre-wrap" data-testid={\`hitl-body-\${question.id}\`}>
+                    {question.body}
+                  </p>
+                ) : null}
+                {question.status === 'answered' ? (
+                  <p>{question.answeredByName ? \`Answered by \${question.answeredByName}.\` : 'Answered.'}</p>
+                ) : null}
+                {question.status === 'open' && question.body == null ? (
+                  <p>{\`Waiting on the \${roleLabel}.\`}</p>
+                ) : null}
+                {question.canAnswer ? (
+                  <form
+                    className="mt-2 flex flex-wrap items-center gap-2"
+                    data-testid={\`hitl-answer-\${question.id}\`}
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      const body = draft.trim();
+                      if (!body || gatePending) return;
+                      sendGate('answer', { questionId: question.id, body });
+                    }}
+                  >
+                    <input
+                      aria-label={\`Answer \${question.stepId}\`}
+                      className="h-8 min-w-0 flex-1 rounded-md border border-bolt-elements-borderColor bg-transparent px-2 text-sm"
+                      value={draft}
+                      disabled={gatePending}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setGateAnswers((current) => ({ ...current, [question.id]: value }));
+                      }}
+                    />
+                    <button
+                      type="submit"
+                      className="rounded-md bg-accent-500 px-2.5 py-1 text-sm text-white disabled:opacity-60"
+                      disabled={gatePending || draft.trim().length === 0}
+                    >
+                      Submit answer
+                    </button>
+                  </form>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+`;
+const hintAnchor =
+  '      <p className="mt-2 text-xs text-bolt-elements-textSecondary">';
 const downloadButton = `        {shared?.canDownload ? (
           <button
             type="button"
@@ -458,6 +624,36 @@ export function patchSharedPhaseBar(source) {
     next = next.replace(
       approvalGateFixed,
       `${downloadButton}${approvalGateFixed}`,
+    );
+  }
+  if (!next.includes("function kickoffForPhase")) {
+    if (!next.includes("export function FactoryPhaseBar")) {
+      throw new Error("factory phase bar was not found");
+    }
+    next = next.replace(
+      "export function FactoryPhaseBar",
+      `${kickoffHelper}export function FactoryPhaseBar`,
+    );
+  }
+  if (!next.includes("sendGate('transition')")) {
+    if (!next.includes(approvalGateFixed)) {
+      throw new Error("factory phase bar was not found");
+    }
+    next = next.replace(approvalGateFixed, `${moveButton}${approvalGateFixed}`);
+  }
+  if (!next.includes('data-testid="factory-phase-move-waiting"')) {
+    if (!next.includes(hintAnchor)) {
+      throw new Error("factory phase bar was not found");
+    }
+    next = next.replace(hintAnchor, `${questionCards}${hintAnchor}`);
+  }
+  if (
+    next.includes('data-testid="factory-phase-bar"') &&
+    !next.includes('aria-label="Project phases"')
+  ) {
+    next = next.replace(
+      'data-testid="factory-phase-bar"',
+      'data-testid="factory-phase-bar"\n      role="region"\n      aria-label="Project phases"',
     );
   }
   return next;
@@ -567,16 +763,9 @@ export function patchSharedBaseChat(source) {
   if (!source.includes("SharedGateDialog") && !source.includes(baseAnchor)) {
     throw new Error("walkthrough chat layout was not found");
   }
-  let next = source;
-  if (!next.includes("SharedGateDialog")) {
-    if (!next.includes(baseImport)) {
-      throw new Error("walkthrough chat layout was not found");
-    }
-    next = next
-      .replace(baseImport, baseImportFixed)
-      .replace(baseAnchor, baseAnchorFixed);
-  }
-  return next;
+  return source
+    .replaceAll(baseImportFixed, baseImport)
+    .replaceAll(baseAnchorFixed, baseAnchor);
 }
 
 const parserImport = "import { workbenchStore } from '~/lib/stores/workbench';";
@@ -655,9 +844,23 @@ function canSendPrompt(phase: string, roleId: RoleId): boolean {
   return phase === 'discovery' && roleId === 'project-manager';
 }
 
+function roleWaitingLabel(roleId: string): string | null {
+  if (roleId === 'project-manager') return 'Waiting on the Project Manager.';
+  if (roleId === 'developer') return 'Waiting on the Developer.';
+  return null;
+}
+
+function openPhaseQuestions(phase: string, questions: StoredQuestion[]): StoredQuestion[] {
+  return questions.filter((question) => question.phase === phase && question.status === 'open');
+}
+
 function waitingLabel(phase: string, roleId: RoleId, questions: StoredQuestion[]): string | null {
-  const open = questions.some((question) => isSharedQuestion(question) && question.status === 'open');
-  if (open && roleId !== 'developer') return 'Waiting on the Developer.';
+  const open = openPhaseQuestions(phase, questions);
+  if (open.some((question) => question.targetRoleId === roleId)) return null;
+  for (const question of open) {
+    const label = roleWaitingLabel(question.targetRoleId);
+    if (label) return label;
+  }
   if (phase === 'discovery' && roleId === 'developer') return 'Waiting on the Project Manager.';
   if (phase === 'implementation' && roleId === 'project-manager') return 'Waiting on the Developer.';
   if (phase === 'delivery' && roleId === 'developer') return 'Waiting on the Project Manager.';
@@ -706,14 +909,14 @@ function presentSnapshot(state: {
     canTransition: next != null,
     transitionLabel: next ? transitionLabel(state.phase) : null,
     canDownload: state.phase === 'delivered' && Boolean(state.documentHtml),
-    questions: state.questions.filter(isSharedQuestion).map((question) => ({
+    questions: state.questions.filter((question) => question.phase === state.phase).map((question) => ({
       id: question.id,
       stepId: question.stepId,
       targetRoleId: question.targetRoleId,
       status: question.status,
       answeredByName: question.answeredByName,
       body: roleId === question.targetRoleId ? question.body : null,
-      canAnswer: roleId === 'developer' && question.status === 'open' && state.phase === 'implementation',
+      canAnswer: roleId === question.targetRoleId && question.status === 'open',
     })),
   };
 }
@@ -840,6 +1043,9 @@ export async function handleProjectRequest(input: {
       if (!state) return { status: 503, body: { error: 'Project store is unavailable.' } };
       const phase = nextPhase(state.phase, roleId);
       if (!phase) return { status: 403, body: { error: "Your role can't move this phase." } };
+      if (openPhaseQuestions(state.phase, state.questions).length > 0) {
+        return { status: 403, body: { error: 'Answer the open question before moving this phase.' } };
+      }
       const document = phase === 'delivered' ? deliveryDocument(state.messages) : null;
       const updated = await query(CAS_PHASE_SQL, [APP_ID, phase, state.phase, document]);
       if (!updated[0]) return { status: 409, body: { error: 'The phase already changed.' } };
@@ -858,10 +1064,10 @@ export async function handleProjectRequest(input: {
       if (!state) return { status: 503, body: { error: 'Project store is unavailable.' } };
       const questionId = String(json.questionId ?? '');
       const question = state.questions.find((item) => item.id === questionId);
-      if (!question || !isSharedQuestion(question)) {
+      if (!question || question.phase !== state.phase) {
         return { status: 404, body: { error: 'Not found' } };
       }
-      if (state.phase !== 'implementation' || roleId !== question.targetRoleId) {
+      if (roleId !== question.targetRoleId) {
         return { status: 403, body: { error: "Your role can't answer this question." } };
       }
       const answer = String(json.body ?? '').trim();
@@ -876,7 +1082,9 @@ export async function handleProjectRequest(input: {
             'insert into wewebplus.answers (id, question_id, user_id, body) values ($1, $2, $3, $4) on conflict (question_id) do nothing',
             [crypto.randomUUID(), question.id, userId, answer],
           );
-          await query(INSERT_MESSAGE_SQL, [crypto.randomUUID(), CHAT_ID, 'developer', answer]);
+          if (isSharedQuestion(question)) {
+            await query(INSERT_MESSAGE_SQL, [crypto.randomUUID(), CHAT_ID, 'developer', answer]);
+          }
         }
       }
       const next = await readState(query, orgId);
@@ -1169,132 +1377,6 @@ function sessionSource() {
   ].join("\n");
 }
 
-function gateDialogSource() {
-  return [
-    "import { useState } from 'react';",
-    "import { useStore } from '@nanostores/react';",
-    "import { Dialog, DialogDescription, DialogRoot, DialogTitle } from '~/components/ui/Dialog';",
-    "import { continuePrefill, factoryPhaseKickoff, latestFactoryPhaseSummary } from '~/lib/factoryPhase';",
-    "import { hitlFetch } from '~/lib/hitl/client';",
-    "import { sharedSnapshot, startBuilderTurn } from '~/lib/hitl/session';",
-    "import type { ProjectSnapshot } from '~/lib/hitl/session';",
-    "",
-    "function kickoffFor(phase: string, messages: { role: string; content: string }[]): string {",
-    "  if (phase === 'implementation') {",
-    "    return continuePrefill('implementation', latestFactoryPhaseSummary(messages, 'discovery')) ?? '';",
-    "  }",
-    "  if (phase === 'delivery') {",
-    "    return factoryPhaseKickoff('delivery', latestFactoryPhaseSummary(messages, 'implementation')) ?? '';",
-    "  }",
-    "  return '';",
-    "}",
-    "",
-    "export function SharedGateDialog() {",
-    "  const snapshot = useStore(sharedSnapshot);",
-    "  const [answer, setAnswer] = useState('');",
-    "  const [pending, setPending] = useState(false);",
-    "  const open = snapshot?.questions.find((question) => question.status === 'open') ?? null;",
-    "  const answered =",
-    "    snapshot?.phase === 'implementation'",
-    "      ? (snapshot.questions.find((question) => question.status === 'answered') ?? null)",
-    "      : null;",
-    "  if (!snapshot || snapshot.phase === 'delivered') return null;",
-    "  const showTransition = !open && snapshot.canTransition && Boolean(snapshot.transitionLabel);",
-    "  const waiting = !open && !showTransition ? snapshot.waitingLabel : null;",
-    "  if (!open && !showTransition && !waiting && !answered) return null;",
-    "",
-    "  const send = (command: string, extra: Record<string, string> = {}) => {",
-    "    if (pending) return;",
-    "    setPending(true);",
-    "    void hitlFetch('/api/project', {",
-    "      method: 'POST',",
-    "      headers: { 'Content-Type': 'application/json' },",
-    "      body: JSON.stringify({ command, ...extra }),",
-    "    })",
-    "      .then(async (response) => {",
-    "        if (!response.ok) return null;",
-    "        return (await response.json()) as { snapshot?: ProjectSnapshot };",
-    "      })",
-    "      .then((payload) => {",
-    "        const next = payload?.snapshot;",
-    "        if (!next?.phase) return;",
-    "        sharedSnapshot.set(next);",
-    "        if (command !== 'transition') return;",
-    "        const prompt = kickoffFor(next.phase, next.messages);",
-    "        if (prompt) startBuilderTurn(prompt);",
-    "      })",
-    "      .finally(() => setPending(false));",
-    "  };",
-    "",
-    "  const title = open ? 'Implementation review' : showTransition ? (snapshot.transitionLabel ?? 'Shared project') : 'Shared project';",
-    "  const answeredLine = answered",
-    "    ? answered.answeredByName",
-    "      ? 'Answered by ' + answered.answeredByName + '.'",
-    "      : 'Answered.'",
-    "    : null;",
-    "  const description = open",
-    "    ? open.canAnswer",
-    "      ? open.body",
-    "      : snapshot.waitingLabel",
-    "    : answeredLine;",
-    "",
-    "  return (",
-    "    <DialogRoot open>",
-    '      <Dialog showCloseButton={false} className="w-[420px]">',
-    '        <div className="p-6" data-testid="shared-gate">',
-    "          <DialogTitle>{title}</DialogTitle>",
-    '          {description ? <DialogDescription className="mb-4">{description}</DialogDescription> : null}',
-    "          {open?.canAnswer ? (",
-    "            <form",
-    '              className="flex flex-wrap items-center gap-2"',
-    "              onSubmit={(event) => {",
-    "                event.preventDefault();",
-    "                const body = answer.trim();",
-    "                if (!body || pending || !open) return;",
-    "                setAnswer('');",
-    "                send('answer', { questionId: open.id, body });",
-    "              }}",
-    "            >",
-    "              <input",
-    '                aria-label="Implementation answer"',
-    '                className="h-8 min-w-0 flex-1 rounded-md border border-bolt-elements-borderColor bg-transparent px-2 text-sm"',
-    "                value={answer}",
-    "                onChange={(event) => setAnswer(event.target.value)}",
-    "              />",
-    "              <button",
-    '                type="submit"',
-    '                className="rounded-md bg-accent-500 px-2.5 py-1 text-sm text-white disabled:opacity-60"',
-    "                disabled={pending}",
-    "              >",
-    "                Submit answer",
-    "              </button>",
-    "            </form>",
-    "          ) : null}",
-    "          {showTransition ? (",
-    "            <button",
-    '              type="button"',
-    '              className="rounded-md bg-accent-500 px-2.5 py-1 text-sm text-white disabled:opacity-60"',
-    '              data-testid="shared-gate-transition"',
-    "              disabled={pending}",
-    "              onClick={() => send('transition')}",
-    "            >",
-    "              {snapshot.transitionLabel}",
-    "            </button>",
-    "          ) : null}",
-    "          {waiting && description !== waiting ? (",
-    '            <p className="text-sm text-bolt-elements-textSecondary" data-testid="shared-gate-waiting">',
-    "              {waiting}",
-    "            </p>",
-    "          ) : null}",
-    "        </div>",
-    "      </Dialog>",
-    "    </DialogRoot>",
-    "  );",
-    "}",
-    "",
-  ].join("\n");
-}
-
 export function applyBoltWorkflowPatches(boltRoot) {
   const read = (path) => readFileSync(path, "utf8");
   const writeIfChanged = (path, next, previous) => {
@@ -1329,10 +1411,6 @@ export function applyBoltWorkflowPatches(boltRoot) {
   );
   writeFileSync(join(boltRoot, "app/lib/hitl/session.tsx"), sessionSource());
   writeFileSync(
-    join(boltRoot, "app/components/factory/SharedGateDialog.tsx"),
-    gateDialogSource(),
-  );
-  writeFileSync(
     join(boltRoot, "app/routes/api.project.ts"),
     projectRouteSource(),
   );
@@ -1340,7 +1418,11 @@ export function applyBoltWorkflowPatches(boltRoot) {
     join(boltRoot, "app/routes/api.project.document.ts"),
     documentRouteSource(),
   );
-  for (const stale of ["SharedProject.tsx", "HitlGateList.tsx"]) {
+  for (const stale of [
+    "SharedProject.tsx",
+    "HitlGateList.tsx",
+    "SharedGateDialog.tsx",
+  ]) {
     const stalePath = join(boltRoot, "app/components/factory", stale);
     if (existsSync(stalePath)) unlinkSync(stalePath);
   }

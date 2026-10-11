@@ -182,9 +182,9 @@ test("both roles walk one shared project", async ({ browser }) => {
       30_000,
       "Discovery did not open for the Developer",
     );
-    await expect(devPage.getByTestId("shared-gate-waiting")).toContainText(
-      "Waiting on the Project Manager.",
-    );
+    await expect(
+      devPage.getByTestId("factory-phase-move-waiting"),
+    ).toContainText("Waiting on the Project Manager.");
     await shot(pmPage, "two-roles-1-discovery-pm");
     await shot(devPage, "two-roles-1-discovery-dev");
 
@@ -228,7 +228,7 @@ test("both roles walk one shared project", async ({ browser }) => {
     await shot(pmPage, "two-roles-2-reply-pm");
     await shot(devPage, "two-roles-2-reply-dev");
 
-    const move = pmPage.getByTestId("shared-gate-transition");
+    const move = pmPage.getByTestId("factory-phase-continue");
     await expect(move).toBeVisible();
     await expect(move).toContainText("Move to Implementation");
     await move.click();
@@ -254,11 +254,12 @@ test("both roles walk one shared project", async ({ browser }) => {
     await expect(
       devPage.getByTestId("factory-phase-implementation"),
     ).toHaveAttribute("aria-pressed", "true");
-    await expect(pmPage.getByTestId("shared-gate")).toContainText(
+    await expect(pmPage.getByTestId("factory-phase-move-waiting")).toContainText(
       "Waiting on the Developer.",
     );
-    await expect(pmPage.getByLabel("Implementation answer")).toHaveCount(0);
-    await expect(devPage.getByLabel("Implementation answer")).toBeVisible();
+    await expect(pmPage.getByLabel("Answer review-approve-dev")).toHaveCount(0);
+    await expect(devPage.getByLabel("Answer review-approve-dev")).toBeVisible();
+    await expect(devPage.getByTestId("factory-phase-continue")).toBeDisabled();
 
     const discoveryIds = new Set(ids);
     let prose = "";
@@ -313,13 +314,13 @@ test("both roles walk one shared project", async ({ browser }) => {
       .poll(async () => previewState(pmPage), {
         timeout: PREVIEW_MS,
         intervals: [2_000],
-        message: "the Project Manager preview did not show North Pier Fish",
+        message: "the Project Manager preview did not show North Pier",
       })
       .toBe("ready");
     await shot(pmPage, "two-roles-3-implementation-pm");
     await shot(devPage, "two-roles-3-implementation-dev");
 
-    await devPage.getByLabel("Implementation answer").fill(ANSWER);
+    await devPage.getByLabel("Answer review-approve-dev").fill(ANSWER);
     await devPage.getByRole("button", { name: "Submit answer" }).click();
     await untilSnapshot(
       pmPage,
@@ -327,8 +328,8 @@ test("both roles walk one shared project", async ({ browser }) => {
       HANDOVER_MS,
       "the Project Manager did not see the answer",
     );
-    await expect(pmPage.getByTestId("shared-gate")).toContainText("Answered");
-    await expect(pmPage.getByTestId("shared-gate-transition")).toHaveCount(0);
+    await expect(pmPage.getByTestId("hitl-questions")).toContainText("Answered");
+    await expect(pmPage.getByTestId("factory-phase-continue")).toHaveCount(0);
     const answered = await untilSnapshot(
       devPage,
       (body) =>
@@ -376,8 +377,9 @@ test("both roles walk one shared project", async ({ browser }) => {
       HANDOVER_MS,
       "the Project Manager moved the phase",
     );
-    const devTransition = devPage.getByTestId("shared-gate-transition");
+    const devTransition = devPage.getByTestId("factory-phase-continue");
     await expect(devTransition).toBeVisible();
+    await expect(devTransition).toBeEnabled();
     await expect(devTransition).toContainText("Move to Delivery");
     await shot(pmPage, "two-roles-4-answered-pm");
     await shot(devPage, "two-roles-4-answered-dev");
@@ -401,10 +403,10 @@ test("both roles walk one shared project", async ({ browser }) => {
       HANDOVER_MS,
       "the Developer did not reach Delivery",
     );
-    await expect(pmPage.getByTestId("shared-gate-transition")).toContainText(
+    await expect(pmPage.getByTestId("factory-phase-continue")).toContainText(
       "Approve delivery",
     );
-    await expect(devPage.getByTestId("shared-gate-waiting")).toContainText(
+    await expect(devPage.getByTestId("factory-phase-move-waiting")).toContainText(
       "Waiting on the Project Manager.",
     );
     const devApprove = await postProject(devPage, { command: "transition" });
@@ -418,7 +420,7 @@ test("both roles walk one shared project", async ({ browser }) => {
     await shot(pmPage, "two-roles-5-delivery-pm");
     await shot(devPage, "two-roles-5-delivery-dev");
 
-    await pmPage.getByTestId("shared-gate-transition").click();
+    await pmPage.getByTestId("factory-phase-continue").click();
     await untilSnapshot(
       pmPage,
       (body) => body.phase === "delivered" && body.canDownload === true,
@@ -431,8 +433,10 @@ test("both roles walk one shared project", async ({ browser }) => {
       HANDOVER_MS,
       "the Developer did not reach Delivered",
     );
-    await expect(pmPage.getByTestId("shared-gate")).toHaveCount(0);
-    await expect(devPage.getByTestId("shared-gate")).toHaveCount(0);
+    await expect(pmPage.getByTestId("hitl-questions")).toHaveCount(0);
+    await expect(devPage.getByTestId("hitl-questions")).toHaveCount(0);
+    await expect(pmPage.getByTestId("factory-phase-continue")).toHaveCount(0);
+    await expect(devPage.getByTestId("factory-phase-continue")).toHaveCount(0);
     await expect(pmPage.getByTestId("shared-download")).toBeVisible();
     await expect(devPage.getByTestId("shared-download")).toBeVisible();
     const pmFile = await downloadBytes(pmPage);
@@ -495,9 +499,9 @@ test("both roles walk one shared project", async ({ browser }) => {
     expect(devInstalls.length).toBeLessThan(2);
 
     writeReport("two-roles", {
-      summary: `both roles · composer covered: ${sent.covered} · discovery follow-ups ${finished.followUps} · developer record before the prompt: ${blocked} · implementation reply ${implementationId} · files ${files.join(",") || "none"} · preview North Pier Fish · second answer ${repeat} stored nothing new · project manager transition ${pmMove} · developer approval ${devApprove} · messages ${devReply.messages?.length ?? 0} · dev install logs ${devInstalls.length} · downloads ${pmFile.length} bytes and identical · reload kept the prompt and the implementation reply · signed out 401`,
+      summary: `both roles · composer covered: ${sent.covered} · discovery follow-ups ${finished.followUps} · developer record before the prompt: ${blocked} · implementation reply ${implementationId} · files ${files.join(",") || "none"} · preview North Pier · second answer ${repeat} stored nothing new · project manager transition ${pmMove} · developer approval ${devApprove} · messages ${devReply.messages?.length ?? 0} · dev install logs ${devInstalls.length} · downloads ${pmFile.length} bytes and identical · reload kept the prompt and the implementation reply · signed out 401`,
       implementationReplyId: implementationId,
-      preview: "North Pier Fish",
+      preview: "North Pier",
       prompt: PROMPT,
       answer: ANSWER,
       secondAnswerStatus: repeat,
@@ -528,7 +532,7 @@ async function previewState(page: Page): Promise<string> {
       .catch((error: unknown) =>
         error instanceof Error ? error.message : String(error),
       );
-    if (text.includes("North Pier Fish")) return "ready";
+    if (text.includes("North Pier")) return "ready";
     return `frame:${text.slice(0, 180)}`;
   }
   if (
@@ -571,7 +575,7 @@ test("an account outside Wewebplus cannot see the project", async ({
     await expect(page.getByTestId("bolt-account")).not.toContainText(
       "Developer",
     );
-    await expect(page.getByTestId("shared-gate")).toHaveCount(0);
+    await expect(page.getByTestId("hitl-questions")).toHaveCount(0);
     const probe = await projectSnapshot(page);
     expect(probe.status).toBe(404);
     await shot(page, "two-roles-outsider");
