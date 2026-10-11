@@ -9,6 +9,7 @@ import {
   factoryPhaseChatMode,
   factoryPhaseChats,
   factoryPhaseKickoff,
+  isFactoryKickoffPrompt,
   latestFactoryPhaseSummary,
   appIdsMissingFactoryPhases,
   hasFactoryPhases,
@@ -378,6 +379,23 @@ Here is what I understood. Approve to continue, or tell me what to change.
     expect(factoryPhaseKickoff("delivery", "- **Page:** Index")).toContain(
       "- **Page:** Index",
     );
+  });
+
+  it("recognizes Discovery and Delivery opening lines as kickoffs", () => {
+    expect(isFactoryKickoffPrompt("Start Discovery.")).toBe(true);
+    expect(isFactoryKickoffPrompt("  Start Discovery.  ")).toBe(true);
+    expect(isFactoryKickoffPrompt("Start Delivery.")).toBe(true);
+    expect(
+      isFactoryKickoffPrompt(
+        "Start Delivery. Approved implementation summary:\n\n- page",
+      ),
+    ).toBe(true);
+    expect(
+      isFactoryKickoffPrompt(
+        "Build the one-page site from this approved Discovery summary:\n\n- page",
+      ),
+    ).toBe(false);
+    expect(isFactoryKickoffPrompt("Coffee")).toBe(false);
   });
 
   it("lets only Implementation skip the blueprint questionnaire", () => {

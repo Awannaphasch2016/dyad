@@ -2,6 +2,7 @@ import { SubscriptionConnectionStatus } from "@/components/SubscriptionConnectio
 import { useAtom, useAtomValue } from "jotai";
 import { selectedAppIdAtom } from "@/atoms/appAtoms";
 import { useLoadApps } from "@/hooks/useLoadApps";
+import { titleBarAppLabel } from "./title_bar_app_label";
 import { useRouter } from "@tanstack/react-router";
 import { useSettings } from "@/hooks/useSettings";
 import { Button } from "@/components/ui/button";
@@ -42,7 +43,7 @@ export const TitleBar = () => {
   const selectedChatId = useAtomValue(selectedChatIdAtom);
   const { hasArmedPayload } = useFirstPromptSaga();
   const resumeFirstPrompt = useFirstPromptProviderResume();
-  const { apps } = useLoadApps();
+  const { apps, loading: appsLoading } = useLoadApps();
   const { navigate } = useRouter();
   const { settings, refreshSettings } = useSettings();
   const queryClient = useQueryClient();
@@ -78,7 +79,12 @@ export const TitleBar = () => {
   ]);
 
   const selectedApp = apps.find((app) => app.id === selectedAppId);
-  const displayText = selectedApp ? selectedApp.name : "No app selected";
+  const appLabel = titleBarAppLabel({
+    selectedAppId,
+    loading: appsLoading,
+    apps,
+  });
+  const displayText = appLabel.text;
 
   const handleAppClick = () => {
     if (selectedApp) {
@@ -119,7 +125,9 @@ export const TitleBar = () => {
                   aria-label={
                     selectedApp
                       ? `Manage ${selectedApp.name}`
-                      : "No app selected"
+                      : appLabel.quiet
+                        ? "Loading app"
+                        : "No app selected"
                   }
                   variant="outline"
                   size="sm"
@@ -145,7 +153,9 @@ export const TitleBar = () => {
                 {displayText}
               </span>
             </TooltipTrigger>
-            <TooltipContent>{displayText}</TooltipContent>
+            <TooltipContent>
+              {appLabel.quiet ? "Loading app" : displayText}
+            </TooltipContent>
           </Tooltip>
           {isDyadPro && <DyadProButton isDyadProEnabled={isDyadProEnabled} />}
         </div>

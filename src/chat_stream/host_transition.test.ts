@@ -9,7 +9,10 @@ import {
   canCancelChatStreamPhase,
 } from "./transition";
 
-function intent(intentId: string): SerializableChatTurnIntent {
+function intent(
+  intentId: string,
+  prompt = "Build it",
+): SerializableChatTurnIntent {
   return {
     schemaVersion: 1,
     intentId,
@@ -20,7 +23,7 @@ function intent(intentId: string): SerializableChatTurnIntent {
       entityKey: 7,
       operationId: `operation-${intentId}`,
     },
-    prompt: "Build it",
+    prompt,
   };
 }
 
@@ -35,7 +38,7 @@ describe("transitionChatStreamHost", () => {
 
     const second = transitionChatStreamHost(first.state, {
       type: "SUBMIT",
-      intent: intent("second"),
+      intent: intent("second", "Ship it"),
     });
 
     expect(second.kind).toBe("applied");
@@ -44,7 +47,164 @@ describe("transitionChatStreamHost", () => {
     expect(second.commands).toEqual([
       {
         type: "persist-queued",
-        intent: intent("second"),
+        intent: intent("second", "Ship it"),
+        resumeQueue: false,
+      },
+    ]);
+  });
+
+  it("ignores a second submit of the same text while the turn is in flight", () => {
+    const first = transitionChatStreamHost(initialChatStreamHostState(), {
+      type: "SUBMIT",
+      intent: intent("first", "Coffee"),
+    });
+    expect(first.kind).toBe("applied");
+    if (first.kind !== "applied") return;
+
+    const duplicate = transitionChatStreamHost(first.state, {
+      type: "SUBMIT",
+      intent: intent("second", "  Coffee  "),
+    });
+
+    expect(duplicate).toEqual({
+      kind: "ignored",
+      state: first.state,
+      reason: "duplicate-in-flight",
+    });
+  });
+
+  it("queues a different message while a reply is running", () => {
+    const first = transitionChatStreamHost(initialChatStreamHostState(), {
+      type: "SUBMIT",
+      intent: intent("first", "Coffee"),
+    });
+    expect(first.kind).toBe("applied");
+    if (first.kind !== "applied") return;
+
+    const second = transitionChatStreamHost(first.state, {
+      type: "SUBMIT",
+      intent: intent("second", "Hey"),
+    });
+
+    expect(second.kind).toBe("applied");
+    if (second.kind !== "applied") return;
+    expect(second.commands).toEqual([
+      {
+        type: "persist-queued",
+        intent: intent("second", "Hey"),
+        resumeQueue: false,
+      },
+    ]);
+  });
+
+  it("admits the same text again after the turn has finished", () => {
+    const started = transitionChatStreamHost(initialChatStreamHostState(), {
+      type: "SUBMIT",
+      intent: intent("first", "Coffee"),
+    });
+    expect(started.kind).toBe("applied");
+    if (started.kind !== "applied") return;
+    const ended = transitionChatStreamHost(started.state, {
+      type: "STREAM_ENDED",
+      intentId: "first",
+      invocationRef: intent("first", "Coffee").invocationRef!,
+      response: {
+        chatId: 7,
+        invocationRef: intent("first", "Coffee").invocationRef!,
+        updatedFiles: false,
+      },
+      targetAppId: 3,
+    });
+    expect(ended.kind).toBe("applied");
+    if (ended.kind !== "applied") return;
+    const idle = transitionChatStreamHost(ended.state, {
+      type: "QUEUE_MUTATED",
+      queueRevision: 1,
+      paused: false,
+      entries: [],
+    });
+    expect(idle.kind).toBe("applied");
+    if (idle.kind !== "applied") return;
+    expect(idle.state.phase).toBe("idle");
+
+    const again = transitionChatStreamHost(idle.state, {
+      type: "SUBMIT",
+      intent: intent("second", "Coffee"),
+    });
+    expect(again.kind).toBe("applied");
+    if (again.kind !== "applied") return;
+    expect(again.commands).toEqual([
+      { type: "admit-and-start", intent: intent("second", "Coffee") },
+    ]);
+  });
+
+  it("ignores a second Discovery or Delivery opening line while one is in flight", () => {
+    const first = transitionChatStreamHost(initialChatStreamHostState(), {
+      type: "SUBMIT",
+      intent: intent("first", "Start Discovery."),
+    });
+    expect(first.kind).toBe("applied");
+    if (first.kind !== "applied") return;
+
+    const secondDiscovery = transitionChatStreamHost(first.state, {
+      type: "SUBMIT",
+      intent: intent("second", "Start Discovery."),
+    });
+    expect(secondDiscovery).toEqual({
+      kind: "ignored",
+      state: first.state,
+      reason: "duplicate-in-flight",
+    });
+
+    const delivery = transitionChatStreamHost(initialChatStreamHostState(), {
+      type: "SUBMIT",
+      intent: intent("delivery", "Start Delivery."),
+    });
+    expect(delivery.kind).toBe("applied");
+    if (delivery.kind !== "applied") return;
+    const otherSummary = transitionChatStreamHost(delivery.state, {
+      type: "SUBMIT",
+      intent: intent(
+        "summary",
+        "Start Delivery. Approved implementation summary:\n\n- page",
+      ),
+    });
+    expect(otherSummary).toEqual({
+      kind: "ignored",
+      state: delivery.state,
+      reason: "duplicate-in-flight",
+    });
+  });
+
+  it("still queues the same text when the new submit has attachments", () => {
+    const first = transitionChatStreamHost(initialChatStreamHostState(), {
+      type: "SUBMIT",
+      intent: intent("first", "Coffee"),
+    });
+    expect(first.kind).toBe("applied");
+    if (first.kind !== "applied") return;
+
+    const withPhoto = {
+      ...intent("second", "Coffee"),
+      attachments: [
+        {
+          name: "photo.png",
+          type: "image/png",
+          data: "a",
+          attachmentType: "chat-context" as const,
+        },
+      ],
+    };
+    const second = transitionChatStreamHost(first.state, {
+      type: "SUBMIT",
+      intent: withPhoto,
+    });
+    expect(second.kind).toBe("applied");
+    if (second.kind !== "applied") return;
+    expect(second.commands).toEqual([
+      {
+        type: "persist-queued",
+        intent: withPhoto,
         resumeQueue: false,
       },
     ]);
@@ -64,7 +224,7 @@ describe("transitionChatStreamHost", () => {
 
     const submitted = transitionChatStreamHost(cancelling, {
       type: "SUBMIT",
-      intent: intent("late"),
+      intent: intent("late", "Still send this"),
     });
 
     expect(submitted.kind).toBe("applied");
@@ -73,7 +233,7 @@ describe("transitionChatStreamHost", () => {
     expect(submitted.commands).toEqual([
       {
         type: "persist-queued",
-        intent: intent("late"),
+        intent: intent("late", "Still send this"),
         resumeQueue: false,
       },
     ]);

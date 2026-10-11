@@ -573,6 +573,10 @@ export function ChatInput({ chatId }: { chatId?: number }) {
     ) {
       return;
     }
+    isAwaitingTurnAcceptanceRef.current = true;
+    const releaseSendGuard = () => {
+      isAwaitingTurnAcceptanceRef.current = false;
+    };
 
     const submittedAnnotations = chatAnnotations;
     const submittedAnnotationIds = new Set(
@@ -614,168 +618,175 @@ export function ChatInput({ chatId }: { chatId?: number }) {
       });
     };
 
-    if (isRecording) {
-      await toggleRecording();
-    }
-
-    // Build prompt with auto-added image mentions
-    const imageMentions = visibleSuccessfulImageJobs
-      .map((job) => `@media:${encodeURIComponent(job.result!.fileName)}`)
-      .join(" ");
-    const promptWithImages = inputValue.trim()
-      ? imageMentions
-        ? `${inputValue} ${imageMentions}`
-        : inputValue
-      : imageMentions;
-    const currentInput = composeChatPrompt(
-      promptWithImages,
-      submittedAnnotations,
-    );
-
-    if (currentInput.length > MAX_CHAT_PROMPT_CHARS) {
-      showErrorToast(CHAT_PROMPT_LENGTH_LIMIT_MESSAGE);
-      return;
-    }
-
-    const submittedInputValue = inputValue;
-    const submittedImageJobIds = visibleSuccessfulImageJobs.map(
-      (job) => job.id,
-    );
-    const dismissSubmittedImageJobs = () => {
-      if (submittedImageJobIds.length === 0) return;
-      setDismissedImageJobIds((previous) => {
-        const next = new Set(previous);
-        for (const jobId of submittedImageJobIds) next.add(jobId);
-        return next;
-      });
-    };
-
-    // Use all selected components for multi-component editing
-    const componentsToSend =
-      selectedComponents && selectedComponents.length > 0
-        ? selectedComponents
-        : [];
-
-    // Handle editing a queued message
-    if (editingQueuedMessageId) {
-      updateQueuedMessage(editingQueuedMessageId, {
-        prompt: currentInput,
-        attachments,
-        selectedComponents: componentsToSend,
-      });
-      hideSubmittedAnnotations();
-      dismissSubmittedImageJobs();
-      resetEditingState();
-      return;
-    }
-
-    // Queue while actively streaming. When Stop parked the queue but the actor
-    // is idle, the main actor appends this prompt and resumes FIFO. Explicit
-    // Pause and step-limit pauses instead let this new turn run immediately.
-    if (isStreaming) {
-      const queued = queueMessage({
-        prompt: currentInput,
-        attachments,
-        selectedComponents: componentsToSend,
-      });
-      if (queued) {
-        // Only clear input, attachments, and components on successful queue
-        hideSubmittedAnnotations();
-        clearComposerAfterSubmit();
-        clearAttachments();
-        dismissSubmittedImageJobs();
+    try {
+      if (isRecording) {
+        await toggleRecording();
       }
-      // If queue failed, leave input/attachments intact for the user
-      return;
-    }
 
-    // Clear text immediately, even when admission waits on network preflight.
-    // Keep the submitted draft in this request's closure so rejection can
-    // restore it without discarding anything typed while admission was pending.
-    void openPreviewIfSetupRequired(appId);
-    setInputValue("");
-    clearSubmittedAttachments(attachments);
-    dismissSubmittedImageJobs();
-    let didRestoreSubmittedInput = false;
-    const restoreSubmittedInput = () => {
-      if (didRestoreSubmittedInput) return;
-      didRestoreSubmittedInput = true;
-      restoreSubmittedAttachments(attachments);
-      setDismissedImageJobIds((previous) => {
-        const next = new Set(previous);
-        for (const jobId of submittedImageJobIds) next.delete(jobId);
-        return next;
-      });
-      setInputValue((current) =>
-        current && submittedInputValue
-          ? `${submittedInputValue}\n\n${current}`
-          : submittedInputValue || current,
+      // Build prompt with auto-added image mentions
+      const imageMentions = visibleSuccessfulImageJobs
+        .map((job) => `@media:${encodeURIComponent(job.result!.fileName)}`)
+        .join(" ");
+      const promptWithImages = inputValue.trim()
+        ? imageMentions
+          ? `${inputValue} ${imageMentions}`
+          : inputValue
+        : imageMentions;
+      const currentInput = composeChatPrompt(
+        promptWithImages,
+        submittedAnnotations,
       );
-    };
-    let didClearAcceptedPayload = false;
-    const clearAcceptedPayload = () => {
-      if (didClearAcceptedPayload) return;
-      didClearAcceptedPayload = true;
-      const currentComponents = store.get(selectedComponentsPreviewAtom);
-      if (
-        currentComponents.length === componentsToSend.length &&
-        currentComponents.every(
-          (component, index) => component === componentsToSend[index],
-        )
-      ) {
-        setSelectedComponents([]);
-        sendPreviewIframeEvent({ type: "PICKER_DEACTIVATED" });
-        setVisualEditingSelectedComponent(null);
-        if (previewIframeRef?.contentWindow) {
-          previewIframeRef.contentWindow.postMessage(
-            { type: "clear-dyad-component-overlays" },
-            "*",
-          );
-        }
+
+      if (currentInput.length > MAX_CHAT_PROMPT_CHARS) {
+        showErrorToast(CHAT_PROMPT_LENGTH_LIMIT_MESSAGE);
+        releaseSendGuard();
+        return;
       }
-    };
-    isAwaitingTurnAcceptanceRef.current = true;
-    hideSubmittedAnnotations();
-    let wasAccepted = false;
-    await streamMessage({
-      prompt: currentInput,
-      chatId,
-      attachments,
-      redo: false,
-      showOptimisticMessage: true,
-      optimisticDisplayContent: buildOptimisticChatDisplay(
-        currentInput,
-        apps.find((app) => app.id === appId)?.path,
-        [
-          ...(mediaApps.find((app) => app.appId === appId)?.files ?? []),
-          ...visibleSuccessfulImageJobs.map((job) => ({
-            fileName: job.result!.fileName,
-            mimeType: "image/png",
-          })),
-        ],
-      ),
-      selectedComponents: componentsToSend,
-      requestedChatMode: isChatModeLoading ? null : storedChatMode,
-      onAccepted: () => {
-        wasAccepted = true;
-        isAwaitingTurnAcceptanceRef.current = false;
-        clearAcceptedPayload();
-      },
-      onAcceptanceRejected: () => {
-        isAwaitingTurnAcceptanceRef.current = false;
-        restoreSubmittedInput();
-        restoreSubmittedAnnotations();
-      },
-      onSettled: ({ success, queued }) => {
-        isAwaitingTurnAcceptanceRef.current = false;
-        if (queued) clearAcceptedPayload();
-        if (!success && !queued && !wasAccepted) {
+
+      const submittedInputValue = inputValue;
+      const submittedImageJobIds = visibleSuccessfulImageJobs.map(
+        (job) => job.id,
+      );
+      const dismissSubmittedImageJobs = () => {
+        if (submittedImageJobIds.length === 0) return;
+        setDismissedImageJobIds((previous) => {
+          const next = new Set(previous);
+          for (const jobId of submittedImageJobIds) next.add(jobId);
+          return next;
+        });
+      };
+
+      // Use all selected components for multi-component editing
+      const componentsToSend =
+        selectedComponents && selectedComponents.length > 0
+          ? selectedComponents
+          : [];
+
+      // Handle editing a queued message
+      if (editingQueuedMessageId) {
+        updateQueuedMessage(editingQueuedMessageId, {
+          prompt: currentInput,
+          attachments,
+          selectedComponents: componentsToSend,
+        });
+        hideSubmittedAnnotations();
+        dismissSubmittedImageJobs();
+        resetEditingState();
+        releaseSendGuard();
+        return;
+      }
+
+      // Queue while actively streaming. When Stop parked the queue but the actor
+      // is idle, the main actor appends this prompt and resumes FIFO. Explicit
+      // Pause and step-limit pauses instead let this new turn run immediately.
+      if (isStreaming) {
+        const queued = queueMessage({
+          prompt: currentInput,
+          attachments,
+          selectedComponents: componentsToSend,
+        });
+        if (queued) {
+          // Only clear input, attachments, and components on successful queue
+          hideSubmittedAnnotations();
+          clearComposerAfterSubmit();
+          clearAttachments();
+          dismissSubmittedImageJobs();
+        }
+        // If queue failed, leave input/attachments intact for the user
+        releaseSendGuard();
+        return;
+      }
+
+      // Clear text immediately, even when admission waits on network preflight.
+      // Keep the submitted draft in this request's closure so rejection can
+      // restore it without discarding anything typed while admission was pending.
+      void openPreviewIfSetupRequired(appId);
+      setInputValue("");
+      clearSubmittedAttachments(attachments);
+      dismissSubmittedImageJobs();
+      let didRestoreSubmittedInput = false;
+      const restoreSubmittedInput = () => {
+        if (didRestoreSubmittedInput) return;
+        didRestoreSubmittedInput = true;
+        restoreSubmittedAttachments(attachments);
+        setDismissedImageJobIds((previous) => {
+          const next = new Set(previous);
+          for (const jobId of submittedImageJobIds) next.delete(jobId);
+          return next;
+        });
+        setInputValue((current) =>
+          current && submittedInputValue
+            ? `${submittedInputValue}\n\n${current}`
+            : submittedInputValue || current,
+        );
+      };
+      let didClearAcceptedPayload = false;
+      const clearAcceptedPayload = () => {
+        if (didClearAcceptedPayload) return;
+        didClearAcceptedPayload = true;
+        const currentComponents = store.get(selectedComponentsPreviewAtom);
+        if (
+          currentComponents.length === componentsToSend.length &&
+          currentComponents.every(
+            (component, index) => component === componentsToSend[index],
+          )
+        ) {
+          setSelectedComponents([]);
+          sendPreviewIframeEvent({ type: "PICKER_DEACTIVATED" });
+          setVisualEditingSelectedComponent(null);
+          if (previewIframeRef?.contentWindow) {
+            previewIframeRef.contentWindow.postMessage(
+              { type: "clear-dyad-component-overlays" },
+              "*",
+            );
+          }
+        }
+      };
+      hideSubmittedAnnotations();
+      let wasAccepted = false;
+      await streamMessage({
+        prompt: currentInput,
+        chatId,
+        attachments,
+        redo: false,
+        showOptimisticMessage: true,
+        optimisticDisplayContent: buildOptimisticChatDisplay(
+          currentInput,
+          apps.find((app) => app.id === appId)?.path,
+          [
+            ...(mediaApps.find((app) => app.appId === appId)?.files ?? []),
+            ...visibleSuccessfulImageJobs.map((job) => ({
+              fileName: job.result!.fileName,
+              mimeType: "image/png",
+            })),
+          ],
+        ),
+        selectedComponents: componentsToSend,
+        requestedChatMode: isChatModeLoading ? null : storedChatMode,
+        onAccepted: () => {
+          wasAccepted = true;
+          isAwaitingTurnAcceptanceRef.current = false;
+          clearAcceptedPayload();
+        },
+        onAcceptanceRejected: () => {
+          isAwaitingTurnAcceptanceRef.current = false;
           restoreSubmittedInput();
           restoreSubmittedAnnotations();
-        }
-      },
-    });
-    posthog.capture("chat:submit", { chatMode });
+        },
+        onSettled: ({ success, queued }) => {
+          isAwaitingTurnAcceptanceRef.current = false;
+          if (queued) clearAcceptedPayload();
+          if (!success && !queued && !wasAccepted) {
+            restoreSubmittedInput();
+            restoreSubmittedAnnotations();
+          }
+        },
+      });
+      posthog.capture("chat:submit", { chatMode });
+    } catch (error) {
+      releaseSendGuard();
+      throw error;
+    }
   };
 
   const handleCancel = () => {

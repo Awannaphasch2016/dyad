@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 export function useChats(appId: number | null) {
   const queryClient = useQueryClient();
 
-  const { data, isLoading } = useQuery<ChatSummary[]>({
+  const { data, isLoading, isError, error } = useQuery<ChatSummary[]>({
     queryKey: queryKeys.chats.list({ appId }),
     queryFn: async () => {
       return ipc.chat.getChats(appId ?? undefined);
@@ -22,6 +22,8 @@ export function useChats(appId: number | null) {
   return {
     chats: data ?? [],
     loading: isLoading,
+    // A failed first fetch has no list. A later refetch keeps the last list.
+    error: isError && data === undefined ? error : null,
     invalidateChats,
   };
 }

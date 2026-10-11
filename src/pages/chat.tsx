@@ -16,6 +16,7 @@ import { selectedAppIdAtom } from "@/atoms/appAtoms";
 import { selectedChatIdAtom } from "@/atoms/chatAtoms";
 import { ipc } from "@/ipc/types";
 import { phaseFromTitle, previewOpenForPhase } from "@/lib/factoryPhase";
+import { chatPageRedirect } from "./chat_route";
 
 const DEFAULT_CHAT_PANEL_SIZE = 50;
 
@@ -30,7 +31,7 @@ export default function ChatPage() {
   const [isResizing, setIsResizing] = useState(false);
   const selectedAppId = useAtomValue(selectedAppIdAtom);
   const setSelectedAppId = useSetAtom(selectedAppIdAtom);
-  const { chats, loading } = useChats(selectedAppId);
+  const { chats, loading, error: chatsError } = useChats(selectedAppId);
   const previousSizeRef = useRef<number>(DEFAULT_CHAT_PANEL_SIZE);
   const isInitialMountRef = useRef(true);
   const selectedAppIdRef = useRef(selectedAppId);
@@ -45,33 +46,41 @@ export default function ChatPage() {
   }, [chatId, setSelectedChatId]);
 
   useEffect(() => {
-    if (chatId || loading) {
-      return;
-    }
-
-    if (!selectedAppId) {
+    const redirect = chatPageRedirect({
+      chatId,
+      loading,
+      fetchFailed: chatsError != null,
+      selectedAppId,
+      chats,
+    });
+    if (redirect.kind === "stay") return;
+    if (redirect.kind === "home") {
       navigate({ to: "/", replace: true });
       return;
     }
-
-    if (chats.length) {
-      // Not a real navigation, just a redirect, when the user navigates to /chat
-      // without a chatId, we redirect to the first chat
-      setSelectedAppId(chats[0].appId);
+    if (redirect.kind === "chat") {
+      setSelectedAppId(redirect.appId);
       navigate({
         to: "/chat",
-        search: { id: chats[0].id, appId: chats[0].appId },
+        search: { id: redirect.chatId, appId: redirect.appId },
         replace: true,
       });
       return;
     }
-
     navigate({
       to: "/app-details",
-      search: { appId: selectedAppId },
+      search: { appId: redirect.appId },
       replace: true,
     });
-  }, [chatId, chats, loading, navigate, selectedAppId, setSelectedAppId]);
+  }, [
+    chatId,
+    chats,
+    chatsError,
+    loading,
+    navigate,
+    selectedAppId,
+    setSelectedAppId,
+  ]);
 
   useEffect(() => {
     if (!chatId) {

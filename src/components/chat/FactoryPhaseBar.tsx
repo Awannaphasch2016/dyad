@@ -238,6 +238,8 @@ export function FactoryPhaseBar() {
       return;
     }
     kickedOffChatIds.current.add(chatId);
+    // This tab sends once. The chat-stream host drops a second kickoff while
+    // one is in flight, and admission drops a kickoff after a user message exists.
     void streamMessage({ prompt: kickoff, chatId, appId });
   }, [
     kickoff,

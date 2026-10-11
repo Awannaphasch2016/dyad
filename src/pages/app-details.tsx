@@ -9,6 +9,7 @@ import { selectedAppIdAtom } from "@/atoms/appAtoms";
 import { selectedChatIdAtom } from "@/atoms/chatAtoms";
 import { ipc } from "@/ipc/types";
 import { useLoadApps } from "@/hooks/useLoadApps";
+import { resolveAppDetailsView } from "./app_details_view";
 import { useChats } from "@/hooks/useChats";
 import { useSelectChat } from "@/hooks/useSelectChat";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -101,7 +102,12 @@ export default function AppDetailsPage() {
   const search = useSearch({ from: "/app-details" as const });
   const appId = search.appId ? Number(search.appId) : null;
   const { t } = useTranslation("home");
-  const { apps: appsList, refreshApps } = useLoadApps();
+  const {
+    apps: appsList,
+    loading: appsLoading,
+    error: appsError,
+    refreshApps,
+  } = useLoadApps();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
@@ -363,6 +369,37 @@ export default function AppDetailsPage() {
     },
   });
 
+  const appView = resolveAppDetailsView({
+    appId,
+    loading: appsLoading,
+    fetchFailed: appsError != null,
+    appIds: appsList.map((app) => app.id),
+  });
+  if (appView === "loading") {
+    return (
+      <div className="relative min-h-screen p-8">
+        <BackButton label="Back" className="absolute top-4 left-4 mb-0" />
+        <div className="flex flex-col items-center justify-center h-full">
+          <h2 className="text-xl font-bold">Loading app…</h2>
+        </div>
+      </div>
+    );
+  }
+  if (appView === "error") {
+    const message =
+      appsError instanceof Error
+        ? appsError.message
+        : "The app list could not be loaded.";
+    return (
+      <div className="relative min-h-screen p-8">
+        <BackButton label="Back" className="absolute top-4 left-4 mb-0" />
+        <div className="flex flex-col items-center justify-center h-full gap-3">
+          <h2 className="text-xl font-bold">{message}</h2>
+          <Button onClick={() => void refreshApps()}>Try again</Button>
+        </div>
+      </div>
+    );
+  }
   if (!selectedApp) {
     return (
       <div className="relative min-h-screen p-8">

@@ -138,6 +138,7 @@ vi.mock("@/ipc/utils/neon_test_branch", async (importOriginal) => {
 });
 
 import { registerAppHandlers } from "./app_handlers";
+import { gitService } from "@/ipc/services/git_service";
 import { registerImportHandlers } from "./import_handlers";
 import { firstPromptCreationRegistry } from "../services/first_prompt_creation_service";
 import { queryInvalidationBus } from "@/window_infrastructure/main/query_invalidation_bus";
@@ -322,6 +323,43 @@ describe("app naming handlers", () => {
       await firstPromptCreationRegistry.cancel(operationId);
 
       expect(fs.existsSync(fullAppPath)).toBe(false);
+    });
+
+    it("deletes the inserted app when Git init throws", async () => {
+      vi.mocked(gitService.initRepoWithInitialCommit).mockRejectedValueOnce(
+        new Error("git init failed"),
+      );
+      const appsBefore = harness.db.select().from(apps).all().length;
+      const chatsBefore = harness.db.select().from(chats).all().length;
+
+      await expect(
+        harness.invokeHandler("create-app", { name: "Broken Init" }),
+      ).rejects.toThrow("git init failed");
+
+      expect(harness.db.select().from(apps).all()).toHaveLength(appsBefore);
+      expect(harness.db.select().from(chats).all()).toHaveLength(chatsBefore);
+      expect(fs.existsSync(path.join(TEMP_BASE, "broken-init"))).toBe(false);
+    });
+
+    it("keeps the app when Git init returns a hash", async () => {
+      vi.mocked(gitService.initRepoWithInitialCommit).mockResolvedValueOnce(
+        "kept-hash",
+      );
+
+      const result = await harness.invokeHandler<{
+        app: { id: number };
+      }>("create-app", { name: "Kept Init" });
+
+      expect(getAppRow(result.app.id)?.name).toBe("Kept Init");
+      const rows = harness.db
+        .select()
+        .from(chats)
+        .where(eq(chats.appId, result.app.id))
+        .all();
+      expect(rows).toHaveLength(3);
+      expect(rows.every((row) => row.initialCommitHash === "kept-hash")).toBe(
+        true,
+      );
     });
 
     it("publishes a second invalidation when first-prompt creation rolls back", async () => {

@@ -1,3 +1,4 @@
+import { isFactoryKickoffPrompt } from "@/lib/factoryPhase";
 import { sameInvocationRef } from "@/state_machines/invocation_ref";
 import { ignore, type TransitionResult } from "@/state_machines/types";
 import type { ChatStreamHostCommand, ChatStreamHostState } from "./host_state";
@@ -8,7 +9,40 @@ export type ChatStreamHostIgnoreReason =
   | "queue-revision-conflict"
   | "not-cancellable"
   | "not-active"
-  | "invalid-host-event";
+  | "invalid-host-event"
+  | "duplicate-in-flight";
+
+function isInFlightDuplicateSubmit(
+  state: ChatStreamHostState,
+  intent: Extract<ChatStreamWireEvent, { type: "SUBMIT" }>["intent"],
+): boolean {
+  if (
+    state.active?.intent.intentId === intent.intentId ||
+    state.queue.some((entry) => entry.intentId === intent.intentId)
+  ) {
+    return false;
+  }
+  const inFlight: { prompt: string }[] = [];
+  if (
+    state.active &&
+    (state.phase === "admitting" ||
+      state.phase === "streaming" ||
+      state.phase === "cancelling" ||
+      state.phase === "finalizing")
+  ) {
+    inFlight.push(state.active.intent);
+  }
+  inFlight.push(...state.queue);
+  if (
+    isFactoryKickoffPrompt(intent.prompt) &&
+    inFlight.some((item) => isFactoryKickoffPrompt(item.prompt))
+  ) {
+    return true;
+  }
+  if ((intent.attachments?.length ?? 0) > 0) return false;
+  const text = intent.prompt.trim();
+  return inFlight.some((item) => item.prompt.trim() === text);
+}
 
 export function initialChatStreamHostState(input?: {
   queueRevision: number;
@@ -157,6 +191,9 @@ export function transitionChatStreamHost(
 > {
   switch (event.type) {
     case "SUBMIT": {
+      if (isInFlightDuplicateSubmit(state, event.intent)) {
+        return ignore(state, "duplicate-in-flight");
+      }
       const predatesLatestStop =
         event.observedStopPolicyVersion !== undefined &&
         event.observedStopPolicyVersion < state.stopPolicyVersion;
