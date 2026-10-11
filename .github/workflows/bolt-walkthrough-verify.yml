@@ -1,6 +1,7 @@
 # Sign two dedicated test accounts into the deployed Bolt walkthrough from
 # headless Chrome with no person involved. Credentials come from Doppler
 # bolt/preview in this job; nothing is printed or copied anywhere else.
+# Run this after the preview deploy for the same commit has finished.
 
 name: Bolt walkthrough verify
 
