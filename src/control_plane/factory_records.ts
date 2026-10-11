@@ -8,6 +8,7 @@ import {
   factoryPhaseApprovals,
   factoryPhaseComments,
 } from "@/db/schema";
+import { approvalPermissionForPhase } from "@/auth/permissions";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import type { FactoryPhase } from "@/lib/factoryPhase";
 import { assertCan, type AccountSession } from "./access";
@@ -126,22 +127,34 @@ export async function listPhaseApprovals(
     }));
 }
 
+/** Same `approve-<phase>` check both Continue IPC paths use. */
+export async function requirePhaseApproval(
+  event: { sender: { id: number } },
+  appId: number,
+  phase: string,
+) {
+  const factoryPhase = approvalPhase(phase);
+  if (!factoryPhase) {
+    throw new DyadError("Unknown factory phase.", DyadErrorKind.Validation);
+  }
+  const owned = await requireOwnedApp(
+    event,
+    appId,
+    approvalPermissionForPhase(factoryPhase),
+  );
+  return { ...owned, factoryPhase };
+}
+
 export async function approvePhase(
   event: { sender: { id: number } },
   appId: number,
   phase: string,
 ): Promise<void> {
-  const permission =
-    phase === "discovery"
-      ? "approve-discovery"
-      : phase === "implementation"
-        ? "approve-implementation"
-        : "approve-delivery";
-  const { app, session } = await requireOwnedApp(event, appId, permission);
-  const factoryPhase = approvalPhase(phase);
-  if (!factoryPhase) {
-    throw new DyadError("Unknown factory phase.", DyadErrorKind.Validation);
-  }
+  const { app, session, factoryPhase } = await requirePhaseApproval(
+    event,
+    appId,
+    phase,
+  );
   const existing = db
     .select()
     .from(factoryPhaseApprovals)
@@ -181,7 +194,7 @@ export async function approvePhase(
         owner: { type: app.ownerType, id: app.ownerId },
         actorId: session.userId,
         action: "approve",
-        subject: `${phase}:${app.remoteId}`,
+        subject: `${factoryPhase}:${app.remoteId}`,
       });
     }
   }

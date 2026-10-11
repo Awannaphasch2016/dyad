@@ -4,6 +4,7 @@ import { createStore, Provider } from "jotai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { selectedAppIdAtom } from "@/atoms/appAtoms";
 import { selectedChatIdAtom } from "@/atoms/chatAtoms";
+import { ClerkSessionProvider, type ClerkSessionState } from "@/auth/session";
 import { FactoryPhaseBar } from "./FactoryPhaseBar";
 
 const streamMessage = vi.hoisted(() => vi.fn());
@@ -13,6 +14,9 @@ const approvePhase = vi.hoisted(() => vi.fn());
 const approveAccountPhase = vi.hoisted(() => vi.fn());
 const listApprovals = vi.hoisted(() => vi.fn());
 const getChat = vi.hoisted(() => vi.fn());
+const ensureCursorPhase = vi.hoisted(() =>
+  vi.fn(async () => ({ started: false })),
+);
 const downloadFactoryDocument = vi.hoisted(() => vi.fn());
 
 vi.mock("@/hooks/useStreamChat", () => ({
@@ -65,6 +69,7 @@ vi.mock("@/ipc/types", () => ({
       addComment: vi.fn(),
       listQuestions: vi.fn(async () => ({ questions: [] })),
       answerQuestion: vi.fn(),
+      ensureCursorPhase,
     },
     chat: {
       getChat: (...args: unknown[]) => getChat(...args),
@@ -83,20 +88,36 @@ const discoverySummary = {
   content: "## Discovery summary\n- **Page name:** Hello",
 };
 
-function renderBar() {
+function renderBar(session?: ClerkSessionState) {
   const store = createStore();
   store.set(selectedAppIdAtom, 7);
   store.set(selectedChatIdAtom, 1);
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  const bar = session ? (
+    <ClerkSessionProvider value={session}>
+      <FactoryPhaseBar />
+    </ClerkSessionProvider>
+  ) : (
+    <FactoryPhaseBar />
+  );
   return render(
     <QueryClientProvider client={client}>
-      <Provider store={store}>
-        <FactoryPhaseBar />
-      </Provider>
+      <Provider store={store}>{bar}</Provider>
     </QueryClientProvider>,
   );
+}
+
+function signedIn(roleId: "developer" | "project-manager"): ClerkSessionState {
+  return {
+    status: "signed-in",
+    roleId,
+    canInvite: false,
+    userId: roleId === "developer" ? "user_dev" : "user_pm",
+    email: null,
+    account: { type: "org", id: "org_wewebplus", name: "WeWebPlus" },
+  };
 }
 
 describe("FactoryPhaseBar", () => {
@@ -110,6 +131,8 @@ describe("FactoryPhaseBar", () => {
     listApprovals.mockResolvedValue({ approvals: [] });
     approveAccountPhase.mockResolvedValue(undefined);
     getChat.mockReset();
+    ensureCursorPhase.mockReset();
+    ensureCursorPhase.mockResolvedValue({ started: false });
     downloadFactoryDocument.mockReset();
     approvePhase.mockResolvedValue({
       appId: 7,
@@ -179,8 +202,13 @@ describe("FactoryPhaseBar", () => {
         appId: 7,
       });
     });
+    expect(ensureCursorPhase).toHaveBeenCalledWith({
+      appId: 7,
+      phase: "discovery",
+    });
     unlinked.unmount();
     streamMessage.mockClear();
+    ensureCursorPhase.mockResolvedValue({ started: true });
 
     getState.mockResolvedValue({
       appId: 7,
@@ -221,5 +249,51 @@ describe("FactoryPhaseBar", () => {
     });
     expect(approveAccountPhase).not.toHaveBeenCalled();
     expect(streamMessage).not.toHaveBeenCalled();
+  });
+
+  it("keeps Continue closed for a developer after the summary and open for a project manager", async () => {
+    getState.mockResolvedValue({
+      appId: 7,
+      factoryHostManaged: false,
+      gasCityProjectId: null,
+      approvedPhases: [],
+    });
+    getChat.mockImplementation(async (chatId: number) =>
+      chatId === 1 ? { messages: [discoverySummary] } : { messages: [] },
+    );
+
+    const developer = renderBar(signedIn("developer"));
+    const refused = await screen.findByRole("button", {
+      name: "Approve and continue to Implementation",
+    });
+    expect((refused as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/Your role can't approve this phase/)).toBeTruthy();
+    developer.unmount();
+
+    const manager = renderBar(signedIn("project-manager"));
+    expect(
+      (
+        (await screen.findByRole("button", {
+          name: "Approve and continue to Implementation",
+        })) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false);
+    expect(screen.queryByText(/Your role can't approve this phase/)).toBeNull();
+    manager.unmount();
+
+    getChat.mockResolvedValue({ messages: [] });
+    renderBar(signedIn("project-manager"));
+    expect(
+      (
+        (await screen.findByRole("button", {
+          name: "Approve and continue to Implementation",
+        })) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    expect(
+      screen.getByText(
+        /Approval unlocks when wewebplus posts its Discovery summary/,
+      ),
+    ).toBeTruthy();
   });
 });

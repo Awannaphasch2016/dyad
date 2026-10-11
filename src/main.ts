@@ -20,6 +20,7 @@ import {
   startFactoryHostBridgeFromEnv,
   stopFactoryHostBridge,
 } from "./main/factory_host_bridge_server";
+import { startCursorFactoryPoller } from "./main/cursor_factory_host";
 import {
   startBrowserBridgeFromEnv,
   stopBrowserBridge,
@@ -471,6 +472,7 @@ export async function onReady() {
   }
   try {
     await startFactoryHostBridgeFromEnv();
+    startCursorFactoryPoller();
   } catch (error) {
     logger.error("Failed to start Gas City host bridge", error);
     dialog.showErrorBox(

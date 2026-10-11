@@ -190,6 +190,75 @@ function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
+/** Cursor Cloud Agent runs share an agent id and each get their own run id. */
+export const CURSOR_RUN_PREFIX = "cursor-run:";
+
+export function factoryRunIdForCursor(cursorRunId: string): string {
+  const raw = cursorRunId.trim();
+  if (!raw || raw.includes("/") || raw.startsWith(CURSOR_RUN_PREFIX)) {
+    throw new FactoryHostError("Cursor run id is not usable", 400);
+  }
+  return `${CURSOR_RUN_PREFIX}${raw}`;
+}
+
+/**
+ * Store one Cursor run on the factory run table.
+ * The row id is `cursor-run:` plus the Cursor run id. That same value is the
+ * intent id, matching a local run. The agent id is a separate column because
+ * follow-ups share it and the intent id is unique.
+ */
+export function recordCursorFactoryRun(
+  database: FactoryHostDatabase,
+  input: {
+    appId: number;
+    phase: FactoryPhase;
+    cursorAgentId: string;
+    cursorRunId: string;
+    prompt: string;
+    idempotencyKey: string;
+  },
+) {
+  const agentId = input.cursorAgentId.trim();
+  if (!agentId) throw new FactoryHostError("Cursor agent id is required", 400);
+  const runId = factoryRunIdForCursor(input.cursorRunId);
+  const chatId = resolveFactoryPhaseChats(database, input.appId)[input.phase];
+  const promptHash = sha256(input.prompt);
+  const existing = database
+    .select()
+    .from(factoryHostRuns)
+    .where(eq(factoryHostRuns.runId, runId))
+    .get();
+  if (existing) {
+    if (
+      existing.cursorAgentId !== agentId ||
+      existing.promptHash !== promptHash ||
+      existing.appId !== input.appId ||
+      existing.phase !== input.phase
+    ) {
+      throw new FactoryHostError(
+        "Cursor run id was already stored with different details",
+        409,
+      );
+    }
+    return readFactoryRun(database, runId);
+  }
+  database
+    .insert(factoryHostRuns)
+    .values({
+      runId,
+      appId: input.appId,
+      chatId,
+      phase: input.phase,
+      idempotencyKey: input.idempotencyKey,
+      promptHash,
+      intentId: runId,
+      cursorAgentId: agentId,
+      acceptance: "accepted",
+    })
+    .run();
+  return readFactoryRun(database, runId);
+}
+
 export function readFactoryRun(database: FactoryHostDatabase, runId: string) {
   const run = database
     .select()
@@ -248,6 +317,10 @@ export function readFactoryRun(database: FactoryHostDatabase, runId: string) {
     status,
     terminalOutcome,
     finalResult: finalMessage ?? null,
+    cursorAgentId: run.cursorAgentId ?? null,
+    cursorRunId: run.runId.startsWith(CURSOR_RUN_PREFIX)
+      ? run.runId.slice(CURSOR_RUN_PREFIX.length)
+      : null,
   };
 }
 

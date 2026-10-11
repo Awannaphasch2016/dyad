@@ -4,7 +4,9 @@ import { factoryHostRuns, hitlAnswers, hitlQuestions } from "@/db/schema";
 import { FACTORY_PHASES, type FactoryPhase } from "@/lib/factoryPhase";
 import type { FactoryHostDatabase } from "@/main/factory_host_service";
 import {
+  CURSOR_RUN_PREFIX,
   FactoryHostError,
+  recordCursorFactoryRun,
   startFactoryRun,
   type FactoryRunDispatch,
 } from "@/main/factory_host_service";
@@ -147,6 +149,17 @@ function isFactoryPhase(value: string): value is FactoryPhase {
   return (FACTORY_PHASES as readonly string[]).includes(value);
 }
 
+/** Sends the answer to the same Cursor agent. The new run id is the follow-up. */
+export interface CursorFollowUpRequest {
+  cursorAgentId: string;
+  prompt: string;
+  idempotencyKey: string;
+}
+
+export type CursorFollowUpSender = (
+  input: CursorFollowUpRequest,
+) => Promise<{ cursorRunId: string }>;
+
 export async function answerHitlQuestion(
   database: DeviceDb,
   input: {
@@ -154,6 +167,7 @@ export async function answerHitlQuestion(
     caller: HitlCaller;
     body: string;
     dispatch?: FactoryRunDispatch;
+    cursorFollowUp?: CursorFollowUpSender;
   },
 ): Promise<{ view: HitlQuestionView; resolved: boolean }> {
   const row = database
@@ -218,6 +232,7 @@ export async function answerHitlQuestion(
     questionBody: updated.body,
     answerBody: input.body,
     dispatch: input.dispatch,
+    cursorFollowUp: input.cursorFollowUp,
   });
   return { view, resolved };
 }
@@ -238,6 +253,7 @@ async function resumeLocalRun(
     questionBody: string;
     answerBody: string;
     dispatch?: FactoryRunDispatch;
+    cursorFollowUp?: CursorFollowUpSender;
   },
 ): Promise<boolean> {
   if (!isFactoryPhase(input.phase)) return false;
@@ -247,6 +263,16 @@ async function resumeLocalRun(
     .where(eq(factoryHostRuns.runId, input.runId))
     .get();
   if (!localRun || localRun.appId !== input.appId) return false;
+  if (localRun.runId.startsWith(CURSOR_RUN_PREFIX)) {
+    return resumeCursorRun(database, localRun, {
+      appId: input.appId,
+      phase: input.phase,
+      questionId: input.questionId,
+      questionBody: input.questionBody,
+      answerBody: input.answerBody,
+      cursorFollowUp: input.cursorFollowUp,
+    });
+  }
   const idempotencyKey = `${input.questionId}:resume`;
   try {
     await startFactoryRun(
@@ -271,10 +297,63 @@ async function resumeLocalRun(
   return resume?.acceptance === "accepted";
 }
 
+/**
+ * A Cursor run stays on the same agent. The follow-up is a new Cursor run,
+ * not a local chat. Without a sender the answer stays unresolved and no
+ * local run is started.
+ */
+async function resumeCursorRun(
+  database: DeviceDb,
+  localRun: typeof factoryHostRuns.$inferSelect,
+  input: {
+    appId: number;
+    phase: FactoryPhase;
+    questionId: string;
+    questionBody: string;
+    answerBody: string;
+    cursorFollowUp?: CursorFollowUpSender;
+  },
+): Promise<boolean> {
+  const idempotencyKey = `${input.questionId}:resume`;
+  const existing = database
+    .select()
+    .from(factoryHostRuns)
+    .where(eq(factoryHostRuns.idempotencyKey, idempotencyKey))
+    .get();
+  if (existing?.acceptance === "accepted") return true;
+  const agentId = localRun.cursorAgentId;
+  if (!agentId || !input.cursorFollowUp) return false;
+  const prompt = `${input.questionBody}\n\n${input.answerBody}`;
+  try {
+    const sent = await input.cursorFollowUp({
+      cursorAgentId: agentId,
+      prompt,
+      idempotencyKey,
+    });
+    recordCursorFactoryRun(database, {
+      appId: input.appId,
+      phase: input.phase,
+      cursorAgentId: agentId,
+      cursorRunId: sent.cursorRunId,
+      prompt,
+      idempotencyKey,
+    });
+  } catch {
+    return false;
+  }
+  const resume = database
+    .select()
+    .from(factoryHostRuns)
+    .where(eq(factoryHostRuns.idempotencyKey, idempotencyKey))
+    .get();
+  return resume?.acceptance === "accepted";
+}
+
 /** Start follow-ups for answers that were stored and then lost the dispatch. An accepted follow-up is left alone. */
 export async function resumeAnsweredFactoryQuestions(
   database: DeviceDb,
   dispatch?: FactoryRunDispatch,
+  cursorFollowUp?: CursorFollowUpSender,
 ): Promise<number> {
   const answered = database
     .select()
@@ -303,6 +382,7 @@ export async function resumeAnsweredFactoryQuestions(
       questionBody: question.body,
       answerBody: answer.body,
       dispatch,
+      cursorFollowUp,
     });
     if (ok) started += 1;
   }

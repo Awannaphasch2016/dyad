@@ -30,9 +30,9 @@ export type ApprovalGate =
   | { allowed: false; reason: string };
 
 /**
- * Renderer-only gate. Missing Clerk keys keep the current ungated buttons.
- * Loading and signed-out states stay closed so privileged actions do not flash.
- * Main does not yet verify the Clerk session for these actions.
+ * Renderer gate for Continue. Missing Clerk keys keep the current ungated
+ * buttons. Loading and signed-out states stay closed so privileged actions
+ * do not flash. Both main-process approve paths use the same role permission.
  */
 export function approvalGate(input: {
   status: ClerkAuthStatus;

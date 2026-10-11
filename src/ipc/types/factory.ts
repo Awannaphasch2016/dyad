@@ -80,6 +80,14 @@ export const factoryContracts = {
     input: z.object({ chatId: z.number() }),
     output: AnswerLockSchema,
   }),
+  ensureCursorPhase: defineContract({
+    channel: "factory:ensure-cursor-phase",
+    input: z.object({
+      appId: z.number(),
+      phase: z.enum(["discovery", "implementation", "delivery"]),
+    }),
+    output: z.object({ started: z.boolean() }),
+  }),
   listQuestions: defineContract({
     channel: "factory:list-questions",
     input: z.object({

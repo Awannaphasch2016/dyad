@@ -1,6 +1,6 @@
 # Experiment A log
 
-Branch `cursor/hitl-experiment-a-d072`. Evidence for the verification list in `plans/hitl-experiments-runbook.md`.
+Branch `cursor/hitl-experiment-a-d072`. Scaffolding evidence. The proof is the app run in `plans/hitl-experiments-runbook.md`, which is still open.
 
 ## P1 baseline
 

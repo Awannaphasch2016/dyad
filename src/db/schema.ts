@@ -396,6 +396,8 @@ export const factoryHostRuns = sqliteTable(
     idempotencyKey: text("idempotency_key").notNull(),
     promptHash: text("prompt_hash").notNull(),
     intentId: text("intent_id").notNull(),
+    // Shared across follow-ups, so it cannot live in the unique intent id.
+    cursorAgentId: text("cursor_agent_id"),
     acceptance: text("acceptance", {
       enum: ["queued", "accepted", "rejected"],
     })

@@ -15,6 +15,11 @@ import {
   answerHitlQuestion,
   listHitlQuestions,
 } from "@/control_plane/hitl_device";
+import {
+  cursorFollowUpForDesktop,
+  startCursorPhase,
+} from "@/main/cursor_factory_host";
+import { cursorFactoryClientFromEnv } from "@/main/cursor_factory_client";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import { factoryContracts } from "../types/factory";
 import { createTypedHandler } from "./base";
@@ -73,6 +78,17 @@ export function registerFactoryHandlers() {
     return getAnswerLock(event, params.chatId);
   });
 
+  createTypedHandler(
+    factoryContracts.ensureCursorPhase,
+    async (event, params) => {
+      await hitlCaller(event, params.appId);
+      return startCursorPhase(db, cursorFactoryClientFromEnv(), {
+        appId: params.appId,
+        phase: params.phase,
+      });
+    },
+  );
+
   createTypedHandler(factoryContracts.listQuestions, async (event, params) => {
     const caller = await hitlCaller(event, params.appId);
     return {
@@ -92,6 +108,7 @@ export function registerFactoryHandlers() {
         questionId: params.questionId,
         caller,
         body: params.body,
+        cursorFollowUp: cursorFollowUpForDesktop(),
       });
       return { question: result.view, resolved: result.resolved };
     } catch (error) {
