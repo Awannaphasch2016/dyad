@@ -1,89 +1,40 @@
-# Fix the Vibe SDK organization run
+# Vibe SDK organization run
 
 ## Important changes
 
-- Remove the extra card above the page. It was never part of the request.
-- The prompt box already on the page is the only place anyone types.
-- Only the Project Manager can press Enter to start an app. The Developer cannot.
-- The app belongs to the organization. There is no private app.
-- The real builder agent asks the questions. A script with memorized questions and answers does not.
-- The question appears in the question popup Vibe SDK already has, and only for the role that was asked.
+- Remove the extra card. The prompt box already on the page is the only place anyone types.
+- Only the Project Manager can press Enter to create an app. The Developer cannot.
+- The organization owns the app. There is no private app and no single-user owner.
+- The real builder agent asks. The question popup Vibe SDK already has shows that question to the named role.
 - The other role sees a waiting line and does not see the question.
-- An agent reads the question that actually appeared and types the reply in the prompt box.
-- A Playwright script alone cannot verify this, because it cannot understand a question it has not seen before.
-- An app has an organization id and the Project Manager who created it. It has no private owner.
-- A question has a role and a body. It has no phase, and it has none of the three old gate names.
+- The named role types the reply in the prompt box. During the check, an agent reads the question and types that reply, because the question is not known ahead of time.
+- A question stores a role and a body. It has no phase and none of `plan-approve`, `review-approve-dev`, or `review-approve-pm`.
+- Leave the three stages, the phase permissions, Gas City, Electron, `hitl-web`, and the Bolt walkthrough as they are. Do not copy them into this run.
 
-## What went wrong
-
-The preview added a card above the builder’s prompt box. That card asked two fixed questions and accepted two fixed answers. The recording left the real prompt box empty.
-
-That missed the request in three ways.
-
-- The only typing place is the prompt box that is already on the page.
-- The builder already has a popup that raises a question. The run uses that popup.
-- The builder will not ask the same question every time, so a script cannot know the reply in advance.
-
-## What the run is
+## The run
 
 One organization. Two people. Two browsers. One app. The real builder agent.
 
-1. Both people sign in. Each browser shows that person’s role.
-2. The Project Manager types a prompt in the existing prompt box and presses Enter. That starts the organization app and sends the prompt to the builder agent.
-3. The Developer’s Enter does nothing at the start. The Developer does not get a second app.
-4. The agent builds. Both people see the same app.
-5. When the agent must ask a person, the existing question popup shows the question to the named role. A requirements question goes to the Project Manager. A technical question goes to the Developer. A question with no role goes to the Project Manager and is marked fallback.
-6. The other role sees “Waiting on the Project Manager.” or “Waiting on the Developer.” The question text is absent there.
-7. The named role types the reply in the same prompt box and presses Enter. That reply is the agent’s next prompt. The agent continues.
-8. When the agent finishes without a question, both people see the finished app. No extra question appears.
-
-There is no Discovery, Implementation, or Delivery step.
+1. Both people sign in with Clerk. Each browser shows that person’s role from `wewebplus.memberships`. The role is `project-manager` or `developer`. Clerk `org:admin` is the invite flag. It is not a role and it does not answer questions.
+2. The Project Manager types a prompt in the existing prompt box and presses Enter. That creates the organization app and sends the prompt to the builder agent.
+3. The Developer’s Enter does nothing until a question is addressed to the Developer. The Developer does not get a second app.
+4. Both people see the same app, the same files, and the same preview.
+5. When the agent must ask, the existing question popup shows the question to the named role. A requirements question goes to the Project Manager. A technical question goes to the Developer. A question with no role goes to the Project Manager and is marked `fallback`.
+6. The other role sees “Waiting on the Project Manager.” or “Waiting on the Developer.” The question text is absent.
+7. The named role types the reply in the same prompt box and presses Enter. That reply is stored once and becomes the agent’s next prompt. A second reply does not start another prompt.
+8. When the agent finishes with no question, both people see the finished app.
 
 ## Enter
 
 Enter is the send button on the existing prompt box.
 
-- Before an app exists, only the Project Manager’s Enter sends the prompt and creates the organization app.
+- Before an app exists, only the Project Manager’s Enter creates the app and sends the prompt.
 - While a question is open, only the named role’s Enter sends the reply.
 - The other person’s Enter does not send.
 
-## What leaves
-
-- The organization-run card, its answer field, and the “Start the scripted build” button.
-- The scripted questions “What should the page be called?” and “Which file should hold the page title?”
-- The memorized replies “North Pier Fish” and “index.html” as the proof.
-- A Playwright test whose pass depends on those fixed sentences.
-- A private app owned by one user. Membership in the organization is what allows both people to see the app.
-
-The role rule stays. The matching role sees the question and can answer. The other role in the organization sees the waiting line. Someone outside the organization does not see the app.
-
-## Verification
-
-An agent drives both browsers. It signs in as each role, types the Project Manager’s prompt, watches the real builder, reads the question the popup actually shows, and types a reply that fits that question into the prompt box.
-
-The agent also checks the other browser. The question text is absent there, and Enter does not send.
-
-The record of the run is the two browsers on video, encoded so the frames are visible. The video is the proof that the prompt went through the real box and that the reply followed the question the builder asked.
-
-A Playwright script may open the browsers and record them. It cannot be the thing that decides the reply.
-
 ## Database
 
-The organization store today is `wewebplus` in Postgres. Two of its columns are leftovers from the three fixed stages.
-
-`questions.phase` is required on every row. A question cannot be saved unless it names Discovery, Implementation, or Delivery. This run has no stages, so that column is not part of the schema below.
-
-The three step names are the old approval buttons, not a general review system.
-
-- `plan-approve` is the Project Manager approving the written plan at the end of Discovery.
-- `review-approve-dev` is the Developer approving the build at the end of Implementation.
-- `review-approve-pm` is the Project Manager approving the result at the end of Delivery.
-
-Those names exist so the old phase strip can record who pressed Continue. This run does not use them.
-
-`apps.owner_type` can be `user` or `org`. A `user` value is a private app. This run keeps only the organization.
-
-The schema this run needs:
+Four tables. The builder’s files and chat stay in Vibe SDK. These tables are who owns the app, who may press Enter, and which role a question is for.
 
 ```mermaid
 erDiagram
@@ -120,13 +71,31 @@ erDiagram
   QUESTIONS ||--o| ANSWERS : "one answer"
 ```
 
-- `memberships.role_id` is `project-manager` or `developer`. This table already exists.
+- `memberships` already exists. `role_id` is `project-manager` or `developer`.
 - `apps.org_id` is the only owner. `created_by` is the Project Manager who pressed Enter. A Developer insert is refused.
-- `questions` has no `phase` and no step name. `target_role_id` is the person who may see the body. `status` is `open` or `answered`. `assignment` is `declared` when the agent named the role, and `fallback` when it did not and the question went to the Project Manager.
-- `answers.question_id` is unique. One reply is stored. A second reply does not create another row.
+- `questions` has no `phase` and no step name. `status` is `open` or `answered`. `assignment` is `declared` or `fallback`.
+- `answers.question_id` is unique.
 
-The builder’s files and chat stay in Vibe SDK. These four tables are the organization record: who may see the app, who may press Enter, and which role a question is for.
+## Do not copy
+
+These pieces exist and they describe the three-stage walkthrough. An agent must not treat them as the design of this run.
+
+- **Phase.** Discovery, Implementation, and Delivery. `questions.phase` is required on the old rows because every old question named a stage. `FACTORY_PHASES` says an app workspace has these three phases.
+- **Gate names.** `plan-approve` is the Project Manager approving the plan at the end of Discovery. `review-approve-dev` is the Developer approving the build at the end of Implementation. `review-approve-pm` is the Project Manager approving the result at the end of Delivery.
+- **Phase permissions.** `approve-discovery`, `approve-implementation`, `approve-delivery`, `work-implementation`, and `comment` on a phase. A private account (`owner_type = user`) is allowed to approve every phase. This run has no private owner.
+- **Recipe words.** Formula, run, bead, and gate. A gate is a bead only a person can finish. This run stops when the builder asks a question.
+- **Other databases.** Dyad sqlite mirrors the phase questions. Vibe SDK D1 gives each app one `userId` and has no organization. The extra card added `hitl_*` tables beside that app. None of those is this schema.
+- **Other places.** Dyad Electron shows the three phase chats. `hitl-web` polls Postgres and does not talk to the builder. Bolt’s walkthrough is the phase recording. Gas City posts questions through `127.0.0.1:32100` and closes them with a bead script.
+- **Old sentences.** “The agents stop at three gates.” “A person working alone has no organization and no gates.” Approach A and Approach B are swapped between two sections of the old semantics note. Here the builder asks when it must, and there is no stage strip.
+
+## Verification
+
+An agent drives both browsers. It signs in as each role, types the Project Manager’s prompt, watches the real builder, reads the question the popup actually shows, and types a fitting reply in the prompt box. It checks that the other browser does not show the question and that Enter does not send there.
+
+The record is both browsers on video, encoded so the frames are visible. A Playwright script may open the browsers and record them. It cannot decide the reply.
+
+The two existing walkthrough accounts are the Project Manager and the Developer. A second pair is not created.
 
 ## Out of scope
 
-Electron, Gas City, the Bolt project, a phase strip, and a second website stay out. This does not change shared Cloudflare tokens, the lab worker, or production Clerk.
+Electron, Gas City, the Bolt project, the phase strip, `hitl-web`, shared Cloudflare tokens, the lab worker, and production Clerk stay untouched.
