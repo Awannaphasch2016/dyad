@@ -9,6 +9,7 @@ on:
   push:
     branches:
       - cursor/automated-hitl-verification-851d
+      - cursor/hitl-visibility-beside-walk-fd29
     paths:
       - .github/workflows/bolt-walkthrough-verify.yml
       - scripts/doppler/bolt-test-accounts.mjs
@@ -26,7 +27,7 @@ concurrency:
 
 jobs:
   verify:
-    if: github.ref == 'refs/heads/cursor/automated-hitl-verification-851d'
+    if: github.ref == 'refs/heads/cursor/automated-hitl-verification-851d' || github.ref == 'refs/heads/cursor/hitl-visibility-beside-walk-fd29'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -154,6 +155,21 @@ jobs:
             cat /tmp/check-delivered.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run the role visibility check
+        working-directory: e2e-walkthrough
+        env:
+          WALKTHROUGH_URL: https://bolt-walkthrough-55d6.karant-test-egress-canary.workers.dev
+          WALKTHROUGH_PM_USER_ID: ${{ steps.accounts.outputs.pm_user_id }}
+          WALKTHROUGH_DEV_USER_ID: ${{ steps.accounts.outputs.dev_user_id }}
+          WALKTHROUGH_PM_IDENTIFIER: ${{ steps.accounts.outputs.pm_identifier }}
+          WALKTHROUGH_DEV_IDENTIFIER: ${{ steps.accounts.outputs.dev_identifier }}
+          WALKTHROUGH_PM_EMAIL: ${{ steps.accounts.outputs.pm_email }}
+          WALKTHROUGH_DEV_EMAIL: ${{ steps.accounts.outputs.dev_email }}
+        run: |
+          set -euo pipefail
+          set +x
+          npx playwright test tests/zz-p3-role-visibility.spec.ts
 
       - name: Summarize
         if: always()

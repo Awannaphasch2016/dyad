@@ -4,6 +4,8 @@ import test from "node:test";
 import { IMPLEMENTATION_QUESTION_ID } from "./bolt-workflow.mjs";
 import { WALKTHROUGH_APP_ID, WALKTHROUGH_CHAT_ID } from "./bolt-sign-in.mjs";
 import {
+  P3_IDEMPOTENCY_KEY,
+  P3_QUESTION_BODY,
   PROMPT,
   checkQuery,
   countRecord,
@@ -20,7 +22,7 @@ test("reset keeps the app and chat and clears the run", () => {
   const statements = resetStatements();
   assert.deepEqual(
     statements.map((statement) => statement.name),
-    ["phase", "messages", "answers", "questions"],
+    ["phase", "messages", "answers", "questions", "p3-answers", "p3-questions"],
   );
   assert.match(statements[0].query, /phase = 'discovery'/);
   assert.match(statements[0].query, /document_html = null/);
@@ -30,6 +32,10 @@ test("reset keeps the app and chat and clears the run", () => {
   assert.deepEqual(statements[1].params, [WALKTHROUGH_CHAT_ID]);
   assert.deepEqual(statements[2].params, [IMPLEMENTATION_QUESTION_ID]);
   assert.deepEqual(statements[3].params, [IMPLEMENTATION_QUESTION_ID]);
+  assert.deepEqual(statements[4].params, [P3_IDEMPOTENCY_KEY]);
+  assert.deepEqual(statements[5].params, [P3_IDEMPOTENCY_KEY]);
+  assert.match(statements[4].query, /wewebplus\.answers/);
+  assert.match(statements[5].query, /idempotency_key/);
   assert.ok(
     statements.every(
       (statement) => !/roles|memberships|apps|chats/.test(statement.query),
@@ -97,6 +103,22 @@ test("the browser prompt is the sentence the database check looks for", () => {
   ]) {
     assert.match(readFileSync(new URL(file, import.meta.url), "utf8"), pattern);
   }
+});
+
+test("the role visibility check posts the question reset removes", () => {
+  const source = readFileSync(
+    new URL(
+      "../../e2e-walkthrough/tests/zz-p3-role-visibility.spec.ts",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  assert.match(source, new RegExp(escape(P3_IDEMPOTENCY_KEY)));
+  assert.match(source, new RegExp(escape(P3_QUESTION_BODY)));
+  assert.match(source, /stepId: "plan-approve"/);
+  assert.match(source, /targetRoleId: "project-manager"/);
+  assert.match(source, /deleteP3Question\(\)/);
 });
 
 test("delivered requires the answer, the document, and the timestamp", () => {
