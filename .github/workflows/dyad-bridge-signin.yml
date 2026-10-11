@@ -117,7 +117,7 @@ jobs:
             echo "neon url still set"
             exit 1
           fi
-          npx playwright test --config e2e-bridge/playwright.config.ts
+          npx playwright test --config e2e-bridge/playwright.config.cjs
 
       - name: Upload both videos
         if: always()

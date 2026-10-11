@@ -1,12 +1,11 @@
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { defineConfig } from "@playwright/test";
+const path = require("node:path");
+const { defineConfig } = require("@playwright/test");
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const root = path.resolve(__dirname, "..");
 const bridgeUrl = process.env.DYAD_BRIDGE_URL ?? "http://127.0.0.1:8372";
 
-export default defineConfig({
-  testDir: ".",
+module.exports = defineConfig({
+  testDir: __dirname,
   testMatch: /.*\.spec\.ts/,
   timeout: 150 * 60 * 1000,
   expect: { timeout: 30_000 },
