@@ -89,7 +89,7 @@ export function clerkRuntime(secrets) {
   }
   for (const marker of REFUSED_DATABASE) {
     if (databaseUrl.includes(marker)) {
-      throw new Error("Refusing a production membership database");
+      throw new Error(`Refusing a production membership database (${marker})`);
     }
   }
   return {
