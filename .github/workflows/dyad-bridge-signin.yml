@@ -1,0 +1,132 @@
+# One Dyad process, two Playwright browsers. Doppler stays in the job.
+# The job does not print Clerk tickets, cookies, or secret values.
+name: Dyad bridge sign-in
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cursor/dyad-bridge-signin-d072
+    paths:
+      - .github/workflows/dyad-bridge-signin.yml
+      - e2e-bridge/**
+      - src/**
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: dyad-bridge-signin
+  cancel-in-progress: false
+
+jobs:
+  two-browsers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Require the Doppler identity
+        env:
+          DOPPLER_IDENTITY: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "$DOPPLER_IDENTITY" ]; then
+            echo "DOPPLER_SERVICE_IDENTITY_ID absent"
+            exit 1
+          fi
+          echo "DOPPLER_SERVICE_IDENTITY_ID present"
+
+      - name: Initialize environment
+        uses: actions/setup-node@v5
+        with:
+          node-version: v24.13.1
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install npm 11.8.0
+        run: npm install -g npm@11.8.0
+
+      - name: Install node modules
+        run: bash scripts/npm-ci-retry.sh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fetch dyad preview secrets
+        uses: dopplerhq/secrets-fetch-action@v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          doppler-project: dyad
+          doppler-config: preview
+          inject-env-vars: true
+
+      - name: Require Clerk and Cursor names
+        run: |
+          node --input-type=module <<'NODE'
+          const names = [
+            "CLERK_SECRET_KEY",
+            "CLERK_PUBLISHABLE_KEY",
+            "CURSOR_API_KEY",
+            "WEWEBPLUS_DATABASE_URL",
+            "WEWEBPLUS_SECRETS_KEY",
+          ];
+          for (const name of names) {
+            const value = process.env[name]?.trim();
+            if (value) process.stdout.write(`::add-mask::${value}\n`);
+          }
+          const missing = [
+            "CLERK_SECRET_KEY",
+            "CLERK_PUBLISHABLE_KEY",
+            "CURSOR_API_KEY",
+          ].filter((name) => !process.env[name]?.trim());
+          if (missing.length) {
+            console.log(`missing ${missing.join(",")}`);
+            process.exit(1);
+          }
+          const publishable = process.env.CLERK_PUBLISHABLE_KEY.trim();
+          if (!publishable.startsWith("pk_test_")) {
+            console.log("clerk publishable key is not a test key");
+            process.exit(1);
+          }
+          console.log("clerk test key present");
+          console.log("cursor token name: CURSOR_API_KEY");
+          NODE
+
+      - name: Install Chromium and a display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          npx playwright install --with-deps chromium
+
+      - name: Walk both browsers
+        env:
+          CI: "true"
+          DYAD_BROWSER_BRIDGE: "1"
+          DYAD_BROWSER_BRIDGE_PORT: "8372"
+          DYAD_BROWSER_BRIDGE_HOST: "127.0.0.1"
+          DYAD_DEV_USER_DATA_DIR: ${{ runner.temp }}/dyad-user-data
+          WEWEBPLUS_DATABASE_URL: ""
+          ELECTRON_DISABLE_SANDBOX: "1"
+        run: |
+          set -euo pipefail
+          mkdir -p "$DYAD_DEV_USER_DATA_DIR"
+          if [ -n "${WEWEBPLUS_DATABASE_URL}" ]; then
+            echo "neon url still set"
+            exit 1
+          fi
+          npx playwright test --config e2e-bridge/playwright.config.cjs
+
+      - name: Upload both videos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dyad-bridge-signin
+          retention-days: 14
+          path: |
+            e2e-bridge/output
+            e2e-bridge/videos
+            e2e-bridge/test-results
+            ${{ runner.temp }}/dyad-user-data/logs

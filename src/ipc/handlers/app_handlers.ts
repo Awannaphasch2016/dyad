@@ -1,7 +1,8 @@
 import { deleteChatJournals } from "@/ipc/services/chat_journal_cleanup";
 import { initialChatExecution } from "@/ipc/utils/chat_execution_selection";
 import { app, dialog } from "electron";
-import { sharingScope } from "@/control_plane/access";
+import { resolveAccountSession, sharingScope } from "@/control_plane/access";
+import { ownerForNewApp } from "@/control_plane/owner";
 import { assertAppVisible } from "@/control_plane/guard";
 import { ensureProjectFiles } from "@/control_plane/file_sync";
 import {
@@ -934,6 +935,11 @@ export function registerAppHandlers() {
       const settings = readSettings();
       const execution = await initialChatExecution();
       accountScope = await sharingScope(event);
+      // Neon is what publishes the row. The owner still comes from the
+      // signed-in Clerk session when that database is not configured.
+      const owner = ownerForNewApp(
+        accountScope?.session ?? (await resolveAccountSession(event)),
+      );
       [app] = await db
         .insert(apps)
         .values({
@@ -944,8 +950,8 @@ export function registerAppHandlers() {
           // the "testing for new apps" setting. Otherwise fall back to the
           // column default (off).
           testingEnabled: settings.enableTestingForNewApps ?? false,
-          ownerType: accountScope?.session.account.type,
-          ownerId: accountScope?.session.account.id,
+          ownerType: owner?.type,
+          ownerId: owner?.id,
         })
         .returning();
       // The three phase chats commit before the next await, so a list refresh

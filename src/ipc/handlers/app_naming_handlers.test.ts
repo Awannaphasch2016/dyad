@@ -8,6 +8,11 @@ import path from "node:path";
 import { eq } from "drizzle-orm";
 
 import { DyadErrorKind } from "@/errors/dyad_error";
+import { setSessionVerifierForTesting } from "@/control_plane/access";
+import {
+  clearSessionTokensForTesting,
+  rememberSessionToken,
+} from "@/control_plane/session_store";
 import { apps, chats } from "@/db/schema";
 import {
   type HandlerTestHarness,
@@ -167,6 +172,11 @@ async function invokeImportHandler<TOutput>(
   return envelope.value as TOutput;
 }
 
+function restoreEnv(name: string, value: string | undefined): void {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
+}
+
 describe("app naming handlers", () => {
   let harness: HandlerTestHarness;
 
@@ -252,6 +262,79 @@ describe("app naming handlers", () => {
       await expect(
         harness.invokeHandler("create-app", { name: "My App" }),
       ).rejects.toMatchObject({ kind: DyadErrorKind.Conflict });
+    });
+
+    it("stamps the signed-in organization when Neon is not configured", async () => {
+      const previous = {
+        secret: process.env.CLERK_SECRET_KEY,
+        publishable: process.env.CLERK_PUBLISHABLE_KEY,
+        database: process.env.WEWEBPLUS_DATABASE_URL,
+      };
+      process.env.CLERK_SECRET_KEY = "sk_test_bridge";
+      process.env.CLERK_PUBLISHABLE_KEY = "pk_test_bridge";
+      delete process.env.WEWEBPLUS_DATABASE_URL;
+      rememberSessionToken(7, "signed-in-token");
+      setSessionVerifierForTesting(async () => ({
+        userId: "user_pm",
+        orgId: "org_wewebplus",
+        roleId: "project-manager",
+        canInvite: false,
+        displayName: "Project Manager",
+        member: true,
+      }));
+      try {
+        const result = await harness.invokeHandler<{ app: { id: number } }>(
+          "create-app",
+          { name: "Owned Bridge" },
+          { sender: { id: 7 } },
+        );
+        expect(getAppRow(result.app.id)).toMatchObject({
+          ownerType: "org",
+          ownerId: "org_wewebplus",
+        });
+      } finally {
+        setSessionVerifierForTesting(null);
+        clearSessionTokensForTesting();
+        restoreEnv("CLERK_SECRET_KEY", previous.secret);
+        restoreEnv("CLERK_PUBLISHABLE_KEY", previous.publishable);
+        restoreEnv("WEWEBPLUS_DATABASE_URL", previous.database);
+      }
+    });
+
+    it("refuses create-app before a row exists when Clerk is on and nobody is signed in", async () => {
+      const previous = {
+        secret: process.env.CLERK_SECRET_KEY,
+        publishable: process.env.CLERK_PUBLISHABLE_KEY,
+        database: process.env.WEWEBPLUS_DATABASE_URL,
+      };
+      process.env.CLERK_SECRET_KEY = "sk_test_bridge";
+      process.env.CLERK_PUBLISHABLE_KEY = "pk_test_bridge";
+      delete process.env.WEWEBPLUS_DATABASE_URL;
+      clearSessionTokensForTesting();
+      try {
+        await expect(
+          harness.invokeHandler(
+            "create-app",
+            { name: "Unsigned Bridge" },
+            { sender: { id: 7 } },
+          ),
+        ).rejects.toMatchObject({
+          message: "Sign in to continue.",
+          kind: DyadErrorKind.Auth,
+        });
+        expect(
+          harness.db
+            .select()
+            .from(apps)
+            .where(eq(apps.name, "Unsigned Bridge"))
+            .get(),
+        ).toBeUndefined();
+      } finally {
+        clearSessionTokensForTesting();
+        restoreEnv("CLERK_SECRET_KEY", previous.secret);
+        restoreEnv("CLERK_PUBLISHABLE_KEY", previous.publishable);
+        restoreEnv("WEWEBPLUS_DATABASE_URL", previous.database);
+      }
     });
 
     it("treats folder conflicts case-insensitively", async () => {

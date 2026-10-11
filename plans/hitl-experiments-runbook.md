@@ -75,13 +75,13 @@ The Cursor agent is a normal agent for this app's repository. The marker may be 
 
 ## Changes
 
-| Piece | Change |
-| --- | --- |
-| Browser bridge session | One Clerk token per websocket. Invokes from that socket use that token. |
+| Piece                         | Change                                                                                                      |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Browser bridge session        | One Clerk token per websocket. Invokes from that socket use that token.                                     |
 | Question and approval queries | Refetch on the same one-second interval as the factory-host-managed phase chats, for the selected app only. |
-| Factory phase chat | Do not mount `ChatInput` or the comment form. |
-| Implementation | `factoryPhaseKickoff` returns the build prompt. `approveAndContinue` does not prefill the composer. |
-| Neon | Not configured for this run. |
+| Factory phase chat            | Do not mount `ChatInput` or the comment form.                                                               |
+| Implementation                | `factoryPhaseKickoff` returns the build prompt. `approveAndContinue` does not prefill the composer.         |
+| Neon                          | Not configured for this run.                                                                                |
 
 No second Electron user-data directory. No second workflow. No UI agent for each role. Playwright opens the two contexts, waits on the test ids, types the answer, and clicks approve. The answer text can come from a function that sees only the question body and the role. Playwright is the only thing that clicks.
 

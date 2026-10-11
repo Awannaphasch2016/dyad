@@ -266,7 +266,10 @@ exit 0
 });
 
 test("preview-up can print a temporary hostname without the named tunnel", () => {
-  const script = readFileSync(new URL("./preview-up.sh", import.meta.url), "utf8");
+  const script = readFileSync(
+    new URL("./preview-up.sh", import.meta.url),
+    "utf8",
+  );
   assert.match(script, /PREVIEW_QUICK_TUNNEL/);
   assert.match(script, /trycloudflare/);
   assert.equal(script.includes('echo "$CLOUDFLARE_API_TOKEN"'), false);

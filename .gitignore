@@ -12,6 +12,9 @@ dist/
 # playwright
 playwright-report/
 test-results/
+e2e-bridge/videos/
+e2e-bridge/output/
+e2e-bridge/test-results/
 blob-report/
 flakiness-report/
 

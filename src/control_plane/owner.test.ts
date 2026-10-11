@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { isLegacyUnownedApp } from "./owner";
+import { isLegacyUnownedApp, ownerForNewApp } from "./owner";
 
 it("claims only an app that has no account yet", () => {
   expect(
@@ -26,4 +26,14 @@ it("claims only an app that has no account yet", () => {
       ownerId: null,
     }),
   ).toBe(false);
+});
+
+it("stamps a signed-in account and leaves an unconfigured app unowned", () => {
+  expect(ownerForNewApp({ mode: "unconfigured" })).toBeNull();
+  expect(
+    ownerForNewApp({
+      mode: "signed-in",
+      account: { type: "org", id: "org_wewebplus" },
+    }),
+  ).toEqual({ type: "org", id: "org_wewebplus" });
 });
