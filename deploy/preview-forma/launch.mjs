@@ -16,14 +16,21 @@ import {
 
 const region = "ap-southeast-1";
 const accountId = "755283537543";
-const schemaUrl =
-  "https://raw.githubusercontent.com/Awannaphasch2016/forma/80a8e419f6285378b4dfada336ea8213f3089bab/db/schema.sql";
+const REFUSED_DATABASE = [
+  "mute-credit-71067312",
+  "proud-salad-68182047",
+  "br-mute-shadow-b3jxqoho",
+  "ep-young-wave-b3cwe0rz",
+  "ep-wild-paper",
+];
 
 export function redact(text) {
   return String(text ?? "")
     .replace(/postgres(?:ql)?:\/\/\S+/gi, "postgres://redacted")
     .replace(/\bsk-or-[A-Za-z0-9_-]+/g, "sk-or-redacted")
     .replace(/\bsk-[A-Za-z0-9_-]{8,}/g, "sk-redacted")
+    .replace(/\bpk_(?:test|live)_[A-Za-z0-9_=-]+/g, "pk_redacted")
+    .replace(/\bsk_(?:test|live)_[A-Za-z0-9_=-]+/g, "sk_redacted")
     .replace(/AKIA[0-9A-Z]{16}/g, "AKIA_REDACTED")
     .replace(/ASIA[0-9A-Z]{16}/g, "ASIA_REDACTED")
     .replace(/dp\.(?:st|pt|sa|ct)\.[A-Za-z0-9._-]+/g, "dp.redacted")
@@ -57,15 +64,49 @@ export function assertDatabaseUrl(url, { pooled }) {
   return host;
 }
 
+export function schemaUrlForImage(image) {
+  const match = /^ghcr\.io\/awannaphasch2016\/forma:sha-([0-9a-f]{40})$/.exec(
+    String(image ?? ""),
+  );
+  if (!match) throw new Error("Pinned image is not a full Forma commit tag");
+  return `https://raw.githubusercontent.com/Awannaphasch2016/forma/${match[1]}/db/schema.sql`;
+}
+
+export function clerkRuntime(secrets) {
+  const publishable = String(secrets?.CLERK_PUBLISHABLE_KEY ?? "").trim();
+  const secret = String(secrets?.CLERK_SECRET_KEY ?? "").trim();
+  const databaseUrl = String(secrets?.WEWEBPLUS_DATABASE_URL ?? "").trim();
+  if (!publishable.startsWith("pk_test_") || publishable.includes("pk_live_")) {
+    throw new Error(
+      "Refusing a Clerk publishable key that is not a development key",
+    );
+  }
+  if (!secret.startsWith("sk_test_") || secret.includes("sk_live_")) {
+    throw new Error("Refusing a Clerk secret key that is not a development key");
+  }
+  if (!databaseUrl.startsWith("postgres")) {
+    throw new Error("Membership database URL is missing");
+  }
+  for (const marker of REFUSED_DATABASE) {
+    if (databaseUrl.includes(marker)) {
+      throw new Error("Refusing a production membership database");
+    }
+  }
+  return {
+    CLERK_PUBLISHABLE_KEY: publishable,
+    CLERK_SECRET_KEY: secret,
+    WEWEBPLUS_DATABASE_URL: databaseUrl,
+  };
+}
+
 export function runtimeEnvironment({ pooledUrl, secrets, appUrl }) {
   assertDatabaseUrl(pooledUrl, { pooled: true });
-  const names = [
-    "APP_PASSWORD",
-    "AUTH_SECRET",
-    "CRON_SECRET",
-    "OPENROUTER_API_KEY",
-  ];
-  const env = { DATABASE_URL: pooledUrl, APP_URL: appUrl };
+  const names = ["AUTH_SECRET", "CRON_SECRET", "OPENROUTER_API_KEY"];
+  const env = {
+    DATABASE_URL: pooledUrl,
+    APP_URL: appUrl,
+    ...clerkRuntime(secrets),
+  };
   for (const name of names) {
     const value = String(secrets?.[name] ?? "").trim();
     if (!value) throw new Error(`forma/dev is missing ${name}`);
@@ -136,6 +177,9 @@ export function assertSchemaSql(sql) {
   if (!/CREATE TABLE IF NOT EXISTS login_attempts/i.test(text)) {
     throw new Error("Forma schema is missing login_attempts");
   }
+  if (!/CREATE TABLE IF NOT EXISTS hitl_questions/i.test(text)) {
+    throw new Error("Forma schema is missing hitl_questions");
+  }
   return text;
 }
 
@@ -163,13 +207,9 @@ export function taskDefinitionDocument({ host, image, environment }) {
         essential: true,
         portMappings: [{ containerPort: 3000, protocol: "tcp" }],
         command: [
-          "node",
-          "node_modules/next/dist/bin/next",
-          "start",
-          "--hostname",
-          "0.0.0.0",
-          "--port",
-          "3000",
+          "sh",
+          "-c",
+          "node --import tsx scripts/local-worker.ts & exec node node_modules/next/dist/bin/next start --hostname 0.0.0.0 --port 3000",
         ],
         environment: Object.entries(environment).map(([name, value]) => ({
           name,
@@ -221,24 +261,32 @@ export async function probePreview(appUrl, fetchImpl = fetch) {
       `preview_forma_status=${statusResponse.status} configured=${statusBody.configured === true} provider=${statusBody.provider || "absent"}`,
     );
   }
-  const passwordResponse = await fetchImpl(`${appUrl}/api/auth`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      origin: appUrl,
-    },
-    body: JSON.stringify({ password: "wrong-password" }),
+  const authResponse = await fetchImpl(`${appUrl}/api/auth`, {
+    headers: { origin: appUrl },
   });
-  if (passwordResponse.status !== 401) {
-    const body = await passwordResponse.json().catch(() => ({}));
-    throw new Error(
-      `preview_forma_password=${passwordResponse.status} error=${body.error || "absent"}`,
-    );
+  if (authResponse.status !== 200) {
+    throw new Error(`preview_forma_auth=${authResponse.status}`);
+  }
+  const authBody = await authResponse.json().catch(() => ({}));
+  if (authBody.signedIn !== false) {
+    throw new Error("preview_forma_auth=signed_in");
+  }
+  const clerkResponse = await fetchImpl(`${appUrl}/api/clerk`);
+  if (clerkResponse.status !== 200) {
+    throw new Error(`preview_forma_clerk=${clerkResponse.status}`);
+  }
+  const clerkBody = await clerkResponse.json().catch(() => ({}));
+  const publishableKey = String(clerkBody.publishableKey ?? "");
+  if (
+    !publishableKey.startsWith("pk_test_") ||
+    publishableKey.includes("pk_live_")
+  ) {
+    throw new Error("preview_forma_clerk=not_development");
   }
   return {
     configured: true,
     provider: "openrouter",
-    password: 401,
+    signedIn: false,
   };
 }
 
@@ -743,7 +791,7 @@ export async function startPreview({
   mask(branch.direct);
   mask(branch.pooled);
   log(`preview_forma_branch=${branch.name}`);
-  const schemaResponse = await fetchImpl(schemaUrl);
+  const schemaResponse = await fetchImpl(schemaUrlForImage(image));
   if (!schemaResponse.ok) {
     throw new Error(`Forma schema download failed (${schemaResponse.status})`);
   }

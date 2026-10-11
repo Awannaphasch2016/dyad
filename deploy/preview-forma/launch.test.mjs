@@ -100,9 +100,14 @@ test("the task receives forma runtime values and listens on every interface", ()
       CRON_SECRET: "cron-secret",
       OPENROUTER_API_KEY: "sk-or-test-value",
       OPENAI_API_KEY: "sk-do-not-copy",
+      CLERK_PUBLISHABLE_KEY: "pk_test_Y2xlcmsuZXhhbXBsZS5jb20k",
+      CLERK_SECRET_KEY: "sk_test_development",
+      WEWEBPLUS_DATABASE_URL: "postgres://user:pass@ep-example.aws.neon.tech/db",
     },
   });
   assert.equal(environment.OPENAI_API_KEY, undefined);
+  assert.equal(environment.APP_PASSWORD, undefined);
+  assert.equal(environment.CLERK_PUBLISHABLE_KEY.startsWith("pk_test_"), true);
   assert.equal(environment.OPENROUTER_API_KEY, "sk-or-test-value");
   assert.throws(
     () =>
@@ -110,10 +115,13 @@ test("the task receives forma runtime values and listens on every interface", ()
         pooledUrl: pooled,
         appUrl: "https://example.com",
         secrets: {
-          APP_PASSWORD: "pw",
           AUTH_SECRET: "auth-secret",
           CRON_SECRET: "cron-secret",
           OPENROUTER_API_KEY: "sk-or-test-value",
+          CLERK_PUBLISHABLE_KEY: "pk_test_Y2xlcmsuZXhhbXBsZS5jb20k",
+          CLERK_SECRET_KEY: "sk_test_development",
+          WEWEBPLUS_DATABASE_URL:
+            "postgres://user:pass@ep-example.aws.neon.tech/db",
         },
       }),
     /load balancer/,
@@ -124,7 +132,12 @@ test("the task receives forma runtime values and listens on every interface", ()
         pooledUrl: pooled,
         appUrl:
           "http://preview-forma-2018533952.ap-southeast-1.elb.amazonaws.com",
-        secrets: { APP_PASSWORD: "pw" },
+        secrets: {
+          CLERK_PUBLISHABLE_KEY: "pk_test_Y2xlcmsuZXhhbXBsZS5jb20k",
+          CLERK_SECRET_KEY: "sk_test_development",
+          WEWEBPLUS_DATABASE_URL:
+            "postgres://user:pass@ep-example.aws.neon.tech/db",
+        },
       }),
     /AUTH_SECRET/,
   );
@@ -136,13 +149,9 @@ test("the task receives forma runtime values and listens on every interface", ()
   });
   const container = document.containerDefinitions[0];
   assert.deepEqual(container.command, [
-    "node",
-    "node_modules/next/dist/bin/next",
-    "start",
-    "--hostname",
-    "0.0.0.0",
-    "--port",
-    "3000",
+    "sh",
+    "-c",
+    "node --import tsx scripts/local-worker.ts & exec node node_modules/next/dist/bin/next start --hostname 0.0.0.0 --port 3000",
   ]);
   const names = container.environment.map((item) => item.name);
   assert.equal(names.includes("DATABASE_URL"), true);
@@ -210,8 +219,14 @@ test("a stopped task that belongs to this launch is reported", () => {
 test("schema sql must create login attempts and the client path is explicit", () => {
   assert.throws(() => assertSchemaSql("select 1"), /login_attempts/);
   assert.match(
-    assertSchemaSql("CREATE TABLE IF NOT EXISTS login_attempts ()"),
-    /login_attempts/,
+    assertSchemaSql(
+      "CREATE TABLE IF NOT EXISTS login_attempts (); CREATE TABLE IF NOT EXISTS hitl_questions ();",
+    ),
+    /hitl_questions/,
+  );
+  assert.throws(
+    () => assertSchemaSql("CREATE TABLE IF NOT EXISTS login_attempts ()"),
+    /hitl_questions/,
   );
   assert.equal(pgModuleHref(""), "pg");
   assert.match(
@@ -480,22 +495,22 @@ test("cleanup deletes only this preview branch", async () => {
   );
 });
 
-test("the public probe requires openrouter and rejects a wrong password", async () => {
+test("the public probe requires openrouter and a development sign-in", async () => {
   const appUrl =
     "http://preview-forma-2018533952.ap-southeast-1.elb.amazonaws.com";
-  const ok = await probePreview(appUrl, async (url, options = {}) => {
+  const ok = await probePreview(appUrl, async (url) => {
     if (url.endsWith("/api/status")) {
       return jsonResponse({ configured: true, provider: "openrouter" });
     }
-    assert.equal(options.method, "POST");
-    assert.equal(options.headers.origin, appUrl);
-    assert.equal(JSON.parse(options.body).password, "wrong-password");
-    return jsonResponse({ error: "That password is incorrect." }, 401);
+    if (url.endsWith("/api/auth")) {
+      return jsonResponse({ signedIn: false, organization: null, role: null });
+    }
+    return jsonResponse({ publishableKey: "pk_test_Y2xlcmsuZXhhbXBsZS5jb20k" });
   });
   assert.deepEqual(ok, {
     configured: true,
     provider: "openrouter",
-    password: 401,
+    signedIn: false,
   });
   await assert.rejects(
     () =>
@@ -510,8 +525,11 @@ test("the public probe requires openrouter and rejects a wrong password", async 
         if (url.endsWith("/api/status")) {
           return jsonResponse({ configured: true, provider: "openrouter" });
         }
-        return jsonResponse({ error: "Request origin is not allowed." }, 403);
+        if (url.endsWith("/api/auth")) {
+          return jsonResponse({ signedIn: false });
+        }
+        return jsonResponse({ publishableKey: "pk_live_refused" }, 200);
       }),
-    /password=403/,
+    /not_development/,
   );
 });
