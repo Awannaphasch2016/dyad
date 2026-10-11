@@ -23,7 +23,11 @@ const manifestAccept = [
 
 export function decideFromEnv(env = process.env) {
   const pr = String(env.PR ?? "").trim();
-  if (env.EVENT === "workflow_dispatch") {
+  if (
+    env.EVENT === "workflow_dispatch" ||
+    (env.EVENT === "push" &&
+      env.REF === "refs/heads/cursor/forma-hitl-preview-5014")
+  ) {
     if (!/^[0-9]+$/.test(pr)) {
       throw new Error("Pull request number must be digits");
     }

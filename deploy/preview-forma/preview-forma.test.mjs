@@ -101,6 +101,18 @@ test("a dispatch in this repository updates one numeric pull request", () => {
     () => decideFromEnv({ EVENT: "workflow_dispatch", PR: "" }),
     /digits/,
   );
+  assert.deepEqual(
+    decideFromEnv({
+      EVENT: "push",
+      REF: "refs/heads/cursor/forma-hitl-preview-5014",
+      PR: "132",
+    }),
+    { command: "update", pr: "132" },
+  );
+  assert.equal(
+    decideFromEnv({ EVENT: "push", REF: "refs/heads/main", PR: "132" }).command,
+    "skip",
+  );
 });
 
 test("compose pins published images and rejects a build", () => {
