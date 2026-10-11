@@ -157,13 +157,13 @@ GitHub: one new comment sentence for a failed destroy. A manual workflow input `
 
 ## Risks & Mitigations
 
-| Risk | Likelihood | Impact | Mitigation |
-| --- | --- | --- | --- |
-| Forced Worker delete removes that preview’s Durable Object data | High | Low | That is the intended teardown. The script name is still only `vibesdk-pr-<number>`. Lab and production names are refused. |
-| Pull request 21’s rate-limit ids match the lab | Low | High | Do not delete rate-limit ids. Leave the counters. |
-| A typed manual run deletes a live preview | Low | Medium | The same name guards and lock apply. Adding the label again recreates it. |
-| Delete succeeds and the Removed comment then fails | Low | Low | The job fails. The next run finds nothing and, if the comment says cleanup did not finish, replaces it with Removed. |
-| A deleted head branch blocks checkout | Medium | Medium | Destroy checks out the workflow ref, not the pull request head. |
+| Risk                                                            | Likelihood | Impact | Mitigation                                                                                                                |
+| --------------------------------------------------------------- | ---------- | ------ | ------------------------------------------------------------------------------------------------------------------------- |
+| Forced Worker delete removes that preview’s Durable Object data | High       | Low    | That is the intended teardown. The script name is still only `vibesdk-pr-<number>`. Lab and production names are refused. |
+| Pull request 21’s rate-limit ids match the lab                  | Low        | High   | Do not delete rate-limit ids. Leave the counters.                                                                         |
+| A typed manual run deletes a live preview                       | Low        | Medium | The same name guards and lock apply. Adding the label again recreates it.                                                 |
+| Delete succeeds and the Removed comment then fails              | Low        | Low    | The job fails. The next run finds nothing and, if the comment says cleanup did not finish, replaces it with Removed.      |
+| A deleted head branch blocks checkout                           | Medium     | Medium | Destroy checks out the workflow ref, not the pull request head.                                                           |
 
 ## Open Questions
 

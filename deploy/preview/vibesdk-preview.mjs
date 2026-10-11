@@ -2,7 +2,14 @@
 
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -20,13 +27,7 @@ import {
   sharedRoleSource,
   sharedSignInSource,
 } from "./vibesdk-shared-auth.mjs";
-import {
-  hitlControllerSource,
-  hitlPanelSource,
-  hitlRoutesSource,
-  patchHome,
-  patchRouteIndex,
-} from "./vibesdk-hitl.mjs";
+import { applyOrganizationRun } from "./vibesdk-org-run.mjs";
 import {
   deletePreviewResources,
   ensurePreviewResources,
@@ -360,7 +361,10 @@ export async function provisionPreview(options) {
       join(checkout, "worker/api/controllers/auth/sharedSignIn.ts"),
       sharedSignInSource(),
     );
-    const loginModalPath = join(checkout, "src/components/auth/login-modal.tsx");
+    const loginModalPath = join(
+      checkout,
+      "src/components/auth/login-modal.tsx",
+    );
     await writeFile(
       loginModalPath,
       patchLoginModal(await readFile(loginModalPath, "utf8")),
@@ -370,12 +374,18 @@ export async function provisionPreview(options) {
       authContextPath,
       patchAuthContext(await readFile(authContextPath, "utf8")),
     );
-    const authButtonPath = join(checkout, "src/components/auth/auth-button.tsx");
+    const authButtonPath = join(
+      checkout,
+      "src/components/auth/auth-button.tsx",
+    );
     await writeFile(
       authButtonPath,
       patchAuthButton(await readFile(authButtonPath, "utf8")),
     );
-    const headerPath = join(checkout, "src/components/layout/global-header.tsx");
+    const headerPath = join(
+      checkout,
+      "src/components/layout/global-header.tsx",
+    );
     await writeFile(
       headerPath,
       patchGlobalHeader(await readFile(headerPath, "utf8")),
@@ -395,28 +405,8 @@ export async function provisionPreview(options) {
       sharedRoleSource(),
     );
     console.log("shared_sign_in=enabled");
-    await mkdir(join(checkout, "worker/api/controllers/hitl"), { recursive: true });
-    await mkdir(join(checkout, "src/components/hitl"), { recursive: true });
-    const routeIndexPath = join(checkout, "worker/api/routes/index.ts");
-    await writeFile(
-      routeIndexPath,
-      patchRouteIndex(await readFile(routeIndexPath, "utf8")),
-    );
-    await writeFile(
-      join(checkout, "worker/api/routes/hitlRoutes.ts"),
-      hitlRoutesSource(),
-    );
-    await writeFile(
-      join(checkout, "worker/api/controllers/hitl/controller.ts"),
-      hitlControllerSource(),
-    );
-    await writeFile(
-      join(checkout, "src/components/hitl/hitl-run.tsx"),
-      hitlPanelSource(),
-    );
-    const homePath = join(checkout, "src/routes/home.tsx");
-    await writeFile(homePath, patchHome(await readFile(homePath, "utf8")));
-    console.log("hitl=enabled");
+    await applyOrganizationRun(checkout);
+    console.log("organization_run=enabled");
     console.log(`think_provider=openrouter think_model=${THINK_MODEL_ID}`);
     await writeFile(
       join(checkout, configName),

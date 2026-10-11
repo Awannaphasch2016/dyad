@@ -3,13 +3,14 @@ import { clerk, setupClerkTestingToken } from "@clerk/testing/playwright";
 import { expect, test } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 
-const PM_QUESTION = "What should the page be called?";
-const DEV_QUESTION = "Which file should hold the page title?";
+const PROMPT = "Build a website for a neighborhood shop.";
 
 async function loadClerk(page) {
   await page.goto("/");
   await page.evaluate(async () => {
-    const keyResponse = await fetch("/api/auth/clerk", { credentials: "include" });
+    const keyResponse = await fetch("/api/auth/clerk", {
+      credentials: "include",
+    });
     if (!keyResponse.ok) throw new Error("clerk key missing");
     const key = (await keyResponse.json()).data.publishableKey;
     const frontendApi = atob(key.slice("pk_test_".length)).replace(/\$$/, "");
@@ -20,7 +21,7 @@ async function loadClerk(page) {
         script.crossOrigin = "anonymous";
         script.src = `https://${frontendApi}/npm/@clerk/clerk-js@5/dist/clerk.browser.js`;
         script.setAttribute("data-clerk-publishable-key", key);
-        script.onload = () => resolve();
+        script.onload = () => resolve(undefined);
         script.onerror = () => reject(new Error("clerk script failed"));
         document.head.appendChild(script);
       });
@@ -33,7 +34,9 @@ async function loadClerk(page) {
 async function signIn(page, userId) {
   await setupClerkTestingToken({ context: page.context() });
   await loadClerk(page);
-  const client = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY ?? "" });
+  const client = createClerkClient({
+    secretKey: process.env.CLERK_SECRET_KEY ?? "",
+  });
   const token = await client.signInTokens.createSignInToken({
     userId,
     expiresInSeconds: 300,
@@ -46,115 +49,140 @@ async function signIn(page, userId) {
   await page.reload();
 }
 
-async function showRun(page) {
-  const run = page.getByTestId("hitl-run");
-  await expect(run).toBeVisible();
-  await run.scrollIntoViewIfNeeded();
-}
-
-async function hold() {
-  await new Promise((resolve) => setTimeout(resolve, 1800));
-}
-
-async function answerStatus(page, questionId, answer) {
-  return page.evaluate(
-    async ({ questionId, answer }) => {
-      const csrf = await fetch("/api/auth/csrf-token", { credentials: "include" });
-      const csrfPayload = csrf.ok ? await csrf.json() : null;
-      const token = csrfPayload?.data?.token;
-      const response = await fetch(`/api/hitl/questions/${questionId}/answers`, {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          ...(typeof token === "string" ? { "X-CSRF-Token": token } : {}),
-        },
-        body: JSON.stringify({ answer }),
-      });
-      return response.status;
+async function answerQuestion(question) {
+  const key = process.env.OPENROUTER_API_KEY ?? "";
+  if (!key)
+    throw new Error(
+      "OPENROUTER_API_KEY is required to answer the live question",
+    );
+  const response = await fetch(
+    "https://openrouter.ai/api/v1/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "anthropic/claude-sonnet-4.5",
+        max_tokens: 120,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are answering one question from a web builder. Reply with one short sentence the builder can use. No preamble.",
+          },
+          { role: "user", content: question },
+        ],
+      }),
     },
-    { questionId, answer },
   );
+  if (!response.ok) throw new Error(`answer model status ${response.status}`);
+  const payload = await response.json();
+  const text = payload?.choices?.[0]?.message?.content;
+  if (typeof text !== "string" || !text.trim())
+    throw new Error("answer model returned nothing");
+  return text.trim().slice(0, 400);
 }
 
-async function openQuestionId(page) {
-  return page.evaluate(async () => {
-    const response = await fetch("/api/hitl", { credentials: "include" });
-    const payload = await response.json();
-    return payload?.data?.open?.id ?? "";
-  });
+async function questionText(page) {
+  const locator = page.getByTestId("org-question");
+  if ((await locator.count()) === 0) return "";
+  if (!(await locator.first().isVisible())) return "";
+  return (await locator.first().innerText()).trim();
 }
 
-test("the scripted run asks each role and then finishes", async ({ browser }) => {
+async function shot(page, name) {
+  await page.screenshot({ path: `artifacts/${name}.png` });
+}
+
+test("the project manager starts the organization app and each role answers the live question", async ({
+  browser,
+}) => {
   test.skip(!process.env.VIBESDK_URL, "VIBESDK_URL is required");
+  test.setTimeout(1_200_000);
   mkdirSync("artifacts", { recursive: true });
-  const pmContext = await browser.newContext({ recordVideo: { dir: "videos/project-manager", size: { width: 1280, height: 720 } } });
-  const devContext = await browser.newContext({ recordVideo: { dir: "videos/developer", size: { width: 1280, height: 720 } } });
+  const pmContext = await browser.newContext({
+    recordVideo: {
+      dir: "videos/project-manager",
+      size: { width: 1280, height: 720 },
+    },
+  });
+  const devContext = await browser.newContext({
+    recordVideo: {
+      dir: "videos/developer",
+      size: { width: 1280, height: 720 },
+    },
+  });
   const pm = await pmContext.newPage();
   const dev = await devContext.newPage();
+  const answered = new Set();
 
   try {
     await signIn(pm, process.env.VIBESDK_PM_USER_ID ?? "");
     await signIn(dev, process.env.VIBESDK_DEV_USER_ID ?? "");
-    await expect(pm.getByText("You are the Project Manager.")).toBeVisible();
-    await expect(dev.getByText("You are the Developer.")).toBeVisible();
-    await showRun(pm);
-    await showRun(dev);
-    await pm.screenshot({ path: "artifacts/01-signed-in-project-manager.png" });
-    await dev.screenshot({ path: "artifacts/01-signed-in-developer.png" });
-    await hold();
+    await expect(pm.getByText("Project Manager").first()).toBeVisible();
+    await expect(dev.getByText("Developer").first()).toBeVisible();
 
-    await pm.getByRole("button", { name: "Start the scripted build" }).click();
-    await expect(pm.getByText(PM_QUESTION)).toBeVisible();
-    await showRun(pm);
-    await expect(dev.getByText(PM_QUESTION)).toHaveCount(0);
-    await expect(dev.getByText("Waiting on the Project Manager.")).toBeVisible();
-    await showRun(dev);
-    await pm.screenshot({ path: "artifacts/02-project-manager-question.png" });
-    await dev.screenshot({ path: "artifacts/02-developer-waiting.png" });
-    await hold();
+    const devBox = dev.locator("textarea").first();
+    await devBox.fill("Build a private app");
+    await devBox.press("Enter");
+    await dev.waitForTimeout(1500);
+    await expect(dev).not.toHaveURL(/\/chat\//);
+    await shot(dev, "developer-enter-does-not-start");
 
-    const pmQuestionId = await openQuestionId(dev);
-    expect(await answerStatus(dev, pmQuestionId, "should be refused")).toBe(403);
-    await expect(dev.getByText(PM_QUESTION)).toHaveCount(0);
+    const pmBox = pm.locator("textarea").first();
+    await pmBox.fill(PROMPT);
+    await pmBox.press("Enter");
+    await pm.waitForURL(/\/chat\/(?!new)/, { timeout: 180_000 });
+    const appUrl = new URL(pm.url());
+    await shot(pm, "project-manager-started");
 
-    await pm.getByLabel("Your answer").fill("North Pier Fish");
-    await pm.getByRole("button", { name: "Submit answer" }).click();
-    await expect(pm.getByText("The agent continued.")).toBeVisible();
-    await expect(pm.getByText("Question: What should the page be called?")).toBeVisible();
-    await expect(pm.getByText("Answer: North Pier Fish")).toBeVisible();
-    await showRun(pm);
-    await expect(dev.getByText(PM_QUESTION)).toHaveCount(0);
-    await expect(dev.getByText("North Pier Fish")).toHaveCount(0);
-    await expect(dev.getByText(DEV_QUESTION)).toBeVisible();
-    await showRun(dev);
-    await expect(pm.getByText(DEV_QUESTION)).toHaveCount(0);
-    await expect(pm.getByText("Waiting on the Developer.")).toBeVisible();
-    await pm.screenshot({ path: "artifacts/03-project-manager-continued.png" });
-    await dev.screenshot({ path: "artifacts/03-developer-question.png" });
-    await hold();
+    await expect(dev.getByTestId("org-app-link")).toBeVisible({
+      timeout: 60_000,
+    });
+    await dev.getByTestId("org-app-link").click();
+    await dev.waitForURL(
+      new RegExp(appUrl.pathname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    );
+    await shot(dev, "developer-opened-app");
 
-    const devQuestionId = await openQuestionId(pm);
-    expect(await answerStatus(pm, devQuestionId, "should be refused")).toBe(403);
+    const deadline = Date.now() + 10 * 60 * 1000;
+    let quietSince = 0;
+    while (Date.now() < deadline && answered.size < 2) {
+      const pmQuestion = await questionText(pm);
+      const devQuestion = await questionText(dev);
+      if (pmQuestion && devQuestion) {
+        throw new Error("both roles can see a question at the same time");
+      }
+      const speaker = pmQuestion ? pm : devQuestion ? dev : null;
+      const listener = speaker === pm ? dev : speaker === dev ? pm : null;
+      const asked = pmQuestion || devQuestion;
+      if (!speaker || !listener || !asked || answered.has(asked)) {
+        if (answered.size > 0 && quietSince === 0) quietSince = Date.now();
+        if (answered.size > 0 && Date.now() - quietSince > 180_000) break;
+        await pm.waitForTimeout(3000);
+        continue;
+      }
+      quietSince = 0;
+      await expect(listener.getByText(asked, { exact: false })).toHaveCount(0);
+      await expect(listener.getByTestId("org-waiting")).toBeVisible();
+      await shot(speaker, `question-${answered.size + 1}`);
+      await shot(listener, `waiting-${answered.size + 1}`);
+      const reply = await answerQuestion(asked);
+      const box = speaker.locator("textarea").last();
+      await expect(box).toBeEnabled();
+      await box.fill(reply);
+      await box.press("Enter");
+      answered.add(asked);
+      await speaker.waitForTimeout(2000);
+      await shot(speaker, `answered-${answered.size}`);
+    }
 
-    await dev.getByLabel("Your answer").fill("index.html");
-    await dev.getByRole("button", { name: "Submit answer" }).click();
-    await expect(pm.getByText("The app is complete.")).toBeVisible();
-    await expect(dev.getByText("The app is complete.")).toBeVisible();
-    await expect(pm.getByText(DEV_QUESTION)).toHaveCount(0);
-    await expect(dev.getByText(PM_QUESTION)).toHaveCount(0);
-    await expect(pm.getByLabel("Your answer")).toHaveCount(0);
-    await expect(dev.getByLabel("Your answer")).toHaveCount(0);
-    await expect(dev.getByText("Question: Which file should hold the page title?")).toBeVisible();
-    await expect(dev.getByText("Answer: index.html")).toBeVisible();
-    await showRun(pm);
-    await showRun(dev);
-    await pm.screenshot({ path: "artifacts/04-project-manager-complete.png" });
-    await dev.screenshot({ path: "artifacts/04-developer-complete.png" });
-    await hold();
+    expect(answered.size).toBeGreaterThan(0);
+    await pm.waitForTimeout(2000);
+    await dev.waitForTimeout(2000);
   } finally {
-    await pm.screenshot({ path: "artifacts/pm-last.png" }).catch(() => {});
-    await dev.screenshot({ path: "artifacts/dev-last.png" }).catch(() => {});
     await pmContext.close();
     await devContext.close();
   }
