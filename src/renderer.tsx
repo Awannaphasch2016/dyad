@@ -43,6 +43,7 @@ import {
 } from "./state_machines/react";
 import { clearTestRuntimeForAppAtom } from "./atoms/testRuntimeAtoms";
 import {
+  chatTabSessionStorageAtom,
   ensureRecentViewedChatIdAtom,
   initializeChatTabSessionStorageAtom,
 } from "./atoms/chatAtoms";
@@ -296,6 +297,21 @@ function RendererServices() {
           );
           if (navigation) {
             void router.navigate({ ...navigation, replace: true });
+          } else {
+            const session = store.get(chatTabSessionStorageAtom);
+            const selected = session.selectedChatId;
+            const path = window.location.pathname;
+            if (
+              selected !== null &&
+              session.openChatIds.includes(selected) &&
+              (path === "/" || path === "")
+            ) {
+              void router.navigate({
+                to: "/chat",
+                search: { id: selected },
+                replace: true,
+              });
+            }
           }
           setWindowReady(true);
         })
