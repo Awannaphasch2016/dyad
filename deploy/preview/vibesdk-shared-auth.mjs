@@ -404,7 +404,7 @@ function sessionToken(authorization: string | null, cookie: string | null): stri
 	return match ? decodeURIComponent(match[1]) : '';
 }
 
-async function clerkIdentity(env: Env, token: string): Promise<{ userId: string; email: string; name: string }> {
+async function clerkIdentity(env: Env, token: string): Promise<{ userId: string; email: string; emailVerified: boolean; name: string }> {
 	const secret = binding(env, 'CLERK_SECRET_KEY');
 	const publishable = binding(env, 'CLERK_PUBLISHABLE_KEY');
 	if (!secret.startsWith('sk_test_') || !publishable.startsWith('pk_test_')) {
@@ -451,14 +451,23 @@ async function clerkIdentity(env: Env, token: string): Promise<{ userId: string;
 		first_name?: string | null;
 		last_name?: string | null;
 		primary_email_address_id?: string;
-		email_addresses?: { id: string; email_address: string }[];
+		email_addresses?: {
+			id: string;
+			email_address: string;
+			verification?: { status?: string } | null;
+		}[];
 	};
-	const email =
-		user.email_addresses?.find((item) => item.id === user.primary_email_address_id)
-			?.email_address ?? user.email_addresses?.[0]?.email_address;
-	if (!email) throw new SignInRefusal('clerk-email');
+	const address =
+		user.email_addresses?.find((item) => item.id === user.primary_email_address_id) ??
+		user.email_addresses?.[0];
+	if (!address?.email_address) throw new SignInRefusal('clerk-email');
 	const name = [user.first_name, user.last_name].filter(Boolean).join(' ').trim();
-	return { userId: payload.sub, email: email.toLowerCase(), name: name || email.split('@')[0] };
+	return {
+		userId: payload.sub,
+		email: address.email_address.toLowerCase(),
+		emailVerified: address.verification?.status === 'verified',
+		name: name || address.email_address.split('@')[0],
+	};
 }
 
 async function neonQuery(databaseUrl: string, query: string, params: string[]): Promise<GateRow[]> {
@@ -605,29 +614,37 @@ export class SharedSignInController extends BaseController {
 					.where(eq(schema.users.email, identity.email))
 					.get();
 				if (byEmail) {
-					await recordAttempt(env, 'email-taken');
-					return SharedSignInController.createErrorResponse('Sign in to continue.', 403);
+					if (!identity.emailVerified) {
+						await recordAttempt(env, 'email-unverified');
+						return SharedSignInController.createErrorResponse('Sign in to continue.', 403);
+					}
+					if (byEmail.isSuspended || byEmail.deletedAt) {
+						await recordAttempt(env, 'email-taken');
+						return SharedSignInController.createErrorResponse('Sign in to continue.', 403);
+					}
+					user = byEmail;
+				} else {
+					const now = new Date();
+					try {
+						await database.insert(schema.users).values({
+							id: identity.userId,
+							email: identity.email,
+							displayName: identity.name,
+							emailVerified: true,
+							provider: 'email',
+							providerId: identity.userId,
+							createdAt: now,
+							updatedAt: now,
+						});
+					} catch {
+						throw new SignInRefusal('user-insert');
+					}
+					user = await database
+						.select()
+						.from(schema.users)
+						.where(eq(schema.users.id, identity.userId))
+						.get();
 				}
-				const now = new Date();
-				try {
-					await database.insert(schema.users).values({
-						id: identity.userId,
-						email: identity.email,
-						displayName: identity.name,
-						emailVerified: true,
-						provider: 'email',
-						providerId: identity.userId,
-						createdAt: now,
-						updatedAt: now,
-					});
-				} catch {
-					throw new SignInRefusal('user-insert');
-				}
-				user = await database
-					.select()
-					.from(schema.users)
-					.where(eq(schema.users.id, identity.userId))
-					.get();
 			}
 			if (!user) {
 				await recordAttempt(env, 'user-row');
@@ -636,7 +653,7 @@ export class SharedSignInController extends BaseController {
 			const sessionService = new SessionService(env);
 			let created: Awaited<ReturnType<SessionService['createSession']>>;
 			try {
-				created = await sessionService.createSession(identity.userId, request);
+				created = await sessionService.createSession(user.id, request);
 			} catch {
 				throw new SignInRefusal('session-create');
 			}
@@ -649,7 +666,7 @@ export class SharedSignInController extends BaseController {
 				accessToken: created.accessToken,
 				accessTokenExpiry: SessionService.config.sessionTTL,
 			});
-			await recordAttempt(env, 'ok');
+			await recordAttempt(env, user.id === identity.userId ? 'ok' : 'ok-linked');
 			return response;
 		} catch (error) {
 			await recordAttempt(env, refusalCode(error));

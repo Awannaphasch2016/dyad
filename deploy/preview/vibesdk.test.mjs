@@ -24,6 +24,7 @@ import {
   patchGlobalHeader,
   patchLoginModal,
   sharedSession,
+  sharedSignInSource,
 } from "./vibesdk-shared-auth.mjs";
 import {
   BUILDER_NOTE,
@@ -418,10 +419,7 @@ test("the shared sign-in keeps one Wewebplus role and hides the email form", () 
   assert.equal(
     sharedSession({
       userId: "user_1",
-      memberships: [
-        { role_id: "project-manager" },
-        { role_id: "developer" },
-      ],
+      memberships: [{ role_id: "project-manager" }, { role_id: "developer" }],
     }).role,
     null,
   );
@@ -451,6 +449,20 @@ test("the shared sign-in keeps one Wewebplus role and hides the email form", () 
   assert.doesNotMatch(modal, /location\.assign/);
   assert.match(modal, /replace\(\/\\\$\$\/, ''\)/);
   assert.match(modal, /void startSharedSignIn\(\)/);
+  const controller = sharedSignInSource();
+  assert.match(
+    controller,
+    /emailVerified: address\.verification\?\.status === 'verified'/,
+  );
+  assert.match(controller, /createSession\(user\.id, request\)/);
+  assert.match(
+    controller,
+    /user\.id === identity\.userId \? 'ok' : 'ok-linked'/,
+  );
+  assert.doesNotMatch(
+    controller,
+    /if \(byEmail\) \{\s*await recordAttempt\(env, 'email-taken'\)/,
+  );
 });
 
 test("sign in leaves for the Clerk account page", () => {
