@@ -1,0 +1,53 @@
+name: Publish Forma HITL
+
+# Opens a pull request on Awannaphasch2016/forma and merges it to main.
+# The dyad-harness app writes to Forma. This job does not deploy.
+
+on:
+  push:
+    branches:
+      - cursor/forma-hitl-publish-5014
+    paths:
+      - .github/workflows/publish-forma-hitl.yml
+      - .github/scripts/publish-forma-hitl.mjs
+      - .github/scripts/publish-forma-hitl.test.mjs
+      - deploy/forma/agent-hitl.patch
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-forma-hitl
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/cursor/forma-hitl-publish-5014'
+    runs-on: ubuntu-latest
+    environment: ai-bots
+    timeout-minutes: 15
+    steps:
+      - name: Check out the publisher
+        uses: actions/checkout@v5
+
+      - name: Check the publisher
+        run: node --test .github/scripts/publish-forma-hitl.test.mjs
+
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.DYAD_GITHUB_APP_ID || '5221649' }}
+          private-key: ${{ secrets.DYAD_GITHUB_APP_PEM_KEY }}
+          owner: Awannaphasch2016
+          repositories: forma
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Open and merge the Forma pull request
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          set +x
+          node .github/scripts/publish-forma-hitl.mjs
