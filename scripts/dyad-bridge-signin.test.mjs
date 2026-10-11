@@ -7,6 +7,8 @@ const workflow = fs.readFileSync(
   "utf8",
 );
 const signIn = fs.readFileSync("e2e-bridge/signin.ts", "utf8");
+const spec = fs.readFileSync("e2e-bridge/two-roles.spec.ts", "utf8");
+const config = fs.readFileSync("e2e-bridge/playwright.config.cjs", "utf8");
 const hitl = fs.readFileSync("src/control_plane/hitl.ts", "utf8");
 
 test("the bridge workflow reads Dyad preview through OIDC and does not print secrets", () => {
@@ -19,7 +21,10 @@ test("the bridge workflow reads Dyad preview through OIDC and does not print sec
   assert.match(workflow, /WEWEBPLUS_DATABASE_URL:\s*""/);
   assert.doesNotMatch(workflow, /DOPPLER_ADMIN_TOKEN/);
   assert.doesNotMatch(workflow, /verify_bridge/);
-  assert.doesNotMatch(workflow, /echo\s+["']?\$\{?(CLERK_SECRET_KEY|CURSOR_API_KEY)/);
+  assert.doesNotMatch(
+    workflow,
+    /echo\s+["']?\$\{?(CLERK_SECRET_KEY|CURSOR_API_KEY)/,
+  );
 });
 
 test("the bridge sign-in uses the Wewebplus user ids", () => {
@@ -28,13 +33,18 @@ test("the bridge sign-in uses the Wewebplus user ids", () => {
     "WEWEBPLUS_PROJECT_MANAGER_USER_ID",
     "WEWEBPLUS_DEVELOPER_USER_ID",
   ]) {
-    const match = hitl.match(
-      new RegExp(`export const ${name} =\\s*"([^"]+)"`),
-    );
+    const match = hitl.match(new RegExp(`export const ${name} =\\s*"([^"]+)"`));
     assert.ok(match, `${name} missing from hitl.ts`);
     assert.match(signIn, new RegExp(match[1]));
   }
   assert.match(signIn, /createSignInToken/);
   assert.match(signIn, /strategy:\s*"ticket"/);
   assert.doesNotMatch(signIn, /clerk:set-session-token/);
+});
+
+test("opening the shared app uses the Apps link and cannot wait forever", () => {
+  assert.match(spec, /getByRole\("link", \{ name: "Apps" \}\)/);
+  assert.doesNotMatch(spec, /getByRole\("button", \{ name: "Apps" \}\)/);
+  assert.match(config, /actionTimeout:\s*30_000/);
+  assert.match(signIn, /timeout:\s*60_000/);
 });

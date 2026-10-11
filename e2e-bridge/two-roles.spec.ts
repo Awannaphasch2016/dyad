@@ -128,9 +128,10 @@ async function openFactoryApp(page: Page, appName: string): Promise<void> {
   });
   const item = page.getByTestId(`app-list-item-${appName}`);
   if (!(await item.isVisible().catch(() => false))) {
-    const toggle = page.getByRole("button", { name: /toggle sidebar/i });
-    if (await toggle.isVisible().catch(() => false)) await toggle.click();
-    await page.getByRole("button", { name: "Apps" }).hover();
+    // The rail control is a link. Hovering a button named Apps never
+    // matches, and Playwright's default action timeout is infinite.
+    await page.getByRole("button", { name: "Toggle Menu" }).click();
+    await page.getByRole("link", { name: "Apps" }).hover();
   }
   await expect(item).toBeVisible({ timeout: 30_000 });
   await item.click();

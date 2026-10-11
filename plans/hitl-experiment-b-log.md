@@ -58,11 +58,11 @@ The question store is the factory bridge started in that job, with the machine t
 
 Agent `bc-b1b5f8c7-d484-4eaa-a0d1-3a69d396019e`. No repository, plan mode, `autoCreatePR: false`. Deleted at the end (`DELETE` 200).
 
-| n | marker | status | polls | role | stop | run id |
-| - | ------ | ------ | ----- | ---- | ---- | ------ |
-| 1 | present | FINISHED | 3 | project-manager | human-required | `run-b227bec7-aa95-418d-ae3b-f1c1bb7c1267` |
-| 2 | present | FINISHED | 2 | developer | human-required | `run-a7ddd23a-a62b-4ca0-abe6-1b39566535a0` |
-| 3 | absent | FINISHED | 4 | none | ready-for-approval | `run-205d0218-d5db-4ff2-99aa-53969493c3c3` |
+| n   | marker  | status   | polls | role            | stop               | run id                                     |
+| --- | ------- | -------- | ----- | --------------- | ------------------ | ------------------------------------------ |
+| 1   | present | FINISHED | 3     | project-manager | human-required     | `run-b227bec7-aa95-418d-ae3b-f1c1bb7c1267` |
+| 2   | present | FINISHED | 2     | developer       | human-required     | `run-a7ddd23a-a62b-4ca0-abe6-1b39566535a0` |
+| 3   | absent  | FINISHED | 4     | none            | ready-for-approval | `run-205d0218-d5db-4ff2-99aa-53969493c3c3` |
 
 Question `16a4462f-814c-41c1-b535-5ac3c06c8302` is the project-manager request. The answer was `Tiny Bakery`. The follow-up was a new run id on the same agent and wrote `## Request for developer`. Question `17c7f0ca-ea39-4c6a-82a2-3351dc177423` is that request. The developer answer was `Use Source Serif for the headings.` The next follow-up was another new run id and classified as `ready-for-approval` (`## Implementation summary`, no request marker).
 
@@ -72,11 +72,11 @@ Both request runs wrote the marker. The summary run did not. Follow-ups produced
 
 2026-10-10. [Run 38027897774](https://github.com/Awannaphasch2016/dyad/actions/runs/38027897774) is the same job again. It passed. The token was still only in the poller (`agent_env_has_token=false`). The agent was `bc-c0322d61-2ba4-47ae-b348-0434643dfda2` and was deleted (`DELETE` 200).
 
-| n | marker | status | polls | role | stop | run id |
-| - | ------ | ------ | ----- | ---- | ---- | ------ |
-| 1 | present | FINISHED | 3 | project-manager | human-required | `run-84b0c86c-51b3-466a-8f88-68d8e564f467` |
-| 2 | present | FINISHED | 3 | developer | human-required | `run-d31a3328-d419-4e59-97d1-37839ae088e1` |
-| 3 | absent | FINISHED | 3 | none | ready-for-approval | `run-7412ddd5-57fe-48b8-bd5e-33fd0f456f38` |
+| n   | marker  | status   | polls | role            | stop               | run id                                     |
+| --- | ------- | -------- | ----- | --------------- | ------------------ | ------------------------------------------ |
+| 1   | present | FINISHED | 3     | project-manager | human-required     | `run-84b0c86c-51b3-466a-8f88-68d8e564f467` |
+| 2   | present | FINISHED | 3     | developer       | human-required     | `run-d31a3328-d419-4e59-97d1-37839ae088e1` |
+| 3   | absent  | FINISHED | 3     | none            | ready-for-approval | `run-7412ddd5-57fe-48b8-bd5e-33fd0f456f38` |
 
 Question `2e33b30a-34d9-4286-8e4a-c039fb6d908d` is the project-manager request. The project-manager caller saw the body and the developer caller did not. Question `439b5770-97e6-4dac-99cb-47b2e0adbe08` is the developer request. The developer caller saw that body and the project-manager caller did not. Both follow-ups were new run ids on the same agent. Both request runs wrote the marker again (0 missing of 2). The third run was the implementation summary.
 

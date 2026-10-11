@@ -197,7 +197,9 @@ export async function signInAs(
     userId,
     expiresInSeconds: 300,
   });
-  await page.waitForFunction(() => window.Clerk?.loaded === true);
+  await page.waitForFunction(() => window.Clerk?.loaded === true, undefined, {
+    timeout: 60_000,
+  });
   await page.evaluate(
     async ({ ticket, organizationId }) => {
       const clerk = window.Clerk;
@@ -221,6 +223,7 @@ export async function signInAs(
   await page.waitForFunction(
     (id) => window.Clerk?.user != null && window.Clerk.organization?.id === id,
     orgId,
+    { timeout: 60_000 },
   );
 }
 
