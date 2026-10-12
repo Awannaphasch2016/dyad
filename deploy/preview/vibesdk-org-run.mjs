@@ -61,6 +61,10 @@ export function canCreate(role) {
   return role === PM_ROLE;
 }
 
+export function turnLabel(name) {
+  return String(name ?? "").trim();
+}
+
 export function acceptTurn({ open, role, answer, alreadyAnswered }) {
   const text = String(answer ?? "").trim();
   if (!open || open.status !== "open") {
@@ -332,6 +336,15 @@ export function patchWebsocket(source) {
                     sendError(connection, turn.message);
                     return;
                 }
+                if (turn.turn) {
+                    const speaker = turn.turn.name.trim();
+                    broadcastToConnections(agent, WebSocketMessageResponses.CONVERSATION_RESPONSE, {
+                        message: (parsedMessage.message ?? '').trim(),
+                        conversationId: \`org-answer-\${turn.turn.id}\`,
+                        isStreaming: false,
+                        speaker,
+                    });
+                }
                 agent.handleUserInput(parsedMessage.message, parsedMessage.images).catch((error: unknown) => {`,
     )
     .replace(
@@ -435,6 +448,7 @@ export function patchChat(source) {
   const end = source.indexOf(disabledEnd, start);
   const replaced = `${source.slice(0, start)}\tconst [orgBody, setOrgBody] = useState('');
 \tconst [orgWaiting, setOrgWaiting] = useState('');
+\tconst [orgTurns, setOrgTurns] = useState<Array<{ id: string; body: string; name: string; role: string }>>([]);
 \tuseEffect(() => {
 \t\tif (!urlChatId) return;
 \t\tlet stop = false;
@@ -445,6 +459,15 @@ export function patchChat(source) {
 \t\t\tif (stop) return;
 \t\t\tsetOrgBody(typeof payload?.data?.body === 'string' ? payload.data.body : '');
 \t\t\tsetOrgWaiting(typeof payload?.data?.waiting === 'string' ? payload.data.waiting : '');
+\t\t\tconst rawTurns = Array.isArray(payload?.data?.turns) ? payload.data.turns : [];
+\t\t\tconst nextTurns: Array<{ id: string; body: string; name: string; role: string }> = [];
+\t\t\tfor (const turn of rawTurns) {
+\t\t\t\tif (!turn || typeof turn !== 'object') continue;
+\t\t\t\tconst record = turn as { id?: unknown; body?: unknown; name?: unknown; role?: unknown };
+\t\t\t\tif (typeof record.id !== 'string' || typeof record.body !== 'string' || typeof record.name !== 'string' || typeof record.role !== 'string') continue;
+\t\t\t\tnextTurns.push({ id: record.id, body: record.body, name: record.name, role: record.role });
+\t\t\t}
+\t\t\tsetOrgTurns(nextTurns);
 \t\t};
 \t\tvoid look();
 \t\tconst timer = window.setInterval(() => void look(), 2000);
@@ -453,6 +476,10 @@ export function patchChat(source) {
 \t\t\twindow.clearInterval(timer);
 \t\t};
 \t}, [urlChatId]);
+\tconst launchTurn = orgTurns.find((turn) => turn.id === 'launch');
+\tconst orgLaunchSpeaker = launchTurn
+\t\t? launchTurn.name.trim()
+\t\t: (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('vibesdk-shared-role') ? ' ' : undefined);
 \tconst isChatDisabled = useMemo(() => {
 \t\tif (orgBody) return false;
 \t\treturn true;
@@ -473,26 +500,50 @@ export function patchChat(source) {
 						</Badge>
 					)}`;
   const ownerAnchor = "\tconst isOwner = !!app && app.userId === user?.id;";
+  const launchAnchor = `\t\t\t\t\t\t\t\t{!appLoading && (
+\t\t\t\t\t\t\t\t\t<UserMessage
+\t\t\t\t\t\t\t\t\t\tmessage={query ?? displayQuery}
+\t\t\t\t\t\t\t\t\t/>
+\t\t\t\t\t\t\t\t)}`;
+  const answerAnchor =
+    "\t\t\t\t\t\t\t\t\t\treturn (\n\t\t\t\t\t\t\t\t\t\t\t<UserMessage\n\t\t\t\t\t\t\t\t\t\t\t\tkey={message.conversationId}\n\t\t\t\t\t\t\t\t\t\t\t\tmessage={message.content}\n\t\t\t\t\t\t\t\t\t\t\t/>\n\t\t\t\t\t\t\t\t\t\t);\n\t\t\t\t\t\t\t\t\t})}";
+  const sendAnchor = "\t\t\tsendUserMessage(newMessage);";
   requireAnchor(replaced, badgeAnchor, "chat gallery chip");
   requireAnchor(replaced, ownerAnchor, "chat owner");
+  requireAnchor(replaced, launchAnchor, "chat launch turn");
+  requireAnchor(replaced, answerAnchor, "chat answer turn");
+  requireAnchor(replaced, sendAnchor, "chat send");
   return replaced
     .replace(ownerAnchor, "\tconst isOwner = false;")
     .replace(badgeAnchor, "")
     .replace(
       popupAnchor,
       `\t\t\t\t\t\t\taboveContent={
-\t\t\t\t\t\t\t\t<>
-\t\t\t\t\t\t\t\t\t{orgWaiting ? (
-\t\t\t\t\t\t\t\t\t\t<p data-testid="org-waiting" className="px-4 pb-2 text-sm">{orgWaiting}</p>
-\t\t\t\t\t\t\t\t\t) : null}
-\t\t\t\t\t\t\t\t\t<ClarifyingQuestionsPopup
-\t\t\t\t\t\t\t\t\t\tquestions={orgBody ? [{ question: orgBody }] : []}
-\t\t\t\t\t\t\t\t\t\topen={Boolean(orgBody)}
-\t\t\t\t\t\t\t\t\t\tonSubmit={submitClarifyingAnswers}
-\t\t\t\t\t\t\t\t\t\tonDismiss={dismissClarifyingQuestions}
-\t\t\t\t\t\t\t\t\t/>
-\t\t\t\t\t\t\t\t</>
+\t\t\t\t\t\t\t\t<ClarifyingQuestionsPopup
+\t\t\t\t\t\t\t\t\tquestions={orgBody ? [{ question: orgBody }] : []}
+\t\t\t\t\t\t\t\t\topen={Boolean(orgBody || orgWaiting)}
+\t\t\t\t\t\t\t\t\twaiting={orgWaiting}
+\t\t\t\t\t\t\t\t\tonSubmit={submitClarifyingAnswers}
+\t\t\t\t\t\t\t\t\tonDismiss={dismissClarifyingQuestions}
+\t\t\t\t\t\t\t\t/>
 \t\t\t\t\t\t\t}`,
+    )
+    .replace(
+      launchAnchor,
+      `\t\t\t\t\t\t\t\t{!appLoading && (
+\t\t\t\t\t\t\t\t\t<UserMessage
+\t\t\t\t\t\t\t\t\t\tmessage={query ?? displayQuery}
+\t\t\t\t\t\t\t\t\t\tspeaker={orgLaunchSpeaker}
+\t\t\t\t\t\t\t\t\t/>
+\t\t\t\t\t\t\t\t)}`,
+    )
+    .replace(
+      answerAnchor,
+      "\t\t\t\t\t\t\t\t\t\treturn (\n\t\t\t\t\t\t\t\t\t\t\t<UserMessage\n\t\t\t\t\t\t\t\t\t\t\t\tkey={message.conversationId}\n\t\t\t\t\t\t\t\t\t\t\t\tmessage={message.content}\n\t\t\t\t\t\t\t\t\t\t\t\tspeaker={message.speaker}\n\t\t\t\t\t\t\t\t\t\t\t/>\n\t\t\t\t\t\t\t\t\t\t);\n\t\t\t\t\t\t\t\t\t})}\n\t\t\t\t\t\t\t\t{orgTurns.filter((turn) => turn.id !== 'launch' && !messages.some((item) => item.conversationId === \`org-answer-\${turn.id}\` || (item.role === 'user' && item.content === turn.body))).map((turn) => (\n\t\t\t\t\t\t\t\t\t<UserMessage\n\t\t\t\t\t\t\t\t\t\tkey={turn.id}\n\t\t\t\t\t\t\t\t\t\tmessage={turn.body}\n\t\t\t\t\t\t\t\t\t\tspeaker={turn.name.trim()}\n\t\t\t\t\t\t\t\t\t/>\n\t\t\t\t\t\t\t\t))}",
+    )
+    .replace(
+      sendAnchor,
+      "\t\t\tif (!sessionStorage.getItem('vibesdk-shared-role')) sendUserMessage(newMessage);",
     );
 }
 
@@ -669,6 +720,69 @@ function binding(env: Env, name: string): string {
 	return typeof value === 'string' ? value : '';
 }
 
+const clerkNames = new Map<string, string>();
+
+function roleTitle(role: string): string {
+	return role === DEV_ROLE ? 'Developer' : 'Project Manager';
+}
+
+function turnLabel(name: string): string {
+	return name.trim();
+}
+
+async function memberName(env: Env, userId: string): Promise<string> {
+	const cached = clerkNames.get(userId);
+	if (cached) return cached;
+	let name = '';
+	const secret = binding(env, 'CLERK_SECRET_KEY');
+	if (secret.startsWith('sk_test_') || secret.startsWith('sk_live_')) {
+		try {
+			const response = await fetch('https://api.clerk.com/v1/users/' + encodeURIComponent(userId), {
+				headers: { Authorization: 'Bearer ' + secret },
+			});
+			if (response.ok) {
+				const user = await response.json() as { first_name?: string | null; last_name?: string | null; username?: string | null };
+				name = [user.first_name, user.last_name].filter(Boolean).join(' ').trim();
+				if (!name && typeof user.username === 'string') name = user.username.trim();
+			}
+		} catch {
+			name = '';
+		}
+	}
+	if (!name) {
+		try {
+			const row = await env.DB.prepare('SELECT display_name FROM users WHERE id = ?').bind(userId).first<{ display_name: string | null }>();
+			name = row?.display_name?.trim() ?? '';
+		} catch {
+			name = '';
+		}
+	}
+	if (name) clerkNames.set(userId, name);
+	return name;
+}
+
+type HumanTurn = { id: string; body: string; name: string; role: string };
+
+async function humanTurns(env: Env, appId: string): Promise<HumanTurn[]> {
+	const app = await env.DB.prepare('SELECT created_by, original_prompt, title FROM apps WHERE id = ?').bind(appId).first<{ created_by: string | null; original_prompt: string | null; title: string | null }>();
+	const turns: HumanTurn[] = [];
+	if (app?.created_by) {
+		const body = (app.original_prompt || app.title || '').trim();
+		const member = await membership(env, app.created_by);
+		if (member && body) {
+			turns.push({ id: 'launch', body, name: await memberName(env, app.created_by), role: roleTitle(member.role) });
+		}
+	}
+	const answers = await env.DB.prepare('SELECT answers.question_id, answers.user_id, answers.body FROM answers INNER JOIN questions ON questions.id = answers.question_id WHERE questions.app_id = ? ORDER BY answers.created_at ASC').bind(appId).all<{ question_id: string; user_id: string; body: string }>();
+	for (const row of answers.results ?? []) {
+		const body = row.body?.trim() ?? '';
+		const member = await membership(env, row.user_id);
+		if (!member || !body) continue;
+		turns.push({ id: row.question_id, body, name: await memberName(env, row.user_id), role: roleTitle(member.role) });
+	}
+	return turns;
+}
+
 async function neonQuery(databaseUrl: string, query: string, params: string[]): Promise<GateRow[]> {
 	const endpoint = new URL(databaseUrl);
 	const host = endpoint.hostname.replace('-pooler.', '.');
@@ -793,16 +907,17 @@ export async function latestOrganizationApp(env: Env, userId: string): Promise<{
 	return await env.DB.prepare('SELECT id, title FROM apps WHERE org_id = ? ORDER BY created_at DESC LIMIT 1').bind(member.orgId).first<{ id: string; title: string }>();
 }
 
-export async function openOrganizationQuestion(env: Env, userId: string, appId: string): Promise<{ body: string | null; waiting: string | null } | null> {
+export async function openOrganizationQuestion(env: Env, userId: string, appId: string): Promise<{ body: string | null; waiting: string | null; turns: HumanTurn[] } | null> {
 	await ensureOrganizationSchema(env);
 	const member = await membership(env, userId);
 	if (!member || !appId) return null;
 	const app = await env.DB.prepare('SELECT org_id FROM apps WHERE id = ?').bind(appId).first<{ org_id: string | null }>();
 	if (!app?.org_id || app.org_id !== member.orgId) return null;
+	const turns = await humanTurns(env, appId);
 	const open = await env.DB.prepare("SELECT target_role_id, body, status FROM questions WHERE app_id = ? AND status = 'open' ORDER BY created_at DESC LIMIT 1").bind(appId).first<{ target_role_id: string; body: string; status: string }>();
-	if (!open) return { body: null, waiting: null };
-	if (open.target_role_id === member.role) return { body: open.body, waiting: null };
-	return { body: null, waiting: waitingLine(open.target_role_id) };
+	if (!open) return { body: null, waiting: null, turns };
+	if (open.target_role_id === member.role) return { body: open.body, waiting: null, turns };
+	return { body: null, waiting: waitingLine(open.target_role_id), turns };
 }
 
 export async function publishOrganizationQuestion(input: {
@@ -849,7 +964,7 @@ export async function publishOrganizationQuestion(input: {
 	}
 }
 
-export async function acceptOrganizationAnswer(env: Env, appId: string, connection: WebSocket, message: string): Promise<{ allow: boolean; message: string }> {
+export async function acceptOrganizationAnswer(env: Env, appId: string, connection: WebSocket, message: string): Promise<{ allow: boolean; message: string; turn?: { id: string; body: string; name: string; role: string; label: string } }> {
 	await ensureOrganizationSchema(env);
 	const actor = readOrganizationRole(connection);
 	const text = message.trim();
@@ -863,7 +978,9 @@ export async function acceptOrganizationAnswer(env: Env, appId: string, connecti
 		return { allow: false, message: 'This question already has an answer.' };
 	}
 	await env.DB.prepare("UPDATE questions SET status = 'answered' WHERE id = ? AND status = 'open'").bind(open.id).run();
-	return { allow: true, message: '' };
+	const name = await memberName(env, actor.userId);
+	const role = roleTitle(actor.role);
+	return { allow: true, message: '', turn: { id: open.id, body: text, name, role, label: turnLabel(name) } };
 }
 
 export async function redactConversation(env: Env, appId: string, connection: WebSocket, state: unknown): Promise<unknown> {
@@ -961,18 +1078,111 @@ interface ClarifyingQuestionsPopupProps {
 	onDismiss?: () => void;
 }
 
-export function ClarifyingQuestionsPopup({ questions, open }: ClarifyingQuestionsPopupProps) {
+export function ClarifyingQuestionsPopup({ questions, open, waiting }: ClarifyingQuestionsPopupProps & { waiting?: string }) {
 	const question = questions[0];
-	if (!open || !question?.question) return null;
+	if (open && question?.question) {
+		return (
+			<div className="rounded-t-xl border border-b-0 bg-bg-4 px-4 py-3">
+				<p className="text-xs text-text-tertiary">Question</p>
+				<p data-testid="org-question" className="text-sm text-text-primary">{question.question}</p>
+				<p className="mt-1 text-xs text-text-tertiary">Reply in the prompt box.</p>
+			</div>
+		);
+	}
+	if (!open || !waiting) return null;
 	return (
-		<div className="rounded-t-xl border border-b-0 bg-bg-4 px-4 py-3">
-			<p className="text-xs text-text-tertiary">Question</p>
-			<p data-testid="org-question" className="text-sm text-text-primary">{question.question}</p>
-			<p className="mt-1 text-xs text-text-tertiary">Reply in the prompt box.</p>
+		<div data-testid="org-waiting" className="flex items-start gap-2 rounded-t-xl border border-b-0 bg-bg-4 px-4 py-3">
+			<svg aria-label="Locked" viewBox="0 0 24 24" className="mt-0.5 size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2">
+				<rect x="5" y="11" width="14" height="10" rx="2" />
+				<path d="M8 11V8a4 4 0 0 1 8 0v3" />
+			</svg>
+			<p className="text-sm text-text-primary">{waiting}</p>
 		</div>
 	);
 }
 `;
+}
+
+export function patchSocketType(source) {
+  const anchor =
+    "\ttype: 'conversation_response';\n\tmessage: string;\n\tconversationId?: string;\n";
+  requireAnchor(source, anchor, "socket turn type");
+  return source.replace(anchor, `${anchor}\tspeaker?: string;\n`);
+}
+
+export function patchChatMessage(source) {
+  const anchor = "    queuePosition?: number;\n};";
+  requireAnchor(source, anchor, "chat message speaker");
+  return source.replace(
+    anchor,
+    "    queuePosition?: number;\n    speaker?: string;\n};",
+  );
+}
+
+export function patchUserMessage(source) {
+  const anchor = `export function UserMessage({ message }: { message: string }) {
+	const sanitizedMessage = sanitizeMessageForDisplay(message);
+
+	return (
+		<div className="flex flex-col gap-2 min-w-0">
+			<div className="flex items-center gap-2 mb-3">
+				<div className="size-5 flex items-center justify-center rounded-full bg-brand text-white shrink-0">
+					<span className="text-[10px]">U</span>
+				</div>
+				<div className="font-medium text-text-50">You</div>
+			</div>
+			<Markdown className="text-text-primary/80">{sanitizedMessage}</Markdown>
+		</div>
+	);
+}`;
+  requireAnchor(source, anchor, "user message label");
+  return source.replace(
+    anchor,
+    `export function UserMessage({ message, speaker }: { message: string; speaker?: string }) {
+	const sanitizedMessage = sanitizeMessageForDisplay(message);
+	const label = speaker?.trim() ? speaker.trim() : 'You';
+
+	return (
+		<div className="flex flex-col gap-2 min-w-0" data-testid={speaker?.trim() ? 'org-human-turn' : undefined}>
+			<div className="flex items-center gap-2 mb-3">
+				<div className="size-5 flex items-center justify-center rounded-full bg-brand text-white shrink-0">
+					<span className="text-[10px]">{label === 'You' ? 'U' : label.slice(0, 1).toUpperCase()}</span>
+				</div>
+				<div className="font-medium text-text-50" data-testid={speaker?.trim() ? 'org-turn' : undefined}>{label}</div>
+			</div>
+			<Markdown className="text-text-primary/80">{sanitizedMessage}</Markdown>
+		</div>
+	);
+}`,
+  );
+}
+
+export function patchConversationHandler(source) {
+  const importAnchor = "    createAIMessage,\n";
+  const caseAnchor =
+    "            case 'conversation_response': {\n                // Use concrete conversationId when available; otherwise use placeholder id\n                let conversationId = message.conversationId ?? 'conversation_response';\n";
+  requireAnchor(source, importAnchor, "conversation import");
+  requireAnchor(source, caseAnchor, "conversation response");
+  return source
+    .replace(importAnchor, "    createAIMessage,\n    createUserMessage,\n")
+    .replace(
+      caseAnchor,
+      `${caseAnchor}                if (message.speaker && message.conversationId?.startsWith('org-answer-')) {
+                    const speaker = message.speaker;
+                    const text = message.message;
+                    const answerId = message.conversationId;
+                    setMessages(prev => {
+                        if (prev.some(item => item.conversationId === answerId)) return prev;
+                        const unlabeled = prev.findIndex(item => item.role === 'user' && item.content === text && !item.speaker);
+                        const labeled = { ...createUserMessage(text), conversationId: answerId, speaker };
+                        if (unlabeled >= 0) return prev.map((item, index) => index === unlabeled ? labeled : item);
+                        return [...prev, labeled];
+                    });
+                    break;
+                }
+
+`,
+    );
 }
 
 export async function applyOrganizationRun(checkout) {
@@ -1007,6 +1217,13 @@ export async function applyOrganizationRun(checkout) {
     ["src/hooks/use-apps.ts", patchAppsHook],
     ["src/routes/home.tsx", patchHome],
     ["src/routes/chat/chat.tsx", patchChat],
+    ["src/routes/chat/components/messages.tsx", patchUserMessage],
+    ["src/routes/chat/utils/message-helpers.ts", patchChatMessage],
+    [
+      "src/routes/chat/utils/handle-websocket-message.ts",
+      patchConversationHandler,
+    ],
+    ["worker/api/websocketTypes.ts", patchSocketType],
   ];
   for (const [relative, patch] of patches) {
     const path = join(checkout, relative);

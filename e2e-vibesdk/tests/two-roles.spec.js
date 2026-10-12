@@ -85,6 +85,24 @@ async function answerQuestion(question) {
   return text.trim().slice(0, 400);
 }
 
+async function clerkName(userId) {
+  const secret = process.env.CLERK_SECRET_KEY ?? "";
+  if (!secret || !userId) return "";
+  const response = await fetch(
+    `https://api.clerk.com/v1/users/${encodeURIComponent(userId)}`,
+    { headers: { Authorization: `Bearer ${secret}` } },
+  );
+  if (!response.ok) return "";
+  const user = await response.json();
+  const name = [user.first_name, user.last_name]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  return (
+    name || (typeof user.username === "string" ? user.username.trim() : "")
+  );
+}
+
 async function questionText(page) {
   const locator = page.getByTestId("org-question");
   if ((await locator.count()) === 0) return "";
@@ -151,6 +169,17 @@ test("the project manager starts the organization app and each role answers the 
       new RegExp(appUrl.pathname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
     );
     await shot(dev, "developer-opened-app");
+    const pmName = await clerkName(process.env.VIBESDK_PM_USER_ID ?? "");
+    const devName = await clerkName(process.env.VIBESDK_DEV_USER_ID ?? "");
+    expect(pmName).toBeTruthy();
+    await expect(pm.getByTestId("org-turn").first()).toHaveText(pmName, {
+      timeout: 30_000,
+    });
+    await expect(dev.getByTestId("org-turn").first()).toHaveText(pmName, {
+      timeout: 30_000,
+    });
+    await shot(pm, "project-manager-named-turn");
+    await shot(dev, "developer-sees-named-turn");
 
     const deadline = Date.now() + 10 * 60 * 1000;
     let quietSince = 0;
@@ -172,6 +201,11 @@ test("the project manager starts the organization app and each role answers the 
       quietSince = 0;
       await expect(listener.getByText(asked, { exact: false })).toHaveCount(0);
       await expect(listener.getByTestId("org-waiting")).toBeVisible();
+      await expect(listener.getByLabel("Locked")).toBeVisible();
+      await expect(listener.locator("textarea").last()).toBeDisabled();
+      await expect(listener.getByText("Reply in the prompt box.")).toHaveCount(
+        0,
+      );
       await shot(speaker, `question-${answered.size + 1}`);
       await shot(listener, `waiting-${answered.size + 1}`);
       const reply = await answerQuestion(asked);
@@ -180,11 +214,26 @@ test("the project manager starts the organization app and each role answers the 
       await box.fill(reply);
       await box.press("Enter");
       answered.add(asked);
-      await speaker.waitForTimeout(2000);
+      const preview = reply.slice(0, 48);
+      const speakerName = speaker === pm ? pmName : devName;
+      const heard = listener
+        .getByTestId("org-human-turn")
+        .filter({ hasText: preview });
+      await expect(heard.first()).toBeVisible({ timeout: 20_000 });
+      await expect(heard.first().getByTestId("org-turn")).toHaveText(
+        speakerName,
+      );
       await shot(speaker, `answered-${answered.size}`);
+      await shot(listener, `heard-${answered.size}`);
     }
 
     expect(answered.size).toBeGreaterThan(0);
+    await expect(pm.getByText("Orange").first()).toBeVisible({
+      timeout: 180_000,
+    });
+    await expect(dev.getByText("Orange").first()).toBeVisible({
+      timeout: 180_000,
+    });
     await pm.waitForTimeout(2000);
     await dev.waitForTimeout(2000);
   } finally {

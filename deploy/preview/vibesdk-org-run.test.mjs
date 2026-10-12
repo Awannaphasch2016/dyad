@@ -19,6 +19,7 @@ import {
   patchAppService,
   presentQuestion,
   redactQuestionText,
+  turnLabel,
 } from "./vibesdk-org-run.mjs";
 
 test("a missing role is kept for the project manager and marked fallback", () => {
@@ -172,5 +173,24 @@ test("the generated run does not keep the extra card or a phase", () => {
   assert.equal(popup.includes("<textarea"), false);
   assert.match(popup, /data-testid="org-question"/);
   assert.match(popup, /Reply in the prompt box/);
+  assert.match(popup, /aria-label="Locked"/);
+  assert.match(popup, /data-testid="org-waiting"/);
   assert.match(routes, /\/api\/org/);
+});
+
+test("a human turn shows the account name", () => {
+  assert.equal(
+    turnLabel("Walkthrough Project Manager"),
+    "Walkthrough Project Manager",
+  );
+  assert.equal(turnLabel("  Ada Lovelace  "), "Ada Lovelace");
+  const run = orgRunSource();
+  assert.match(run, /function turnLabel\(name: string\): string/);
+  assert.match(run, /return name\.trim\(\)/);
+  assert.equal(run.includes("' · '"), false);
+  assert.match(run, /api\.clerk\.com\/v1\/users\//);
+  assert.match(run, /SELECT created_by, original_prompt, title/);
+  assert.match(run, /answers\.user_id/);
+  assert.equal(run.includes("ALTER TABLE answers ADD"), false);
+  assert.equal(run.includes("phase"), false);
 });
