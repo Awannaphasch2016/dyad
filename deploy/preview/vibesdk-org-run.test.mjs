@@ -98,12 +98,14 @@ test("creating an app does not make the creator the owner", () => {
     "            }",
   ].join("\n");
   const patched = patchAppService(source);
-  assert.match(patched, /isOwner: false/);
+  assert.match(patched, /memberCanAccessApp/);
+  assert.match(patched, /isOwner: mayOpen/);
   assert.match(patched, /org_id = /);
   assert.match(patched, /Changing the gallery flag is not available/);
   assert.match(patched, /Deleting an app is not available/);
   assert.equal(patched.includes("your own apps"), false);
   assert.equal(patched.includes("app.userId === userId"), false);
+  assert.equal(patched.includes("isOwner: false"), false);
 });
 
 test("only the project manager can create an organization app", () => {
@@ -162,7 +164,8 @@ test("the generated run does not keep the extra card or a phase", () => {
   assert.match(run, /target_role_id/);
   assert.match(run, /question_id TEXT PRIMARY KEY/);
   assert.match(run, /organizationIdFor/);
-  assert.match(run, /!row\.org_id \|\| row\.org_id !== member\.orgId/);
+  assert.match(run, /if \(!row\?\.org_id\) return member\.role === PM_ROLE/);
+  assert.match(run, /row\.org_id !== member\.orgId/);
   assert.equal(run.includes("row.user_id !== userId"), false);
   assert.match(run, new RegExp(CREATE_REFUSAL));
   assert.equal(popup.includes("<input"), false);

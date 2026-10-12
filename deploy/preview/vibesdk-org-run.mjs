@@ -370,13 +370,14 @@ export function patchAppService(source) {
   return source
     .replace(
       importAnchor,
-      `${importAnchor}\nimport { organizationIdFor } from '../../services/org/run';`,
+      `${importAnchor}\nimport { memberCanAccessApp, organizationIdFor } from '../../services/org/run';`,
     )
     .replace(
       ownerAnchor,
-      `        return {
+      `        const mayOpen = await memberCanAccessApp(this.env, appId, userId);
+        return {
             exists: true,
-            isOwner: false,
+            isOwner: mayOpen,
             visibility: app.visibility as 'private' | 'public' | null
         };`,
     )
@@ -394,9 +395,7 @@ export function patchAppService(source) {
     )
     .replace(
       deleteAnchor,
-      `            if (!ownershipResult.isOwner) {
-                return { success: false, error: 'Deleting an app is not available.' };
-            }`,
+      `            return { success: false, error: 'Deleting an app is not available.' };`,
     );
 }
 
@@ -763,7 +762,8 @@ export async function memberCanAccessApp(env: Env, appId: string, userId: string
 	const member = await membership(env, userId);
 	if (!member) return false;
 	const row = await env.DB.prepare('SELECT org_id FROM apps WHERE id = ?').bind(appId).first<{ org_id: string | null }>();
-	return Boolean(row?.org_id && row.org_id === member.orgId);
+	if (!row?.org_id) return member.role === PM_ROLE;
+	return row.org_id === member.orgId;
 }
 
 export async function authorizeOrganizationSocket(env: Env, userId: string, appId: string, request: Request): Promise<Request | Response> {
@@ -771,9 +771,9 @@ export async function authorizeOrganizationSocket(env: Env, userId: string, appI
 	if (!member) return new Response('Forbidden', { status: 403 });
 	await ensureOrganizationSchema(env);
 	const row = await env.DB.prepare('SELECT org_id FROM apps WHERE id = ?').bind(appId).first<{ org_id: string | null }>();
-	if (!row) {
+	if (!row || !row.org_id) {
 		if (member.role !== PM_ROLE) return new Response('Forbidden', { status: 403 });
-	} else if (!row.org_id || row.org_id !== member.orgId) {
+	} else if (row.org_id !== member.orgId) {
 		return new Response('Not found', { status: 404 });
 	}
 	const headers = new Headers(request.headers);
