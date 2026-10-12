@@ -717,12 +717,270 @@ sequenceDiagram
 | Host bridge | Starts Dyad, or appends a finished message | Competes with the new backend client | Replaced by the turn client | Gains the event adapter |
 | GasCity | Optional starter of the Dyad agent | Executor when that backend is selected | Executor of every turn | Executor of foreign agents only |
 
+## 11. Decision criteria when GasCity is the orchestrator
+
+The ranking D > C > B is a ranking of how little Dyad's agent loop moves.
+It is not a ranking of orchestration. The goal in this section is the
+stronger one: GasCity decides which agent runs, and Dyad's UI can show
+either that agent or the native agent through one stream, without copying
+the tool harness into GasCity.
+
+### Corrected definitions
+
+**D — event projection.** One side emits facts. The other paints or
+reacts. In the diagram above, GasCity emits text and activity, and a
+Dyad adapter writes `chat:response:chunk`. The native
+`handleLocalAgentStream` function stays on its own call path. D does not
+adapt Dyad's events so that GasCity can steer Dyad. That reverses the
+arrow. An outbound variant, where Dyad emits events and GasCity listens,
+is also D: it is observation. Martin Fowler calls that event notification.
+The sender does not depend on a response. Using an event as a disguised
+order is what he calls a passive-aggressive command.
+
+**C — GasCity owns the agent loop.** Prompts, model calls, retries, and
+workflow state run in GasCity for every factory turn, including the turn
+that used to be Dyad's local agent. Dyad keeps the UI and the files.
+C does not require a line-by-line port of `TOOL_DEFINITIONS` on day one.
+It does require those tools to be reachable from GasCity, because the
+files, git repo, preview process, and consent checks live in the Electron
+app. That callback is a second product surface. The loop itself
+(`streamText`, prompt assembly, tool-transcript sanitizing, the chat
+lock) would leave `local_agent_handler.ts`.
+
+**B — Dyad owns the call.** The chat stream host calls an `AgentBackend`.
+The native backend wraps today's loop. A GasCity backend is the other
+implementation. The user was right that this puts the integration inside
+Dyad. The host in `src/chat_stream/` remains the component that admits
+the turn. GasCity is a callee.
+
+**What the bridge is today.** None of the three. `POST /v1/apps/:id/phases/:phase/runs`
+is a command from GasCity to Dyad: start `local-agent` with this prompt.
+`GET /v1/runs/gas-city-run:…` returns status and, after the turn ends,
+one final assistant message. `POST …/messages` inserts a finished bubble.
+Question and answer routes exist for HITL. There is no cancel route on
+the bridge, and neither direction has a live token or tool-event stream.
+Idempotency keys already exist on runs and messages.
+
+### Calling interface versus event interface
+
+| | Calling interface | Event interface |
+| --- | --- | --- |
+| Meaning | The caller names a receiver and asks it to start, cancel, resume, or answer | A publisher reports that something happened |
+| Who decides the next step | The caller, using the return or the task state | Whoever happens to be listening |
+| Failure | The caller sees reject, timeout, or a terminal task state | A missed event is silence unless someone polls a store |
+| Fits GasCity as orchestrator | Yes. GasCity is the client | Only as the view, or as a log |
+
+A2A draws the same line one level up from tools. MCP is how an agent
+reaches its own tools. A2A is how one agent gives another a task.
+A2A task states are `submitted`, `working`, `completed`, `failed`,
+`canceled`, `rejected`, plus the interrupted states `input-required` and
+`auth-required`. Streaming is `SendStreamingMessage`. A dropped stream
+resumes with `SubscribeToTask`. `input-required` closes the stream and
+the same task continues when the client sends the user's answer.
+Cancel is its own operation. MCP has no peer-agent lifecycle. A2A has
+no tool-call schema. Dyad's `TOOL_DEFINITIONS` are the tool layer.
+GasCity's phase runner wants the task layer.
+
+Temporal makes the same split inside one vendor: a workflow is the
+orchestrator, an activity is the worker. Long activities heartbeat, or
+cancellation and crash recovery never arrive. The heartbeat details are
+the resume cursor. Dyad's factory poll is a weak version of "get task."
+It has no heartbeat and no cursor inside the turn.
+
+Choreography (events only) fits short, independent reactions. Orchestration
+fits a long branchy flow with cancel, compensation, and an audit of who
+ran. A factory phase is the second kind. Camunda, AWS Step Functions
+guidance, and the choreography write-ups agree that the two styles can
+live together: orchestrate the phase, publish events for the UI.
+
+### Comparison matrix
+
+| Dimension | D, event projection | C, loop moves to GasCity | B, Dyad calls GasCity |
+| --- | --- | --- | --- |
+| Who starts, cancels, and resumes | Nobody new. Native turns stay with the chat stream host. Foreign turns are whatever the event producer does outside Dyad | GasCity | Dyad's chat stream host |
+| Dyad agent, tools, and harness | Kept in place for native turns. Foreign agents do not use them | Loop leaves Dyad. Tools stay only if GasCity calls back | Kept, behind `AgentBackend`, for the native backend only |
+| One calling path for both agents | No. Native stays on `chat:stream`. Foreign agents use a different producer | Yes, and that path is GasCity | Yes, and that path is Dyad |
+| Live UI stream | Yes, if the adapter writes `chat:response:chunk` | Yes, if GasCity's events are mapped to the same chunks | Yes, if both backends feed one chunk mapper |
+| User input, approval, cancel, HITL back to GasCity | Only if someone adds commands. Events do not carry the return path | Natural, because GasCity is already the waiter | Dyad receives them first and must forward |
+| Execution state | Split. Dyad owns the chat row and the chat lock. GasCity owns the phase only if it keeps its own store | GasCity owns the workflow. Dyad still owns the visible transcript unless that moves too | Dyad owns the turn. GasCity owns whatever happens inside its backend |
+| Retry, reconnect, long runs | A UI patch can be resent. The run itself has no shared cursor | One workflow history. Electron quitting no longer kills the loop | Dyad retries only while its process lives. GasCity retries only its own backend |
+| What changes when Dyad's agent changes | Native path changes as it does today. The adapter breaks only if chunk XML changes | GasCity's copy or callback breaks | `AgentBackend` breaks if the event vocabulary changes |
+| Adding a third agent | Add another event producer that speaks chunk XML | Register another worker behind GasCity | Implement another `AgentBackend` inside Dyad |
+| New pieces | Inbound adapter, chat-lock sharing | Turn client, workspace tool API, a new home for the loop | `AgentBackend`, GasCity client, shared chunk mapper |
+| Electron quits mid-run | Native run dies with the process. A foreign run can continue only if it was not inside Dyad | The loop can continue. Local tools cannot, until the app returns | Both the caller and the native worker die |
+
+### When an architect picks each one
+
+**Pick D** when the UI is the problem and control is already solved
+somewhere else. You have a producer of text and tool activity, and you
+need the existing message list to paint it. You accept two call paths.
+Choose the outbound-only form of D when GasCity needs an audit log and
+must not be on the critical path of a keystroke.
+
+**D is not enough** when GasCity must choose the agent, stop it, wait
+for an approval, branch on a tool result, or recover a turn after the
+stream drops. An event adapter can show those facts. It cannot be the
+thing that issues them. Today's `GET /runs` already shows the gap: GasCity
+can see `queued`, `running`, `completed`, `cancelled`, or `errored`, and
+then one final message. It cannot see tool calls as they happen, and it
+cannot cancel the run through this API.
+
+**Pick C** when the worker process is the problem. The factory turn must
+keep running after Dyad quits, the laptop sleeps, or a second UI (not
+this Electron app) must drive the same loop. Also pick C when you want
+one prompt, one retry policy, and one transcript implementation, and you
+accept a remote tool boundary. C is the expensive way to get a single
+caller. It is the cheap way to get a caller that outlives the desktop app.
+
+**Pick B** when the user always starts in Dyad and ordinary chat must
+run with GasCity unavailable. The shared interface then belongs in the
+chat stream host, because that host already serializes turns. Pick B
+when GasCity agents are optional backends, not the owner of the phase.
+B fights the goal "GasCity is the primary orchestrator."
+
+**Use both a call and an event stream** when GasCity must orchestrate
+and Dyad must paint. The call is the task (`start`, `cancel`,
+`input-required`, `subscribe`). The event stream is the view
+(`chat:response:chunk`). CQRS is this split: the command model and the
+read model are allowed to differ. The factory bridge has the command
+(`POST /runs`) and a finished-message write (`POST /messages`). It does
+not yet have the live read model in either direction.
+
+### Sequences for the corrected options
+
+D, as a view. GasCity is not on the native call.
+
+```mermaid
+sequenceDiagram
+  participant User
+  participant Dyad as Dyad chat host
+  participant Agent as Dyad local agent
+  participant Adapter as Chunk adapter
+  participant GC as GasCity
+
+  alt native turn
+    User->>Dyad: chat:stream
+    Dyad->>Agent: handleLocalAgentStream
+    Agent-->>User: chat:response:chunk
+  else foreign agent, view only
+    GC-->>Adapter: text, tool activity, end
+    Adapter-->>User: chat:response:chunk
+  end
+```
+
+C, one caller. The loop no longer starts in Dyad.
+
+```mermaid
+sequenceDiagram
+  participant User
+  participant Dyad as Dyad UI and tool API
+  participant GC as GasCity
+  participant Agent as Agent running in GasCity
+
+  User->>Dyad: prompt
+  Dyad->>GC: start task
+  GC->>Agent: run
+  Agent->>Dyad: tool callback for files, git, preview
+  Agent-->>GC: status and artifacts
+  GC-->>Dyad: task events
+  Dyad-->>User: chat:response:chunk
+  User->>Dyad: cancel or HITL answer
+  Dyad->>GC: cancel or input-required reply
+```
+
+B, Dyad is the caller.
+
+```mermaid
+sequenceDiagram
+  participant User
+  participant Host as Dyad AgentBackend
+  participant Native as Native backend
+  participant GC as GasCity backend
+
+  User->>Host: chat:stream
+  alt native
+    Host->>Native: run turn
+    Native-->>User: chunks
+  else GasCity agent
+    Host->>GC: run turn
+    GC-->>Host: events
+    Host-->>User: chunks
+  end
+```
+
+The shape that matches "GasCity orchestrates, Dyad keeps the harness":
+GasCity is the A2A-style client, the Dyad agent is one worker, other
+agents are other workers, and a projector writes chunks. Tools stay
+inside the Dyad worker.
+
+```mermaid
+sequenceDiagram
+  participant User
+  participant UI as Dyad UI
+  participant GC as GasCity orchestrator
+  participant Dyad as Dyad agent worker
+  participant Other as Other agent worker
+
+  User->>UI: prompt or HITL answer
+  UI->>GC: forward input for a factory phase
+  GC->>Dyad: start, cancel, or resume task
+  GC->>Other: or start a different worker
+  Dyad-->>GC: status, tool activity, input-required, result
+  Other-->>GC: the same task events
+  GC-->>UI: those events
+  UI-->>User: chat:response:chunk
+```
+
+On that path the native agent is reused by being called, not by being
+copied and not by being hidden behind a Dyad-owned backend interface.
+Ordinary non-factory chat can keep today's `chat:stream` path so a
+missing supervisor does not take down the editor.
+
+### Recommendation
+
+D > C > B is a sound preference for disruption and for UI reuse. It is
+the wrong preference for orchestration ownership.
+
+For the stated goal, build the missing half of the bridge as a task
+interface and keep D as the projector into `chat:response:chunk`. Do not
+start by moving `handleLocalAgentStream` into GasCity. Do not start by
+adding `AgentBackend` under the chat stream host.
+
+That recommendation flips if a factory run must survive the Electron
+process exiting. The local agent cannot. C, or an out-of-process worker
+that still calls the same tools, becomes the deciding requirement. It
+also flips back toward B if factory mode is optional and the chat host
+must stay the only caller.
+
+### Findings that would change this
+
+These are not answered by this repository:
+
+1. Must a phase keep running after Dyad quits or the machine sleeps?
+2. Does GasCity branch on tool results and HITL, or only on the final assistant message it can already poll?
+3. Is there a GasCity task or event schema, or is `POST /runs` plus `GET /runs` the whole contract?
+4. When GasCity switches agents, do they share one phase chat or one chat each? The bridge currently resolves one chat per phase.
+5. Will a non-Dyad agent edit files itself, or will it only ask the Dyad worker to edit? Self-edit requires the tool callback even if the loop stays in Dyad.
+6. Must ordinary chat work while the supervisor is down? If yes, the native `chat:stream` path stays beside the factory task path.
+
+### Sources
+
+- Event notification versus command: [Martin Fowler, "What do you mean by Event-Driven?"](https://www.martinfowler.com/articles/201701-event-driven.html)
+- Separate read and write models: [CQRS](https://martinfowler.com/bliki/CQRS.html)
+- Agent-to-agent tasks, streaming, cancel, and `input-required`: [A2A specification](https://a2a-protocol.org/latest/specification/), [streaming and async](https://a2a-protocol.org/latest/topics/streaming-and-async/), [protocol definition](https://a2a-protocol.org/latest/definitions/)
+- MCP is the tool layer, not the peer-agent layer: [MCP specification, 2026-07-28](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2026-07-28/index.mdx), [MCP vs A2A](https://jonmoshier.com/notes/mcp-vs-a2a/)
+- Workflow owns the steps; the activity heartbeats or cancel and resume never arrive: [Temporal long-running activity](https://docs.temporal.io/design-patterns/long-running-activity)
+- Orchestrate the long branchy flow; choreograph independent reactions: [AWS orchestration guidance](https://docs.aws.amazon.com/prescriptive-guidance/latest/modernization-integrating-microservices/orchestration.html), [Camunda](https://camunda.com/blog/2023/02/orchestration-vs-choreography/), [Ben Morris](https://www.ben-morris.com/orchestration-vs-choreography-for-microservice-workflows/)
+
 ## Verified versus proposed
 
-Verified: the lifecycle, tool list, IPC names, chunk schema, and the fact
-that the host bridge starts local-agent or appends finished messages.
-The current container, component, and sequence diagrams describe that path.
+Verified: the lifecycle, tool list, IPC names, chunk schema, the host
+bridge routes (`POST /runs`, `GET /runs`, `POST /messages`, HITL
+questions and answers), and the absence of a bridge cancel route or a
+live event stream. The current diagrams describe that path.
 
-Proposed: options B, C, and D, the adapter events, agent switching inside
-one chat, and any claim that GasCity already emits a compatible stream.
-This repository does not contain that GasCity emitter.
+Proposed: options B, C, and D, the task-shaped calling interface, the
+chunk projector, and any claim that GasCity already emits a compatible
+stream. This repository does not contain that GasCity emitter. The
+external sources describe the patterns. They do not describe this
+codebase.
