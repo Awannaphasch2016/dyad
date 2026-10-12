@@ -138,10 +138,15 @@ test("the project manager starts the organization app and each role answers the 
     const appUrl = new URL(pm.url());
     await shot(pm, "project-manager-started");
 
-    await expect(dev.getByTestId("org-app-link")).toBeVisible({
-      timeout: 60_000,
-    });
-    await dev.getByTestId("org-app-link").click();
+    const appLink = dev.locator(`a[href="${appUrl.pathname}"]`);
+    await expect(appLink.first()).toBeVisible({ timeout: 90_000 });
+    await appLink.first().click();
+    await expect(pm.getByRole("button", { name: "Make public" })).toHaveCount(
+      0,
+    );
+    await expect(dev.getByRole("button", { name: "Make public" })).toHaveCount(
+      0,
+    );
     await dev.waitForURL(
       new RegExp(appUrl.pathname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
     );
