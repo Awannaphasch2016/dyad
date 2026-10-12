@@ -178,14 +178,16 @@ test("the generated run does not keep the extra card or a phase", () => {
   assert.match(routes, /\/api\/org/);
 });
 
-test("a human turn shows that member's name and role", () => {
+test("a human turn shows the account name", () => {
   assert.equal(
-    turnLabel("Ada Lovelace", "Project Manager"),
-    "Ada Lovelace · Project Manager",
+    turnLabel("Walkthrough Project Manager"),
+    "Walkthrough Project Manager",
   );
-  assert.equal(turnLabel("", "Developer"), "Developer");
+  assert.equal(turnLabel("  Ada Lovelace  "), "Ada Lovelace");
   const run = orgRunSource();
-  assert.match(run, /if \(person && title\) return person \+ ' · ' \+ title;/);
+  assert.match(run, /function turnLabel\(name: string\): string/);
+  assert.match(run, /return name\.trim\(\)/);
+  assert.equal(run.includes("' · '"), false);
   assert.match(run, /api\.clerk\.com\/v1\/users\//);
   assert.match(run, /SELECT created_by, original_prompt, title/);
   assert.match(run, /answers\.user_id/);

@@ -61,11 +61,8 @@ export function canCreate(role) {
   return role === PM_ROLE;
 }
 
-export function turnLabel(name, role) {
-  const person = String(name ?? "").trim();
-  const title = String(role ?? "").trim();
-  if (person && title) return `${person} · ${title}`;
-  return person || title;
+export function turnLabel(name) {
+  return String(name ?? "").trim();
 }
 
 export function acceptTurn({ open, role, answer, alreadyAnswered }) {
@@ -340,7 +337,7 @@ export function patchWebsocket(source) {
                     return;
                 }
                 if (turn.turn) {
-                    const speaker = [turn.turn.name, turn.turn.role].filter(Boolean).join(' · ');
+                    const speaker = turn.turn.name.trim();
                     broadcastToConnections(agent, WebSocketMessageResponses.CONVERSATION_RESPONSE, {
                         message: (parsedMessage.message ?? '').trim(),
                         conversationId: \`org-answer-\${turn.turn.id}\`,
@@ -481,7 +478,7 @@ export function patchChat(source) {
 \t}, [urlChatId]);
 \tconst launchTurn = orgTurns.find((turn) => turn.id === 'launch');
 \tconst orgLaunchSpeaker = launchTurn
-\t\t? [launchTurn.name, launchTurn.role].filter(Boolean).join(' · ')
+\t\t? launchTurn.name.trim()
 \t\t: (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('vibesdk-shared-role') ? ' ' : undefined);
 \tconst isChatDisabled = useMemo(() => {
 \t\tif (orgBody) return false;
@@ -542,7 +539,7 @@ export function patchChat(source) {
     )
     .replace(
       answerAnchor,
-      "\t\t\t\t\t\t\t\t\t\treturn (\n\t\t\t\t\t\t\t\t\t\t\t<UserMessage\n\t\t\t\t\t\t\t\t\t\t\t\tkey={message.conversationId}\n\t\t\t\t\t\t\t\t\t\t\t\tmessage={message.content}\n\t\t\t\t\t\t\t\t\t\t\t\tspeaker={message.speaker}\n\t\t\t\t\t\t\t\t\t\t\t/>\n\t\t\t\t\t\t\t\t\t\t);\n\t\t\t\t\t\t\t\t\t})}\n\t\t\t\t\t\t\t\t{orgTurns.filter((turn) => turn.id !== 'launch' && !messages.some((item) => item.conversationId === \`org-answer-\${turn.id}\` || (item.role === 'user' && item.content === turn.body))).map((turn) => (\n\t\t\t\t\t\t\t\t\t<UserMessage\n\t\t\t\t\t\t\t\t\t\tkey={turn.id}\n\t\t\t\t\t\t\t\t\t\tmessage={turn.body}\n\t\t\t\t\t\t\t\t\t\tspeaker={[turn.name, turn.role].filter(Boolean).join(' · ')}\n\t\t\t\t\t\t\t\t\t/>\n\t\t\t\t\t\t\t\t))}",
+      "\t\t\t\t\t\t\t\t\t\treturn (\n\t\t\t\t\t\t\t\t\t\t\t<UserMessage\n\t\t\t\t\t\t\t\t\t\t\t\tkey={message.conversationId}\n\t\t\t\t\t\t\t\t\t\t\t\tmessage={message.content}\n\t\t\t\t\t\t\t\t\t\t\t\tspeaker={message.speaker}\n\t\t\t\t\t\t\t\t\t\t\t/>\n\t\t\t\t\t\t\t\t\t\t);\n\t\t\t\t\t\t\t\t\t})}\n\t\t\t\t\t\t\t\t{orgTurns.filter((turn) => turn.id !== 'launch' && !messages.some((item) => item.conversationId === \`org-answer-\${turn.id}\` || (item.role === 'user' && item.content === turn.body))).map((turn) => (\n\t\t\t\t\t\t\t\t\t<UserMessage\n\t\t\t\t\t\t\t\t\t\tkey={turn.id}\n\t\t\t\t\t\t\t\t\t\tmessage={turn.body}\n\t\t\t\t\t\t\t\t\t\tspeaker={turn.name.trim()}\n\t\t\t\t\t\t\t\t\t/>\n\t\t\t\t\t\t\t\t))}",
     )
     .replace(
       sendAnchor,
@@ -729,11 +726,8 @@ function roleTitle(role: string): string {
 	return role === DEV_ROLE ? 'Developer' : 'Project Manager';
 }
 
-function turnLabel(name: string, role: string): string {
-	const person = name.trim();
-	const title = role.trim();
-	if (person && title) return person + ' · ' + title;
-	return person || title;
+function turnLabel(name: string): string {
+	return name.trim();
 }
 
 async function memberName(env: Env, userId: string): Promise<string> {
@@ -986,7 +980,7 @@ export async function acceptOrganizationAnswer(env: Env, appId: string, connecti
 	await env.DB.prepare("UPDATE questions SET status = 'answered' WHERE id = ? AND status = 'open'").bind(open.id).run();
 	const name = await memberName(env, actor.userId);
 	const role = roleTitle(actor.role);
-	return { allow: true, message: '', turn: { id: open.id, body: text, name, role, label: turnLabel(name, role) } };
+	return { allow: true, message: '', turn: { id: open.id, body: text, name, role, label: turnLabel(name) } };
 }
 
 export async function redactConversation(env: Env, appId: string, connection: WebSocket, state: unknown): Promise<unknown> {

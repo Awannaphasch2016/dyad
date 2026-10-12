@@ -170,17 +170,12 @@ test("the project manager starts the organization app and each role answers the 
     );
     await shot(dev, "developer-opened-app");
     const pmName = await clerkName(process.env.VIBESDK_PM_USER_ID ?? "");
-    const launchLabel = pmName
-      ? `${pmName} · Project Manager`
-      : "Project Manager";
-    await expect(
-      pm.getByTestId("org-turn").filter({ hasText: launchLabel }).first(),
-    ).toBeVisible({
+    const devName = await clerkName(process.env.VIBESDK_DEV_USER_ID ?? "");
+    expect(pmName).toBeTruthy();
+    await expect(pm.getByTestId("org-turn").first()).toHaveText(pmName, {
       timeout: 30_000,
     });
-    await expect(
-      dev.getByTestId("org-turn").filter({ hasText: launchLabel }).first(),
-    ).toBeVisible({
+    await expect(dev.getByTestId("org-turn").first()).toHaveText(pmName, {
       timeout: 30_000,
     });
     await shot(pm, "project-manager-named-turn");
@@ -220,13 +215,13 @@ test("the project manager starts the organization app and each role answers the 
       await box.press("Enter");
       answered.add(asked);
       const preview = reply.slice(0, 48);
-      const roleName = speaker === pm ? "Project Manager" : "Developer";
+      const speakerName = speaker === pm ? pmName : devName;
       const heard = listener
         .getByTestId("org-human-turn")
         .filter({ hasText: preview });
       await expect(heard.first()).toBeVisible({ timeout: 20_000 });
-      await expect(heard.first().getByTestId("org-turn")).toContainText(
-        roleName,
+      await expect(heard.first().getByTestId("org-turn")).toHaveText(
+        speakerName,
       );
       await shot(speaker, `answered-${answered.size}`);
       await shot(listener, `heard-${answered.size}`);
