@@ -290,11 +290,439 @@ The adapter contract can be small:
 Until GasCity emits those, the UI can only show finished messages from
 `POST /messages` and native local-agent runs from `POST /runs`.
 
+## 10. Diagrams: current, B, C, and D
+
+The current diagrams name the code that exists. The B, C, and D diagrams
+are proposed layouts on top of that code. Same names mean the same box.
+
+| Name in the diagrams | Code today |
+| --- | --- |
+| Renderer facade | `src/chat_stream/renderer_facade.ts` |
+| `chat:stream` handler | `src/ipc/handlers/chat_stream_handlers.ts` |
+| Chat stream host | `src/chat_stream/` host state machine, one owner per chat |
+| Local agent | `handleLocalAgentStream` in `local_agent_handler.ts` |
+| Tool harness | `TOOL_DEFINITIONS` |
+| Host bridge | `factory_host_bridge_server.ts` on `127.0.0.1:32100` |
+| Chunk | `chat:response:chunk` (`ChatResponseChunkSchema`) |
+
+### Container diagram — current
+
+GasCity can start the local agent or append a finished message. The model
+call and the tools stay inside Dyad.
+
+```mermaid
+flowchart TB
+  user["User"]
+
+  subgraph electron ["Dyad Electron"]
+    renderer["Renderer<br/>composer and message list"]
+    main["Main process<br/>chat stream host, local agent, tools, host bridge"]
+    db[("SQLite")]
+    workspace["App workspace<br/>files, git, preview"]
+  end
+
+  model["Model provider"]
+  gascity["GasCity supervisor"]
+  mcp["MCP servers"]
+
+  user --> renderer
+  renderer -->|"IPC chat:stream"| main
+  main -->|"IPC chat:response:chunk"| renderer
+  main --> db
+  main --> workspace
+  main -->|"streamText"| model
+  main --> mcp
+  gascity -->|"HTTP POST /runs or /messages"| main
+  main -->|"formula GET and PUT"| gascity
+```
+
+### Container diagram — B, pluggable backend
+
+The renderer and the chunk IPC stay. The chat stream host no longer calls
+the local agent directly. It calls an `AgentBackend`. The native backend
+wraps today's loop. A second backend delegates the turn to GasCity.
+A remote agent that edits the app needs a workspace callback, because the
+files are on the user's machine.
+
+```mermaid
+flowchart TB
+  user["User"]
+
+  subgraph electron ["Dyad Electron"]
+    renderer["Renderer<br/>unchanged"]
+    host["Chat stream host<br/>selects AgentBackend"]
+    native["Native backend<br/>wraps today's local agent"]
+    remote["GasCity backend<br/>new"]
+    db[("SQLite")]
+    workspace["App workspace"]
+    callback["Workspace callback<br/>new, for remote edits"]
+  end
+
+  model["Model provider"]
+  gascity["GasCity<br/>foreign agent runtime"]
+  mcp["MCP servers"]
+
+  user --> renderer
+  renderer -->|"chat:stream"| host
+  host --> native
+  host --> remote
+  host --> db
+  host -->|"chat:response:chunk"| renderer
+  native --> workspace
+  native --> model
+  native --> mcp
+  remote -->|"run this turn"| gascity
+  gascity -.->|"file and preview calls"| callback
+  callback --> workspace
+```
+
+### Container diagram — C, GasCity executes every turn
+
+Ordinary chat leaves Dyad. GasCity hosts the old Dyad agent and every
+other agent. Dyad's main process keeps the UI, the message rows, and a
+tool service for the local workspace. The model provider sits behind
+GasCity.
+
+```mermaid
+flowchart TB
+  user["User"]
+
+  subgraph electron ["Dyad Electron"]
+    renderer["Renderer<br/>unchanged"]
+    thin["Thin main<br/>turn client, chunk writer, messages"]
+    tools["Workspace tool service<br/>files, git, preview, SQL"]
+    db[("SQLite")]
+    workspace["App workspace"]
+  end
+
+  subgraph gc ["GasCity"]
+    router["Agent router"]
+    moved["Dyad agent<br/>moved here"]
+    other["Other agents"]
+  end
+
+  model["Model provider"]
+
+  user --> renderer
+  renderer -->|"chat:stream"| thin
+  thin -->|"every prompt"| router
+  router --> moved
+  router --> other
+  moved --> model
+  other --> model
+  moved -->|"tool callback"| tools
+  other -->|"tool callback"| tools
+  tools --> workspace
+  thin --> db
+  thin -->|"chat:response:chunk"| renderer
+```
+
+### Container diagram — D, shared chunks, separate executors
+
+The native boxes stay where they are. GasCity is a second producer of
+the same chunk IPC. It does not sit on the native prompt path.
+
+```mermaid
+flowchart TB
+  user["User"]
+
+  subgraph electron ["Dyad Electron"]
+    renderer["Renderer<br/>unchanged"]
+    host["Chat stream host<br/>unchanged for a native turn"]
+    agent["Local agent and tool harness<br/>unchanged"]
+    adapter["Host-bridge event adapter<br/>new"]
+    db[("SQLite")]
+    workspace["App workspace"]
+  end
+
+  model["Model provider"]
+  gascity["GasCity<br/>other agents and their own tools"]
+  mcp["MCP servers"]
+
+  user --> renderer
+  renderer -->|"native prompt"| host
+  host --> agent
+  agent -->|"streamText"| model
+  agent --> workspace
+  agent --> mcp
+  agent --> db
+  host -->|"chat:response:chunk"| renderer
+  gascity -->|"turn events"| adapter
+  adapter --> db
+  adapter -->|"same chat:response:chunk"| renderer
+  gascity -.->|"only if that agent edits the app"| workspace
+```
+
+### Component diagram — current
+
+```mermaid
+flowchart TB
+  subgraph renderer ["Renderer"]
+    composer["Composer"]
+    facade["Renderer facade<br/>StreamRequest"]
+    list["Message list<br/>paints message XML"]
+  end
+
+  subgraph main ["Main process"]
+    ipc["chat:stream handler"]
+    streamhost["Chat stream host<br/>one owner, queue, cancel"]
+    local["handleLocalAgentStream"]
+    sdk["streamText"]
+    tools["TOOL_DEFINITIONS<br/>consent and path jail"]
+    bridge["Host bridge<br/>POST /runs and /messages"]
+    store["Message store"]
+  end
+
+  composer --> facade --> ipc --> streamhost
+  streamhost --> local --> sdk
+  local --> tools
+  local --> store
+  bridge -->|"starts a local-agent turn"| streamhost
+  bridge -->|"appends a finished row"| store
+  local -->|"chunks"| list
+```
+
+### Component diagram — B
+
+`handleLocalAgentStream` moves behind one implementation. A mapper shared
+by both backends is what the message list hears.
+
+```mermaid
+flowchart TB
+  subgraph renderer ["Renderer, unchanged"]
+    composer["Composer"]
+    facade["Renderer facade"]
+    list["Message list"]
+  end
+
+  subgraph main ["Main process"]
+    ipc["chat:stream handler"]
+    streamhost["Chat stream host"]
+    backend["AgentBackend<br/>new interface"]
+    native["NativeAgentBackend"]
+    remote["GasCityAgentBackend<br/>new"]
+    local["handleLocalAgentStream<br/>wrapped"]
+    tools["TOOL_DEFINITIONS<br/>native backend only"]
+    mapper["Chunk mapper<br/>new, shared"]
+    store["Message store"]
+  end
+
+  gascity["GasCity agent runtime"]
+
+  composer --> facade --> ipc --> streamhost --> backend
+  backend --> native --> local --> tools
+  backend --> remote --> gascity
+  native --> mapper
+  remote --> mapper
+  mapper --> store
+  mapper -->|"chat:response:chunk"| list
+```
+
+### Component diagram — C
+
+The local-agent function is no longer a component of Dyad's main process.
+The tools it used become a service GasCity calls back into.
+
+```mermaid
+flowchart TB
+  subgraph renderer ["Renderer, unchanged"]
+    composer["Composer"]
+    facade["Renderer facade"]
+    list["Message list"]
+  end
+
+  subgraph main ["Thin main"]
+    ipc["chat:stream handler"]
+    client["GasCity turn client<br/>replaces the chat stream host's executor"]
+    writer["Chunk writer"]
+    api["Workspace tool API<br/>files, git, preview, SQL"]
+    store["Message store"]
+  end
+
+  subgraph gc ["GasCity"]
+    router["Agent router"]
+    moved["Dyad agent worker<br/>old loop, new home"]
+    other["Other agent workers"]
+  end
+
+  composer --> facade --> ipc --> client --> router
+  router --> moved
+  router --> other
+  moved -->|"tool callback"| api
+  other -->|"tool callback"| api
+  router -->|"events"| writer
+  writer --> store
+  writer -->|"chat:response:chunk"| list
+```
+
+### Component diagram — D
+
+The left column is the current component diagram. The adapter is a new
+sibling of the host bridge. It writes chunks and message rows. It does
+not call `streamText` or `TOOL_DEFINITIONS`.
+
+```mermaid
+flowchart TB
+  subgraph renderer ["Renderer, unchanged"]
+    composer["Composer"]
+    facade["Renderer facade"]
+    list["Message list"]
+  end
+
+  subgraph main ["Main process"]
+    ipc["chat:stream handler<br/>unchanged"]
+    streamhost["Chat stream host<br/>unchanged"]
+    local["handleLocalAgentStream<br/>unchanged"]
+    tools["TOOL_DEFINITIONS<br/>unchanged"]
+    bridge["Host bridge<br/>existing /runs and /messages"]
+    adapter["Event adapter<br/>new"]
+    store["Message store"]
+  end
+
+  gascity["GasCity agents"]
+
+  composer --> facade --> ipc --> streamhost --> local --> tools
+  local -->|"native chunks"| list
+  local --> store
+  bridge --> streamhost
+  gascity -->|"text, activity, end, error"| adapter
+  adapter --> store
+  adapter -->|"foreign chunks"| list
+  adapter -->|"holds the same chat lock"| streamhost
+```
+
+### Sequence diagram — current
+
+```mermaid
+sequenceDiagram
+  participant User
+  participant Facade as Renderer facade
+  participant Host as Chat stream host
+  participant Agent as handleLocalAgentStream
+  participant Model as Model provider
+  participant Tool as Tool harness
+  participant UI as Message list
+
+  User->>Facade: submit prompt
+  Facade->>Host: IPC chat:stream
+  Host->>Host: take the chat lock, store the user message
+  Host->>Agent: run local agent
+  Agent->>Model: streamText
+  loop tokens and tool calls
+    Model-->>Agent: text-delta or tool-call
+    Agent->>Tool: execute
+    Tool-->>Agent: result
+    Agent->>Model: tool result
+    Agent-->>UI: chat:response:chunk
+  end
+  Agent-->>UI: chat:response:end
+  Host->>Host: release the chat lock
+```
+
+A GasCity `POST /runs` enters at the chat stream host and then follows
+this same sequence. A GasCity `POST /messages` skips the loop and inserts
+one finished row.
+
+### Sequence diagram — B
+
+```mermaid
+sequenceDiagram
+  participant User
+  participant Host as Chat stream host
+  participant Backend as AgentBackend
+  participant Native as Native backend
+  participant Remote as GasCity backend
+  participant GC as GasCity
+  participant UI as Message list
+
+  User->>Host: IPC chat:stream
+  Host->>Host: take the chat lock
+  Host->>Backend: run turn
+
+  alt selected backend is native
+    Backend->>Native: run turn
+    Native->>Native: today's streamText and tool loop
+    Native-->>Backend: agent events
+  else selected backend is GasCity
+    Backend->>Remote: run turn
+    Remote->>GC: start the chosen agent
+    GC-->>Remote: text, tool activity, error
+    Remote-->>Backend: the same agent events
+  end
+
+  Backend-->>UI: chat:response:chunk
+  Backend-->>UI: chat:response:end
+  Host->>Host: release the chat lock
+```
+
+### Sequence diagram — C
+
+```mermaid
+sequenceDiagram
+  participant User
+  participant Thin as Thin Dyad main
+  participant Router as GasCity router
+  participant Agent as Selected agent
+  participant Tools as Dyad workspace tool API
+  participant UI as Message list
+
+  User->>Thin: IPC chat:stream
+  Thin->>Router: every prompt, including ordinary chat
+  Router->>Agent: Dyad agent or another agent
+  loop execution
+    Agent->>Tools: read or edit the local app when needed
+    Tools-->>Agent: result
+    Agent-->>Thin: text, activity, error
+    Thin-->>UI: chat:response:chunk
+  end
+  Agent-->>Thin: turn end
+  Thin-->>UI: chat:response:end
+```
+
+### Sequence diagram — D
+
+```mermaid
+sequenceDiagram
+  participant User
+  participant Host as Chat stream host
+  participant Agent as Local agent
+  participant Adapter as Event adapter
+  participant GC as GasCity
+  participant UI as Message list
+
+  alt native prompt
+    User->>Host: IPC chat:stream
+    Host->>Agent: today's loop
+    Agent-->>UI: chat:response:chunk
+    Agent-->>UI: chat:response:end
+  else GasCity-managed agent
+    User->>Host: prompt that Dyad forwards
+    Host->>GC: start the chosen agent
+    GC-->>Adapter: text, activity, end, error
+    Adapter->>Host: hold the same chat lock
+    Adapter-->>UI: chat:response:chunk
+    Adapter-->>UI: chat:response:end
+  end
+```
+
+### What moves
+
+| Box | Current | B | C | D |
+| --- | --- | --- | --- | --- |
+| Renderer and message list | Paints chunks | Same | Same | Same |
+| Chat stream host | Owns the turn | Calls `AgentBackend` | Replaced by a GasCity client | Same, plus a lock share with the adapter |
+| Local agent | The only executor | Wrapped as the native backend | Moves into GasCity | Stays |
+| Tool harness | In the main process | Used by the native backend | Exposed as a callback API | Stays on the native path |
+| Model provider | Called by Dyad | Called by the native backend | Called by GasCity | Called by Dyad for native turns |
+| Host bridge | Starts Dyad, or appends a finished message | Competes with the new backend client | Replaced by the turn client | Gains the event adapter |
+| GasCity | Optional starter of the Dyad agent | Executor when that backend is selected | Executor of every turn | Executor of foreign agents only |
+
 ## Verified versus proposed
 
 Verified: the lifecycle, tool list, IPC names, chunk schema, and the fact
 that the host bridge starts local-agent or appends finished messages.
+The current container, component, and sequence diagrams describe that path.
 
-Proposed: the adapter events, agent switching inside one chat, and any
-claim that GasCity already emits a compatible stream. This repository
-does not contain that GasCity emitter.
+Proposed: options B, C, and D, the adapter events, agent switching inside
+one chat, and any claim that GasCity already emits a compatible stream.
+This repository does not contain that GasCity emitter.
