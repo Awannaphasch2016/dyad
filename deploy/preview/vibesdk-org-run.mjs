@@ -276,7 +276,7 @@ import { assertProjectManager, authorizeOrganizationSocket, memberCanAccessApp }
     .replace(
       previewAnchor,
       `                const orgMember = user ? await memberCanAccessApp(env, agentId, user.id) : false;
-                if (!user || (user.id !== appResult.userId && !orgMember)) {`,
+                if (!user || !orgMember) {`,
     );
 }
 
@@ -351,76 +351,64 @@ export function patchAppService(source) {
             isOwner: app.userId === userId,
             visibility: app.visibility as 'private' | 'public' | null
         };`;
+  const listAnchor = `        // Fetch user's apps first
+        const apps = await readDb
+            .select()
+            .from(schema.apps)
+            .where(eq(schema.apps.userId, userId))`;
+  const galleryAnchor = `        if (existingApp[0].userId !== userId) {
+            return { success: false, error: 'You can only change visibility of your own apps' };
+        }`;
+  const deleteAnchor = `            if (!ownershipResult.isOwner) {
+                return { success: false, error: 'You can only delete your own apps' };
+            }`;
   requireAnchor(source, importAnchor, "app import");
   requireAnchor(source, ownerAnchor, "app owner");
+  requireAnchor(source, listAnchor, "app list");
+  requireAnchor(source, galleryAnchor, "gallery update");
+  requireAnchor(source, deleteAnchor, "app delete");
   return source
     .replace(
       importAnchor,
-      `${importAnchor}\nimport { memberCanAccessApp } from '../../services/org/run';`,
+      `${importAnchor}\nimport { memberCanAccessApp, organizationIdFor } from '../../services/org/run';`,
     )
     .replace(
       ownerAnchor,
-      `        const orgMember = await memberCanAccessApp(this.env, appId, userId);
+      `        const mayOpen = await memberCanAccessApp(this.env, appId, userId);
         return {
             exists: true,
-            isOwner: app.userId === userId || orgMember,
+            isOwner: mayOpen,
             visibility: app.visibility as 'private' | 'public' | null
         };`,
+    )
+    .replace(
+      listAnchor,
+      `        const orgId = await organizationIdFor(this.env, userId);
+        const apps = await readDb
+            .select()
+            .from(schema.apps)
+            .where(orgId ? sql\`org_id = \${orgId}\` : eq(schema.apps.userId, userId))`,
+    )
+    .replace(
+      galleryAnchor,
+      `        return { success: false, error: 'Changing the gallery flag is not available.' };`,
+    )
+    .replace(
+      deleteAnchor,
+      `            return { success: false, error: 'Deleting an app is not available.' };`,
     );
 }
 
 export function patchHome(source) {
-  const queryAnchor = "\tconst { user } = useAuth();\n";
   const createAnchor =
     "\tconst handleCreateApp = (query: string, mode: ProjectType) => {\n";
-  const mountAnchor =
-    '\t\t\t\t\t\t/>\n\t\t\t\t\t</motion.div>\n\t\t\t\t</div>\n\n\t\t\t\t<AnimatePresence mode="popLayout">';
-  requireAnchor(source, queryAnchor, "home query");
   requireAnchor(source, createAnchor, "home create");
-  requireAnchor(source, mountAnchor, "home mount");
   if (source.includes("HitlRun"))
     throw new Error("home still mounts the extra card");
-  return source
-    .replace(
-      queryAnchor,
-      `${queryAnchor}\tconst [orgAppId, setOrgAppId] = useState('');
-	useEffect(() => {
-		const role = sessionStorage.getItem('vibesdk-shared-role') ?? '';
-		if (!role.includes('Developer')) return;
-		let stop = false;
-		const look = async () => {
-			const response = await fetch('/api/org/app', { credentials: 'include' });
-			if (!response.ok) return;
-			const payload = await response.json();
-			const id = payload?.data?.id;
-			if (!stop && typeof id === 'string' && id) setOrgAppId(id);
-		};
-		void look();
-		const timer = window.setInterval(() => void look(), 2000);
-		return () => {
-			stop = true;
-			window.clearInterval(timer);
-		};
-	}, [user]);
-`,
-    )
-    .replace(
-      createAnchor,
-      `${createAnchor}\t\tconst sharedRole = sessionStorage.getItem('vibesdk-shared-role') ?? '';\n\t\tif (sharedRole.includes('Developer')) return;\n`,
-    )
-    .replace(
-      mountAnchor,
-      `\t\t\t\t\t\t/>
-\t\t\t\t\t\t{orgAppId ? (
-\t\t\t\t\t\t\t<a data-testid="org-app-link" href={\`/chat/\${orgAppId}\`} className="mt-4 text-center text-sm underline">
-\t\t\t\t\t\t\t\tOpen the organization app
-\t\t\t\t\t\t\t</a>
-\t\t\t\t\t\t) : null}
-\t\t\t\t\t</motion.div>
-\t\t\t\t</div>
-
-\t\t\t\t<AnimatePresence mode="popLayout">`,
-    );
+  return source.replace(
+    createAnchor,
+    `${createAnchor}\t\tconst sharedRole = sessionStorage.getItem('vibesdk-shared-role') ?? '';\n\t\tif (sharedRole.includes('Developer')) return;\n`,
+  );
 }
 
 export function patchChat(source) {
@@ -469,9 +457,30 @@ export function patchChat(source) {
 \t\tif (orgBody) return false;
 \t\treturn true;
 \t}, [orgBody]);${source.slice(end + disabledEnd.length)}`;
-  return replaced.replace(
-    popupAnchor,
-    `\t\t\t\t\t\t\taboveContent={
+  const badgeAnchor = `\t{app?.visibility && (
+						<Badge
+							className="shrink-0"
+							variant={
+								app.visibility === 'private'
+									? 'secondary'
+									: 'success'
+							}
+						>
+							<span className="inline-flex items-center gap-1">
+								<Globe className="h-3 w-3" weight="duotone" />
+								{capitalizeFirstLetter(app.visibility)}
+							</span>
+						</Badge>
+					)}`;
+  const ownerAnchor = "\tconst isOwner = !!app && app.userId === user?.id;";
+  requireAnchor(replaced, badgeAnchor, "chat gallery chip");
+  requireAnchor(replaced, ownerAnchor, "chat owner");
+  return replaced
+    .replace(ownerAnchor, "\tconst isOwner = false;")
+    .replace(badgeAnchor, "")
+    .replace(
+      popupAnchor,
+      `\t\t\t\t\t\t\taboveContent={
 \t\t\t\t\t\t\t\t<>
 \t\t\t\t\t\t\t\t\t{orgWaiting ? (
 \t\t\t\t\t\t\t\t\t\t<p data-testid="org-waiting" className="px-4 pb-2 text-sm">{orgWaiting}</p>
@@ -484,7 +493,83 @@ export function patchChat(source) {
 \t\t\t\t\t\t\t\t\t/>
 \t\t\t\t\t\t\t\t</>
 \t\t\t\t\t\t\t}`,
+    );
+}
+
+export function patchSidebar(source) {
+  const pathAnchor =
+    "\tconst getAppPath = (app: App) =>\n\t\tapp.userId === user?.id ? `/chat/${app.id}` : `/app/${app.id}`;";
+  const iconAnchor =
+    "\tconst getVisibilityIcon = (visibility: App['visibility']) => {";
+  requireAnchor(source, pathAnchor, "sidebar path");
+  requireAnchor(source, iconAnchor, "sidebar icon");
+  const iconEnd = source.indexOf(iconAnchor);
+  const iconClose = source.indexOf("\n\t};", iconEnd);
+  if (iconClose < 0)
+    throw new Error("organization patch missed sidebar icon end");
+  return (
+    source.slice(0, iconEnd) +
+    "\tconst getVisibilityIcon = (_visibility: App['visibility']) => null;" +
+    source.slice(iconClose + "\n\t};".length)
+  ).replace(
+    pathAnchor,
+    `\tconst sharedRole = sessionStorage.getItem('vibesdk-shared-role') ?? '';
+	const getAppPath = (app: App) =>
+		sharedRole.includes('Project Manager') || sharedRole.includes('Developer') || app.userId === user?.id
+			? \`/chat/\${app.id}\`
+			: \`/app/\${app.id}\`;`,
   );
+}
+
+export function patchAppsHook(source) {
+  const anchor = "\t\tqueryFn: fetchUserApps,\n\t\tenabled: !!user,";
+  requireAnchor(source, anchor, "apps hook");
+  return source.replaceAll(
+    anchor,
+    `\t\tqueryFn: fetchUserApps,
+		enabled: !!user,
+		refetchInterval: () =>
+			sessionStorage.getItem('vibesdk-shared-role') ? 2000 : false,`,
+  );
+}
+
+export function patchAppView(source) {
+  const importAnchor =
+    "import { AppService } from '../../../database/services/AppService';";
+  const privateAnchor =
+    "            if (appResult.visibility === 'private' && appResult.userId !== userId) {\n                return AppViewController.createErrorResponse<AppDetailsData>('App not found', 404);\n            }";
+  requireAnchor(source, importAnchor, "app view import");
+  requireAnchor(source, privateAnchor, "app view private");
+  return source
+    .replace(
+      importAnchor,
+      `${importAnchor}\nimport { memberCanAccessApp } from '../../../services/org/run';`,
+    )
+    .replace(
+      privateAnchor,
+      `            const orgMember = userId ? await memberCanAccessApp(env, appId, userId) : false;
+            if (appResult.visibility === 'private' && !orgMember) {
+                return AppViewController.createErrorResponse<AppDetailsData>('App not found', 404);
+            }`,
+    );
+}
+
+export function patchAppsController(source) {
+  const galleryAnchor =
+    "result.error?.includes('only change visibility of your own apps') ? 403 : 500;";
+  const deleteAnchor =
+    "result.error?.includes('only delete your own apps') ? 403 : 500;";
+  requireAnchor(source, galleryAnchor, "gallery status");
+  requireAnchor(source, deleteAnchor, "delete status");
+  return source
+    .replace(
+      galleryAnchor,
+      "result.error?.includes('not available') ? 403 : 500;",
+    )
+    .replace(
+      deleteAnchor,
+      "result.error?.includes('not available') ? 403 : 500;",
+    );
 }
 
 export function orgRunSource() {
@@ -666,25 +751,30 @@ export async function claimOrganizationApp(env: Env, appId: string, userId: stri
 	await env.DB.prepare('UPDATE apps SET org_id = ?, created_by = ? WHERE id = ?').bind(member.orgId, userId, appId).run();
 }
 
+export async function organizationIdFor(env: Env, userId: string): Promise<string | null> {
+	await ensureOrganizationSchema(env);
+	const member = await membership(env, userId);
+	return member?.orgId ?? null;
+}
+
 export async function memberCanAccessApp(env: Env, appId: string, userId: string): Promise<boolean> {
 	await ensureOrganizationSchema(env);
 	const member = await membership(env, userId);
 	if (!member) return false;
 	const row = await env.DB.prepare('SELECT org_id FROM apps WHERE id = ?').bind(appId).first<{ org_id: string | null }>();
-	return Boolean(row?.org_id && row.org_id === member.orgId);
+	if (!row?.org_id) return member.role === PM_ROLE;
+	return row.org_id === member.orgId;
 }
 
 export async function authorizeOrganizationSocket(env: Env, userId: string, appId: string, request: Request): Promise<Request | Response> {
 	const member = await membership(env, userId);
 	if (!member) return new Response('Forbidden', { status: 403 });
 	await ensureOrganizationSchema(env);
-	const row = await env.DB.prepare('SELECT org_id, user_id FROM apps WHERE id = ?').bind(appId).first<{ org_id: string | null; user_id: string | null }>();
-	if (!row) {
+	const row = await env.DB.prepare('SELECT org_id FROM apps WHERE id = ?').bind(appId).first<{ org_id: string | null }>();
+	if (!row || !row.org_id) {
 		if (member.role !== PM_ROLE) return new Response('Forbidden', { status: 403 });
-	} else if (row.org_id) {
-		if (row.org_id !== member.orgId) return new Response('Not found', { status: 404 });
-	} else if (row.user_id && row.user_id !== userId) {
-		return new Response('Forbidden', { status: 403 });
+	} else if (row.org_id !== member.orgId) {
+		return new Response('Not found', { status: 404 });
 	}
 	const headers = new Headers(request.headers);
 	headers.delete('x-org-role');
@@ -911,6 +1001,10 @@ export async function applyOrganizationRun(checkout) {
     ["worker/agents/core/codingAgent.ts", patchCodingAgent],
     ["worker/agents/core/websocket.ts", patchWebsocket],
     ["worker/database/services/AppService.ts", patchAppService],
+    ["worker/api/controllers/appView/controller.ts", patchAppView],
+    ["worker/api/controllers/apps/controller.ts", patchAppsController],
+    ["src/components/layout/app-sidebar.tsx", patchSidebar],
+    ["src/hooks/use-apps.ts", patchAppsHook],
     ["src/routes/home.tsx", patchHome],
     ["src/routes/chat/chat.tsx", patchChat],
   ];
