@@ -414,7 +414,8 @@ test("two signed-in browsers walk Discovery, Implementation, and Delivery", asyn
       .toEqual(
         expect.arrayContaining(["discovery", "implementation", "delivery"]),
       );
-    await expect(dev.getByTestId("factory-phase-continue")).toBeDisabled();
+    await expect(pm.getByTestId("factory-phase-continue")).toHaveCount(0);
+    await expect(dev.getByTestId("factory-phase-continue")).toHaveCount(0);
   } finally {
     const snapshot = await snapshotEvidence(evidence.appId).catch((error) => ({
       error: error instanceof Error ? error.message : "evidence unread",
