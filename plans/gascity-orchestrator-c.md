@@ -55,11 +55,57 @@ does not receive `TOOL_DEFINITIONS` and does not link the AI SDK loop.
 Dyad's agent. Option C retires that as the execution path. The poll can
 remain as a compatibility read while tasks are in flight.
 
-## Change impact
+## How to read the matrix
 
-Impact words: **None** (behavior stays), **Adapt** (same owner, new
-branch or field), **New** (does not exist), **Retire** (factory path
-stops using it), **External** (GasCity repo, not this one).
+Same rule as [PR #129](https://github.com/Awannaphasch2016/dyad/pull/129). Each row is one intention. Each column is one place this plan actually stores or decides state. The columns came from the factory path in this repo, not from a generic layer list.
+
+A cell is either:
+
+- **Change** — this intention is not finished until this dimension is edited as the cell says.
+- **Leave** — while doing this intention, do not edit this dimension. Its current behavior stays.
+
+A row is finished only when every **Change** cell is true and every **Leave** cell still behaves as it does today.
+
+### The columns
+
+| Column | Where it lives |
+| --- | --- |
+| Chat lock | `src/chat_stream/` host. One owner per chat, the queue, and cancel. |
+| Agent loop | `handleLocalAgentStream` in `local_agent_handler.ts`, called from `chat_stream_handlers.ts`. The model call. |
+| Tool harness | `tool_definitions.ts`, consent in `tool_invocation.ts`, path jail in `path_safety.ts`. |
+| Transcript | SQLite `messages` and `chat:response:chunk` in `src/ipc/types/chat.ts`. |
+| Run record | `factoryHostRuns` in `src/db/schema.ts`. |
+| Bridge | `factory_host_bridge_server.ts` on `127.0.0.1:32100`. |
+| HITL | `hitlQuestions` and `answerHitlQuestion` in `hitl_device.ts`. |
+| Phase chrome | `FactoryPhaseBar.tsx`. Kickoff calls `streamMessage`. |
+| Workspace | The app directory, git, and the preview process. |
+| GasCity task | The supervisor's workflow cursor. Not in this repo. |
+
+## Change impact matrix
+
+| Intention | Chat lock | Agent loop | Tool harness | Transcript | Run record | Bridge | HITL | Phase chrome | Workspace | GasCity task |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| GasCity calls the model for a factory turn | Change. The factory turn takes the existing one-owner lock. The owner is the GasCity task, not `handleLocalAgentStream`. | Change. A factory prompt does not enter `handleLocalAgentStream`. | Leave. Moving the model call does not copy `TOOL_DEFINITIONS`. | Leave. This intention does not invent a second transcript. | Change. The row stores the GasCity task id. `intentId` stops being the execution key. | Change. `POST /runs` stops dispatching a local-agent intent. | Leave. | Change. Kickoff and continue call GasCity instead of `streamMessage`. | Leave. Files stay in the app directory. | Change. GasCity stores the workflow cursor and performs the model call. |
+| The message list shows that turn while it runs | Leave. The lock is the one taken above. | Leave. Painting does not start `streamText`. | Leave. | Change. Event ingress writes the streaming assistant row through `chat:response:chunk`. The chunk schema stays. | Change. The row stores the last applied event cursor so a replay does not append twice. | Change. New event route: text, activity, input-required, end, error. | Leave. | Leave. The bar does not become a second transcript. | Leave. | Change. GasCity emits those events. It does not write `messages` itself. |
+| A tool that touches the app still runs in Dyad | Leave. The call runs under the turn that already holds the lock. | Leave. The tool does not re-enter `streamText`. | Change. An allowlisted invoker calls the existing `execute`. First set: `read_file`, `list_files`, `grep`, `code_search`, `write_file`, `search_replace`, `git_status`, `git_diff`. Consent and the path jail stay the rules. | Leave. Tool XML still arrives through the event route. | Leave. | Change. New tool route. No `execute_sandbox_script`, sub-agent, or MCP tool. | Leave. Consent still blocks inside Dyad. | Leave. | Leave. The same tools write the same directory. | Change. GasCity calls the tool route and waits. It does not implement file or git logic. |
+| Cancel and one answer go back to GasCity | Change. Cancel releases that factory owner the same way a native cancel does. | Leave. Cancel does not enter the local agent. | Change. The in-flight `execute` aborts. | Change. Cancel ends the turn with `wasCancelled`. The answer continues the same task's stream. No new message type. | Change. Status becomes canceled, or the same task id continues across the answer. | Change. New cancel route. | Change. One answer resumes that GasCity task. The question stays on `hitlQuestions`. | Leave. The reply is still typed in the existing composer. | Leave. | Change. GasCity receives cancel and the answer. `input-required` is the waiting state. |
+| Ordinary chat still runs with GasCity down | Leave. A non-factory chat uses the host as it does today. | Leave. `handleLocalAgentStream` stays the executor for Ask, Build, Agent, and Plan. | Leave. Ordinary registration is unchanged. | Leave. | Leave. An ordinary chat writes no factory row. | Leave. Ordinary chat does not call the bridge. | Leave. | Leave. The phase bar stays off a non-factory app. | Leave. | Leave. No task is created. |
+| Formula steps and the preview deploy stay put | Leave. | Leave. | Leave. | Leave. | Leave. | Leave. | Leave. | Leave. Approval and document download stay. | Leave. The preview process and the deploy stay. | Leave. The formula editor is not the task runner. Do not change `gascity_formula_client.ts`. |
+
+## How to verify
+
+| Row | Change check | Leave check |
+| --- | --- | --- |
+| GasCity calls the model | A factory kickoff creates a GasCity task and does not call `handleLocalAgentStream`. The chat accepts no second owner. | `TOOL_DEFINITIONS` is not copied. The app directory is still the file store. |
+| Message list shows the turn | Text and tool activity appear through `chat:response:chunk` while the task is running. A replay of the same event does not duplicate the tail. | The chunk schema is unchanged. The phase bar is not a second transcript. |
+| Tools stay in Dyad | An allowlisted edit runs the existing `execute` and still asks for consent. A sandbox, sub-agent, or MCP name is rejected. | `streamText` does not start for that tool call. |
+| Cancel and one answer | Cancel aborts the tool call, tells GasCity, and sets `wasCancelled`. One answer resumes the same task. A second answer does not. | The reply is typed in the existing composer. The question row stays `hitlQuestions`. |
+| Ordinary chat | With the supervisor unreachable, Ask, Build, Agent, and Plan still stream. | No factory row and no GasCity task are created. |
+| Formula and preview | The formula page still reads and writes the phase TOML. The preview URL still serves the app. | No column in this matrix was edited for this row. |
+
+## Surface inventory
+
+The matrix above is the change impact. This inventory names the same decision in file order. Impact words: **None** (behavior stays), **Adapt** (same owner, new branch or field), **New** (does not exist), **Retire** (factory path stops using it), **External** (GasCity repo, not this one).
 
 | Surface | Path | Impact | What changes | What stays |
 | --- | --- | --- | --- | --- |
