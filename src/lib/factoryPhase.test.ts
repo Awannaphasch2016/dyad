@@ -158,13 +158,13 @@ describe("factoryPhase", () => {
     );
   });
 
-  it("treats a started next phase as approval of the previous one", () => {
+  it("does not treat a started next phase as approval", () => {
     const progress = {
       approved: new Set<never>(),
       started: new Set(["discovery", "implementation"] as const),
     };
-    expect(isFactoryPhaseApproved("discovery", progress)).toBe(true);
-    expect(isFactoryPhaseUnlocked("implementation", progress)).toBe(true);
+    expect(isFactoryPhaseApproved("discovery", progress)).toBe(false);
+    expect(isFactoryPhaseUnlocked("implementation", progress)).toBe(false);
     expect(isFactoryPhaseUnlocked("delivery", progress)).toBe(false);
   });
 
@@ -185,54 +185,61 @@ describe("factoryPhase", () => {
       showFactoryPhaseApproval({
         phase: "discovery",
         progress: runningDiscovery,
-        hasPhaseSummary: true,
+        status: "awaiting_review",
       }),
     ).toBe(true);
+    expect(
+      showFactoryPhaseApproval({
+        phase: "discovery",
+        progress: runningDiscovery,
+        status: "executing",
+      }),
+    ).toBe(false);
 
     const implementationStarted = {
-      approved: new Set<never>(),
+      approved: new Set(["discovery"] as const),
       started: new Set(["discovery", "implementation"] as const),
     };
     expect(
       showFactoryPhaseApproval({
         phase: "discovery",
         progress: implementationStarted,
-        hasPhaseSummary: true,
+        status: "awaiting_review",
       }),
     ).toBe(false);
     expect(
       showFactoryPhaseApproval({
         phase: "implementation",
         progress: implementationStarted,
-        hasPhaseSummary: false,
+        status: "awaiting_review",
       }),
     ).toBe(true);
 
     const finished = {
-      approved: new Set<never>(),
+      approved: new Set(["discovery", "implementation"] as const),
       started: new Set(["discovery", "implementation", "delivery"] as const),
     };
     expect(
       showFactoryPhaseApproval({
         phase: "implementation",
         progress: finished,
-        hasPhaseSummary: true,
+        status: "awaiting_review",
       }),
     ).toBe(false);
     expect(
       showFactoryPhaseApproval({
         phase: "delivery",
         progress: finished,
-        hasPhaseSummary: false,
+        status: "executing",
+      }),
+    ).toBe(false);
+    expect(
+      showFactoryPhaseApproval({
+        phase: "delivery",
+        progress: finished,
+        status: "awaiting_review",
       }),
     ).toBe(true);
-    expect(
-      showFactoryPhaseApproval({
-        phase: "delivery",
-        progress: finished,
-        hasPhaseSummary: true,
-      }),
-    ).toBe(false);
   });
 
   it("uses a lighter shade while a phase has started and is not finished", () => {
@@ -244,14 +251,12 @@ describe("factoryPhase", () => {
       factoryPhaseShade({
         phase: "discovery",
         progress: discoveryRunning,
-        hasPhaseSummary: true,
       }),
     ).toBe("in-progress");
     expect(
       factoryPhaseShade({
         phase: "implementation",
         progress: discoveryRunning,
-        hasPhaseSummary: false,
       }),
     ).toBe("not-started");
 
@@ -263,21 +268,18 @@ describe("factoryPhase", () => {
       factoryPhaseShade({
         phase: "discovery",
         progress: implementationRunning,
-        hasPhaseSummary: true,
       }),
-    ).toBe("finished");
+    ).toBe("in-progress");
     expect(
       factoryPhaseShade({
         phase: "implementation",
         progress: implementationRunning,
-        hasPhaseSummary: false,
       }),
     ).toBe("in-progress");
     expect(
       factoryPhaseShade({
         phase: "delivery",
         progress: implementationRunning,
-        hasPhaseSummary: false,
       }),
     ).toBe("not-started");
 
@@ -289,20 +291,25 @@ describe("factoryPhase", () => {
       factoryPhaseShade({
         phase: "delivery",
         progress: finished,
-        hasPhaseSummary: true,
       }),
-    ).toBe("finished");
+    ).toBe("in-progress");
   });
 
-  it("allows approval only after a finished phase summary", () => {
+  it("allows approval only while the phase is in review", () => {
     expect(
-      canContinueFactoryPhase({ hasPhaseSummary: false, isStreaming: false }),
+      canContinueFactoryPhase({ status: "executing", isStreaming: false }),
     ).toBe(false);
     expect(
-      canContinueFactoryPhase({ hasPhaseSummary: true, isStreaming: true }),
+      canContinueFactoryPhase({
+        status: "awaiting_review",
+        isStreaming: true,
+      }),
     ).toBe(false);
     expect(
-      canContinueFactoryPhase({ hasPhaseSummary: true, isStreaming: false }),
+      canContinueFactoryPhase({
+        status: "awaiting_review",
+        isStreaming: false,
+      }),
     ).toBe(true);
     expect(lockedFactoryPhaseReason("delivery")).toBe(
       "Approve Implementation first",

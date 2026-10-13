@@ -15,14 +15,36 @@ import {
   answerHitlQuestion,
   listHitlQuestions,
 } from "@/control_plane/hitl_device";
-import {
-  cursorFollowUpForDesktop,
-  startCursorPhase,
-} from "@/main/cursor_factory_host";
-import { cursorFactoryClientFromEnv } from "@/main/cursor_factory_client";
+import { cursorFollowUpForDesktop } from "@/main/cursor_factory_host";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  approvalPermissionForPhase,
+  roleHasPermission,
+} from "@/auth/permissions";
+import type { FactoryPhase } from "@/lib/factoryPhase";
+import {
+  answerFactoryPhase,
+  approveFactoryPhase,
+  enterFactoryPhase,
+  factoryScriptEnabled,
+  listFactoryPhaseMachines,
+  readFactoryPhaseMachine,
+  rejectFactoryPhase,
+  retryFactoryPhase,
+} from "@/main/factory_phase_controller";
 import { factoryContracts } from "../types/factory";
 import { createTypedHandler } from "./base";
+
+function factoryPhase(value: string): FactoryPhase {
+  if (
+    value === "discovery" ||
+    value === "implementation" ||
+    value === "delivery"
+  ) {
+    return value;
+  }
+  throw new DyadError("Unknown factory phase", DyadErrorKind.Validation);
+}
 
 async function hitlCaller(event: { sender: { id: number } }, appId: number) {
   const app = db.select().from(apps).where(eq(apps.id, appId)).get();
@@ -51,7 +73,22 @@ export function registerFactoryHandlers() {
   });
 
   createTypedHandler(factoryContracts.approve, async (event, params) => {
+    const phase = factoryPhase(params.phase);
+    const machine = readFactoryPhaseMachine(db, params.appId, phase);
+    if (machine && machine.status !== "awaiting_review") {
+      throw new DyadError(
+        "This phase is not ready for approval.",
+        DyadErrorKind.Conflict,
+      );
+    }
     await approvePhase(event, params.appId, params.phase);
+    if (machine) {
+      await approveFactoryPhase(db, {
+        appId: params.appId,
+        phase,
+        script: factoryScriptEnabled(),
+      });
+    }
   });
 
   createTypedHandler(
@@ -82,12 +119,51 @@ export function registerFactoryHandlers() {
     factoryContracts.ensureCursorPhase,
     async (event, params) => {
       await hitlCaller(event, params.appId);
-      return startCursorPhase(db, cursorFactoryClientFromEnv(), {
+      return enterFactoryPhase(db, {
         appId: params.appId,
         phase: params.phase,
+        script: factoryScriptEnabled(),
       });
     },
   );
+
+  createTypedHandler(
+    factoryContracts.listPhaseMachines,
+    async (event, params) => {
+      await hitlCaller(event, params.appId);
+      return { machines: listFactoryPhaseMachines(db, params.appId) };
+    },
+  );
+
+  createTypedHandler(factoryContracts.rejectPhase, async (event, params) => {
+    const caller = await hitlCaller(event, params.appId);
+    if (
+      !roleHasPermission(
+        caller.roleId,
+        approvalPermissionForPhase(params.phase),
+      )
+    ) {
+      throw new DyadError(
+        "Your role can't approve this phase.",
+        DyadErrorKind.Auth,
+      );
+    }
+    await rejectFactoryPhase(db, {
+      appId: params.appId,
+      phase: params.phase,
+      feedback: params.feedback,
+      script: factoryScriptEnabled(),
+    });
+  });
+
+  createTypedHandler(factoryContracts.retryPhase, async (event, params) => {
+    await hitlCaller(event, params.appId);
+    await retryFactoryPhase(db, {
+      appId: params.appId,
+      phase: params.phase,
+      script: factoryScriptEnabled(),
+    });
+  });
 
   createTypedHandler(factoryContracts.listQuestions, async (event, params) => {
     const caller = await hitlCaller(event, params.appId);
@@ -104,11 +180,19 @@ export function registerFactoryHandlers() {
   createTypedHandler(factoryContracts.answerQuestion, async (event, params) => {
     const caller = await hitlCaller(event, params.appId);
     try {
+      const script = factoryScriptEnabled();
       const result = await answerHitlQuestion(db, {
         questionId: params.questionId,
         caller,
         body: params.body,
-        cursorFollowUp: cursorFollowUpForDesktop(),
+        cursorFollowUp: script ? undefined : cursorFollowUpForDesktop(),
+        skipResume: script,
+      });
+      await answerFactoryPhase(db, {
+        appId: params.appId,
+        questionId: params.questionId,
+        answer: params.body,
+        script,
       });
       return { question: result.view, resolved: result.resolved };
     } catch (error) {

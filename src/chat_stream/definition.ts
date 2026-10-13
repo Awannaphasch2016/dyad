@@ -497,6 +497,9 @@ function createCommandRunner(
               const { openFactoryRequestForRun } =
                 await import("@/main/factory_host_request");
               openFactoryRequestForRun(db, active.intent.intentId);
+              const { publishLocalFactoryStop } =
+                await import("@/main/factory_phase_controller");
+              await publishLocalFactoryStop(db, active.intent.intentId);
             } catch (requestError) {
               console.error(
                 "[factory-host] request was not opened",

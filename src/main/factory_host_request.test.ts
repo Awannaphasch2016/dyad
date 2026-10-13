@@ -73,7 +73,7 @@ describe("openFactoryRequestForRun", () => {
       .run();
 
     const opened = openFactoryRequestForRun(database, runId);
-    expect(opened?.stop).toBe("human-required");
+    expect(opened?.stop).toBe("question_opened");
     const again = openFactoryRequestForRun(database, runId);
     expect(again?.questionId).toBe(opened?.questionId);
     const stored = database.select().from(hitlQuestions).all();
@@ -117,7 +117,10 @@ describe("openFactoryRequestForRun", () => {
       })
       .run();
     const summary = openFactoryRequestForRun(database, runId, SUMMARY);
-    expect(summary).toEqual({ stop: "ready-for-approval", questionId: null });
+    expect(summary).toEqual({
+      stop: "agent_stopped_unclear",
+      questionId: null,
+    });
     expect(database.select().from(hitlQuestions).all()).toHaveLength(0);
     database.$client.close();
   });

@@ -26,6 +26,7 @@ import {
   factoryPhaseKickoff,
   factoryPhaseLabel,
   factoryPhaseShade,
+  factoryPhaseStatusLine,
   hasFactoryPhases,
   isFactoryPhaseApproved,
   isFactoryPhaseUnlocked,
@@ -74,6 +75,7 @@ export function FactoryPhaseBar() {
   const session = useClerkSession();
   const queryClient = useQueryClient();
   const [localApprovalPending, setLocalApprovalPending] = useState(false);
+  const [rejectFeedback, setRejectFeedback] = useState("");
   const { chats } = useChats(appId);
   const { app } = useLoadApp(appId);
   const { selectChat } = useSelectChat();
@@ -98,6 +100,16 @@ export function FactoryPhaseBar() {
       }
       const result = await ipc.factory.listApprovals({ appId });
       return result.approvals;
+    },
+  });
+  const machinesQuery = useQuery({
+    queryKey: queryKeys.factory.machines(appId),
+    enabled: appId != null,
+    refetchInterval: factoryViewRefetchInterval(enabled),
+    queryFn: async () => {
+      if (appId == null) return [];
+      const result = await ipc.factory.listPhaseMachines({ appId });
+      return result.machines;
     },
   });
   const factoryStateQuery = useQuery({
@@ -251,7 +263,6 @@ export function FactoryPhaseBar() {
 
   const next = nextFactoryPhase(phase);
   const nextChat = next ? byPhase[next] : undefined;
-  const phaseSummary = summaries.get(phase) ?? null;
   const gate = approvalGate({
     status: role.status,
     roleId: role.roleId,
@@ -259,9 +270,15 @@ export function FactoryPhaseBar() {
     accountType:
       session.status === "signed-in" ? (session.account?.type ?? null) : null,
   });
+  const machine =
+    machinesQuery.data?.find((item) => item.phase === phase) ?? null;
+  const deliveryApproved =
+    machinesQuery.data?.some(
+      (item) => item.phase === "delivery" && item.status === "approved",
+    ) ?? false;
   const canApprove =
     canContinueFactoryPhase({
-      hasPhaseSummary: phaseSummary != null,
+      status: machine?.status ?? null,
       isStreaming,
     }) && gate.allowed;
   const alreadyApproved = isFactoryPhaseApproved(phase, progress);
@@ -270,15 +287,12 @@ export function FactoryPhaseBar() {
     showFactoryPhaseApproval({
       phase,
       progress,
-      hasPhaseSummary: phaseSummary != null,
+      status: machine?.status ?? null,
     });
+  const showRetry =
+    machine?.status === "incomplete" || machine?.status === "failed";
 
-  const phaseShade = factoryPhaseShade({
-    phase,
-    progress,
-    hasPhaseSummary: phaseSummary != null,
-  });
-  const canDownload = canDownloadFactoryDocument(phaseShade);
+  const canDownload = canDownloadFactoryDocument(deliveryApproved);
   const downloadDocumentation = () => {
     const document = buildFactoryDocument({
       phase,
@@ -340,7 +354,6 @@ export function FactoryPhaseBar() {
           const shade = factoryPhaseShade({
             phase: item,
             progress,
-            hasPhaseSummary: summaries.has(item),
           });
           return (
             <Button
@@ -393,6 +406,66 @@ export function FactoryPhaseBar() {
             Approve delivery
           </Button>
         )}
+        {showApproval && (
+          <>
+            <label className="sr-only" htmlFor="factory-phase-feedback">
+              What should change?
+            </label>
+            <input
+              id="factory-phase-feedback"
+              data-testid="factory-phase-feedback"
+              value={rejectFeedback}
+              onChange={(event) => setRejectFeedback(event.target.value)}
+              placeholder="What should change?"
+              className="h-8 min-w-40 rounded-md border border-border bg-background px-2 text-sm"
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={
+                !canApprove ||
+                approvalPending ||
+                rejectFeedback.trim().length === 0
+              }
+              data-testid="factory-phase-reject"
+              onClick={() => {
+                if (appId == null) return;
+                void ipc.factory
+                  .rejectPhase({
+                    appId,
+                    phase,
+                    feedback: rejectFeedback,
+                  })
+                  .then(() => {
+                    setRejectFeedback("");
+                    return queryClient.invalidateQueries({
+                      queryKey: queryKeys.factory.machines(appId),
+                    });
+                  });
+              }}
+            >
+              Send back
+            </Button>
+          </>
+        )}
+        {showRetry && appId != null && (
+          <Button
+            type="button"
+            size="sm"
+            className="ml-auto"
+            data-testid="factory-phase-retry"
+            onClick={() => {
+              void ipc.factory.retryPhase({ appId, phase }).then(() =>
+                queryClient.invalidateQueries({
+                  queryKey: queryKeys.factory.machines(appId),
+                }),
+              );
+            }}
+          >
+            Retry
+          </Button>
+        )}
         {canDownload && (
           <Button
             type="button"
@@ -409,7 +482,11 @@ export function FactoryPhaseBar() {
       </div>
       {phase && (
         <HitlQuestionList
-          questions={questionsQuery.data ?? []}
+          questions={
+            machine == null || machine.status === "waiting_for_answer"
+              ? (questionsQuery.data ?? [])
+              : []
+          }
           pending={false}
           onAnswer={(questionId, body) => {
             void ipc.factory
@@ -422,17 +499,19 @@ export function FactoryPhaseBar() {
           }}
         />
       )}
-      <p className={cn("mt-2 text-xs text-muted-foreground")}>
-        {factoryPhaseHint(phase)}
+      <p
+        className={cn("mt-2 text-xs text-muted-foreground")}
+        aria-live="polite"
+        data-testid="factory-phase-status"
+      >
+        {machine
+          ? factoryPhaseStatusLine({
+              phase,
+              status: machine.status,
+              viewerCanApprove: gate.allowed,
+            })
+          : factoryPhaseHint(phase)}
         {showApproval && !gate.allowed && <> {gate.reason}</>}
-        {showApproval && gate.allowed && !canApprove && (
-          <>
-            {" "}
-            {isStreaming
-              ? "wewebplus is working…"
-              : `Approval unlocks when wewebplus posts its ${factoryPhaseLabel(phase)} summary.`}
-          </>
-        )}
       </p>
     </div>
   );

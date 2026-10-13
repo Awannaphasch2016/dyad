@@ -43,9 +43,8 @@ describe("factory documents", () => {
   });
 
   it("offers a download only after the phase is finished", () => {
-    expect(canDownloadFactoryDocument("finished")).toBe(true);
-    expect(canDownloadFactoryDocument("in-progress")).toBe(false);
-    expect(canDownloadFactoryDocument("not-started")).toBe(false);
+    expect(canDownloadFactoryDocument(true)).toBe(true);
+    expect(canDownloadFactoryDocument(false)).toBe(false);
   });
 
   it("writes the discovery specification with every diagram", () => {

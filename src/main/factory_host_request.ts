@@ -62,7 +62,7 @@ export function openFactoryRequestForRun(
     finalMessage: content,
     phase: run.phase as FactoryPhase,
   });
-  if (stop !== "human-required") return { stop, questionId: null };
+  if (stop !== "question_opened") return { stop, questionId: null };
 
   const request = extractFactoryRequest(content);
   if (!request) return { stop, questionId: null };

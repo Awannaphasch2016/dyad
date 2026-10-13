@@ -18,6 +18,7 @@ const getChat = vi.hoisted(() => vi.fn());
 const ensureCursorPhase = vi.hoisted(() =>
   vi.fn(async () => ({ started: false })),
 );
+const listPhaseMachines = vi.hoisted(() => vi.fn());
 const downloadFactoryDocument = vi.hoisted(() => vi.fn());
 
 vi.mock("@/hooks/useStreamChat", () => ({
@@ -71,6 +72,9 @@ vi.mock("@/ipc/types", () => ({
       listQuestions: vi.fn(async () => ({ questions: [] })),
       answerQuestion: vi.fn(),
       ensureCursorPhase,
+      listPhaseMachines: (...args: unknown[]) => listPhaseMachines(...args),
+      rejectPhase: vi.fn(),
+      retryPhase: vi.fn(),
     },
     chat: {
       getChat: (...args: unknown[]) => getChat(...args),
@@ -88,6 +92,33 @@ const discoverySummary = {
   role: "assistant",
   content: "## Discovery summary\n- **Page name:** Hello",
 };
+
+function machine(
+  phase: "discovery" | "implementation" | "delivery",
+  status: string,
+) {
+  return {
+    phase,
+    status,
+    iteration: 1,
+    openQuestionId: null,
+    hookAttempt: 0,
+    summary: status === "awaiting_review" ? "summary" : null,
+    feedback: null,
+    failureReason: null,
+    finishText: null,
+  };
+}
+
+function reviewingDiscovery() {
+  listPhaseMachines.mockResolvedValue({
+    machines: [
+      machine("discovery", "awaiting_review"),
+      machine("implementation", "locked"),
+      machine("delivery", "locked"),
+    ],
+  });
+}
 
 function renderBar(session?: ClerkSessionState, chatId = 1) {
   const store = createStore();
@@ -135,6 +166,8 @@ describe("FactoryPhaseBar", () => {
     getChat.mockReset();
     ensureCursorPhase.mockReset();
     ensureCursorPhase.mockResolvedValue({ started: false });
+    listPhaseMachines.mockReset();
+    reviewingDiscovery();
     downloadFactoryDocument.mockReset();
     approvePhase.mockResolvedValue({
       appId: 7,
@@ -188,9 +221,21 @@ describe("FactoryPhaseBar", () => {
           memberId: "user_1",
           memberName: "Ada",
         },
+        {
+          phase: "delivery",
+          memberId: "user_1",
+          memberName: "Ada",
+        },
       ],
     });
-    renderBar();
+    listPhaseMachines.mockResolvedValue({
+      machines: [
+        machine("discovery", "approved"),
+        machine("implementation", "approved"),
+        machine("delivery", "approved"),
+      ],
+    });
+    renderBar(undefined, 3);
     const download = await screen.findByRole("button", {
       name: "Download documentation",
     });
@@ -348,18 +393,58 @@ describe("FactoryPhaseBar", () => {
     manager.unmount();
 
     getChat.mockResolvedValue({ messages: [] });
+    listPhaseMachines.mockResolvedValue({
+      machines: [
+        machine("discovery", "executing"),
+        machine("implementation", "locked"),
+        machine("delivery", "locked"),
+      ],
+    });
     renderBar(signedIn("project-manager"));
+    await waitFor(() => {
+      expect(screen.getByTestId("factory-phase-status").textContent).toContain(
+        "Working in Discovery.",
+      );
+    });
+    expect(screen.queryByTestId("factory-phase-continue")).toBeNull();
+  });
+
+  it("lets the developer approve implementation and keeps download hidden until delivery is approved", async () => {
+    getState.mockResolvedValue({
+      appId: 7,
+      factoryHostManaged: false,
+      gasCityProjectId: null,
+      approvedPhases: [],
+    });
+    getChat.mockResolvedValue({ messages: [discoverySummary] });
+    listApprovals.mockResolvedValue({
+      approvals: [
+        { phase: "discovery", memberId: "user_1", memberName: "Ada" },
+      ],
+    });
+    listPhaseMachines.mockResolvedValue({
+      machines: [
+        machine("discovery", "approved"),
+        machine("implementation", "awaiting_review"),
+        machine("delivery", "locked"),
+      ],
+    });
+
+    const manager = renderBar(signedIn("project-manager"), 2);
+    const refused = await screen.findByRole("button", {
+      name: "Approve and continue to Delivery",
+    });
+    expect((refused as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByTestId("factory-phase-download")).toBeNull();
+    manager.unmount();
+
+    renderBar(signedIn("developer"), 2);
     expect(
       (
         (await screen.findByRole("button", {
-          name: "Approve and continue to Implementation",
+          name: "Approve and continue to Delivery",
         })) as HTMLButtonElement
       ).disabled,
-    ).toBe(true);
-    expect(
-      screen.getByText(
-        /Approval unlocks when wewebplus posts its Discovery summary/,
-      ),
-    ).toBeTruthy();
+    ).toBe(false);
   });
 });

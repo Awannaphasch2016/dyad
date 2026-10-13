@@ -18,6 +18,8 @@ test("the bridge workflow reads Dyad preview through OIDC and does not print sec
   assert.match(workflow, /doppler-config:\s*preview/);
   assert.match(workflow, /id-token:\s*write/);
   assert.match(workflow, /DYAD_BROWSER_BRIDGE:\s*"1"/);
+  assert.match(workflow, /DYAD_FACTORY_SCRIPT:\s*"record"/);
+  assert.match(workflow, /timeout-minutes:\s*5/);
   assert.match(workflow, /WEWEBPLUS_DATABASE_URL:\s*""/);
   assert.doesNotMatch(workflow, /DOPPLER_ADMIN_TOKEN/);
   assert.doesNotMatch(workflow, /verify_bridge/);

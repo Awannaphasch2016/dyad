@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import {
   index,
   integer,
+  primaryKey,
   sqliteTable,
   text,
   unique,
@@ -277,6 +278,41 @@ export const factoryPhaseApprovals = sqliteTable(
       table.phase,
     ),
   ],
+);
+
+export const factoryPhaseMachines = sqliteTable(
+  "factory_phase_machines",
+  {
+    appId: integer("app_id")
+      .notNull()
+      .references(() => apps.id, { onDelete: "cascade" }),
+    phase: text("phase", {
+      enum: ["discovery", "implementation", "delivery"],
+    }).notNull(),
+    status: text("status", {
+      enum: [
+        "locked",
+        "executing",
+        "waiting_for_answer",
+        "running_hooks",
+        "awaiting_review",
+        "approved",
+        "incomplete",
+        "failed",
+      ],
+    }).notNull(),
+    iteration: integer("iteration").notNull().default(1),
+    openQuestionId: text("open_question_id"),
+    hookAttempt: integer("hook_attempt").notNull().default(0),
+    summary: text("summary"),
+    feedback: text("feedback"),
+    failureReason: text("failure_reason"),
+    finishText: text("finish_text"),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => [primaryKey({ columns: [table.appId, table.phase] })],
 );
 
 export const factoryPhaseComments = sqliteTable("factory_phase_comments", {

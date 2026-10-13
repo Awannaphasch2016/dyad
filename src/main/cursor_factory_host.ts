@@ -14,6 +14,7 @@ import {
   latestFactoryPhaseSummary,
 } from "@/lib/factoryPhase";
 import { classifyCursorFactoryStop } from "@/lib/cursorFactoryStop";
+import { phaseSummaryFromFinish } from "@/lib/factoryStop";
 import { factoryPhaseSystemPrompt } from "@/prompts/factory_phase_prompt";
 import type { CursorFollowUpSender } from "@/control_plane/hitl_device";
 import { db } from "@/db";
@@ -168,7 +169,7 @@ export async function settleCursorFactoryRun(
     phase: run.phase,
   });
   if (!stop) return "pending";
-  if (stop === "human-required") {
+  if (stop === "question_opened") {
     const opened = openFactoryRequestForRun(
       database,
       run.runId,
@@ -176,15 +177,18 @@ export async function settleCursorFactoryRun(
     );
     return opened?.questionId ? "question" : "pending";
   }
-  if (stop === "ready-for-approval" && snapshot.message) {
-    postFactoryHostMessage(database, {
-      appId: run.appId,
-      phase: run.phase,
-      role: "assistant",
-      content: snapshot.message,
-      idempotencyKey: `${run.runId}:summary`,
-    });
-    return "summary";
+  if (stop === "agent_finished" && snapshot.message) {
+    const summary = phaseSummaryFromFinish(run.phase, snapshot.message);
+    if (summary) {
+      postFactoryHostMessage(database, {
+        appId: run.appId,
+        phase: run.phase,
+        role: "assistant",
+        content: summary,
+        idempotencyKey: `${run.runId}:summary`,
+      });
+      return "summary";
+    }
   }
   postFactoryHostMessage(database, {
     appId: run.appId,
