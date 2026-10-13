@@ -17,6 +17,8 @@ import {
   orgRoutesSource,
   orgRunSource,
   patchAppService,
+  patchChat,
+  patchUserMessage,
   presentQuestion,
   redactQuestionText,
   turnLabel,
@@ -171,10 +173,11 @@ test("the generated run does not keep the extra card or a phase", () => {
   assert.match(run, new RegExp(CREATE_REFUSAL));
   assert.equal(popup.includes("<input"), false);
   assert.equal(popup.includes("<textarea"), false);
-  assert.match(popup, /data-testid="org-question"/);
-  assert.match(popup, /Reply in the prompt box/);
-  assert.match(popup, /aria-label="Locked"/);
-  assert.match(popup, /data-testid="org-waiting"/);
+  assert.match(popup, /return null/);
+  assert.equal(popup.includes("org-waiting"), false);
+  assert.equal(popup.includes("org-question"), false);
+  assert.equal(popup.includes("Reply in the prompt box"), false);
+  assert.equal(popup.includes('aria-label="Locked"'), false);
   assert.match(routes, /\/api\/org/);
 });
 
@@ -191,6 +194,33 @@ test("a human turn shows the account name", () => {
   assert.match(run, /api\.clerk\.com\/v1\/users\//);
   assert.match(run, /SELECT created_by, original_prompt, title/);
   assert.match(run, /answers\.user_id/);
+  assert.equal(run.includes("ALTER TABLE answers ADD"), false);
+  assert.equal(run.includes("phase"), false);
+});
+
+test("the transcript uses three avatars and one human interaction", () => {
+  const chatPatch = patchChat.toString();
+  const userPatch = patchUserMessage.toString();
+  const run = orgRunSource();
+  const popup = orgPopupSource();
+  assert.match(userPatch, /org-avatar-pm/);
+  assert.match(userPatch, /org-avatar-dev/);
+  assert.match(userPatch, /org-response-required/);
+  assert.match(userPatch, /Response required/);
+  assert.match(userPatch, /Waiting on the Project Manager/);
+  assert.match(userPatch, /replaceAll/);
+  assert.match(chatPatch, /org-question/);
+  assert.match(chatPatch, /orgSeenQuestion/);
+  assert.match(chatPatch, /orgPending/);
+  assert.match(chatPatch, /AIAvatar/);
+  assert.match(chatPatch, /role=\{turn\.role\}/);
+  assert.match(chatPatch, /launchTurn\?\.role/);
+  assert.equal(popup.includes("org-waiting"), false);
+  assert.match(run, /select user_id from wewebplus\.memberships where org_id/);
+  assert.match(run, /waiting: waitingLine\(open\.target_role_id\)/);
+  assert.match(run, /pending: null/);
+  assert.match(run, /return name\.trim\(\)/);
+  assert.equal(run.includes("' · '"), false);
   assert.equal(run.includes("ALTER TABLE answers ADD"), false);
   assert.equal(run.includes("phase"), false);
 });

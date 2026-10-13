@@ -1,6 +1,7 @@
 // Organization run for the Vibe SDK preview.
 // The prompt box already on the page is the only place anyone types.
-// The builder's existing question popup shows the question to the named role.
+// The named role sees the question as an Orange message.
+// Waiting is one human interaction in the transcript, and that interaction becomes the answer.
 // Memberships are read from wewebplus. The shared apps and questions tables
 // are not altered: Electron, hitl-web, and Bolt still use their phase columns.
 // This run's app, question, and answer rows live on the Vibe SDK app database.
@@ -444,10 +445,16 @@ export function patchChat(source) {
   requireAnchor(source, unusedQuestion, "chat question state");
   requireAnchor(source, popupAnchor, "chat popup");
   source = source.replace(unusedQuestion, "");
+  source = source.replace(
+    "import { UserMessage, AIMessage } from './components/messages';",
+    "import { UserMessage, AIMessage } from './components/messages';\nimport { AIAvatar } from '../../components/icons/logos';",
+  );
   const start = source.indexOf(disabledAnchor);
   const end = source.indexOf(disabledEnd, start);
   const replaced = `${source.slice(0, start)}\tconst [orgBody, setOrgBody] = useState('');
 \tconst [orgWaiting, setOrgWaiting] = useState('');
+\tconst [orgPending, setOrgPending] = useState<{ id: string; name: string; role: string } | null>(null);
+\tconst [orgSeenQuestion, setOrgSeenQuestion] = useState('');
 \tconst [orgTurns, setOrgTurns] = useState<Array<{ id: string; body: string; name: string; role: string }>>([]);
 \tuseEffect(() => {
 \t\tif (!urlChatId) return;
@@ -458,6 +465,7 @@ export function patchChat(source) {
 \t\t\tconst payload = await response.json();
 \t\t\tif (stop) return;
 \t\t\tsetOrgBody(typeof payload?.data?.body === 'string' ? payload.data.body : '');
+\t\t\tif (typeof payload?.data?.body === 'string' && payload.data.body) setOrgSeenQuestion(payload.data.body);
 \t\t\tsetOrgWaiting(typeof payload?.data?.waiting === 'string' ? payload.data.waiting : '');
 \t\t\tconst rawTurns = Array.isArray(payload?.data?.turns) ? payload.data.turns : [];
 \t\t\tconst nextTurns: Array<{ id: string; body: string; name: string; role: string }> = [];
@@ -468,6 +476,17 @@ export function patchChat(source) {
 \t\t\t\tnextTurns.push({ id: record.id, body: record.body, name: record.name, role: record.role });
 \t\t\t}
 \t\t\tsetOrgTurns(nextTurns);
+\t\t\tconst rawPending = payload?.data?.pending;
+\t\t\tif (rawPending && typeof rawPending === 'object') {
+\t\t\t\tconst pending = rawPending as { id?: unknown; name?: unknown; role?: unknown };
+\t\t\t\tif (typeof pending.id === 'string' && typeof pending.name === 'string' && typeof pending.role === 'string' && pending.name.trim()) {
+\t\t\t\t\tsetOrgPending({ id: pending.id, name: pending.name.trim(), role: pending.role });
+\t\t\t\t} else {
+\t\t\t\t\tsetOrgPending(null);
+\t\t\t\t}
+\t\t\t} else {
+\t\t\t\tsetOrgPending(null);
+\t\t\t}
 \t\t};
 \t\tvoid look();
 \t\tconst timer = window.setInterval(() => void look(), 2000);
@@ -505,13 +524,13 @@ export function patchChat(source) {
 \t\t\t\t\t\t\t\t\t\tmessage={query ?? displayQuery}
 \t\t\t\t\t\t\t\t\t/>
 \t\t\t\t\t\t\t\t)}`;
-  const answerAnchor =
-    "\t\t\t\t\t\t\t\t\t\treturn (\n\t\t\t\t\t\t\t\t\t\t\t<UserMessage\n\t\t\t\t\t\t\t\t\t\t\t\tkey={message.conversationId}\n\t\t\t\t\t\t\t\t\t\t\t\tmessage={message.content}\n\t\t\t\t\t\t\t\t\t\t\t/>\n\t\t\t\t\t\t\t\t\t\t);\n\t\t\t\t\t\t\t\t\t})}";
+  const transcriptAnchor =
+    "\t\t\t\t\t\t\t\t{otherMessages\n\t\t\t\t\t\t\t\t\t.filter(\n\t\t\t\t\t\t\t\t\t\t(message) => !message.ui?.isThinking,\n\t\t\t\t\t\t\t\t\t)\n\t\t\t\t\t\t\t\t\t.map((message) => {\n\t\t\t\t\t\t\t\t\t\tif (message.role === 'assistant') {\n\t\t\t\t\t\t\t\t\t\t\treturn (\n\t\t\t\t\t\t\t\t\t\t\t\t<AIMessage\n\t\t\t\t\t\t\t\t\t\t\t\t\tkey={message.conversationId}\n\t\t\t\t\t\t\t\t\t\t\t\t\tmessage={message.content}\n\t\t\t\t\t\t\t\t\t\t\t\t\tparts={message.parts}\n\t\t\t\t\t\t\t\t\t\t\t\t\tisThinking={\n\t\t\t\t\t\t\t\t\t\t\t\t\t\tmessage.ui?.isThinking\n\t\t\t\t\t\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t\t\t\t\t\ttoolEvents={\n\t\t\t\t\t\t\t\t\t\t\t\t\t\tmessage.ui?.toolEvents\n\t\t\t\t\t\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t\t\t\t\t\trichToolPreview={\n\t\t\t\t\t\t\t\t\t\t\t\t\t\trichToolPreview\n\t\t\t\t\t\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t\t\t\t\t/>\n\t\t\t\t\t\t\t\t\t\t\t);\n\t\t\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t\t\treturn (\n\t\t\t\t\t\t\t\t\t\t\t<UserMessage\n\t\t\t\t\t\t\t\t\t\t\t\tkey={message.conversationId}\n\t\t\t\t\t\t\t\t\t\t\t\tmessage={message.content}\n\t\t\t\t\t\t\t\t\t\t\t/>\n\t\t\t\t\t\t\t\t\t\t);\n\t\t\t\t\t\t\t\t\t})}";
   const sendAnchor = "\t\t\tsendUserMessage(newMessage);";
   requireAnchor(replaced, badgeAnchor, "chat gallery chip");
   requireAnchor(replaced, ownerAnchor, "chat owner");
   requireAnchor(replaced, launchAnchor, "chat launch turn");
-  requireAnchor(replaced, answerAnchor, "chat answer turn");
+  requireAnchor(replaced, transcriptAnchor, "chat transcript");
   requireAnchor(replaced, sendAnchor, "chat send");
   return replaced
     .replace(ownerAnchor, "\tconst isOwner = false;")
@@ -534,12 +553,13 @@ export function patchChat(source) {
 \t\t\t\t\t\t\t\t\t<UserMessage
 \t\t\t\t\t\t\t\t\t\tmessage={query ?? displayQuery}
 \t\t\t\t\t\t\t\t\t\tspeaker={orgLaunchSpeaker}
+\t\t\t\t\t\t\t\t\t\trole={launchTurn?.role}
 \t\t\t\t\t\t\t\t\t/>
 \t\t\t\t\t\t\t\t)}`,
     )
     .replace(
-      answerAnchor,
-      "\t\t\t\t\t\t\t\t\t\treturn (\n\t\t\t\t\t\t\t\t\t\t\t<UserMessage\n\t\t\t\t\t\t\t\t\t\t\t\tkey={message.conversationId}\n\t\t\t\t\t\t\t\t\t\t\t\tmessage={message.content}\n\t\t\t\t\t\t\t\t\t\t\t\tspeaker={message.speaker}\n\t\t\t\t\t\t\t\t\t\t\t/>\n\t\t\t\t\t\t\t\t\t\t);\n\t\t\t\t\t\t\t\t\t})}\n\t\t\t\t\t\t\t\t{orgTurns.filter((turn) => turn.id !== 'launch' && !messages.some((item) => item.conversationId === \`org-answer-\${turn.id}\` || (item.role === 'user' && item.content === turn.body))).map((turn) => (\n\t\t\t\t\t\t\t\t\t<UserMessage\n\t\t\t\t\t\t\t\t\t\tkey={turn.id}\n\t\t\t\t\t\t\t\t\t\tmessage={turn.body}\n\t\t\t\t\t\t\t\t\t\tspeaker={turn.name.trim()}\n\t\t\t\t\t\t\t\t\t/>\n\t\t\t\t\t\t\t\t))}",
+      transcriptAnchor,
+      '{(() => {\n\t\t\t\t\t\t\t\tconst orgAnswer = (message: { conversationId?: string; role?: string; content?: string }) =>\n\t\t\t\t\t\t\t\t\tBoolean(message.conversationId?.startsWith(\'org-answer-\')) ||\n\t\t\t\t\t\t\t\t\t(message.role === \'user\' && orgTurns.some((turn) => turn.id !== \'launch\' && turn.body === message.content));\n\t\t\t\t\t\t\t\tconst visible = otherMessages.filter((message) => !message.ui?.isThinking && !orgAnswer(message));\n\t\t\t\t\t\t\t\tconst completed = orgTurns.filter((turn) => turn.id !== \'launch\');\n\t\t\t\t\t\t\t\tconst latestId = orgPending ? \'\' : (completed[completed.length - 1]?.id ?? \'\');\n\t\t\t\t\t\t\t\tconst earlier = completed.filter((turn) => turn.id !== latestId);\n\t\t\t\t\t\t\t\tconst current = latestId ? completed.find((turn) => turn.id === latestId) : undefined;\n\t\t\t\t\t\t\t\tconst answerIndex = otherMessages.findIndex((message) => !message.ui?.isThinking && orgAnswer(message));\n\t\t\t\t\t\t\t\tconst afterIds = new Set<string>();\n\t\t\t\t\t\t\t\tif (answerIndex >= 0) {\n\t\t\t\t\t\t\t\t\tfor (const message of otherMessages.slice(answerIndex + 1)) {\n\t\t\t\t\t\t\t\t\t\tif (message.ui?.isThinking || orgAnswer(message)) continue;\n\t\t\t\t\t\t\t\t\t\tif (message.conversationId) afterIds.add(message.conversationId);\n\t\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\tconst before = visible.filter((message) => !message.conversationId || !afterIds.has(message.conversationId));\n\t\t\t\t\t\t\t\tconst after = visible.filter((message) => Boolean(message.conversationId && afterIds.has(message.conversationId)));\n\t\t\t\t\t\t\t\tconst renderMessage = (message: (typeof otherMessages)[number]) => {\n\t\t\t\t\t\t\t\t\tif (message.role === \'assistant\') {\n\t\t\t\t\t\t\t\t\t\treturn (\n\t\t\t\t\t\t\t\t\t\t\t<AIMessage\n\t\t\t\t\t\t\t\t\t\t\t\tkey={message.conversationId}\n\t\t\t\t\t\t\t\t\t\t\t\tmessage={message.content}\n\t\t\t\t\t\t\t\t\t\t\t\tparts={message.parts}\n\t\t\t\t\t\t\t\t\t\t\t\tisThinking={message.ui?.isThinking}\n\t\t\t\t\t\t\t\t\t\t\t\ttoolEvents={message.ui?.toolEvents}\n\t\t\t\t\t\t\t\t\t\t\t\trichToolPreview={richToolPreview}\n\t\t\t\t\t\t\t\t\t\t\t/>\n\t\t\t\t\t\t\t\t\t\t);\n\t\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t\treturn (\n\t\t\t\t\t\t\t\t\t\t<UserMessage\n\t\t\t\t\t\t\t\t\t\t\tkey={message.conversationId}\n\t\t\t\t\t\t\t\t\t\t\tmessage={message.content}\n\t\t\t\t\t\t\t\t\t\t\tspeaker={message.speaker}\n\t\t\t\t\t\t\t\t\t\t/>\n\t\t\t\t\t\t\t\t\t);\n\t\t\t\t\t\t\t\t};\n\t\t\t\t\t\t\t\treturn (\n\t\t\t\t\t\t\t\t\t<>\n\t\t\t\t\t\t\t\t\t\t{before.map(renderMessage)}\n\t\t\t\t\t\t\t\t\t\t{earlier.map((turn) => (\n\t\t\t\t\t\t\t\t\t\t\t<UserMessage\n\t\t\t\t\t\t\t\t\t\t\t\tkey={turn.id}\n\t\t\t\t\t\t\t\t\t\t\t\tmessage={turn.body}\n\t\t\t\t\t\t\t\t\t\t\t\tspeaker={turn.name.trim()}\n\t\t\t\t\t\t\t\t\t\t\t\trole={turn.role}\n\t\t\t\t\t\t\t\t\t\t\t/>\n\t\t\t\t\t\t\t\t\t\t))}\n\t\t\t\t\t\t\t\t\t\t{orgSeenQuestion ? (\n\t\t\t\t\t\t\t\t\t\t\t<div data-testid="org-builder-question" className="flex flex-col gap-2 min-w-0">\n\t\t\t\t\t\t\t\t\t\t\t\t<div className="font-mono font-medium text-text-50 flex items-center gap-2 mb-3">\n\t\t\t\t\t\t\t\t\t\t\t\t\t<AIAvatar className="size-5 text-orange-500 shrink-0" />\n\t\t\t\t\t\t\t\t\t\t\t\t\tOrange\n\t\t\t\t\t\t\t\t\t\t\t\t</div>\n\t\t\t\t\t\t\t\t\t\t\t\t<p data-testid="org-question" className="text-text-primary/80">{orgSeenQuestion}</p>\n\t\t\t\t\t\t\t\t\t\t\t\t{orgBody ? <p className="mt-1 text-xs text-text-tertiary">Reply in the prompt box.</p> : null}\n\t\t\t\t\t\t\t\t\t\t\t</div>\n\t\t\t\t\t\t\t\t\t\t) : null}\n\t\t\t\t\t\t\t\t\t\t{orgPending ? (\n\t\t\t\t\t\t\t\t\t\t\t<UserMessage\n\t\t\t\t\t\t\t\t\t\t\t\tkey={orgPending.id}\n\t\t\t\t\t\t\t\t\t\t\t\tmessage=""\n\t\t\t\t\t\t\t\t\t\t\t\tspeaker={orgPending.name.trim()}\n\t\t\t\t\t\t\t\t\t\t\t\trole={orgPending.role}\n\t\t\t\t\t\t\t\t\t\t\t\tpending\n\t\t\t\t\t\t\t\t\t\t\t/>\n\t\t\t\t\t\t\t\t\t\t) : null}\n\t\t\t\t\t\t\t\t\t\t{current ? (\n\t\t\t\t\t\t\t\t\t\t\t<UserMessage\n\t\t\t\t\t\t\t\t\t\t\t\tkey={current.id}\n\t\t\t\t\t\t\t\t\t\t\t\tmessage={current.body}\n\t\t\t\t\t\t\t\t\t\t\t\tspeaker={current.name.trim()}\n\t\t\t\t\t\t\t\t\t\t\t\trole={current.role}\n\t\t\t\t\t\t\t\t\t\t\t/>\n\t\t\t\t\t\t\t\t\t\t) : null}\n\t\t\t\t\t\t\t\t\t\t{after.map(renderMessage)}\n\t\t\t\t\t\t\t\t\t</>\n\t\t\t\t\t\t\t\t);\n\t\t\t\t\t\t\t})()}',
     )
     .replace(
       sendAnchor,
@@ -631,7 +651,7 @@ const PM_ROLE = 'project-manager';
 const DEV_ROLE = 'developer';
 
 type Actor = { role: string; userId: string; orgId: string };
-type GateRow = { org_id?: string; role_id?: string };
+type GateRow = { org_id?: string; role_id?: string; user_id?: string };
 type QuestionRecord = {
 	id: string;
 	org_id: string;
@@ -907,17 +927,39 @@ export async function latestOrganizationApp(env: Env, userId: string): Promise<{
 	return await env.DB.prepare('SELECT id, title FROM apps WHERE org_id = ? ORDER BY created_at DESC LIMIT 1').bind(member.orgId).first<{ id: string; title: string }>();
 }
 
-export async function openOrganizationQuestion(env: Env, userId: string, appId: string): Promise<{ body: string | null; waiting: string | null; turns: HumanTurn[] } | null> {
+async function roleMemberId(env: Env, orgId: string, role: string): Promise<string> {
+	const databaseUrl = binding(env, 'WEWEBPLUS_DATABASE_URL');
+	if (!databaseUrl || !orgId || !role) return '';
+	const rows = await neonQuery(
+		databaseUrl,
+		'select user_id from wewebplus.memberships where org_id = $1 and role_id = $2',
+		[orgId, role],
+	);
+	const ids = rows.map((row) => row.user_id ?? '').filter((id) => id);
+	return ids.length === 1 ? ids[0] : '';
+}
+
+async function pendingInteraction(env: Env, orgId: string, questionId: string, targetRole: string, turns: HumanTurn[]): Promise<{ id: string; name: string; role: string } | null> {
+	const userId = await roleMemberId(env, orgId, targetRole);
+	const lookedUp = userId ? (await memberName(env, userId)).trim() : '';
+	const launch = targetRole === PM_ROLE ? turns.find((turn) => turn.id === 'launch') : undefined;
+	const name = lookedUp || launch?.name.trim() || '';
+	if (!name) return null;
+	return { id: questionId, name, role: roleTitle(targetRole) };
+}
+
+export async function openOrganizationQuestion(env: Env, userId: string, appId: string): Promise<{ body: string | null; waiting: string | null; turns: HumanTurn[]; pending: { id: string; name: string; role: string } | null } | null> {
 	await ensureOrganizationSchema(env);
 	const member = await membership(env, userId);
 	if (!member || !appId) return null;
 	const app = await env.DB.prepare('SELECT org_id FROM apps WHERE id = ?').bind(appId).first<{ org_id: string | null }>();
 	if (!app?.org_id || app.org_id !== member.orgId) return null;
 	const turns = await humanTurns(env, appId);
-	const open = await env.DB.prepare("SELECT target_role_id, body, status FROM questions WHERE app_id = ? AND status = 'open' ORDER BY created_at DESC LIMIT 1").bind(appId).first<{ target_role_id: string; body: string; status: string }>();
-	if (!open) return { body: null, waiting: null, turns };
-	if (open.target_role_id === member.role) return { body: open.body, waiting: null, turns };
-	return { body: null, waiting: waitingLine(open.target_role_id), turns };
+	const open = await env.DB.prepare("SELECT id, target_role_id, body, status FROM questions WHERE app_id = ? AND status = 'open' ORDER BY created_at DESC LIMIT 1").bind(appId).first<{ id: string; target_role_id: string; body: string; status: string }>();
+	if (!open) return { body: null, waiting: null, turns, pending: null };
+	const pending = await pendingInteraction(env, member.orgId, open.id, open.target_role_id, turns);
+	if (open.target_role_id === member.role) return { body: open.body, waiting: null, turns, pending };
+	return { body: null, waiting: waitingLine(open.target_role_id), turns, pending };
 }
 
 export async function publishOrganizationQuestion(input: {
@@ -1078,27 +1120,9 @@ interface ClarifyingQuestionsPopupProps {
 	onDismiss?: () => void;
 }
 
-export function ClarifyingQuestionsPopup({ questions, open, waiting }: ClarifyingQuestionsPopupProps & { waiting?: string }) {
-	const question = questions[0];
-	if (open && question?.question) {
-		return (
-			<div className="rounded-t-xl border border-b-0 bg-bg-4 px-4 py-3">
-				<p className="text-xs text-text-tertiary">Question</p>
-				<p data-testid="org-question" className="text-sm text-text-primary">{question.question}</p>
-				<p className="mt-1 text-xs text-text-tertiary">Reply in the prompt box.</p>
-			</div>
-		);
-	}
-	if (!open || !waiting) return null;
-	return (
-		<div data-testid="org-waiting" className="flex items-start gap-2 rounded-t-xl border border-b-0 bg-bg-4 px-4 py-3">
-			<svg aria-label="Locked" viewBox="0 0 24 24" className="mt-0.5 size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2">
-				<rect x="5" y="11" width="14" height="10" rx="2" />
-				<path d="M8 11V8a4 4 0 0 1 8 0v3" />
-			</svg>
-			<p className="text-sm text-text-primary">{waiting}</p>
-		</div>
-	);
+export function ClarifyingQuestionsPopup(props: ClarifyingQuestionsPopupProps & { waiting?: string }) {
+	void props;
+	return null;
 }
 `;
 }
@@ -1120,41 +1144,28 @@ export function patchChatMessage(source) {
 }
 
 export function patchUserMessage(source) {
-  const anchor = `export function UserMessage({ message }: { message: string }) {
-	const sanitizedMessage = sanitizeMessageForDisplay(message);
-
-	return (
-		<div className="flex flex-col gap-2 min-w-0">
-			<div className="flex items-center gap-2 mb-3">
-				<div className="size-5 flex items-center justify-center rounded-full bg-brand text-white shrink-0">
-					<span className="text-[10px]">U</span>
-				</div>
-				<div className="font-medium text-text-50">You</div>
-			</div>
-			<Markdown className="text-text-primary/80">{sanitizedMessage}</Markdown>
-		</div>
-	);
-}`;
+  const anchor =
+    'export function UserMessage({ message }: { message: string }) {\n\tconst sanitizedMessage = sanitizeMessageForDisplay(message);\n\n\treturn (\n\t\t<div className="flex flex-col gap-2 min-w-0">\n\t\t\t<div className="flex items-center gap-2 mb-3">\n\t\t\t\t<div className="size-5 flex items-center justify-center rounded-full bg-brand text-white shrink-0">\n\t\t\t\t\t<span className="text-[10px]">U</span>\n\t\t\t\t</div>\n\t\t\t\t<div className="font-medium text-text-50">You</div>\n\t\t\t</div>\n\t\t\t<Markdown className="text-text-primary/80">{sanitizedMessage}</Markdown>\n\t\t</div>\n\t);\n}';
+  const waitingAnchor =
+    "\tconst sanitizedMessage = sanitizeMessageForDisplay(message);\n\n\t// Ordered parts are authoritative; fall back to a single text part for the\n\t// few literal placeholder messages that are constructed without parts.\n\tconst resolvedParts: MessagePart[] = parts && parts.length > 0\n\t\t? parts\n\t\t: (sanitizedMessage ? [{ type: 'text', text: sanitizedMessage }] : []);";
+  const helperAnchor =
+    "\treturn message.replace(/<system_context>[\\s\\S]*?<\\/system_context>\\n/gi, '').trim();\n}";
   requireAnchor(source, anchor, "user message label");
-  return source.replace(
-    anchor,
-    `export function UserMessage({ message, speaker }: { message: string; speaker?: string }) {
-	const sanitizedMessage = sanitizeMessageForDisplay(message);
-	const label = speaker?.trim() ? speaker.trim() : 'You';
-
-	return (
-		<div className="flex flex-col gap-2 min-w-0" data-testid={speaker?.trim() ? 'org-human-turn' : undefined}>
-			<div className="flex items-center gap-2 mb-3">
-				<div className="size-5 flex items-center justify-center rounded-full bg-brand text-white shrink-0">
-					<span className="text-[10px]">{label === 'You' ? 'U' : label.slice(0, 1).toUpperCase()}</span>
-				</div>
-				<div className="font-medium text-text-50" data-testid={speaker?.trim() ? 'org-turn' : undefined}>{label}</div>
-			</div>
-			<Markdown className="text-text-primary/80">{sanitizedMessage}</Markdown>
-		</div>
-	);
-}`,
-  );
+  requireAnchor(source, waitingAnchor, "assistant waiting text");
+  requireAnchor(source, helperAnchor, "assistant text helper");
+  return source
+    .replace(
+      anchor,
+      'export function UserMessage({ message, speaker, role, pending }: { message: string; speaker?: string; role?: string; pending?: boolean }) {\n\tconst sanitizedMessage = sanitizeMessageForDisplay(message);\n\tconst label = speaker?.trim() ? speaker.trim() : \'You\';\n\tconst kind = role === \'Developer\' ? \'dev\' : role === \'Project Manager\' ? \'pm\' : \'\';\n\n\treturn (\n\t\t<div\n\t\t\tclassName={pending ? \'flex flex-col gap-2 min-w-0 rounded-lg border border-orange-500 bg-bg-4 px-3 py-2\' : \'flex flex-col gap-2 min-w-0\'}\n\t\t\tdata-testid={pending ? \'org-pending\' : speaker?.trim() ? \'org-human-turn\' : undefined}\n\t\t>\n\t\t\t<div className="flex items-center gap-2 mb-3">\n\t\t\t\t{kind === \'pm\' ? (\n\t\t\t\t\t<svg data-testid="org-avatar-pm" aria-label="Project Manager" viewBox="0 0 28 28" className="size-5 shrink-0">\n\t\t\t\t\t\t<circle cx="14" cy="14" r="14" fill="#f6821f" />\n\t\t\t\t\t\t<path fill="white" d="M14 7.2a3.1 3.1 0 1 1 0 6.2 3.1 3.1 0 0 1 0-6.2zm-5.2 11.2c.6-2.4 2.6-3.8 5.2-3.8s4.6 1.4 5.2 3.8c.2.7-.3 1.4-1 1.4H9.8c-.7 0-1.2-.7-1-1.4z" />\n\t\t\t\t\t</svg>\n\t\t\t\t) : kind === \'dev\' ? (\n\t\t\t\t\t<svg data-testid="org-avatar-dev" aria-label="Developer" viewBox="0 0 28 28" className="size-5 shrink-0">\n\t\t\t\t\t\t<circle cx="14" cy="14" r="14" fill="#1d4ed8" />\n\t\t\t\t\t\t<path fill="white" d="M8 18.5 12.2 9h1.6l4.2 9.5h-1.7l-.8-2H10.5l-.8 2H8zm3.2-3.4h3.6L14 11.2l-2.8 3.9z" />\n\t\t\t\t\t</svg>\n\t\t\t\t) : (\n\t\t\t\t\t<div className="size-5 flex items-center justify-center rounded-full bg-brand text-white shrink-0">\n\t\t\t\t\t\t<span className="text-[10px]">{label === \'You\' ? \'U\' : label.slice(0, 1).toUpperCase()}</span>\n\t\t\t\t\t</div>\n\t\t\t\t)}\n\t\t\t\t<div className="font-medium text-text-50" data-testid={speaker?.trim() ? \'org-turn\' : undefined}>{label}</div>\n\t\t\t\t{pending ? (\n\t\t\t\t\t<div data-testid="org-response-required" className="text-xs font-semibold text-orange-500">Response required</div>\n\t\t\t\t) : null}\n\t\t\t</div>\n\t\t\t{pending ? (\n\t\t\t\t<p className="text-sm text-text-tertiary">This account answers in the prompt box.</p>\n\t\t\t) : (\n\t\t\t\t<Markdown className="text-text-primary/80">{sanitizedMessage}</Markdown>\n\t\t\t)}\n\t\t</div>\n\t);\n}',
+    )
+    .replace(
+      waitingAnchor,
+      "\tconst sanitizedMessage = orgVisibleText(sanitizeMessageForDisplay(message));\n\n\t// Ordered parts are authoritative; fall back to a single text part for the\n\t// few literal placeholder messages that are constructed without parts.\n\tconst resolvedParts: MessagePart[] = (parts && parts.length > 0\n\t\t? parts\n\t\t: (sanitizedMessage ? [{ type: 'text', text: sanitizedMessage }] : [])\n\t).flatMap((part): MessagePart[] => {\n\t\tif (part.type !== 'text') return [part];\n\t\tconst text = orgVisibleText(part.text);\n\t\treturn text ? [{ ...part, text }] : [];\n\t});",
+    )
+    .replace(
+      helperAnchor,
+      "\treturn message.replace(/<system_context>[\\s\\S]*?<\\/system_context>\\n/gi, '').trim();\n}\n\nfunction orgVisibleText(message: string): string {\n\treturn message\n\t\t.replaceAll('Waiting on the Project Manager.', '')\n\t\t.replaceAll('Waiting on the Developer.', '')\n\t\t.trim();\n}",
+    );
 }
 
 export function patchConversationHandler(source) {
