@@ -116,15 +116,28 @@ async function signedInPage(
   };
 }
 
+async function ensureSignedInShell(page: Page): Promise<void> {
+  const button = page.getByTestId("title-bar-user-button");
+  if (await button.isVisible().catch(() => false)) return;
+  // A full reload restarts Clerk. While that session is still loading, the
+  // title bar is absent even though the home composer is on screen.
+  const appeared = await button
+    .waitFor({ state: "visible", timeout: 15_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (appeared) return;
+  await page.goto(BRIDGE_URL);
+  await expect(button).toBeVisible({ timeout: 20_000 });
+}
+
 async function openFactoryApp(
   page: Page,
   appName: string,
   chatId: number,
 ): Promise<void> {
-  await page.goto(BRIDGE_URL);
-  await expect(page.getByTestId("title-bar-user-button")).toBeVisible({
-    timeout: 60_000,
-  });
+  // Both browsers are already on the signed-in home page. Reloading here
+  // restarts Clerk and can sit on the loading session for the whole timeout.
+  await ensureSignedInShell(page);
   const item = page.getByTestId(`app-list-item-${appName}`);
   if (!(await item.isVisible().catch(() => false))) {
     // The rail control is a link. Hovering a button named Apps never
@@ -465,9 +478,7 @@ async function walkPhase(
       await dev.goto(BRIDGE_URL);
       await expect(pm.getByTestId(`hitl-question-${beat.id}`)).toBeVisible();
       await dev.goto(returnUrl);
-      await expect(dev.getByTestId("title-bar-user-button")).toBeVisible({
-        timeout: 60_000,
-      });
+      await ensureSignedInShell(dev);
       await expect(dev.getByTestId("factory-phase-bar")).toBeVisible();
       evidence.leftAppWhileQuestionOpen = true;
       split = await showSplit(pm, dev, beat.id);
