@@ -104,6 +104,10 @@ import { SUMMARIZE_CHAT_SYSTEM_PROMPT } from "../../prompts/summarize_chat_syste
 import { SECURITY_REVIEW_SYSTEM_PROMPT } from "../../prompts/security_review_prompt";
 import { appendFactoryPhaseSystemPrompt } from "../../prompts/factory_phase_prompt";
 import { phaseFromTitle } from "@/lib/factoryPhase";
+import {
+  isFactoryOrchestratedChat,
+  runFactoryOrchestratedTurn,
+} from "@/main/factory_orchestrator";
 import fs from "node:fs";
 import * as path from "path";
 import * as crypto from "crypto";
@@ -1163,6 +1167,26 @@ export function registerChatStreamHandlers() {
       // guess until the next stream replaces it. The latest stream wins, and the
       // value is cleared on clean exit.
       setSentinelActiveChat(req.chatId);
+
+      if (isFactoryOrchestratedChat(chat.app, chat.title)) {
+        const factoryPhase = phaseFromTitle(chat.title);
+        if (factoryPhase) {
+          mutatedPersistedChat = true;
+          const outcome = await runFactoryOrchestratedTurn({
+            database: db,
+            sender: event.sender,
+            chatId: req.chatId,
+            appId: chat.app.id,
+            phase: factoryPhase,
+            prompt: req.prompt,
+            invocationRef: req.invocationRef,
+            streamId: req.streamId,
+            abortSignal: abortController.signal,
+          });
+          if (outcome === "completed") finishedNaturally = true;
+          return req.chatId;
+        }
+      }
 
       let baseSettings = readSettings();
       let selectedModel = chat.modelSelection

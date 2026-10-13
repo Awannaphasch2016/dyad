@@ -782,6 +782,197 @@ export function shouldIncludeTool(
 /**
  * Build ToolSet for AI SDK from tool definitions
  */
+
+export async function invokeRegisteredTool(params: {
+  tool: (typeof TOOL_DEFINITIONS)[number];
+  args: unknown;
+  ctx: AgentContext;
+  options?: BuildAgentToolSetOptions;
+  toolCallId?: string;
+}): Promise<LanguageModelV3ToolResultOutput> {
+  const { tool, ctx, options = {} } = params;
+  const toolCallId = params.toolCallId;
+  let args = params.args as any;
+  let presentationXml = "";
+  const invocationCtx =
+    toolCallId && ctx.onToolActivity
+      ? {
+          ...ctx,
+          onXmlStream: (xml: string) => {
+            presentationXml = xml;
+            recordStreamingToolActivity(ctx, {
+              toolCallId,
+              toolName: tool.name,
+              status: "pending",
+              presentationXml: xml,
+            });
+          },
+          onXmlComplete: (xml: string) => {
+            presentationXml = xml;
+            recordStreamingToolActivity(ctx, {
+              toolCallId,
+              toolName: tool.name,
+              status: "pending",
+              presentationXml: xml,
+            });
+          },
+        }
+      : ctx;
+  try {
+    // The SDK is not the authority for validation: MCP and sandbox
+    // adapters must enter the same invocation boundary.
+    if (!shouldIncludeTool(tool, invocationCtx, options, "invocation")) {
+      throw new DyadError(
+        "Tool is unavailable in this turn",
+        DyadErrorKind.Precondition,
+      );
+    }
+    const schema = asSchema(
+      tool.getInputSchema?.(invocationCtx) ?? tool.inputSchema,
+    );
+    if (schema.validate) {
+      const validated = await schema.validate(args);
+      if (!validated.success) throw validated.error;
+      args = validated.value;
+    }
+    const mutationRequiresTracking =
+      toolModifiesState(tool, ctx) &&
+      (tool.mutationTracking ?? "automatic") === "automatic";
+    const processedArgs = await processArgPlaceholders(args, invocationCtx);
+
+    if (toolCallId && invocationCtx.onToolActivity) {
+      presentationXml = tool.buildXml?.(processedArgs, false) ?? "";
+      await invocationCtx.onToolActivity({
+        toolCallId,
+        toolName: tool.name,
+        status: "pending",
+        presentationXml,
+        inputJson: processedArgs,
+      });
+    }
+
+    // Reject tools that cannot pass the blueprint gate before asking
+    // the user for consent. Consent may wait indefinitely, but this
+    // precondition is synchronous and independent of mutation admission.
+    if (
+      toolModifiesState(tool, ctx) &&
+      tool.requiresBlueprintApproval !== false &&
+      !APP_BLUEPRINT_TOOLS.has(tool.name) &&
+      !PLANNING_SPECIFIC_TOOLS.has(tool.name) &&
+      !CAPABILITY_GATED_BLUEPRINT_TOOLS.has(tool.name)
+    ) {
+      assertAppBlueprintApproved({
+        toolName: tool.name,
+        chatId: invocationCtx.chatId,
+        enabled: options.enableAppBlueprint !== false,
+      });
+    }
+
+    // Consent can wait indefinitely for the user. Resolve it before
+    // registering mutation activity so cancellation cannot let delayed
+    // consent enter a closed actor generation.
+    await requireToolConsentOrThrow(tool, processedArgs, invocationCtx);
+    const invoke = async () => {
+      if (!shouldIncludeTool(tool, invocationCtx, options, "invocation")) {
+        throw new DyadError(
+          "Tool is no longer available",
+          DyadErrorKind.Precondition,
+        );
+      }
+      if (invocationCtx.abortSignal?.aborted) {
+        throw new DyadError(
+          "This agent run was cancelled.",
+          DyadErrorKind.UserCancelled,
+        );
+      }
+      // Track file edit tool usage before execution to capture all attempts
+      // (including failures) for retry/fallback telemetry
+      trackFileEditTool(invocationCtx, tool.name, processedArgs);
+      const result = await withReferencedAppRead(
+        tool.name,
+        processedArgs,
+        invocationCtx,
+        (readCtx) => tool.execute(processedArgs, readCtx),
+      );
+
+      // Only completed mutations unblock run_tests. Failed tool calls are
+      // still present in fileEditTracker for retry/fallback telemetry, but
+      // must not masquerade as a code change.
+      const didMutate = shouldTrackToolMutation(
+        tool,
+        processedArgs,
+        result,
+        invocationCtx,
+      );
+      trackAppMutation(
+        invocationCtx,
+        tool.name,
+        didMutate,
+        didMutate &&
+          (await shouldTrackToolFileMutation(
+            tool,
+            processedArgs,
+            result,
+            invocationCtx,
+          )),
+      );
+
+      if (toolCallId && invocationCtx.onToolActivity) {
+        await invocationCtx.onToolActivity({
+          toolCallId,
+          toolName: tool.name,
+          status: "completed",
+          presentationXml,
+          inputJson: processedArgs,
+          outputText: serializeActivityOutput(result),
+        });
+      }
+
+      return convertToolResultForAiSdk(result);
+    };
+
+    return mutationRequiresTracking
+      ? await withTrackedMutation(invocationCtx, invoke)
+      : await invoke();
+  } catch (error) {
+    const errorMessage = getToolErrorSummary(error);
+    const errorDetails = getToolErrorDisplayDetails(error);
+
+    const errorXml = `<dyad-output type="error" message="Tool '${tool.name}' failed: ${escapeXmlAttr(errorMessage)}">${escapeXmlContent(errorDetails)}</dyad-output>`;
+    invocationCtx.onXmlComplete(errorXml);
+    if (toolCallId && invocationCtx.onToolActivity) {
+      await invocationCtx.onToolActivity({
+        toolCallId,
+        toolName: tool.name,
+        status: invocationCtx.abortSignal?.aborted ? "aborted" : "error",
+        presentationXml: errorXml,
+        inputJson: typeof args === "object" && args !== null ? args : undefined,
+        error: errorDetails,
+      });
+    }
+    throw error;
+  }
+}
+
+export async function invokeRegisteredToolByName(params: {
+  toolName: string;
+  args: unknown;
+  ctx: AgentContext;
+  options?: BuildAgentToolSetOptions;
+  toolCallId?: string;
+}): Promise<LanguageModelV3ToolResultOutput> {
+  const tool = TOOL_DEFINITIONS.find(
+    (definition) => definition.name === params.toolName,
+  );
+  if (!tool) {
+    throw new DyadError(
+      `Unknown tool: ${params.toolName}`,
+      DyadErrorKind.NotFound,
+    );
+  }
+  return invokeRegisteredTool({ ...params, tool });
+}
+
 export function buildAgentToolSet(
   ctx: AgentContext,
   options: BuildAgentToolSetOptions = {},
@@ -796,177 +987,14 @@ export function buildAgentToolSet(
     toolSet[tool.name] = {
       description: resolveToolDescription(tool, ctx),
       inputSchema: tool.getInputSchema?.(ctx) ?? tool.inputSchema,
-      execute: async (
-        args: any,
-        executionOptions?: { toolCallId?: string },
-      ) => {
-        const toolCallId = executionOptions?.toolCallId;
-        let presentationXml = "";
-        const invocationCtx =
-          toolCallId && ctx.onToolActivity
-            ? {
-                ...ctx,
-                onXmlStream: (xml: string) => {
-                  presentationXml = xml;
-                  recordStreamingToolActivity(ctx, {
-                    toolCallId,
-                    toolName: tool.name,
-                    status: "pending",
-                    presentationXml: xml,
-                  });
-                },
-                onXmlComplete: (xml: string) => {
-                  presentationXml = xml;
-                  recordStreamingToolActivity(ctx, {
-                    toolCallId,
-                    toolName: tool.name,
-                    status: "pending",
-                    presentationXml: xml,
-                  });
-                },
-              }
-            : ctx;
-        try {
-          // The SDK is not the authority for validation: MCP and sandbox
-          // adapters must enter the same invocation boundary.
-          if (!shouldIncludeTool(tool, invocationCtx, options, "invocation")) {
-            throw new DyadError(
-              "Tool is unavailable in this turn",
-              DyadErrorKind.Precondition,
-            );
-          }
-          const schema = asSchema(
-            tool.getInputSchema?.(invocationCtx) ?? tool.inputSchema,
-          );
-          if (schema.validate) {
-            const validated = await schema.validate(args);
-            if (!validated.success) throw validated.error;
-            args = validated.value;
-          }
-          const mutationRequiresTracking =
-            toolModifiesState(tool, ctx) &&
-            (tool.mutationTracking ?? "automatic") === "automatic";
-          const processedArgs = await processArgPlaceholders(
-            args,
-            invocationCtx,
-          );
-
-          if (toolCallId && invocationCtx.onToolActivity) {
-            presentationXml = tool.buildXml?.(processedArgs, false) ?? "";
-            await invocationCtx.onToolActivity({
-              toolCallId,
-              toolName: tool.name,
-              status: "pending",
-              presentationXml,
-              inputJson: processedArgs,
-            });
-          }
-
-          // Reject tools that cannot pass the blueprint gate before asking
-          // the user for consent. Consent may wait indefinitely, but this
-          // precondition is synchronous and independent of mutation admission.
-          if (
-            toolModifiesState(tool, ctx) &&
-            tool.requiresBlueprintApproval !== false &&
-            !APP_BLUEPRINT_TOOLS.has(tool.name) &&
-            !PLANNING_SPECIFIC_TOOLS.has(tool.name) &&
-            !CAPABILITY_GATED_BLUEPRINT_TOOLS.has(tool.name)
-          ) {
-            assertAppBlueprintApproved({
-              toolName: tool.name,
-              chatId: invocationCtx.chatId,
-              enabled: options.enableAppBlueprint !== false,
-            });
-          }
-
-          // Consent can wait indefinitely for the user. Resolve it before
-          // registering mutation activity so cancellation cannot let delayed
-          // consent enter a closed actor generation.
-          await requireToolConsentOrThrow(tool, processedArgs, invocationCtx);
-          const invoke = async () => {
-            if (
-              !shouldIncludeTool(tool, invocationCtx, options, "invocation")
-            ) {
-              throw new DyadError(
-                "Tool is no longer available",
-                DyadErrorKind.Precondition,
-              );
-            }
-            if (invocationCtx.abortSignal?.aborted) {
-              throw new DyadError(
-                "This agent run was cancelled.",
-                DyadErrorKind.UserCancelled,
-              );
-            }
-            // Track file edit tool usage before execution to capture all attempts
-            // (including failures) for retry/fallback telemetry
-            trackFileEditTool(invocationCtx, tool.name, processedArgs);
-            const result = await withReferencedAppRead(
-              tool.name,
-              processedArgs,
-              invocationCtx,
-              (readCtx) => tool.execute(processedArgs, readCtx),
-            );
-
-            // Only completed mutations unblock run_tests. Failed tool calls are
-            // still present in fileEditTracker for retry/fallback telemetry, but
-            // must not masquerade as a code change.
-            const didMutate = shouldTrackToolMutation(
-              tool,
-              processedArgs,
-              result,
-              invocationCtx,
-            );
-            trackAppMutation(
-              invocationCtx,
-              tool.name,
-              didMutate,
-              didMutate &&
-                (await shouldTrackToolFileMutation(
-                  tool,
-                  processedArgs,
-                  result,
-                  invocationCtx,
-                )),
-            );
-
-            if (toolCallId && invocationCtx.onToolActivity) {
-              await invocationCtx.onToolActivity({
-                toolCallId,
-                toolName: tool.name,
-                status: "completed",
-                presentationXml,
-                inputJson: processedArgs,
-                outputText: serializeActivityOutput(result),
-              });
-            }
-
-            return convertToolResultForAiSdk(result);
-          };
-
-          return mutationRequiresTracking
-            ? await withTrackedMutation(invocationCtx, invoke)
-            : await invoke();
-        } catch (error) {
-          const errorMessage = getToolErrorSummary(error);
-          const errorDetails = getToolErrorDisplayDetails(error);
-
-          const errorXml = `<dyad-output type="error" message="Tool '${tool.name}' failed: ${escapeXmlAttr(errorMessage)}">${escapeXmlContent(errorDetails)}</dyad-output>`;
-          invocationCtx.onXmlComplete(errorXml);
-          if (toolCallId && invocationCtx.onToolActivity) {
-            await invocationCtx.onToolActivity({
-              toolCallId,
-              toolName: tool.name,
-              status: invocationCtx.abortSignal?.aborted ? "aborted" : "error",
-              presentationXml: errorXml,
-              inputJson:
-                typeof args === "object" && args !== null ? args : undefined,
-              error: errorDetails,
-            });
-          }
-          throw error;
-        }
-      },
+      execute: (args: unknown, executionOptions?: { toolCallId?: string }) =>
+        invokeRegisteredTool({
+          tool,
+          args,
+          ctx,
+          options,
+          toolCallId: executionOptions?.toolCallId,
+        }),
     };
   }
 

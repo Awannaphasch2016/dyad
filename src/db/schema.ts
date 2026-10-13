@@ -401,6 +401,19 @@ export const factoryHostRuns = sqliteTable(
     })
       .notNull()
       .default("queued"),
+    gasCityTaskId: text("gas_city_task_id"),
+    orchestratorStatus: text("orchestrator_status", {
+      enum: [
+        "queued",
+        "running",
+        "input-required",
+        "completed",
+        "cancelled",
+        "errored",
+      ],
+    }),
+    eventCursor: integer("event_cursor").notNull().default(0),
+    assistantMessageId: integer("assistant_message_id"),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
       .default(sql`(unixepoch())`),

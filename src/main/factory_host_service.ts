@@ -17,9 +17,6 @@ import {
   type FactoryPhase,
 } from "@/lib/factoryPhase";
 import { escapeXmlContent } from "../../shared/xmlEscape";
-import { computeChatTurnPayloadHash } from "@/ipc/utils/chat_turn_intent_hash";
-import { dispatchChatIntentAndWait } from "@/ipc/services/chat_actor_service";
-import type { SerializableChatTurnIntent } from "@/chat_stream/transport";
 
 export type FactoryHostDatabase = typeof productionDb;
 
@@ -206,10 +203,19 @@ export function readFactoryRun(database: FactoryHostDatabase, runId: string) {
     .where(eq(chatTurnIntents.intentId, run.intentId))
     .get();
 
-  const terminalOutcome =
-    intent?.recovery === "terminal" ? intent.terminalOutcome : null;
-  const status =
-    run.acceptance === "rejected" || intent?.acceptance === "rejected"
+  const orchestrated = run.orchestratorStatus;
+  const terminalOutcome = orchestrated
+    ? orchestrated === "completed" ||
+      orchestrated === "cancelled" ||
+      orchestrated === "errored"
+      ? orchestrated
+      : null
+    : intent?.recovery === "terminal"
+      ? intent.terminalOutcome
+      : null;
+  const status = orchestrated
+    ? orchestrated
+    : run.acceptance === "rejected" || intent?.acceptance === "rejected"
       ? "rejected"
       : terminalOutcome === "completed"
         ? "completed"
@@ -222,8 +228,15 @@ export function readFactoryRun(database: FactoryHostDatabase, runId: string) {
               ? "running"
               : "queued";
 
-  const finalMessage =
-    terminalOutcome && intent?.acceptedMessageId
+  const finalMessage = orchestrated
+    ? terminalOutcome && run.assistantMessageId
+      ? database
+          .select({ id: messages.id, content: messages.content })
+          .from(messages)
+          .where(eq(messages.id, run.assistantMessageId))
+          .get()
+      : undefined
+    : terminalOutcome && intent?.acceptedMessageId
       ? database
           .select({ id: messages.id, content: messages.content })
           .from(messages)
@@ -246,7 +259,89 @@ export function readFactoryRun(database: FactoryHostDatabase, runId: string) {
     status,
     terminalOutcome,
     finalResult: finalMessage ?? null,
+    gasCityTaskId: run.gasCityTaskId,
+    eventCursor: run.eventCursor,
   };
+}
+
+export const FACTORY_EVENT_TYPES = [
+  "text",
+  "activity",
+  "input-required",
+  "end",
+  "error",
+] as const;
+export type FactoryEventType = (typeof FACTORY_EVENT_TYPES)[number];
+
+function factoryRunId(input: {
+  appId: number;
+  phase: FactoryPhase;
+  idempotencyKey: string;
+}): string {
+  return `gas-city-run:${sha256(
+    `${input.appId}\0${input.phase}\0${input.idempotencyKey}`,
+  )}`;
+}
+
+/**
+ * Record a factory task for GasCity. This does not start the local agent.
+ * The same idempotency key and prompt returns the existing task.
+ */
+export function openOrchestratedRun(
+  database: FactoryHostDatabase,
+  input: {
+    appId: number;
+    phase: FactoryPhase;
+    prompt: string;
+    idempotencyKey: string;
+  },
+) {
+  const state = readFactoryState(database, input.appId);
+  if (!state.factoryHostManaged) {
+    throw new FactoryHostError("App is not linked to Gas City", 409);
+  }
+  const chatId = resolveFactoryPhaseChats(database, input.appId)[input.phase];
+  const runId = factoryRunId(input);
+  const promptHash = sha256(input.prompt);
+  database.transaction((tx) => {
+    const existing = tx
+      .select()
+      .from(factoryHostRuns)
+      .where(eq(factoryHostRuns.runId, runId))
+      .get();
+    if (existing && existing.promptHash !== promptHash) {
+      throw new FactoryHostError(
+        "Idempotency key was already used with a different prompt",
+        409,
+      );
+    }
+    if (existing) return;
+    tx.insert(messages)
+      .values({ chatId, role: "user", content: input.prompt })
+      .run();
+    const assistantMessageId = Number(
+      tx
+        .insert(messages)
+        .values({ chatId, role: "assistant", content: "" })
+        .run().lastInsertRowid,
+    );
+    tx.insert(factoryHostRuns)
+      .values({
+        runId,
+        appId: input.appId,
+        chatId,
+        phase: input.phase,
+        idempotencyKey: input.idempotencyKey,
+        promptHash,
+        intentId: runId,
+        acceptance: "accepted",
+        gasCityTaskId: runId,
+        orchestratorStatus: "running",
+        assistantMessageId,
+      })
+      .run();
+  });
+  return readFactoryRun(database, runId);
 }
 
 export async function startFactoryRun(
@@ -257,93 +352,145 @@ export async function startFactoryRun(
     prompt: string;
     idempotencyKey: string;
   },
-  dispatch?: typeof dispatchChatIntentAndWait,
 ) {
-  const state = readFactoryState(database, input.appId);
-  if (!state.factoryHostManaged) {
-    throw new FactoryHostError("App is not linked to Gas City", 409);
-  }
-  const chatId = resolveFactoryPhaseChats(database, input.appId)[input.phase];
-  const runId = `gas-city-run:${sha256(
-    `${input.appId}\0${input.phase}\0${input.idempotencyKey}`,
-  )}`;
-  const promptHash = sha256(input.prompt);
-  const intentId = runId;
-  const existing = database
-    .select()
-    .from(factoryHostRuns)
-    .where(eq(factoryHostRuns.runId, runId))
-    .get();
-  if (existing && existing.promptHash !== promptHash) {
-    throw new FactoryHostError(
-      "Idempotency key was already used with a different prompt",
-      409,
-    );
-  }
-  if (!existing) {
-    database
-      .insert(factoryHostRuns)
-      .values({
-        runId,
-        appId: input.appId,
-        chatId,
-        phase: input.phase,
-        idempotencyKey: input.idempotencyKey,
-        promptHash,
-        intentId,
-      })
-      .run();
-  }
+  return openOrchestratedRun(database, input);
+}
 
-  const withoutHash = {
-    schemaVersion: 1 as const,
-    intentId,
-    chatId,
-    appId: input.appId,
-    invocationRef: {
-      kind: "chat-stream" as const,
-      entityKey: chatId,
-      operationId: `${runId}:stream`,
-    },
-    prompt: input.prompt,
-    selectedComponents: [],
-    requestedChatMode: "local-agent" as const,
-  };
-  const intent: SerializableChatTurnIntent = {
-    ...withoutHash,
-    payloadHash: computeChatTurnPayloadHash(withoutHash),
-  };
-  const persistAcceptance = (acceptance: "accepted" | "rejected") => {
+function loadFactoryRun(
+  database: Pick<FactoryHostDatabase, "select">,
+  taskId: string,
+) {
+  return (
     database
-      .update(factoryHostRuns)
+      .select()
+      .from(factoryHostRuns)
+      .where(eq(factoryHostRuns.runId, taskId))
+      .get() ??
+    database
+      .select()
+      .from(factoryHostRuns)
+      .where(eq(factoryHostRuns.gasCityTaskId, taskId))
+      .get()
+  );
+}
+
+export function applyFactoryHostEvent(
+  database: FactoryHostDatabase,
+  input: {
+    appId: number;
+    phase: FactoryPhase;
+    taskId: string;
+    cursor: number;
+    type: FactoryEventType;
+    content: string;
+  },
+) {
+  const applied = database.transaction((tx) => {
+    const run = loadFactoryRun(tx, input.taskId);
+    if (!run || run.appId !== input.appId || run.phase !== input.phase) {
+      throw new FactoryHostError("Run not found", 404);
+    }
+    if (input.cursor <= run.eventCursor) {
+      return { runId: run.runId, appended: false };
+    }
+    if (input.cursor !== run.eventCursor + 1) {
+      throw new FactoryHostError("Event cursor is not the next event", 409);
+    }
+    if (
+      run.orchestratorStatus === "completed" ||
+      run.orchestratorStatus === "cancelled" ||
+      run.orchestratorStatus === "errored"
+    ) {
+      throw new FactoryHostError("Run is already finished", 409);
+    }
+    let assistantMessageId = run.assistantMessageId;
+    if (input.content.length > 0) {
+      if (assistantMessageId) {
+        const row = tx
+          .select({ content: messages.content })
+          .from(messages)
+          .where(eq(messages.id, assistantMessageId))
+          .get();
+        tx.update(messages)
+          .set({ content: `${row?.content ?? ""}${input.content}` })
+          .where(eq(messages.id, assistantMessageId))
+          .run();
+      } else {
+        assistantMessageId = Number(
+          tx
+            .insert(messages)
+            .values({
+              chatId: run.chatId,
+              role: "assistant",
+              content: input.content,
+            })
+            .run().lastInsertRowid,
+        );
+      }
+    }
+    const orchestratorStatus =
+      input.type === "end"
+        ? "completed"
+        : input.type === "error"
+          ? "errored"
+          : input.type === "input-required"
+            ? "input-required"
+            : "running";
+    tx.update(factoryHostRuns)
       .set({
-        acceptance: acceptance === "accepted" ? "accepted" : "rejected",
+        assistantMessageId,
+        orchestratorStatus,
+        eventCursor: input.cursor,
         updatedAt: new Date(),
       })
-      .where(eq(factoryHostRuns.runId, runId))
+      .where(eq(factoryHostRuns.runId, run.runId))
       .run();
+    return { runId: run.runId, appended: true };
+  });
+  return {
+    ...readFactoryRun(database, applied.runId),
+    appended: applied.appended,
   };
-  const dispatchResult = (dispatch ?? dispatchChatIntentAndWait)(intent).then(
-    (acceptance) => ({ kind: "settled" as const, acceptance }),
-    () => ({ kind: "failed" as const }),
-  );
-  const initial = await Promise.race([
-    dispatchResult,
-    new Promise<{ kind: "pending" }>((resolve) =>
-      setTimeout(() => resolve({ kind: "pending" }), 50),
-    ),
-  ]);
-  if (initial.kind === "settled") {
-    persistAcceptance(initial.acceptance);
-  } else if (initial.kind === "failed") {
-    persistAcceptance("rejected");
-    throw new FactoryHostError("Run was not admitted by the chat actor", 409);
-  } else {
-    void dispatchResult.then((result) => {
-      persistAcceptance(
-        result.kind === "settled" ? result.acceptance : "rejected",
-      );
-    });
+}
+
+export function cancelFactoryHostRun(
+  database: FactoryHostDatabase,
+  runId: string,
+) {
+  const run = loadFactoryRun(database, runId);
+  if (!run) throw new FactoryHostError("Run not found", 404);
+  if (
+    run.orchestratorStatus === "completed" ||
+    run.orchestratorStatus === "errored"
+  ) {
+    throw new FactoryHostError("Run is already finished", 409);
   }
-  return readFactoryRun(database, runId);
+  if (run.orchestratorStatus !== "cancelled") {
+    database
+      .update(factoryHostRuns)
+      .set({ orchestratorStatus: "cancelled", updatedAt: new Date() })
+      .where(eq(factoryHostRuns.runId, run.runId))
+      .run();
+  }
+  return readFactoryRun(database, run.runId);
+}
+
+export function markFactoryRunErrored(
+  database: FactoryHostDatabase,
+  runId: string,
+) {
+  const run = loadFactoryRun(database, runId);
+  if (!run) return;
+  if (
+    run.orchestratorStatus === "completed" ||
+    run.orchestratorStatus === "cancelled" ||
+    run.orchestratorStatus === "errored"
+  ) {
+    return;
+  }
+  database
+    .update(factoryHostRuns)
+    .set({ orchestratorStatus: "errored", updatedAt: new Date() })
+    .where(eq(factoryHostRuns.runId, run.runId))
+    .run();
 }

@@ -1,13 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import {
   BUILD_MODE_TOOL_NAMES,
   shouldIncludeTool,
   buildAgentToolSet,
   estimateAgentToolTokens,
   estimateBuildModeToolTokens,
+  invokeRegisteredTool,
   TOOL_DEFINITIONS,
 } from "./tool_definitions";
+import { readFileTool } from "./tools/read_file";
+import type { AgentContext } from "./tools/types";
 
 describe("Build mode tool profile", () => {
   it("is an exact, engine-free, non-sub-agent allowlist", () => {
@@ -219,5 +223,47 @@ describe("discovery versus invocation availability", () => {
     expect(
       shouldIncludeTool(tool, { ...ctx, isDyadPro: false }, {}, "invocation"),
     ).toBe(false);
+  });
+});
+
+describe("invokeRegisteredTool", () => {
+  it("asks for consent before execute", async () => {
+    const ctx = {
+      event: {} as AgentContext["event"],
+      appId: 1,
+      appPath: "/tmp/does-not-need-to-exist",
+      referencedApps: new Map(),
+      chatId: 1,
+      supabaseProjectId: null,
+      supabaseOrganizationSlug: null,
+      neonProjectId: null,
+      neonActiveBranchId: null,
+      frameworkType: null,
+      messageId: 1,
+      isSharedModulesChanged: false,
+      sharedServerModulePaths: [],
+      pendingFunctionDeploys: [],
+      isDyadPro: false,
+      todos: [],
+      dyadRequestId: "turn",
+      fileEditTracker: {},
+      testingEnabled: false,
+      testRunAttempts: new Map(),
+      onXmlStream: () => {},
+      onXmlComplete: () => {},
+      appendUserMessage: () => {},
+      onUpdateTodos: () => {},
+      requireConsent: async () => false,
+    } satisfies AgentContext;
+    const error = await invokeRegisteredTool({
+      tool: readFileTool,
+      args: { path: "missing.txt" },
+      ctx,
+    }).then(
+      () => null,
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(DyadError);
+    expect((error as DyadError).kind).toBe(DyadErrorKind.UserCancelled);
   });
 });
