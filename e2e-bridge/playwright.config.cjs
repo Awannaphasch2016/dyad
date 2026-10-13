@@ -37,5 +37,10 @@ module.exports = defineConfig({
     timeout: 75 * 1000,
     stdout: "pipe",
     stderr: "pipe",
+    // npm start detaches Electron. SIGKILL of the xvfb-run group leaves that
+    // process holding stdout, so Playwright waits on the pipe until the job
+    // is killed. SIGTERM lets the supervisor stop Electron, then SIGKILL
+    // follows if the shell is still up.
+    gracefulShutdown: { signal: "SIGTERM", timeout: 5_000 },
   },
 });

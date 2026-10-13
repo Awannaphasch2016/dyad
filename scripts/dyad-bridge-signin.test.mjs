@@ -50,5 +50,7 @@ test("opening the shared app uses the Apps link and cannot wait forever", () => 
   assert.match(spec, /chat-list-item-/);
   assert.doesNotMatch(spec, /app-details-screenshot-open-in-chat/);
   assert.match(config, /actionTimeout:\s*30_000/);
+  assert.match(config, /gracefulShutdown:\s*\{\s*signal:\s*"SIGTERM"/);
+  assert.match(config, /timeout:\s*5_000/);
   assert.match(signIn, /timeout:\s*60_000/);
 });

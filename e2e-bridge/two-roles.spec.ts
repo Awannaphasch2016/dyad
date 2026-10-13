@@ -232,9 +232,17 @@ async function showSplit(
 ): Promise<{ target: Page; other: Page; role: string; body: string }> {
   const pmForm = pm.getByTestId(`hitl-answer-${id}`);
   const devForm = dev.getByTestId(`hitl-answer-${id}`);
-  await expect(pmForm.or(devForm)).toBeVisible({ timeout: 30_000 });
-  const pmAnswers = await pmForm.isVisible().catch(() => false);
-  const devAnswers = await devForm.isVisible().catch(() => false);
+  // These forms are in two browser contexts. Locator.or() throws
+  // "Locators must belong to the same frame" across contexts.
+  const started = Date.now();
+  let pmAnswers = false;
+  let devAnswers = false;
+  while (Date.now() - started < 30_000) {
+    pmAnswers = await pmForm.isVisible().catch(() => false);
+    devAnswers = await devForm.isVisible().catch(() => false);
+    if (pmAnswers !== devAnswers) break;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
   if (pmAnswers === devAnswers) {
     throw new Error(`Question ${id} was offered to both roles or to neither.`);
   }
