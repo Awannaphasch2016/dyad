@@ -126,7 +126,7 @@ async function ensureSignedInShell(page: Page): Promise<void> {
     .then(() => true)
     .catch(() => false);
   if (appeared) return;
-  await page.goto(BRIDGE_URL);
+  await page.reload();
   await expect(button).toBeVisible({ timeout: 20_000 });
 }
 
