@@ -196,6 +196,7 @@ async function waitForBeat(
   pm: Page,
   dev: Page,
   phase: Phase,
+  answeredIds: readonly string[] = [],
 ): Promise<"summary" | { id: string }> {
   const summary = new RegExp(`${phaseLabel(phase)} summary`, "i");
   const started = Date.now();
@@ -217,7 +218,10 @@ async function waitForBeat(
       return "summary";
     }
     const id = (await openQuestionId(pm)) ?? (await openQuestionId(dev));
-    if (id) return { id };
+    // One browser can still show "Status: open" for a question that was
+    // already submitted. Treating that card as a new beat fails the split,
+    // because the answer form is already gone.
+    if (id && !answeredIds.includes(id)) return { id };
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
   throw new Error(
@@ -436,7 +440,14 @@ async function walkPhase(
   await selectPhase(dev, phase);
   let sawQuestion = false;
   for (let turn = 0; turn < 6; turn += 1) {
-    const beat = await waitForBeat(pm, dev, phase);
+    const beat = await waitForBeat(
+      pm,
+      dev,
+      phase,
+      evidence.questions
+        .filter((question) => question.phase === phase)
+        .map((question) => question.id),
+    );
     if (beat === "summary") {
       if (requireQuestion && !sawQuestion) {
         throw new Error(
