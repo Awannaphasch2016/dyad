@@ -4,7 +4,8 @@ import { timingSafeEqual } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { apps } from "@/db/schema";
+import { apps, hitlQuestions } from "@/db/schema";
+import { DyadErrorKind, isDyadError } from "@/errors/dyad_error";
 import {
   approveFactoryPhase,
   FactoryHostError,
@@ -17,7 +18,12 @@ import {
   type FactoryHostDatabase,
 } from "./factory_host_service";
 import { MAX_CHAT_PROMPT_CHARS } from "@/shared/chatAttachmentLimits";
-import type { dispatchChatIntentAndWait } from "@/ipc/services/chat_actor_service";
+import {
+  applyFactoryTurnEvent,
+  cancelFactoryTask,
+  invokeFactoryTool,
+  resumeFactoryTaskFromAnswer,
+} from "./factory_orchestrator";
 import { defaultVerifySessionToken } from "@/control_plane/access";
 import {
   answerHitlQuestion,
@@ -51,6 +57,17 @@ const QuestionBody = z.object({
 });
 const AnswerBody = z.object({
   body: z.string().min(1).max(20_000),
+});
+const ToolBody = z.object({
+  args: z.unknown(),
+  taskId: z.string().trim().min(1).max(256),
+  idempotencyKey: z.string().trim().min(1).max(256),
+});
+const EventBody = z.object({
+  taskId: z.string().trim().min(1).max(256),
+  cursor: z.number().int().positive(),
+  type: z.enum(["text", "activity", "input-required", "end", "error"]),
+  content: z.string().max(200_000),
 });
 const Phase = z.enum(["discovery", "implementation", "delivery"]);
 
@@ -91,10 +108,27 @@ function tokenMatches(header: string | undefined, expected: string): boolean {
   return supplied.length === wanted.length && timingSafeEqual(supplied, wanted);
 }
 
+function rethrowFactoryToolError(error: unknown): never {
+  if (error instanceof FactoryHostError) throw error;
+  if (isDyadError(error)) {
+    const status =
+      error.kind === DyadErrorKind.NotFound
+        ? 404
+        : error.kind === DyadErrorKind.Validation
+          ? 400
+          : error.kind === DyadErrorKind.UserCancelled ||
+              error.kind === DyadErrorKind.Precondition ||
+              error.kind === DyadErrorKind.Conflict
+            ? 409
+            : 500;
+    throw new FactoryHostError(error.message, status);
+  }
+  throw error;
+}
+
 export function createFactoryHostBridgeServer(options: {
   token: string;
   database?: FactoryHostDatabase;
-  dispatchChatIntent?: typeof dispatchChatIntentAndWait;
   resolveCaller?: (token: string) => Promise<HitlCaller | null>;
 }): Server {
   const database = options.database ?? db;
@@ -214,11 +248,26 @@ export function createFactoryHostBridgeServer(options: {
         }
         if (request.method === "POST" && questionId && answering) {
           const body = AnswerBody.parse(await readJson(request));
+          const before = database
+            .select({
+              status: hitlQuestions.status,
+              runId: hitlQuestions.runId,
+            })
+            .from(hitlQuestions)
+            .where(eq(hitlQuestions.id, questionId))
+            .get();
           const result = await answerHitlQuestion(database, {
             questionId,
             caller,
             body: body.body,
           });
+          if (before?.status === "open" && result.view.status === "answered") {
+            await resumeFactoryTaskFromAnswer({
+              taskId: before.runId,
+              questionId,
+              body: body.body,
+            });
+          }
           json(response, 200, result);
           return;
         }
@@ -230,6 +279,55 @@ export function createFactoryHostBridgeServer(options: {
       );
       if (request.method === "GET" && runMatch) {
         json(response, 200, readFactoryRun(database, runMatch[1]));
+        return;
+      }
+      const cancelMatch = url.pathname.match(
+        /^\/v1\/runs\/(gas-city-run:[a-f0-9]{64})\/cancel$/,
+      );
+      if (request.method === "POST" && cancelMatch) {
+        json(response, 200, await cancelFactoryTask(database, cancelMatch[1]));
+        return;
+      }
+      const toolMatch = url.pathname.match(
+        /^\/v1\/apps\/(\d+)\/tools\/([a-z0-9_]+)$/,
+      );
+      if (request.method === "POST" && toolMatch) {
+        const body = ToolBody.parse(await readJson(request));
+        try {
+          json(
+            response,
+            200,
+            await invokeFactoryTool({
+              database,
+              appId: Number(toolMatch[1]),
+              toolName: toolMatch[2],
+              args: body.args,
+              taskId: body.taskId,
+              idempotencyKey: body.idempotencyKey,
+            }),
+          );
+        } catch (error) {
+          rethrowFactoryToolError(error);
+        }
+        return;
+      }
+      const eventMatch = url.pathname.match(
+        /^\/v1\/apps\/(\d+)\/phases\/(discovery|implementation|delivery)\/events$/,
+      );
+      if (request.method === "POST" && eventMatch) {
+        const body = EventBody.parse(await readJson(request));
+        json(
+          response,
+          200,
+          applyFactoryTurnEvent(database, {
+            appId: Number(eventMatch[1]),
+            phase: Phase.parse(eventMatch[2]),
+            taskId: body.taskId,
+            cursor: body.cursor,
+            type: body.type,
+            content: body.content,
+          }),
+        );
         return;
       }
       const match = url.pathname.match(
@@ -297,11 +395,7 @@ export function createFactoryHostBridgeServer(options: {
         json(
           response,
           202,
-          await startFactoryRun(
-            database,
-            { appId, phase, ...body },
-            options.dispatchChatIntent,
-          ),
+          await startFactoryRun(database, { appId, phase, ...body }),
         );
         return;
       }

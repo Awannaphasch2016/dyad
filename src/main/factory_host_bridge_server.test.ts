@@ -1,27 +1,27 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createServer as createNetServer, type AddressInfo } from "node:net";
 import { request as httpRequest } from "node:http";
 import { eq } from "drizzle-orm";
-import { apps, chats, chatTurnIntents, messages } from "@/db/schema";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { apps, chats, messages } from "@/db/schema";
 import { createInMemoryTestDb, type TestDb } from "@/testing/test_db";
+import { DEFAULT_SETTINGS } from "@/main/settings";
 import {
   createFactoryHostBridgeServer,
   resolveFactoryHostBridgeHost,
   startFactoryHostBridgeFromEnv,
   stopFactoryHostBridge,
 } from "./factory_host_bridge_server";
-import type { SerializableChatTurnIntent } from "@/chat_stream/transport";
 
 describe("factory host bridge", () => {
   let database: TestDb;
   let appId: number;
   let baseUrl: string;
   let server: ReturnType<typeof createFactoryHostBridgeServer>;
-  let dispatchedIntents: SerializableChatTurnIntent[];
-
   beforeEach(async () => {
     database = createInMemoryTestDb();
-    dispatchedIntents = [];
     appId = Number(
       database.insert(apps).values({ name: "Factory", path: "factory" }).run()
         .lastInsertRowid,
@@ -32,47 +32,6 @@ describe("factory host bridge", () => {
     server = createFactoryHostBridgeServer({
       token: "correct-secret",
       database,
-      dispatchChatIntent: async (intent) => {
-        dispatchedIntents.push(intent);
-        const existing = database
-          .select()
-          .from(chatTurnIntents)
-          .where(eq(chatTurnIntents.intentId, intent.intentId))
-          .get();
-        if (existing) return "accepted";
-        const acceptedMessageId = Number(
-          database
-            .insert(messages)
-            .values({
-              chatId: intent.chatId,
-              role: "user",
-              content: intent.prompt,
-              chatTurnIntentId: intent.intentId,
-            })
-            .run().lastInsertRowid,
-        );
-        database
-          .insert(messages)
-          .values({
-            chatId: intent.chatId,
-            role: "assistant",
-            content: "actor finished",
-          })
-          .run();
-        database
-          .insert(chatTurnIntents)
-          .values({
-            intentId: intent.intentId,
-            chatId: intent.chatId,
-            payloadHash: intent.payloadHash,
-            acceptance: "message-accepted",
-            recovery: "terminal",
-            terminalOutcome: "completed",
-            acceptedMessageId,
-          })
-          .run();
-        return "accepted";
-      },
     });
     await new Promise<void>((resolve) =>
       server.listen(0, "127.0.0.1", resolve),
@@ -200,48 +159,184 @@ describe("factory host bridge", () => {
     });
   });
 
-  it("submits idempotent runs through the actor dispatcher and polls final state", async () => {
+  it("records an orchestrated run without starting the local agent", async () => {
     await request(`/v1/apps/${appId}/link`, {
       method: "PUT",
       body: { gasCityProjectId: "gc-run" },
     });
-    const path = `/v1/apps/${appId}/phases/implementation/runs`;
-    const first = await request(path, {
+    const runPath = `/v1/apps/${appId}/phases/implementation/runs`;
+    const first = await request(runPath, {
       method: "POST",
       body: { idempotencyKey: "run-1", prompt: "Build it" },
     });
     expect(first.status).toBe(202);
     expect(first.body).toMatchObject({
-      status: "completed",
-      terminalOutcome: "completed",
-      finalResult: { content: "actor finished" },
+      status: "running",
+      terminalOutcome: null,
+      finalResult: null,
+      gasCityTaskId: first.body.runId,
+      eventCursor: 0,
     });
-    expect(dispatchedIntents[0]).toMatchObject({
-      appId,
-      requestedChatMode: "local-agent",
-      prompt: "Build it",
-      invocationRef: {
-        kind: "chat-stream",
-        entityKey: first.body.chatId,
-      },
-    });
-    expect(dispatchedIntents[0]).not.toHaveProperty("owner");
     const runId = first.body.runId as string;
+    expect(
+      database
+        .select()
+        .from(messages)
+        .all()
+        .map((row) => row.content),
+    ).toEqual(["Build it", ""]);
 
-    const replay = await request(path, {
+    const replay = await request(runPath, {
       method: "POST",
       body: { idempotencyKey: "run-1", prompt: "Build it" },
     });
-    expect(replay.body).toMatchObject({ runId, status: "completed" });
+    expect(replay.body).toMatchObject({ runId, status: "running" });
+    expect(database.select().from(messages).all()).toHaveLength(2);
 
     const polled = await request(`/v1/runs/${runId}`);
-    expect(polled.body).toMatchObject({ runId, status: "completed" });
+    expect(polled.body).toMatchObject({ runId, status: "running" });
 
-    const conflict = await request(path, {
+    const conflict = await request(runPath, {
       method: "POST",
       body: { idempotencyKey: "run-1", prompt: "Different prompt" },
     });
     expect(conflict.status).toBe(409);
+  });
+
+  it("runs an allowlisted tool through the wrapper and rejects the sandbox", async () => {
+    const appDir = fs.mkdtempSync(path.join(os.tmpdir(), "factory-tool-"));
+    fs.writeFileSync(path.join(appDir, "note.txt"), "from-disk");
+    database
+      .update(apps)
+      .set({ path: appDir, factoryHostManaged: true })
+      .where(eq(apps.id, appId))
+      .run();
+    const opened = await request(
+      `/v1/apps/${appId}/phases/implementation/runs`,
+      {
+        method: "POST",
+        body: { idempotencyKey: "tool-run", prompt: "Read the note" },
+      },
+    );
+    const taskId = opened.body.runId as string;
+    const read = await request(`/v1/apps/${appId}/tools/read_file`, {
+      method: "POST",
+      body: {
+        taskId,
+        idempotencyKey: "read-1",
+        args: { path: "note.txt" },
+      },
+    });
+    expect(read.status).toBe(200);
+    expect(read.body.result).toContain("from-disk");
+
+    fs.writeFileSync(path.join(appDir, "note.txt"), "changed");
+    const replay = await request(`/v1/apps/${appId}/tools/read_file`, {
+      method: "POST",
+      body: {
+        taskId,
+        idempotencyKey: "read-1",
+        args: { path: "note.txt" },
+      },
+    });
+    expect(replay.body.result).toContain("from-disk");
+    expect(replay.body.result).not.toContain("changed");
+
+    const rejected = await request(
+      `/v1/apps/${appId}/tools/execute_sandbox_script`,
+      {
+        method: "POST",
+        body: { taskId, idempotencyKey: "sandbox", args: {} },
+      },
+    );
+    expect(rejected.status).toBe(403);
+    fs.rmSync(appDir, { recursive: true, force: true });
+  });
+
+  it("does not write a file when consent is not already granted", async () => {
+    const appDir = fs.mkdtempSync(path.join(os.tmpdir(), "factory-consent-"));
+    const target = path.join(appDir, "keep.txt");
+    fs.writeFileSync(target, "original");
+    database
+      .update(apps)
+      .set({ path: appDir, factoryHostManaged: true })
+      .where(eq(apps.id, appId))
+      .run();
+    const opened = await request(
+      `/v1/apps/${appId}/phases/implementation/runs`,
+      {
+        method: "POST",
+        body: { idempotencyKey: "consent-run", prompt: "Edit" },
+      },
+    );
+    const settings = vi
+      .spyOn(await import("@/main/settings"), "readSettings")
+      .mockReturnValue({
+        ...DEFAULT_SETTINGS,
+        agentToolConsents: { write_file: "ask" },
+      });
+    try {
+      const denied = await request(`/v1/apps/${appId}/tools/write_file`, {
+        method: "POST",
+        body: {
+          taskId: opened.body.runId,
+          idempotencyKey: "write-1",
+          args: { path: "keep.txt", content: "replaced" },
+        },
+      });
+      expect(denied.status).toBe(409);
+      expect(fs.readFileSync(target, "utf8")).toBe("original");
+    } finally {
+      settings.mockRestore();
+      fs.rmSync(appDir, { recursive: true, force: true });
+    }
+  });
+
+  it("replays an event cursor without duplicating the transcript and cancels the task", async () => {
+    await request(`/v1/apps/${appId}/link`, {
+      method: "PUT",
+      body: { gasCityProjectId: "gc-events" },
+    });
+    const opened = await request(`/v1/apps/${appId}/phases/discovery/runs`, {
+      method: "POST",
+      body: { idempotencyKey: "event-run", prompt: "Discover" },
+    });
+    const taskId = opened.body.runId as string;
+    const eventPath = `/v1/apps/${appId}/phases/discovery/events`;
+    const first = await request(eventPath, {
+      method: "POST",
+      body: { taskId, cursor: 1, type: "text", content: "Hello" },
+    });
+    expect(first.body).toMatchObject({
+      appended: true,
+      eventCursor: 1,
+      status: "running",
+    });
+    const replay = await request(eventPath, {
+      method: "POST",
+      body: { taskId, cursor: 1, type: "text", content: "Hello again" },
+    });
+    expect(replay.body).toMatchObject({ appended: false, eventCursor: 1 });
+    const gap = await request(eventPath, {
+      method: "POST",
+      body: { taskId, cursor: 3, type: "text", content: "skipped" },
+    });
+    expect(gap.status).toBe(409);
+    const assistant = database
+      .select()
+      .from(messages)
+      .all()
+      .find((row) => row.role === "assistant");
+    expect(assistant?.content).toBe("Hello");
+
+    const cancelled = await request(`/v1/runs/${taskId}/cancel`, {
+      method: "POST",
+    });
+    expect(cancelled.status).toBe(200);
+    expect(cancelled.body).toMatchObject({
+      status: "cancelled",
+      terminalOutcome: "cancelled",
+    });
   });
 });
 
