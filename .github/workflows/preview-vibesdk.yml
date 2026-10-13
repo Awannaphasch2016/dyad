@@ -137,7 +137,7 @@ jobs:
 
   hitl:
     needs: deploy
-    if: needs.deploy.result == 'success' && github.event.pull_request.head.ref == 'cursor/vibesdk-named-turns-0539'
+    if: needs.deploy.result == 'success' && github.event.pull_request.head.ref == 'cursor/vibesdk-participant-avatars-0539'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     permissions:

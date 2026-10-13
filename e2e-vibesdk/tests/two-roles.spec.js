@@ -178,6 +178,12 @@ test("the project manager starts the organization app and each role answers the 
     await expect(dev.getByTestId("org-turn").first()).toHaveText(pmName, {
       timeout: 30_000,
     });
+    await expect(
+      pm.getByTestId("org-human-turn").first().getByTestId("org-avatar-pm"),
+    ).toBeVisible();
+    await expect(
+      dev.getByTestId("org-human-turn").first().getByTestId("org-avatar-pm"),
+    ).toBeVisible();
     await shot(pm, "project-manager-named-turn");
     await shot(dev, "developer-sees-named-turn");
 
@@ -199,9 +205,39 @@ test("the project manager starts the organization app and each role answers the 
         continue;
       }
       quietSince = 0;
+      const speakerName = speaker === pm ? pmName : devName;
+      const avatar = speaker === pm ? "org-avatar-pm" : "org-avatar-dev";
       await expect(listener.getByText(asked, { exact: false })).toHaveCount(0);
-      await expect(listener.getByTestId("org-waiting")).toBeVisible();
-      await expect(listener.getByLabel("Locked")).toBeVisible();
+      await expect(listener.getByTestId("org-question")).toHaveCount(0);
+      await expect(listener.getByTestId("org-builder-question")).toHaveCount(0);
+      await expect(listener.getByTestId("org-pending")).toBeVisible();
+      await expect(
+        listener.getByTestId("org-pending").getByTestId("org-turn"),
+      ).toHaveText(speakerName);
+      await expect(
+        listener.getByTestId("org-pending").getByTestId(avatar),
+      ).toBeVisible();
+      await expect(listener.getByTestId("org-response-required")).toBeVisible();
+      await expect(speaker.getByTestId("org-builder-question")).toContainText(
+        "Orange",
+      );
+      await expect(speaker.getByTestId("org-question")).toHaveText(asked);
+      await expect(speaker.getByTestId("org-pending")).toBeVisible();
+      await expect(
+        speaker.getByTestId("org-pending").getByTestId(avatar),
+      ).toBeVisible();
+      await expect(
+        speaker.getByText("Waiting on the Project Manager.", { exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        listener.getByText("Waiting on the Project Manager.", { exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        speaker.getByText("Waiting on the Developer.", { exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        listener.getByText("Waiting on the Developer.", { exact: true }),
+      ).toHaveCount(0);
       await expect(listener.locator("textarea").last()).toBeDisabled();
       await expect(listener.getByText("Reply in the prompt box.")).toHaveCount(
         0,
@@ -215,7 +251,6 @@ test("the project manager starts the organization app and each role answers the 
       await box.press("Enter");
       answered.add(asked);
       const preview = reply.slice(0, 48);
-      const speakerName = speaker === pm ? pmName : devName;
       const heard = listener
         .getByTestId("org-human-turn")
         .filter({ hasText: preview });
@@ -223,6 +258,15 @@ test("the project manager starts the organization app and each role answers the 
       await expect(heard.first().getByTestId("org-turn")).toHaveText(
         speakerName,
       );
+      await expect(heard.first().getByTestId(avatar)).toBeVisible();
+      await expect(listener.getByTestId("org-pending")).toHaveCount(0);
+      await expect(speaker.getByTestId("org-pending")).toHaveCount(0);
+      await expect(
+        speaker.getByText("Waiting on the Project Manager.", { exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        listener.getByText("Waiting on the Project Manager.", { exact: true }),
+      ).toHaveCount(0);
       await shot(speaker, `answered-${answered.size}`);
       await shot(listener, `heard-${answered.size}`);
     }
