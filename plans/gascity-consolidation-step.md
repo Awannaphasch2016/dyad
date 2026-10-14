@@ -124,7 +124,35 @@ This branch’s Dyad loop is `dyad-bridge-signin.yml` running `e2e-bridge/two-ro
 
 The walker clicks the window. It does not sling. The recorded Northwind script stays out of the shared runner. A click unblocks a bead only after Submit answer and Approve write that bead.
 
-Operator AXI is the remote executor. A Cursor cloud agent looks up an `ops-axi` command when the work runs on Doppler, ECS, EC2, Devbox, or this walk. It does not perform that call from the agent VM. Grouping every workflow into that catalog is the next slice on PR #92, after this walk decision.
+Operator AXI is the remote executor. A Cursor cloud agent looks up an `ops-axi` command when the work runs on Doppler, ECS, EC2, Devbox, or this walk. It does not perform that call from the agent VM.
+
+## Finished catalog
+
+A finished `packages/ops-axi` has these commands. The first six exist on PR #92. The rest are the ones that slice adds. CI, review bots, the CLA, stale-PR closers, and `release.yml` stay automatic. They are not commands.
+
+| Use case                                                    | Command                     | Workflow                                                |
+| ----------------------------------------------------------- | --------------------------- | ------------------------------------------------------- |
+| Prove Actions can reach the EC2 host and its Doppler tokens | `ops-axi ec2 check`         | `ec2-access-check.yml`                                  |
+| Roll the Gas City host to a commit                          | `ops-axi rollout <sha>`     | `gascity-rollout.yml`                                   |
+| Report Doppler project `dyad` against the manifest          | `ops-axi doppler status`    | `doppler-organize.yml` with `command=status`            |
+| Copy manifest names into the `ci` and `prd` configs         | `ops-axi doppler phase1`    | `doppler-organize.yml` with `command=phase1`            |
+| Check that copy                                             | `ops-axi doppler verify`    | `doppler-organize.yml` with `command=verify`            |
+| Store the formula preview role ARN                          | `ops-axi formula role`      | `preview-formula-role.yml`                              |
+| Require that ARN present                                    | `ops-axi formula verify`    | `ec2-access-check.yml`                                  |
+| Deploy the formula pages to ECS                             | `ops-axi formula deploy`    | `preview-formula.yml`                                   |
+| Publish the Dyad image and update the shared preview        | `ops-axi preview image`     | `preview-image.yml`                                     |
+| Open or update the Devbox preview for a pull request        | `ops-axi preview up <pr>`   | Adds the `preview` label, which starts `preview.yml`    |
+| Remove that preview                                         | `ops-axi preview down <pr>` | Removes the `preview` label, which starts `preview.yml` |
+| Prove GitHub can run a preview on the Devbox                | `ops-axi preview exec`      | `preview-exec.yml`                                      |
+| Start preview containers after cloudflared stops            | `ops-axi preview wake`      | `preview-wake.yml`                                      |
+| Seal the Devbox controller key                              | `ops-axi preview secrets`   | `preview-secrets.yml`                                   |
+| Publish the toolbox image                                   | `ops-axi toolbox image`     | `axi-toolbox-image.yml`                                 |
+| Drive the Dyad window through one config                    | `ops-axi walk dyad`         | `ui-walk.yml` with `e2e-walk/configs/dyad.json`         |
+| Drive the Vibe window through the same runner               | `ops-axi walk vibe`         | `ui-walk.yml` with `e2e-walk/configs/vibesdk.json`      |
+| Prove the Cursor key in `dyad` / `preview`                  | `ops-axi cursor probe`      | `hitl-cursor-probe.yml`                                 |
+| Run the Cursor factory poller once                          | `ops-axi cursor factory`    | `hitl-cursor-factory.yml`                               |
+
+`preview up` and `preview down` label the pull request. `preview.yml` has no `workflow_dispatch`. `ui-walk.yml` is the file PR #162 adds. Until that file exists, `ops-axi walk dyad` has no workflow to start. `dyad-bridge-signin.yml` is the recorded Northwind walk and is not the finished command.
 
 ## Walk, before the sling
 
