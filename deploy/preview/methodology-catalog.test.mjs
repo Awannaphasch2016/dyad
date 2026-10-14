@@ -112,6 +112,10 @@ test("a stored pack changes the step text and the file gate", () => {
   assert.equal(nextStepId(speckit, "requirements", "turn"), "clarify");
   assert.equal(nextStepId(speckit, "implement", "turn"), "implement");
   assert.equal(nextStepId(speckit, "implement", "deploy"), "review");
+  assert.match(
+    stepPrompt(speckit, "implement"),
+    /Write the shop website pages from tasks\.md before calling deploy_space/,
+  );
   assert.equal(nextStepId(gsd, "verify-work", "answer"), "approve-ship");
 });
 
@@ -140,8 +144,10 @@ test("the builder prompt receives the current step and does not contain a pack p
   assert.match(patched, /handleDeploySpaceOutput/);
   assert.match(
     patched,
-    /advanceMethodology\(this\.env, this\.getAgentId\(\), 'deploy'\)/,
+    /if \(this\.shopPagesWritten\) await advanceMethodology\(this\.env, this\.getAgentId\(\), 'deploy'\)/,
   );
+  assert.match(patched, /noteShopPage/);
+  assert.match(patched, /beadTurns >= 8/);
   assert.match(patched, /publishOrganizationQuestion/);
   assert.equal(patched.includes("do NOT start writing files"), false);
   assert.equal(patched.includes("do NOT end after only writing files"), false);

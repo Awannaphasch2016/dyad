@@ -630,6 +630,7 @@ test("the Vibe SDK workflow stays off the Dyad devbox", () => {
     "utf8",
   );
   assert.match(walk, /iframe\[title="App Preview"\]/);
+  assert.match(walk, /shopReady/);
   assert.equal(walk.includes('fill("Build a short hours page'), false);
   assert.equal(walk.includes('name: "New build"'), false);
   assert.match(workflow, /vibesdk-preview-pr-/);

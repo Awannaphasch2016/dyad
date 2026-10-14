@@ -313,6 +313,33 @@ test("the create request owes the run before any browser socket", () => {
     ),
     false,
   );
+  const deployed = patchConversationHandler(
+    [
+      "    createAIMessage,",
+      "            case 'conversation_response': {",
+      "                // Use concrete conversationId when available; otherwise use placeholder id",
+      "                let conversationId = message.conversationId ?? 'conversation_response';",
+      "                    setIsInitialStateRestored(true);",
+      "                    ",
+      "                    if (state.shouldBeGenerating && !isGenerating) {",
+      "                        logger.debug('🔄 Reconnected with shouldBeGenerating=true, auto-resuming generation');",
+      "                        setIsGenerating(true); ",
+      "                        updateStage('code', { status: 'active' });",
+      "                        sendWebSocketMessage(websocket, 'generate_all');",
+      "                    }",
+      "                }",
+      "                break;",
+      "            case 'deployment_completed': {",
+      "                setIsPreviewDeploying(false);",
+      "                const finalPreviewURL = getPreviewUrl(message.previewURL, message.tunnelURL);",
+      "                setPreviewUrl(finalPreviewURL);",
+      "                break;",
+      "            }",
+    ].join("\n"),
+  );
+  assert.match(deployed, /setShouldRefreshPreview\(true\)/);
+  assert.match(deployed, /setShouldRefreshPreview\(false\)/);
+  assert.equal(handler.includes("setShouldRefreshPreview"), false);
 });
 
 test("opening another app clears that screen before the next poll", () => {

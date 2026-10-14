@@ -206,13 +206,28 @@ test("the project manager starts the organization app and each role answers the 
 
     const deadline = Date.now() + 18 * 60 * 1000;
     const previewFrame = (page) => page.locator('iframe[title="App Preview"]');
-    while (Date.now() < deadline) {
-      if (
-        (await previewFrame(pm).count()) > 0 &&
-        (await previewFrame(dev).count()) > 0
-      ) {
-        break;
+    async function shopText(page) {
+      if ((await previewFrame(page).count()) === 0) return "";
+      try {
+        return (
+          await page
+            .frameLocator('iframe[title="App Preview"]')
+            .locator("body")
+            .innerText({ timeout: 2000 })
+        )
+          .replace(/\s+/g, " ")
+          .trim();
+      } catch {
+        return "";
       }
+    }
+    function shopReady(text) {
+      return text.length > 80 && !/edit src\/App\.tsx/i.test(text);
+    }
+    while (Date.now() < deadline) {
+      const pmShop = await shopText(pm);
+      const devShop = await shopText(dev);
+      if (shopReady(pmShop) && shopReady(devShop)) break;
       for (const page of [pm, dev]) {
         const previewButton = page.getByTitle("Preview");
         if ((await previewButton.count()) > 0)
@@ -301,8 +316,8 @@ test("the project manager starts the organization app and each role answers the 
 
     expect(answered.size).toBeGreaterThan(0);
     expect(firstQuestion).toBeTruthy();
-    await expect(previewFrame(pm)).toBeVisible();
-    await expect(previewFrame(dev)).toBeVisible();
+    expect(shopReady(await shopText(pm))).toBe(true);
+    expect(shopReady(await shopText(dev))).toBe(true);
     expect(new URL(pm.url()).pathname).toBe(appUrl.pathname);
     expect(new URL(dev.url()).pathname).toBe(appUrl.pathname);
     for (const page of [pm, dev]) {

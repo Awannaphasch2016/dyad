@@ -83,7 +83,7 @@ export const METHODOLOGY_CATALOG = [
       ),
       implement(
         "implement",
-        "Implement tasks.md. You may write the product files, call deploy_space, then get_browser_console_logs.",
+        "Write the shop website pages from tasks.md before calling deploy_space. The preview must show those pages. Then call get_browser_console_logs.",
       ),
       write(
         "review",

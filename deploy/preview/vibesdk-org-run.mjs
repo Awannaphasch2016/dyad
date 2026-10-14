@@ -222,7 +222,7 @@ import { advanceMethodology, methodologyStepId, methodologyStepPrompt, methodolo
     )
     .replace(
       field,
-      `${field}\n\tprivate organizationHold = false;\n\tprivate methodologyStepAtStart = '';\n`,
+      `${field}\n\tprivate organizationHold = false;\n\tprivate methodologyStepAtStart = '';\n\tprivate shopPagesWritten = false;\n`,
     )
     .replace(
       prompt,
@@ -324,7 +324,7 @@ import { advanceMethodology, methodologyStepId, methodologyStepPrompt, methodolo
     )
     .replace(
       "await stub.chat(text, forwarder);",
-      "let beadTurns = 0;\n\t\t\tdo {\n\t\t\t\tthis.methodologyStepAtStart = await methodologyStepId(this.env, this.getAgentId());\n\t\t\t\tawait this.configureThinkAgent();\n\t\t\t\tawait stub.chat(beadTurns === 0 ? text : 'Continue the current step.', forwarder);\n\t\t\t\tbeadTurns += 1;\n\t\t\t\tif (this.organizationHold || beadTurns >= 4) break;\n\t\t\t\tconst stepNow = await methodologyStepId(this.env, this.getAgentId());\n\t\t\t\tif (stepNow === this.methodologyStepAtStart) await advanceMethodology(this.env, this.getAgentId(), 'turn');\n\t\t\t} while (beadTurns < 4);",
+      "let beadTurns = 0;\n\t\t\tdo {\n\t\t\t\tthis.methodologyStepAtStart = await methodologyStepId(this.env, this.getAgentId());\n\t\t\t\tawait this.configureThinkAgent();\n\t\t\t\tawait stub.chat(beadTurns === 0 ? text : 'Continue the current step.', forwarder);\n\t\t\t\tbeadTurns += 1;\n\t\t\t\tif (this.organizationHold || beadTurns >= 8) break;\n\t\t\t\tconst stepNow = await methodologyStepId(this.env, this.getAgentId());\n\t\t\t\tif (stepNow === this.methodologyStepAtStart) await advanceMethodology(this.env, this.getAgentId(), 'turn');\n\t\t\t} while (beadTurns < 8);",
     )
     .replace(
       `		try {
@@ -336,7 +336,7 @@ import { advanceMethodology, methodologyStepId, methodologyStepPrompt, methodolo
       `		try {
 			const url = await this.getBrowserPreviewURL();
 			this.broadcast(WebSocketMessageResponses.DEPLOYMENT_COMPLETED, { previewURL: url });
-			await advanceMethodology(this.env, this.getAgentId(), 'deploy');
+			if (this.shopPagesWritten) await advanceMethodology(this.env, this.getAgentId(), 'deploy');
 		} catch (e) {
 			this.logger.warn('Failed to surface preview after deploy_space', e);
 		}`,
@@ -351,6 +351,22 @@ import { advanceMethodology, methodologyStepId, methodologyStepPrompt, methodolo
 			'3. If the deploy reports build errors or the console shows errors, fix the code and repeat from step 1 until the deploy succeeds and the console is clean.',
 			'A building turn should finish with a successful \`deploy_space\` and a clean \`get_browser_console_logs\` check.',`,
       "'After deploy_space succeeds, call get_browser_console_logs and fix errors the console shows.',",
+    )
+    .replace(
+      "await this.maybeMirrorFile(toolName, args, seenWrittenFiles);",
+      "await this.maybeMirrorFile(toolName, args, seenWrittenFiles);\n\t\t\t\t\tthis.noteShopPage(args);",
+    )
+    .replace(
+      "\t/**\n\t * The model deployed the SpaceDO itself via the `deploy_space` tool.",
+      `\tprivate noteShopPage(args: Record<string, unknown>) {
+\t\tconst path = ['path', 'filePath', 'file']
+\t\t\t.map((key) => args[key])
+\t\t\t.find((value): value is string => typeof value === 'string');
+\t\tif (path && /\\.(tsx|jsx|html|vue)$/i.test(path)) this.shopPagesWritten = true;
+\t}
+
+\t/**
+\t * The model deployed the SpaceDO itself via the \`deploy_space\` tool.`,
     );
 }
 
@@ -1393,7 +1409,7 @@ export function patchConversationHandler(source) {
   requireAnchor(source, importAnchor, "conversation import");
   requireAnchor(source, caseAnchor, "conversation response");
   requireAnchor(source, resumeAnchor, "conversation resume");
-  return source
+  const refreshed = source
     .replace(importAnchor, "    createAIMessage,\n    createUserMessage,\n")
     .replace(
       resumeAnchor,
@@ -1425,6 +1441,26 @@ export function patchConversationHandler(source) {
 
 `,
     );
+  const deployDone = `            case 'deployment_completed': {
+                setIsPreviewDeploying(false);
+                const finalPreviewURL = getPreviewUrl(message.previewURL, message.tunnelURL);
+                setPreviewUrl(finalPreviewURL);
+                break;
+            }`;
+  if (!refreshed.includes(deployDone)) return refreshed;
+  return refreshed.replace(
+    deployDone,
+    `            case 'deployment_completed': {
+                setIsPreviewDeploying(false);
+                const finalPreviewURL = getPreviewUrl(message.previewURL, message.tunnelURL);
+                setPreviewUrl(finalPreviewURL);
+                setTimeout(() => {
+                    setShouldRefreshPreview(true);
+                    setTimeout(() => setShouldRefreshPreview(false), 100);
+                }, 500);
+                break;
+            }`,
+  );
 }
 
 export function patchUseChat(source) {
