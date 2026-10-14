@@ -1,6 +1,6 @@
 # Gas City methodology formulas
 
-`openspec/` and `speckit/` are Gas City packs. Each one extends `build-base` and imports `../gascity` when these directories sit next to the `gascity` pack in a packs repository.
+`openspec/`, `speckit/`, and `gsd/` are Gas City packs. Each one extends `build-base` and imports `../gascity` when these directories sit next to the `gascity` pack in a packs repository.
 
 They were added here because this agent cannot push to `Awannaphasch2016/gascity-packs`. They are not a registry release, and they are not in the packs compatibility suite.
 

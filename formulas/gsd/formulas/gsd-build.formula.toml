@@ -1,0 +1,280 @@
+description = """
+GSD phase loop on the Gas City build-base contract.
+
+Source loop, from gsd-build/get-shit-done:
+discuss-phase, plan-phase, execute-phase, verify-work, ship.
+
+Artifacts land under artifact_root, which should be the .planning directory:
+- PROJECT.md, REQUIREMENTS.md, ROADMAP.md
+- phases/<phase>/CONTEXT.md and DISCUSSION-LOG.md
+- RESEARCH.md from four parallel lanes
+- one PLAN.md per execution wave
+- VERIFICATION.md from the goal-backward check
+- UAT.md from the developer
+
+Inserted steps:
+- discuss after requirements (questions; planning has not started)
+- research after discuss (fan-out, then synthesis)
+- plan-check after plan (checker, up to three revisions, no person)
+- verify-work after review (developer acceptance)
+- approve-ship after verify-work (project manager, before publish)
+
+GSD's --auto flag selects defaults and skips questions. This formula does not.
+interaction_mode does not skip suspend or gate steps.
+
+gc.hitl.kind and gc.hitl.role are metadata for the host. The formula schedules
+gc.run-operator and does not check an organization membership.
+"""
+formula = "gsd-build"
+version = 1
+contract = "graph.v2"
+extends = ["build-base"]
+target_required = true
+
+[catalog]
+name = "gsd-build"
+description = "Run build-base as a GSD phase: discuss, research fan-out, plans, wave execute, goal-backward verify, user acceptance, then ship."
+
+[metadata.gc.methodology]
+allowed_drain_policies = ["separate", "same-session"]
+implementation_strategy = "drain"
+interaction_modes = ["interactive", "autonomous", "headless"]
+review_modes = ["report", "agent", "interactive"]
+
+[vars]
+[vars.implementation_target]
+description = "Worker that executes one GSD plan in a fresh session."
+default = "gc.implementation-worker"
+
+[vars.planning_formula]
+description = "Planning formula. The GSD sequence lives on gsd-build."
+default = "planning-base"
+
+[vars.decomposition_formula]
+description = "Decomposition formula. Waves are written by the decompose step of gsd-build."
+default = "decomposition-base"
+
+[vars.implementation_formula]
+description = "Per-plan drain formula."
+default = "do-work"
+
+[vars.implementation_item_formula]
+description = "Shared-session per-plan formula."
+default = "do-work-item"
+
+[vars.code_review_formula]
+description = "Review formula used when a host delegates review."
+default = "review"
+
+[vars.review_fix_formula]
+description = "Fix loop used when verification or acceptance finds a gap."
+default = "fix-loop-base"
+
+[[steps]]
+id = "requirements"
+title = "Write the GSD project frame"
+needs = ["prepare"]
+metadata = { "gc.run_target" = "gc.requirements-planner", "gc.build.artifact_schema" = "gc.build.requirements.v1", "gc.build.artifact_path_keys" = "gc.build.requirements_path,gc.var.requirements_path" }
+description = """
+Write PROJECT.md, REQUIREMENTS.md, and ROADMAP.md under artifact_root.
+ROADMAP.md names the phases. REQUIREMENTS.md gives each requirement an id.
+Do not discuss gray areas and do not write plans in this step.
+"""
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+
+[[steps]]
+id = "discuss"
+title = "Discuss the phase"
+needs = ["requirements"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.hitl.kind" = "suspend", "gc.hitl.role" = "project-manager" }
+description = """
+This step is a suspend. Read the current phase from ROADMAP.md.
+Ask the project manager about gray areas: libraries, patterns, and testing.
+Write the answers to CONTEXT.md and append each question and answer to
+DISCUSSION-LOG.md. Do not invent an answer. Do not start research.
+GSD's --auto flag does not apply here.
+"""
+
+[[steps]]
+id = "research"
+title = "Research the phase in four lanes"
+needs = ["discuss"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+expand = "gsd-research"
+description = """
+Fan out stack, features, architecture, and pitfalls. Synthesize RESEARCH.md
+only after all four lanes return. Do not collapse the four lanes into one prompt.
+"""
+
+[[steps]]
+id = "plan"
+title = "Write wave plans"
+needs = ["research"]
+metadata = { "gc.run_target" = "gc.design-author", "gc.build.artifact_schema" = "gc.build.plan.v1", "gc.build.artifact_path_keys" = "gc.build.plan_path,gc.var.plan_path" }
+description = """
+Read PROJECT.md, REQUIREMENTS.md, CONTEXT.md, and RESEARCH.md.
+Write one PLAN.md per wave. Each plan names its tasks, the requirement ids it
+covers, and the plans it depends on. A plan must be small enough for one fresh
+worker session. Do not execute the plans.
+"""
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+
+[[steps]]
+id = "plan-check"
+title = "Check the plans"
+needs = ["plan"]
+metadata = { "gc.run_target" = "gc.review-synthesizer" }
+description = """
+This is a completion check, not an approval.
+Review the plans for requirement coverage, task size, dependency order, and
+context fit. Write VALIDATION.md with PASS or FAIL.
+On FAIL, send the plans back to the plan step. Stop after three failures.
+A PASS does not accept the phase.
+"""
+
+[[steps]]
+id = "plan-review"
+title = "Project manager accepts the plans"
+needs = ["plan-check"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.hitl.kind" = "gate", "gc.hitl.role" = "project-manager" }
+description = """
+This step is a gate. It runs only after VALIDATION.md says PASS.
+The project manager approves or rejects the plans.
+Reject returns to discuss with the feedback. Approve opens decompose.
+The operator must not approve. GSD's own checker is not this gate.
+"""
+
+[[steps]]
+id = "decompose"
+title = "Create one bead per plan"
+needs = ["plan-review"]
+metadata = { "gc.run_target" = "gc.task-decomposer", "gc.build.artifact_schema" = "gc.build.decomposition.v1", "gc.build.artifact_path_keys" = "gc.build.decomposition_path,gc.var.decomposition_path" }
+description = """
+Create one bead per PLAN.md. Depend each bead on the plans it lists.
+Plans in the same wave have no dependency on each other and may run together.
+The next wave stays blocked until the previous wave's beads are done.
+"""
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+
+[[steps]]
+id = "implement"
+title = "Execute ready waves in separate sessions"
+needs = ["decompose"]
+condition = "{{drain_policy}} == separate"
+metadata = { "gc.run_target" = "{{implementation_target}}" }
+description = """
+Drain ready beads in separate sessions. Each worker reads only its PLAN.md,
+commits the task, and writes SUMMARY.md.
+A package tagged [ASSUMED] or [SUS], or a failed install, suspends that bead
+for the developer. Do not substitute another package name.
+A suspend does not cancel the other beads in the wave.
+"""
+
+[steps.drain]
+context = "separate"
+formula = "do-work"
+member_access = "exclusive"
+
+[[steps]]
+id = "implement-same-session"
+title = "Execute waves in one shared session"
+needs = ["decompose"]
+condition = "{{drain_policy}} == same-session"
+metadata = { "gc.run_target" = "{{implementation_target}}" }
+description = """
+Execute ready plans one at a time in one session. Still honor wave dependencies.
+A package checkpoint suspends for the developer.
+"""
+
+[steps.drain]
+context = "shared"
+formula = "do-work-item"
+on_item_failure = "skip_remaining"
+member_access = "exclusive"
+
+[steps.drain.item]
+single_lane = true
+
+[[steps]]
+id = "review"
+title = "Verify the phase goal-backward"
+needs = ["summarize-implementation"]
+metadata = { "gc.run_target" = "gc.implementation-reviewer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path" }
+description = """
+Read the requirement ids and the SUMMARY.md files. Run the tests named by the plans.
+Write VERIFICATION.md with PASS or FAIL and the evidence.
+FAIL generates fix plans and returns to the implement drain.
+This is a completion check. It does not accept the phase.
+"""
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+
+[[steps]]
+id = "verify-work"
+title = "Developer accepts the phase"
+needs = ["review"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.hitl.kind" = "gate", "gc.hitl.role" = "developer" }
+description = """
+This step is a gate. It runs only after VERIFICATION.md says PASS.
+Walk the developer through the phase goals. Write UAT.md.
+Reject returns to the implement drain with fix plans. Approve opens the ship gate.
+The operator must not mark the phase accepted.
+"""
+
+[[steps]]
+id = "approve-ship"
+title = "Project manager accepts the ship"
+needs = ["verify-work"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.hitl.kind" = "gate", "gc.hitl.role" = "project-manager" }
+description = """
+This step is a gate. It runs only after UAT.md records the developer acceptance.
+The project manager approves or rejects the ship.
+Reject returns to verify-work with the feedback. Approve opens finalize.
+The operator must not approve. GSD's ship command is the inherited publish step,
+and it stays closed until this gate passes.
+"""
+
+[[steps]]
+id = "finalize"
+title = "Finalize the GSD phase"
+needs = ["approve-ship"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path" }
+description = """
+Write the final report from ROADMAP.md, CONTEXT.md, VERIFICATION.md, and UAT.md.
+Update STATE.md. Publishing stays on the inherited publish step.
+"""
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
