@@ -14,6 +14,7 @@ import {
   isFactoryOrchestratedChat,
   runFactoryOrchestratedTurn,
   applyFactoryTurnEvent,
+  submitFactoryGateVerdict,
 } from "./factory_orchestrator";
 
 describe("factory orchestrator", () => {
@@ -165,6 +166,68 @@ describe("factory orchestrator", () => {
     ]);
     database.$client.close();
     fs.rmSync(appDir, { recursive: true, force: true });
+  });
+
+  it("posts approve for the open gate", async () => {
+    const database = createInMemoryTestDb();
+    const appDir = fs.mkdtempSync(path.join(os.tmpdir(), "factory-verdict-"));
+    const appId = Number(
+      database.insert(apps).values({ name: "Factory", path: appDir }).run()
+        .lastInsertRowid,
+    );
+    for (const title of ["Discovery", "Implementation", "Delivery"]) {
+      database.insert(chats).values({ appId, title }).run();
+    }
+    linkFactoryApp(database, appId, "gc-verdict");
+    const opened = openOrchestratedRun(database, {
+      appId,
+      phase: "discovery",
+      prompt: "Build the site",
+      idempotencyKey: FACTORY_FORMULA,
+      formula: FACTORY_FORMULA,
+    });
+    applyFactoryTurnEvent(database, {
+      appId,
+      phase: "discovery",
+      taskId: opened.runId,
+      cursor: 1,
+      type: "input-required",
+      content: "Waiting for Discovery approval.",
+      stepId: "accept-discovery",
+    });
+    const previousUrl = process.env.GAS_CITY_ORCHESTRATOR_URL;
+    const previousFetch = globalThis.fetch;
+    const bodies: unknown[] = [];
+    process.env.GAS_CITY_ORCHESTRATOR_URL = "http://127.0.0.1:9/orchestrator";
+    globalThis.fetch = (async (_url, init) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+    try {
+      const state = await submitFactoryGateVerdict(
+        database,
+        appId,
+        "discovery",
+      );
+      expect(state.gateWaiting).toBe(true);
+      expect(bodies).toEqual([
+        {
+          type: "verdict",
+          taskId: opened.runId,
+          stepId: "accept-discovery",
+          verdict: "approve",
+        },
+      ]);
+    } finally {
+      globalThis.fetch = previousFetch;
+      if (previousUrl === undefined) {
+        delete process.env.GAS_CITY_ORCHESTRATOR_URL;
+      } else {
+        process.env.GAS_CITY_ORCHESTRATOR_URL = previousUrl;
+      }
+      database.$client.close();
+      fs.rmSync(appDir, { recursive: true, force: true });
+    }
   });
 
   it("paints the bead chat and releases the stream at the gate", async () => {
