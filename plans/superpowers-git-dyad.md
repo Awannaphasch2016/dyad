@@ -18,7 +18,7 @@ One real run. Superpowers is the methodology. The composer we just shipped is wh
 
 The Project Manager and the Developer use one Dyad app. The methodology on that app is Superpowers. Gas City runs `superpowers-phased` against the GIT 2025 conference site. Each phase gate shows up in the composer for the role that gate names. Approve and Send back write the verdict Gas City already checks.
 
-The recorded scripted walkthrough (`DYAD_FACTORY_SCRIPT=record`, Actions run 38556844109) proved the composer. It is not this run. It never called Superpowers.
+The recorded scripted walkthrough (`DYAD_FACTORY_SCRIPT=record`, Actions run 38556844109) proved the composer. It is not this run. It never called Superpowers. Playwright drove that walkthrough with replies chosen before the run. That is the wrong driver here.
 
 ## Methodology choice
 
@@ -41,6 +41,20 @@ Other packs stay unlaunched. OpenSpec, Spec Kit, BMAD, gstack, and Compound Engi
 6. The formula's revision child runs on `request-changes`. The same gate opens again. The phase does not advance.
 7. A phase still opens by itself when the formula enters it. Nobody presses Send to begin Discovery, Implementation, or Delivery.
 8. Inner Superpowers design and spec approval stay autonomous (`brainstorming_approval_mode=autonomous`). Those loops are not extra Dyad gates. The three phase gates are the stops a person sees.
+
+## Who unblocks a gate
+
+Cursor Cloud Agents unblock the gates. One agent is signed in as the Project Manager. One agent is signed in as the Developer. Each agent reads the question that is actually on its screen and types the reply that fits that question. The reply is not stored in the test ahead of time.
+
+This is the same rule as [PR #127](https://github.com/Awannaphasch2016/dyad/pull/127), `plans/vibesdk-real-agent-hitl.md`:
+
+> An agent drives both browsers. It signs in as each role, types the Project Manager’s prompt, watches the real builder, reads the question the popup actually shows, and types a fitting reply in the prompt box. A Playwright script may open the browsers and record them. It cannot decide the reply.
+
+[PR #128](https://github.com/Awannaphasch2016/dyad/pull/128) ran that rule. The builder asked “What type of neighborhood shop is this?” and the agent typed the reply it read. The sentence was not in the script.
+
+Playwright cannot unblock these gates. A Playwright step has to know the click and the reply before the run starts. Superpowers writes the gate question while the run is going, from the artifacts it just produced. A script that always clicks Approve, or that types a sentence chosen yesterday, is not a person accepting that work. The scripted factory walkthrough is that kind of script: the Discovery sentence and the Implementation sentence are fixed in `scriptedAgentText`.
+
+For this run, Playwright does not sign in, does not read the question, and does not press Submit, Approve, or Send back. The two Cursor Cloud Agents do. Each one only acts in the browser whose Clerk membership is its role. The Project Manager agent cannot accept Implementation. The Developer agent cannot accept Discovery or Delivery.
 
 ## GIT project
 
@@ -66,7 +80,7 @@ Gas City runs in one container that has `gc` and the upstream `superpowers-build
 
 The Cursor key stays in the Dyad process. It is not placed in the child agent environment.
 
-The scripted walkthrough step stays at 5 minutes. A live Superpowers run is longer than that step. Record the two browsers on a path that can wait at each gate. Do not raise the scripted workflow timeout to cover this run.
+The scripted walkthrough step stays at 5 minutes and stays Playwright. It is not reused for this run. Do not raise that timeout. The two Cursor Cloud Agents wait on the live gate for as long as Superpowers takes, and their browser recordings are the record.
 
 ## Decisions
 
@@ -76,6 +90,7 @@ The scripted walkthrough step stays at 5 minutes. A live Superpowers run is long
 - Zero free-text questions inside a phase is a valid finish. The gate is still required.
 - Implementation is accepted by the Developer. Discovery and Delivery are accepted by the Project Manager.
 - The worker starts at `baseline/speckit-1.1.2` plus `requirements.md`.
+- Cursor Cloud Agents unblock the gates by reading the live question. Playwright does not decide a reply and does not click Approve.
 
 ## Dependencies
 
@@ -94,6 +109,7 @@ The scripted walkthrough step stays at 5 minutes. A live Superpowers run is long
 - Showing the live conference site to the worker.
 - Writing a verdict without `human_gate.role`, or copying the role from the button instead of the signed-in membership.
 - Treating a green factory unit test, or the scripted walkthrough, as this run.
+- Letting Playwright type a prepared reply or click Approve. That skips the judgment the gate exists for.
 - Launching any other methodology pack in the same pass.
 
 ## Acceptance
@@ -102,7 +118,7 @@ The run is done when all of these are true:
 
 1. The app's methodology is `superpowers`, and the Gas City bead was slung on `superpowers-phased`.
 2. The worker commit started from `baseline/speckit-1.1.2`, with `requirements.md` added and the live site withheld.
-3. Both browsers recorded the same app. Discovery's gate was answerable only by the Project Manager, in the composer. Implementation's gate was answerable only by the Developer. Delivery's gate was answerable only by the Project Manager.
+3. Two Cursor Cloud Agents recorded the same app, one signed in as each role. Each agent read the question on its own screen and typed the reply. Discovery's gate was answered only by the Project Manager agent. Implementation's gate was answered only by the Developer agent. Delivery's gate was answered only by the Project Manager agent. Playwright did not submit those replies.
 4. Each accepted gate has `human_gate.verdict=approve` and `human_gate.role` equal to that gate's `gc.human_gate.role`.
 5. All three phases reached approved. Download or publish happened only after Delivery was approved.
 6. The GIT acceptance verifier ran on the Superpowers head, and the report is saved with the Gas City run id, bead ids, and both recordings.
