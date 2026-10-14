@@ -118,7 +118,7 @@ test("the project manager starts the organization app and each role answers the 
   browser,
 }) => {
   test.skip(!process.env.VIBESDK_URL, "VIBESDK_URL is required");
-  test.setTimeout(5 * 60 * 1000);
+  test.setTimeout(8 * 60 * 1000);
   mkdirSync("artifacts", { recursive: true });
   const pmContext = await browser.newContext({
     recordVideo: {
@@ -135,12 +135,15 @@ test("the project manager starts the organization app and each role answers the 
   const pm = await pmContext.newPage();
   const dev = await devContext.newPage();
   const answered = new Set();
+  let firstQuestion = "";
 
   try {
     await signIn(pm, process.env.VIBESDK_PM_USER_ID ?? "");
     await signIn(dev, process.env.VIBESDK_DEV_USER_ID ?? "");
     await expect(pm.getByText("Project Manager").first()).toBeVisible();
     await expect(dev.getByText("Developer").first()).toBeVisible();
+    await expect(pm.getByText("Wewebplus", { exact: true }).first()).toBeVisible();
+    await expect(dev.getByText("Wewebplus", { exact: true }).first()).toBeVisible();
 
     const devBox = dev.locator("textarea").first();
     await devBox.fill("Build a private app");
@@ -205,6 +208,7 @@ test("the project manager starts the organization app and each role answers the 
         continue;
       }
       quietSince = 0;
+      if (!firstQuestion) firstQuestion = asked;
       const speakerName = speaker === pm ? pmName : devName;
       const avatar = speaker === pm ? "org-avatar-pm" : "org-avatar-dev";
       await expect(listener.getByText(asked, { exact: false })).toHaveCount(0);
@@ -272,6 +276,23 @@ test("the project manager starts the organization app and each role answers the 
     }
 
     expect(answered.size).toBeGreaterThan(0);
+    expect(firstQuestion).toBeTruthy();
+    await pm.getByRole("button", { name: "New build" }).click();
+    await expect(pm).not.toHaveURL(/\/chat\//);
+    const secondBox = pm.locator("textarea").first();
+    await secondBox.fill("Build a short hours page for the shop.");
+    await secondBox.press("Enter");
+    await pm.waitForURL(/\/chat\/(?!new)/, { timeout: 90_000 });
+    expect(new URL(pm.url()).pathname).not.toBe(appUrl.pathname);
+    await expect(pm.getByText(firstQuestion, { exact: false })).toHaveCount(0);
+    await expect(pm.getByTestId("org-pending")).toHaveCount(0);
+    await shot(pm, "project-manager-other-app");
+    const otherLink = dev.locator(`a[href="${new URL(pm.url()).pathname}"]`);
+    await expect(otherLink.first()).toBeVisible({ timeout: 45_000 });
+    await otherLink.first().click();
+    await expect(dev.getByText(firstQuestion, { exact: false })).toHaveCount(0);
+    await expect(dev.getByTestId("org-pending")).toHaveCount(0);
+    await shot(dev, "developer-other-app");
     await expect(pm.getByText("Orange").first()).toBeVisible({
       timeout: 20_000,
     });
