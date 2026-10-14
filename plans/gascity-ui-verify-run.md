@@ -1,6 +1,6 @@
 # Drive a formula run on the three-phase window
 
-Status: this check is the run. The proof is a recording of Discovery, Implementation, and Delivery in the Dyad window. [PR #172](https://github.com/Awannaphasch2016/dyad/pull/172) paints a bead when an event arrives.
+Status: recorded. One Discovery send slung `speckit-phased`. The window moved Discovery, then Implementation, then Delivery as each bead arrived. Approve posts `verdict: approve`. `gc` did not run. The city for this recording was a local listener. [PR #172](https://github.com/Awannaphasch2016/dyad/pull/172) paints a bead when an event arrives.
 
 ## Important points
 
