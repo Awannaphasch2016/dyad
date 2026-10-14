@@ -154,6 +154,41 @@ A finished `packages/ops-axi` has these commands. The first six exist on PR #92.
 
 `preview up` and `preview down` label the pull request. `preview.yml` has no `workflow_dispatch`. `ui-walk.yml` is the file PR #162 adds. Until that file exists, `ops-axi walk dyad` has no workflow to start. `dyad-bridge-signin.yml` is the recorded Northwind walk and is not the finished command.
 
+## Preview paths besides the Devbox
+
+`preview.yml`, `preview-image.yml`, `preview-exec.yml`, `preview-wake.yml`, `preview-secrets.yml`, and `preview-control.yml` run on Devbox `Wewebplus-ci`. These do not:
+
+| Path             | Host                                                                                                  | Workflow                                                       | Start                                                                                     |
+| ---------------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Formula pages    | ECS cluster `wewebplus-formula-preview`, service `formula-preview`, one task, ALB in `ap-southeast-1` | `preview-formula.yml`                                          | `ops-axi formula deploy`                                                                  |
+| Vibe SDK         | Cloudflare Worker `vibesdk-pr-<n>.karant-test-egress-canary.workers.dev`                              | `preview-vibesdk.yml` on `cursor/vibesdk-org-prompt-hitl-0539` | Label `preview-vibesdk`                                                                   |
+| Bolt walkthrough | Cloudflare Worker `bolt-walkthrough-55d6`                                                             | `bolt-preview-from-doppler.yml` on `cursor/bolt-doppler-55d6`  | Dispatch or push on that branch                                                           |
+| Forma            | Vercel preview in Forma’s own project                                                                 | `preview-forma.yml` and `pr-preview-forma.yml`                 | `workflow_dispatch` with a Forma SHA or PR, or `repository_dispatch` type `preview-forma` |
+
+The formula HTTPS plan stays on that same ECS service. `gascity-image.yml` publishes a GHCR image and does not start a host. `wewebplus-preview-image.yml` publishes the preview CLI image and does not run Dyad. `preview-vercel-db.yml` points pull request 20’s Neon branch at a Vercel Preview environment, and that job still logs into the Devbox.
+
+## Read-only command in each group
+
+Each group has one command that prints facts and changes nothing. A failed deploy is debugged by running that command, not by repeating the deploy.
+
+| Group                          | Read-only command                | What it prints                                                    | Write command it stays away from                                    |
+| ------------------------------ | -------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Host                           | `ops-axi ec2 check`              | Actions can reach the host. Doppler token names and fingerprints. | `ops-axi rollout <sha>`                                             |
+| Host, still missing            | `ops-axi host status`            | The commit the EC2 host is running.                               | `ops-axi rollout <sha>`                                             |
+| Doppler                        | `ops-axi doppler status`         | Environment names and which manifest names are present.           | `ops-axi doppler phase1`                                            |
+| Doppler, after a copy          | `ops-axi doppler verify`         | The copy matches the manifest.                                    | `ops-axi doppler phase1`                                            |
+| Formula on ECS                 | `ops-axi formula verify`         | `AWS_PREVIEW_FORMULA_ROLE_ARN` is present.                        | `ops-axi formula role`                                              |
+| Formula on ECS, still missing  | `ops-axi formula status`         | Service active, desired count 1, task health, URL.                | `ops-axi formula deploy`                                            |
+| Devbox preview                 | `ops-axi preview status <pr>`    | Container state from `preview-control.yml` action `status`.       | `ops-axi preview up <pr>`                                           |
+| Devbox preview                 | `ops-axi preview logs <pr>`      | Recent logs. Action `logs`.                                       |                                                                     |
+| Devbox preview                 | `ops-axi preview db-status <pr>` | Neon branch presence. Action `db-status`.                         |                                                                     |
+| Vibe Worker, still missing     | `ops-axi vibe status <pr>`       | HTTP status of the `workers.dev` URL.                             | The label that deploys                                              |
+| Bolt Worker, still missing     | `ops-axi bolt status`            | HTTP status of `bolt-walkthrough-55d6`.                           | `bolt-preview-from-doppler.yml`                                     |
+| Forma on Vercel, still missing | `ops-axi forma status`           | Deployment state for the SHA or PR.                               | `preview-forma.yml`                                                 |
+| Toolbox                        | `ops-axi toolbox status`         | Published digest and tag. The image workflow only builds today.   | `ops-axi toolbox image`                                             |
+| Walk                           | `ops-axi walk status`            | Last walk conclusion and artifact names.                          | `ops-axi walk dyad`                                                 |
+| Cursor key                     | `ops-axi cursor probe`           | `GET /v1/me`, then one plan-mode agent that is deleted.           | `ops-axi cursor factory` stays out. It runs the old factory poller. |
+
 ## Walk, before the sling
 
 Two pull requests are the agent UI walk. Both land before a formula sling.
