@@ -8,6 +8,7 @@ on:
     branches:
       - cursor/dyad-bridge-signin-d072
       - cursor/phase-completion-machine-d072
+      - cursor/composer-bar-factory-9b9b
     paths:
       - .github/workflows/dyad-bridge-signin.yml
       - e2e-bridge/**

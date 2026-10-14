@@ -71,6 +71,10 @@ import { AgentConsentBanner } from "./AgentConsentBanner";
 import { CancellationBanner } from "./CancellationBanner";
 import { useCancellationRequestLatch } from "./useCancellationRequestLatch";
 import { TodoList } from "./TodoList";
+import {
+  FactoryComposerQuestion,
+  useFactoryOpenQuestion,
+} from "./FactoryComposerQuestion";
 import { QuestionnaireInput } from "./QuestionnaireInput";
 import { isChatLockedByQuestionnaire } from "./questionnaireComposerLock";
 import { useClerkSession } from "@/auth/session";
@@ -539,6 +543,8 @@ export function ChatInput({ chatId }: { chatId?: number }) {
     chatId,
     pendingQuestionnaires,
   );
+  const factoryOpen = useFactoryOpenQuestion(chatId);
+  const promptLocked = questionnaireLocked || factoryOpen.question != null;
   const answerLock = useQuery({
     queryKey: queryKeys.factory.answerLock(chatId ?? null),
     enabled: chatId != null,
@@ -565,7 +571,7 @@ export function ChatInput({ chatId }: { chatId?: number }) {
 
   const handleSubmit = async () => {
     if (
-      questionnaireLocked ||
+      promptLocked ||
       !hasComposerPayload ||
       !chatId ||
       pendingFiles ||
@@ -929,12 +935,21 @@ export function ChatInput({ chatId }: { chatId?: number }) {
             (showBanner || showPromo || isCancellationRequested) &&
               "rounded-t-none border-t-0",
           )}
-          onDragOver={questionnaireLocked ? undefined : handleDragOver}
-          onDragLeave={questionnaireLocked ? undefined : handleDragLeave}
-          onDrop={questionnaireLocked ? undefined : handleDrop}
+          onDragOver={promptLocked ? undefined : handleDragOver}
+          onDragLeave={promptLocked ? undefined : handleDragLeave}
+          onDrop={promptLocked ? undefined : handleDrop}
         >
-          {/* Show active questionnaire if exists */}
-          <QuestionnaireInput />
+          {factoryOpen.question != null &&
+          factoryOpen.appId != null &&
+          factoryOpen.phase != null ? (
+            <FactoryComposerQuestion
+              appId={factoryOpen.appId}
+              phase={factoryOpen.phase}
+              question={factoryOpen.question}
+            />
+          ) : (
+            <QuestionnaireInput />
+          )}
 
           {chatId && <ChatAnnotationsTray chatId={chatId} />}
 
@@ -1089,21 +1104,17 @@ export function ChatInput({ chatId }: { chatId?: number }) {
           )}
           <div
             className="flex items-end gap-1"
-            data-testid={
-              questionnaireLocked ? "chat-composer-locked" : undefined
-            }
+            data-testid={promptLocked ? "chat-composer-locked" : undefined}
           >
             {factoryComposer && (
               <div className="mb-0.5 ml-1">
                 <AuxiliaryActionsMenu
-                  onFileSelect={
-                    questionnaireLocked ? () => {} : handleFileSelect
-                  }
+                  onFileSelect={promptLocked ? () => {} : handleFileSelect}
                   showTokenBar={showTokenBar}
                   toggleShowTokenBar={toggleShowTokenBar}
                   appId={appId ?? undefined}
                   onGenerateImage={
-                    questionnaireLocked ? undefined : handleOpenImageGenerator
+                    promptLocked ? undefined : handleOpenImageGenerator
                   }
                 />
               </div>
@@ -1112,15 +1123,13 @@ export function ChatInput({ chatId }: { chatId?: number }) {
               value={inputValue}
               onChange={setInputValue}
               onSubmit={handleSubmit}
-              onPaste={questionnaireLocked ? undefined : handlePaste}
+              onPaste={promptLocked ? undefined : handlePaste}
               placeholder={
-                questionnaireLocked
-                  ? t("answerTheQuestions")
-                  : t("askDyadToBuild")
+                promptLocked ? t("answerTheQuestions") : t("askDyadToBuild")
               }
-              disabled={questionnaireLocked}
+              disabled={promptLocked}
               excludeCurrentApp={true}
-              disableSendButton={disableSendButton || questionnaireLocked}
+              disableSendButton={disableSendButton || promptLocked}
               messageHistory={userMessageHistory}
             />
 
@@ -1131,7 +1140,7 @@ export function ChatInput({ chatId }: { chatId?: number }) {
                   render={
                     <button
                       onClick={toggleRecording}
-                      disabled={isTranscribing || questionnaireLocked}
+                      disabled={isTranscribing || promptLocked}
                       aria-label={
                         isRecording
                           ? t("stopRecording", "Stop recording")
@@ -1253,12 +1262,12 @@ export function ChatInput({ chatId }: { chatId?: number }) {
               </div>
 
               <AuxiliaryActionsMenu
-                onFileSelect={questionnaireLocked ? () => {} : handleFileSelect}
+                onFileSelect={promptLocked ? () => {} : handleFileSelect}
                 showTokenBar={showTokenBar}
                 toggleShowTokenBar={toggleShowTokenBar}
                 appId={appId ?? undefined}
                 onGenerateImage={
-                  questionnaireLocked ? undefined : handleOpenImageGenerator
+                  promptLocked ? undefined : handleOpenImageGenerator
                 }
               />
             </div>

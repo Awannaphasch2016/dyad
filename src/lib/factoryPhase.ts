@@ -322,14 +322,14 @@ export function continuePrefill(
 }
 
 /**
- * A factory phase chat has no composer. Home and any chat that is not a
- * factory phase keep it.
+ * Factory phase chats use the same composer as every other chat. The phase
+ * bar navigates and approves. An open question is answered in the composer.
  */
 export function showFactoryPhaseComposer(
-  chats: readonly { title: string | null }[],
-  chatTitle: string | null | undefined,
+  _chats: readonly { title: string | null }[],
+  _chatTitle: string | null | undefined,
 ): boolean {
-  return !(hasFactoryPhases(chats) && phaseFromTitle(chatTitle) != null);
+  return true;
 }
 
 /** Factory chats hide the generic "Keep going" suggestion. */
