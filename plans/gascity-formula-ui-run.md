@@ -1,6 +1,6 @@
 # Run speckit-phased and show it in the Dyad window
 
-Status: plan only. [PR #169](https://github.com/Awannaphasch2016/dyad/pull/169) slings `speckit-phased` once and stores the open bead. GasCity does not execute that formula, and the message list does not show the bead that is running.
+Status: Dyad paints each bead on that bead's phase chat, and a waiting gate ends the visible stream so **Approve and continue** can be clicked. GasCity still has to execute `speckit-phased`. `gc` is not in this repo, so Dyad does not walk the beads.
 
 ## Important points
 

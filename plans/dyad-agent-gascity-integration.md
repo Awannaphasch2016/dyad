@@ -26,17 +26,17 @@ Composer
 
 Verified files:
 
-| Piece | File |
-| --- | --- |
-| Renderer submit/cancel surface | `src/chat_stream/renderer_facade.ts` |
-| Wire names | `src/chat_stream/protocol.ts` |
-| Chunk schema | `src/ipc/types/chat.ts` (`ChatResponseChunkSchema`) |
-| IPC entry | `src/ipc/handlers/chat_stream_handlers.ts` (`chat:stream`) |
-| Local-agent loop | `src/pro/main/ipc/handlers/local_agent/local_agent_handler.ts` |
-| Tool table | `src/pro/main/ipc/handlers/local_agent/tool_definitions.ts` |
-| Tool consent and mutation tracking | `src/pro/main/ipc/handlers/local_agent/tools/tool_invocation.ts` |
-| Path jail | `src/pro/main/ipc/handlers/local_agent/tools/path_safety.ts` |
-| GasCity host bridge | `src/main/factory_host_bridge_server.ts`, `src/main/factory_host_service.ts` |
+| Piece                              | File                                                                         |
+| ---------------------------------- | ---------------------------------------------------------------------------- |
+| Renderer submit/cancel surface     | `src/chat_stream/renderer_facade.ts`                                         |
+| Wire names                         | `src/chat_stream/protocol.ts`                                                |
+| Chunk schema                       | `src/ipc/types/chat.ts` (`ChatResponseChunkSchema`)                          |
+| IPC entry                          | `src/ipc/handlers/chat_stream_handlers.ts` (`chat:stream`)                   |
+| Local-agent loop                   | `src/pro/main/ipc/handlers/local_agent/local_agent_handler.ts`               |
+| Tool table                         | `src/pro/main/ipc/handlers/local_agent/tool_definitions.ts`                  |
+| Tool consent and mutation tracking | `src/pro/main/ipc/handlers/local_agent/tools/tool_invocation.ts`             |
+| Path jail                          | `src/pro/main/ipc/handlers/local_agent/tools/path_safety.ts`                 |
+| GasCity host bridge                | `src/main/factory_host_bridge_server.ts`, `src/main/factory_host_service.ts` |
 
 The model decides when to call a tool. Dyad does not have a separate
 planner that picks tools. `streamText` receives `tools: allTools`. The SDK
@@ -95,21 +95,21 @@ calls and tool results stay paired.
 itself. Each tool is a function in the Electron main process with the app
 path, database, and consent context.
 
-| Capability | Tool names | Boundary |
-| --- | --- | --- |
-| Read and search the app | `read_file`, `list_files`, `grep`, `code_search`, `explore_code` | Paths must stay inside the app directory |
-| Edit the app | `write_file`, `search_replace`, `copy_file`, `delete_file`, `rename_file` | Consent plus mutation tracking |
-| Dependencies and app process | `add_dependency`, `restart_app`, `reinstall_and_restart_app` | Uses Dyad's app runtime, not a free shell |
-| Checks | `run_type_checks`, `run_tests`, `run_build`, `run_pre_commit` | Bounded commands for the app, not an open terminal |
-| Script | `execute_sandbox_script` | Sandbox script, not arbitrary host shell |
-| Git | `git_status`, `git_diff`, `git_log`, `git_show_commit`, `git_show_file`, `git_restore_file` | App repo only |
-| Data | `execute_sql`, `get_database_table_schema`, `get_supabase_project_info`, `get_neon_project_info` | Connected project, SQL consent |
-| Web | `web_search`, `web_crawl`, `web_fetch` | Provider-backed fetch, not a browser the user drives |
-| Images | `generate_image` | Provider image API |
-| Sub-agents | `spawn_agent`, `list_agents`, `wait_agents`, `cancel_agent`, `send_message`, `followup_task` | Child Dyad agents, same harness |
-| Plan / blueprint | `planning_questionnaire`, `write_plan`, `exit_plan`, `write_app_blueprint` | Plan mode and app-create flow |
-| MCP | `search_mcp_tools`, `get_mcp_tool_schema`, dynamic MCP tools | User-configured MCP servers |
-| Other | `read_logs`, `read_guide`, `update_todos`, `set_chat_summary`, `add_integration`, `enable_nitro`, `suggest_plugin`, chat search/read | Dyad product surfaces |
+| Capability                   | Tool names                                                                                                                           | Boundary                                             |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
+| Read and search the app      | `read_file`, `list_files`, `grep`, `code_search`, `explore_code`                                                                     | Paths must stay inside the app directory             |
+| Edit the app                 | `write_file`, `search_replace`, `copy_file`, `delete_file`, `rename_file`                                                            | Consent plus mutation tracking                       |
+| Dependencies and app process | `add_dependency`, `restart_app`, `reinstall_and_restart_app`                                                                         | Uses Dyad's app runtime, not a free shell            |
+| Checks                       | `run_type_checks`, `run_tests`, `run_build`, `run_pre_commit`                                                                        | Bounded commands for the app, not an open terminal   |
+| Script                       | `execute_sandbox_script`                                                                                                             | Sandbox script, not arbitrary host shell             |
+| Git                          | `git_status`, `git_diff`, `git_log`, `git_show_commit`, `git_show_file`, `git_restore_file`                                          | App repo only                                        |
+| Data                         | `execute_sql`, `get_database_table_schema`, `get_supabase_project_info`, `get_neon_project_info`                                     | Connected project, SQL consent                       |
+| Web                          | `web_search`, `web_crawl`, `web_fetch`                                                                                               | Provider-backed fetch, not a browser the user drives |
+| Images                       | `generate_image`                                                                                                                     | Provider image API                                   |
+| Sub-agents                   | `spawn_agent`, `list_agents`, `wait_agents`, `cancel_agent`, `send_message`, `followup_task`                                         | Child Dyad agents, same harness                      |
+| Plan / blueprint             | `planning_questionnaire`, `write_plan`, `exit_plan`, `write_app_blueprint`                                                           | Plan mode and app-create flow                        |
+| MCP                          | `search_mcp_tools`, `get_mcp_tool_schema`, dynamic MCP tools                                                                         | User-configured MCP servers                          |
+| Other                        | `read_logs`, `read_guide`, `update_todos`, `set_chat_summary`, `add_integration`, `enable_nitro`, `suggest_plugin`, chat search/read | Dyad product surfaces                                |
 
 What this agent cannot do:
 
@@ -123,16 +123,16 @@ What this agent cannot do:
 
 ## 4. Interface inventory
 
-| From | To | Mechanism | Reusable by GasCity? |
-| --- | --- | --- | --- |
-| UI | main | Electron IPC `chat:stream` | Only from inside the app |
-| Main | UI | `chat:response:chunk`, `end`, `error` | Yes, if some main-process code emits the same payloads |
-| Agent | model | AI SDK `streamText` over HTTPS | No. That is one model client |
-| Agent | tools | In-process `execute(args, ctx)` | No. Tools expect `AgentContext` |
-| Tools | disk / git / app runtime | Direct function calls | The tools can be called by Dyad. An outside process cannot call them unless a bridge wraps them |
-| Tools | DB | Drizzle, same message rows the UI reads | The rows are the durable UI state |
-| GasCity | Dyad | HTTP `127.0.0.1:32100` | Already exists: start run, append message, question, approval |
-| Dyad | GasCity | Supervisor HTTP for formula source | Formula config only. Not agent streaming |
+| From    | To                       | Mechanism                               | Reusable by GasCity?                                                                            |
+| ------- | ------------------------ | --------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| UI      | main                     | Electron IPC `chat:stream`              | Only from inside the app                                                                        |
+| Main    | UI                       | `chat:response:chunk`, `end`, `error`   | Yes, if some main-process code emits the same payloads                                          |
+| Agent   | model                    | AI SDK `streamText` over HTTPS          | No. That is one model client                                                                    |
+| Agent   | tools                    | In-process `execute(args, ctx)`         | No. Tools expect `AgentContext`                                                                 |
+| Tools   | disk / git / app runtime | Direct function calls                   | The tools can be called by Dyad. An outside process cannot call them unless a bridge wraps them |
+| Tools   | DB                       | Drizzle, same message rows the UI reads | The rows are the durable UI state                                                               |
+| GasCity | Dyad                     | HTTP `127.0.0.1:32100`                  | Already exists: start run, append message, question, approval                                   |
+| Dyad    | GasCity                  | Supervisor HTTP for formula source      | Formula config only. Not agent streaming                                                        |
 
 Internal details that should stay internal: `AgentContext`, tool execute
 signatures, and the AI SDK part stream (`text-delta`, `tool-call`).
@@ -242,16 +242,16 @@ keep targeting the same `chatId` and streaming message.
 
 ## 8. Impact matrix
 
-| Component | Change? |
-| --- | --- |
-| Composer and message list | Unchanged if chunks and XML stay the same |
-| `ChatResponseChunk` schema | Unchanged for text and known XML. A new field only if we want typed tool cards for unknown agents |
-| `local_agent_handler` and `TOOL_DEFINITIONS` | Unchanged. Native mode keeps working |
-| Chat actor owner / cancel / queue | Small change so an external turn can hold the same lock |
-| Host bridge | New event ingress, mapped to chunks |
-| GasCity | New emitter. Dyad cannot invent GasCity's event format from this repo |
-| Message table | Same rows. External turns must still persist there or reload loses them |
-| Formula TOML | Unchanged. It picks steps, not this stream |
+| Component                                    | Change?                                                                                           |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Composer and message list                    | Unchanged if chunks and XML stay the same                                                         |
+| `ChatResponseChunk` schema                   | Unchanged for text and known XML. A new field only if we want typed tool cards for unknown agents |
+| `local_agent_handler` and `TOOL_DEFINITIONS` | Unchanged. Native mode keeps working                                                              |
+| Chat actor owner / cancel / queue            | Small change so an external turn can hold the same lock                                           |
+| Host bridge                                  | New event ingress, mapped to chunks                                                               |
+| GasCity                                      | New emitter. Dyad cannot invent GasCity's event format from this repo                             |
+| Message table                                | Same rows. External turns must still persist there or reload loses them                           |
+| Formula TOML                                 | Unchanged. It picks steps, not this stream                                                        |
 
 ## 9. Options and recommendation
 
@@ -295,15 +295,15 @@ Until GasCity emits those, the UI can only show finished messages from
 The current diagrams name the code that exists. The B, C, and D diagrams
 are proposed layouts on top of that code. Same names mean the same box.
 
-| Name in the diagrams | Code today |
-| --- | --- |
-| Renderer facade | `src/chat_stream/renderer_facade.ts` |
-| `chat:stream` handler | `src/ipc/handlers/chat_stream_handlers.ts` |
-| Chat stream host | `src/chat_stream/` host state machine, one owner per chat |
-| Local agent | `handleLocalAgentStream` in `local_agent_handler.ts` |
-| Tool harness | `TOOL_DEFINITIONS` |
-| Host bridge | `factory_host_bridge_server.ts` on `127.0.0.1:32100` |
-| Chunk | `chat:response:chunk` (`ChatResponseChunkSchema`) |
+| Name in the diagrams  | Code today                                                |
+| --------------------- | --------------------------------------------------------- |
+| Renderer facade       | `src/chat_stream/renderer_facade.ts`                      |
+| `chat:stream` handler | `src/ipc/handlers/chat_stream_handlers.ts`                |
+| Chat stream host      | `src/chat_stream/` host state machine, one owner per chat |
+| Local agent           | `handleLocalAgentStream` in `local_agent_handler.ts`      |
+| Tool harness          | `TOOL_DEFINITIONS`                                        |
+| Host bridge           | `factory_host_bridge_server.ts` on `127.0.0.1:32100`      |
+| Chunk                 | `chat:response:chunk` (`ChatResponseChunkSchema`)         |
 
 ### Container diagram — current
 
@@ -707,15 +707,15 @@ sequenceDiagram
 
 ### What moves
 
-| Box | Current | B | C | D |
-| --- | --- | --- | --- | --- |
-| Renderer and message list | Paints chunks | Same | Same | Same |
-| Chat stream host | Owns the turn | Calls `AgentBackend` | Replaced by a GasCity client | Same, plus a lock share with the adapter |
-| Local agent | The only executor | Wrapped as the native backend | Moves into GasCity | Stays |
-| Tool harness | In the main process | Used by the native backend | Exposed as a callback API | Stays on the native path |
-| Model provider | Called by Dyad | Called by the native backend | Called by GasCity | Called by Dyad for native turns |
-| Host bridge | Starts Dyad, or appends a finished message | Competes with the new backend client | Replaced by the turn client | Gains the event adapter |
-| GasCity | Optional starter of the Dyad agent | Executor when that backend is selected | Executor of every turn | Executor of foreign agents only |
+| Box                       | Current                                    | B                                      | C                            | D                                        |
+| ------------------------- | ------------------------------------------ | -------------------------------------- | ---------------------------- | ---------------------------------------- |
+| Renderer and message list | Paints chunks                              | Same                                   | Same                         | Same                                     |
+| Chat stream host          | Owns the turn                              | Calls `AgentBackend`                   | Replaced by a GasCity client | Same, plus a lock share with the adapter |
+| Local agent               | The only executor                          | Wrapped as the native backend          | Moves into GasCity           | Stays                                    |
+| Tool harness              | In the main process                        | Used by the native backend             | Exposed as a callback API    | Stays on the native path                 |
+| Model provider            | Called by Dyad                             | Called by the native backend           | Called by GasCity            | Called by Dyad for native turns          |
+| Host bridge               | Starts Dyad, or appends a finished message | Competes with the new backend client   | Replaced by the turn client  | Gains the event adapter                  |
+| GasCity                   | Optional starter of the Dyad agent         | Executor when that backend is selected | Executor of every turn       | Executor of foreign agents only          |
 
 ## 11. Decision criteria when GasCity is the orchestrator
 
@@ -763,12 +763,12 @@ Idempotency keys already exist on runs and messages.
 
 ### Calling interface versus event interface
 
-| | Calling interface | Event interface |
-| --- | --- | --- |
-| Meaning | The caller names a receiver and asks it to start, cancel, resume, or answer | A publisher reports that something happened |
-| Who decides the next step | The caller, using the return or the task state | Whoever happens to be listening |
-| Failure | The caller sees reject, timeout, or a terminal task state | A missed event is silence unless someone polls a store |
-| Fits GasCity as orchestrator | Yes. GasCity is the client | Only as the view, or as a log |
+|                              | Calling interface                                                           | Event interface                                        |
+| ---------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------ |
+| Meaning                      | The caller names a receiver and asks it to start, cancel, resume, or answer | A publisher reports that something happened            |
+| Who decides the next step    | The caller, using the return or the task state                              | Whoever happens to be listening                        |
+| Failure                      | The caller sees reject, timeout, or a terminal task state                   | A missed event is silence unless someone polls a store |
+| Fits GasCity as orchestrator | Yes. GasCity is the client                                                  | Only as the view, or as a log                          |
 
 A2A draws the same line one level up from tools. MCP is how an agent
 reaches its own tools. A2A is how one agent gives another a task.
@@ -795,19 +795,19 @@ live together: orchestrate the phase, publish events for the UI.
 
 ### Comparison matrix
 
-| Dimension | D, event projection | C, loop moves to GasCity | B, Dyad calls GasCity |
-| --- | --- | --- | --- |
-| Who starts, cancels, and resumes | Nobody new. Native turns stay with the chat stream host. Foreign turns are whatever the event producer does outside Dyad | GasCity | Dyad's chat stream host |
-| Dyad agent, tools, and harness | Kept in place for native turns. Foreign agents do not use them | Loop leaves Dyad. Tools stay only if GasCity calls back | Kept, behind `AgentBackend`, for the native backend only |
-| One calling path for both agents | No. Native stays on `chat:stream`. Foreign agents use a different producer | Yes, and that path is GasCity | Yes, and that path is Dyad |
-| Live UI stream | Yes, if the adapter writes `chat:response:chunk` | Yes, if GasCity's events are mapped to the same chunks | Yes, if both backends feed one chunk mapper |
-| User input, approval, cancel, HITL back to GasCity | Only if someone adds commands. Events do not carry the return path | Natural, because GasCity is already the waiter | Dyad receives them first and must forward |
-| Execution state | Split. Dyad owns the chat row and the chat lock. GasCity owns the phase only if it keeps its own store | GasCity owns the workflow. Dyad still owns the visible transcript unless that moves too | Dyad owns the turn. GasCity owns whatever happens inside its backend |
-| Retry, reconnect, long runs | A UI patch can be resent. The run itself has no shared cursor | One workflow history. Electron quitting no longer kills the loop | Dyad retries only while its process lives. GasCity retries only its own backend |
-| What changes when Dyad's agent changes | Native path changes as it does today. The adapter breaks only if chunk XML changes | GasCity's copy or callback breaks | `AgentBackend` breaks if the event vocabulary changes |
-| Adding a third agent | Add another event producer that speaks chunk XML | Register another worker behind GasCity | Implement another `AgentBackend` inside Dyad |
-| New pieces | Inbound adapter, chat-lock sharing | Turn client, workspace tool API, a new home for the loop | `AgentBackend`, GasCity client, shared chunk mapper |
-| Electron quits mid-run | Native run dies with the process. A foreign run can continue only if it was not inside Dyad | The loop can continue. Local tools cannot, until the app returns | Both the caller and the native worker die |
+| Dimension                                          | D, event projection                                                                                                      | C, loop moves to GasCity                                                                | B, Dyad calls GasCity                                                           |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Who starts, cancels, and resumes                   | Nobody new. Native turns stay with the chat stream host. Foreign turns are whatever the event producer does outside Dyad | GasCity                                                                                 | Dyad's chat stream host                                                         |
+| Dyad agent, tools, and harness                     | Kept in place for native turns. Foreign agents do not use them                                                           | Loop leaves Dyad. Tools stay only if GasCity calls back                                 | Kept, behind `AgentBackend`, for the native backend only                        |
+| One calling path for both agents                   | No. Native stays on `chat:stream`. Foreign agents use a different producer                                               | Yes, and that path is GasCity                                                           | Yes, and that path is Dyad                                                      |
+| Live UI stream                                     | Yes, if the adapter writes `chat:response:chunk`                                                                         | Yes, if GasCity's events are mapped to the same chunks                                  | Yes, if both backends feed one chunk mapper                                     |
+| User input, approval, cancel, HITL back to GasCity | Only if someone adds commands. Events do not carry the return path                                                       | Natural, because GasCity is already the waiter                                          | Dyad receives them first and must forward                                       |
+| Execution state                                    | Split. Dyad owns the chat row and the chat lock. GasCity owns the phase only if it keeps its own store                   | GasCity owns the workflow. Dyad still owns the visible transcript unless that moves too | Dyad owns the turn. GasCity owns whatever happens inside its backend            |
+| Retry, reconnect, long runs                        | A UI patch can be resent. The run itself has no shared cursor                                                            | One workflow history. Electron quitting no longer kills the loop                        | Dyad retries only while its process lives. GasCity retries only its own backend |
+| What changes when Dyad's agent changes             | Native path changes as it does today. The adapter breaks only if chunk XML changes                                       | GasCity's copy or callback breaks                                                       | `AgentBackend` breaks if the event vocabulary changes                           |
+| Adding a third agent                               | Add another event producer that speaks chunk XML                                                                         | Register another worker behind GasCity                                                  | Implement another `AgentBackend` inside Dyad                                    |
+| New pieces                                         | Inbound adapter, chat-lock sharing                                                                                       | Turn client, workspace tool API, a new home for the loop                                | `AgentBackend`, GasCity client, shared chunk mapper                             |
+| Electron quits mid-run                             | Native run dies with the process. A foreign run can continue only if it was not inside Dyad                              | The loop can continue. Local tools cannot, until the app returns                        | Both the caller and the native worker die                                       |
 
 ### When an architect picks each one
 

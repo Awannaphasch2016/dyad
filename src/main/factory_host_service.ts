@@ -474,7 +474,9 @@ export function applyFactoryHostEvent(
       : run.chatId;
     const phaseChanged = nextChatId !== run.chatId;
     let assistantMessageId = phaseChanged ? null : run.assistantMessageId;
-    if (input.content.length > 0) {
+    // Only a bead's text is transcript. Activity and a waiting gate update the
+    // cursor without adding a second message.
+    if (input.type === "text" && input.content.length > 0) {
       if (assistantMessageId) {
         const row = tx
           .select({ content: messages.content })

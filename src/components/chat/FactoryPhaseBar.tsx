@@ -108,6 +108,7 @@ export function FactoryPhaseBar() {
   const { streamMessage } = useStreamChat();
   const streamState = useChatStreamState(chatId ?? undefined);
   const kickedOffChatIds = useRef(new Set<number>());
+  const followedFormulaPhase = useRef<FactoryPhase | null>(null);
   const enabled = hasFactoryPhases(chats) && appId != null;
   const factoryStateQuery = useQuery({
     queryKey: queryKeys.factoryHost.state({ appId }),
@@ -190,6 +191,7 @@ export function FactoryPhaseBar() {
   const questionsQuery = useQuery({
     queryKey: queryKeys.factory.questions(appId, phase),
     enabled: appId != null && phase != null,
+    refetchInterval: factoryStateQuery.data?.formula ? 1_000 : false,
     queryFn: async () => {
       if (appId == null || phase == null) return [];
       const result = await ipc.factory.listQuestions({ appId, phase });
@@ -209,6 +211,16 @@ export function FactoryPhaseBar() {
   // A factory app only has its three phase chats; any other chat (or a locked
   // phase) sends the person to the phase they are allowed to work on.
   const isOffPhaseChat = enabled && current != null && phase == null;
+  const openPhaseChatId =
+    formulaActive && openPhase ? (byPhase[openPhase]?.id ?? null) : null;
+  useEffect(() => {
+    if (!formulaActive || openPhase == null || appId == null) return;
+    if (followedFormulaPhase.current === openPhase) return;
+    followedFormulaPhase.current = openPhase;
+    if (openPhaseChatId == null || openPhaseChatId === chatId) return;
+    selectChat({ chatId: openPhaseChatId, appId });
+  }, [formulaActive, openPhase, openPhaseChatId, appId, chatId, selectChat]);
+
   useEffect(() => {
     if (!isOffPhaseChat && (phase == null || phaseUnlocked)) return;
     if (!progressLoaded || appId == null) return;
