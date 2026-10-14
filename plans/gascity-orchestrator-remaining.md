@@ -11,6 +11,33 @@ Status: plan. No new runtime change in this document.
 5. `handleLocalAgentStream` is legacy. New turns do not use it, and there is no native fallback.
 6. The proof slings `speckit-phased` from PR #148, PR #154, and PR #159, and shows the guest session log beside the Dyad window.
 
+## Change impact matrix
+
+The phase bar and the formula bead are different state. Clicking **Approve and continue** inserts `factoryPhaseApprovals` and switches to the next chat. It does not write `human_gate.verdict`, so the bead stays blocked. This matrix is the edit that makes the bar follow the formula.
+
+Same rule as [PR #129](https://github.com/Awannaphasch2016/dyad/pull/129). A row is one intention. A column is one place this path stores or decides state. **Change** means the intention is unfinished until that cell is edited as written. **Leave** means that place keeps today's behavior. A row is finished only when every Change cell is true and every Leave cell still behaves as it does today.
+
+| Column | Where it lives |
+| --- | --- |
+| Approval row | `factoryPhaseApprovals`, returned as `approvedPhases` by `readFactoryState`. |
+| Phase rules | `src/lib/factoryPhase.ts`. Unlock, shade, show-approval, and the summary heading. |
+| Phase bar | `FactoryPhaseBar.tsx`. The three buttons, **Approve and continue**, and the prefill. |
+| Open chat | `selectChat` and the chat whose title is Discovery, Implementation, or Delivery. |
+| Transcript | `messages` in that chat, painted by `chat:response:chunk`. |
+| Questions | `hitlQuestions` and `HitlQuestionList` on the bar. |
+| Run row | `factoryHostRuns`: task id, status, event cursor. |
+| Formula beads | The GasCity workflow. Step beads, `needs`, and `human_gate.verdict`. Not a Dyad table. |
+| Guest session | The GasCity session that executes the open bead. |
+
+| Intention | Approval row | Phase rules | Phase bar | Open chat | Transcript | Questions | Run row | Formula beads | Guest session |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| The bar shows the phase the formula is in | Change. This row is not the unlock. A stored approval must not paint Implementation open while `accept-discovery` is open. | Change. Unlock and shade read the open bead's phase. A chat that merely has messages is not "started." | Change. The lock, the shade, and the selected button read that cursor. | Change. The open chat is the phase of the open bead. | Leave. The chunk schema stays. | Leave. | Change. One workflow id and the current step id. The bar polls that, not one prompt row per phase. | Change. Dyad reads the open bead. GasCity remains the writer. | Leave. The bead picks the phase. The session does not. |
+| Approve writes the gate verdict and does not open the next phase | Change. The click does not insert `factoryPhaseApprovals` to mean the phase is done. | Change. The button is enabled when the matching gate bead is waiting. A `## Discovery summary` heading is not the enablement. | Change. **Approve and continue** does not call `selectChat` and does not prefill the next chat. | Change. The click stays on the gate's phase. | Leave. | Leave. Clarify still uses a question. The verdict is `human_gate.verdict`, not a second answer row. | Leave. GasCity's events still set the status. The click does not mark the run completed. | Change. The click writes `approve` or `request-changes` on the open confirmation bead. | Leave. The same session waits, then continues. |
+| The window shows the step inside the phase | Leave. | Change. In progress means a bead in that phase is open. | Change. The open phase shows the step title: specify, clarify, plan, tasks, implement, converge, the report, or publish. | Change. Discovery steps stay on Discovery. Implementation steps stay on Implementation. | Change. The text is the open bead's events. The bar does not kick off a local prompt to fill the chat. | Change. The list shows a question only when the open bead asked one. | Change. The current step id is on the run row the bar polls. | Change. The bar reads that bead's id and title. | Change. The text is that session's output. |
+| The next phase unlocks only when the gate bead closes | Change. `approvedPhases` is not the lock. | Change. Implementation unlocks only after `accept-discovery` is `approve`. "The next chat has messages" is not approval. The same rule binds Delivery to `accept-implementation`. | Change. The next button stays disabled until that bead closes. | Change. The next chat is not selected on the click. | Leave. | Leave. | Change. Status stays `input-required` while the gate is open, and `running` when the next bead is routed. | Change. The `needs` edge releases the next step. The bar observes the closed bead. | Leave. |
+| Request changes stays in the same phase | Change. The click does not insert an approval. | Change. The shade stays in progress. | Change. The same phase stays selected. There is no continue. | Leave. It is already that phase's chat. | Change. The revision child's text appends in that chat. | Leave. | Change. The same workflow id returns to `running` on the revision bead. | Change. `request-changes` reruns the revision child. The gate bead stays open. | Leave. |
+| Delivery approval does not finish the run before publish | Change. The click does not mark Delivery finished. | Change. The finished shade waits until the publish bead has closed. A delivery summary heading is not finished. | Change. **Approve delivery** writes the verdict. Publish is the next step the bar shows. | Leave. The chat stays Delivery through publish. | Change. Publish's result is shown in the Delivery chat. | Leave. | Change. The run is completed only when the workflow's terminal step closes. | Change. `publish` needs `accept-delivery`. The bar reads the publish bead. | Leave. |
+
 ## What changed, and why
 
 Two corrections landed on the previous draft.
