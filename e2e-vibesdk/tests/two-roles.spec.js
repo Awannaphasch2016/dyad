@@ -142,8 +142,6 @@ test("the project manager starts the organization app and each role answers the 
     await signIn(dev, process.env.VIBESDK_DEV_USER_ID ?? "");
     await expect(pm.getByText("Project Manager").first()).toBeVisible();
     await expect(dev.getByText("Developer").first()).toBeVisible();
-    await expect(pm.getByText("Wewebplus", { exact: true }).first()).toBeVisible();
-    await expect(dev.getByText("Wewebplus", { exact: true }).first()).toBeVisible();
 
     const devBox = dev.locator("textarea").first();
     await devBox.fill("Build a private app");
@@ -161,6 +159,8 @@ test("the project manager starts the organization app and each role answers the 
 
     const appLink = dev.locator(`a[href="${appUrl.pathname}"]`);
     await expect(appLink.first()).toBeVisible({ timeout: 45_000 });
+    await expect(pm.getByText("Wewebplus", { exact: true }).first()).toBeVisible();
+    await expect(dev.getByText("Wewebplus", { exact: true }).first()).toBeVisible();
     await appLink.first().click();
     await expect(pm.getByRole("button", { name: "Make public" })).toHaveCount(
       0,
