@@ -2,6 +2,15 @@
 
 Status: plan. No new runtime change in this document.
 
+## Important points
+
+1. GasCity orchestrates the whole factory formula, not only the three phase chats.
+2. Discovery, Implementation, and Delivery are human gates. The methodology steps inside them are beads GasCity routes.
+3. A prompt that describes the methodology is not a formula run. The formula run is a sling that materializes those beads.
+4. The agent process lives in a GasCity guest session. Dyad is the window, the tool route, and the verdict.
+5. `handleLocalAgentStream` is legacy. New turns do not use it, and there is no native fallback.
+6. The proof slings `speckit-phased` from PR #148, PR #154, and PR #159, and shows the guest session log beside the Dyad window.
+
 ## What changed, and why
 
 Two corrections landed on the previous draft.
@@ -247,12 +256,3 @@ describes Spec Kit, is not this proof.
 - A new message-list renderer.
 - File tools after the Electron process has exited.
 - `execute_sandbox_script`, `spawn_agent`, and MCP tools on the factory callback.
-
-## Important points
-
-1. GasCity orchestrates the whole factory formula, not only the three phase chats.
-2. Discovery, Implementation, and Delivery are human gates. The methodology steps inside them are beads GasCity routes.
-3. A prompt that describes the methodology is not a formula run. The formula run is a sling that materializes those beads.
-4. The agent process lives in a GasCity guest session. Dyad is the window, the tool route, and the verdict.
-5. `handleLocalAgentStream` is legacy. New turns do not use it, and there is no native fallback.
-6. The proof slings `speckit-phased` from PR #148, PR #154, and PR #159, and shows the guest session log beside the Dyad window.
