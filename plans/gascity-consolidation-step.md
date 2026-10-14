@@ -231,6 +231,20 @@ That digest is the published image that carries `packages/ops-axi`. The image ha
 
 `ops-axi toolbox use <digest>` is the version command. It checks the image exists, replaces `/usr/local/bin/ops-axi` and `gh-axi` from that image, and writes the digest into the `install` pin. Other sessions see it after the next environment build. `gh-axi update` inside the image does nothing useful: `/opt/axi` is owned by root and the image runs as `agent`.
 
+The readable-output skill is `unslop`, by Lauren Tan (`poteto`) in the `pstack` plugin. It cuts AI tells from writing. The code sibling is `deslop` in `cursor-team-kit`. A copy of `unslop` lives at `.claude/skills/unslop/SKILL.md`, which `.agents/skills` already links. Its current file sets `disable-model-invocation: true`, so a session runs it when asked. `poteto-mode` is the skill that applies `unslop` to prose on its own.
+
+What the environment keeps, and what the checkout keeps:
+
+| Kept by                                 | What                                                                                |
+| --------------------------------------- | ----------------------------------------------------------------------------------- |
+| Environment `install`, then a new build | `ops-axi`, `gh-axi`, the `gh-axi` hooks, Docker, Node, and `gh` on `/usr/local/bin` |
+| The git checkout                        | `unslop`, the repo skills under `.claude/skills`, `AGENTS.md`, and `rules/`         |
+| The Cursor account, not the snapshot    | The `pstack` plugin, if installed from the marketplace                              |
+| Injected per session                    | `GH_TOKEN`. It is not written into the snapshot.                                    |
+| GitHub Actions, not this VM             | Doppler. `ops-axi` starts the workflow that reads it.                               |
+
+`install` ends by running `ops-axi --help` and checking that `.claude/skills/unslop/SKILL.md` exists, so a bad copy fails the build. Pulling the toolbox image needs `ghcr.io` on the environment egress list.
+
 ## Walk, before the sling
 
 Two pull requests are the agent UI walk. Both land before a formula sling.
