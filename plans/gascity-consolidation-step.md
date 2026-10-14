@@ -245,6 +245,35 @@ What the environment keeps, and what the checkout keeps:
 
 `install` ends by running `ops-axi --help` and checking that `.claude/skills/unslop/SKILL.md` exists, so a bad copy fails the build. Pulling the toolbox image needs `ghcr.io` on the environment egress list.
 
+## Implementation list
+
+Two slices. The first lands on PR #92, in `packages/ops-axi`. The second is the cloud environment for this repo. Neither slice slings a formula.
+
+### ops-axi
+
+1. Keep the six commands already in `packages/ops-axi/lib/catalog.js`: `ec2 check`, `formula role`, `formula verify`, `formula deploy`, `doppler status`, `rollout`.
+2. Add `doppler phase1` and `doppler verify` as catalog entries that pass `command` to `doppler-organize.yml`.
+3. Add `--project` and `--config` to every command, plus `--aws-project` and `--aws-config` where a command reads a second pair. The default is the pair that command uses today. The job prints `project=` and `config=` before it reads secrets. A write with no default and no flags exits without changing anything.
+4. Pass those flags into the workflow as inputs. Replace the hardcoded `doppler-project` and `doppler-config` values in the workflows this catalog starts.
+5. Add the Devbox commands: `preview image`, `preview up <pr>`, `preview down <pr>`, `preview exec`, `preview wake`, `preview secrets`. `preview up` and `preview down` add or remove the `preview` label and then watch `preview.yml`.
+6. Add the read-only commands whose workflows already exist: `preview status <pr>`, `preview logs <pr>`, and `preview db-status <pr>` call `preview-control.yml` with `action` set to `status`, `logs`, or `db-status`.
+7. Add the read-only commands that need a new workflow, each of which prints facts and changes nothing: `host status`, `formula status`, `vibe status <pr>`, `bolt status`, `forma status`, `toolbox status`, `walk status`.
+8. Add `toolbox image` for the existing build workflow, and `toolbox use <digest>` to replace `/usr/local/bin/ops-axi` and `gh-axi` and write that digest into the install pin.
+9. Add `cursor probe`. Leave `cursor factory` out.
+10. Add `walk dyad` and `walk vibe` only after `ui-walk.yml` and the two config files exist. Until then the catalog has no walk command.
+11. Extend `packages/ops-axi/test` with the fake `gh`. Cover the new names, the Doppler defaults, a write that refuses to run, and `preview up` adding the label.
+12. Publish a new toolbox image from that commit. `ops-axi toolbox status` prints the digest. Later sessions pin that digest.
+
+### Cursor cloud environment
+
+1. Add `.cursor/environment.json`. Its `install` reads one pin file, copies `ops-axi` and `gh-axi` from that digest into `/usr/local/bin`, and runs `gh-axi setup hooks`.
+2. The same pin file is what `ops-axi toolbox use <digest>` writes. `install` and `toolbox use` do not each keep a copy of the digest.
+3. `install` checks `ops-axi --help` and `.claude/skills/unslop/SKILL.md`. A missing binary or a missing skill fails the build.
+4. The environment image includes Docker, Node, and `gh`. Egress allows `ghcr.io`.
+5. Leave `GH_TOKEN` and every Doppler value out of the snapshot. The session injects `GH_TOKEN`. Doppler stays inside the workflow the command starts.
+6. `unslop` stays in git at `.claude/skills/unslop/SKILL.md`. The environment does not keep a second copy.
+7. Build the environment from that commit. A new session is the check: `ops-axi --help` prints the catalog, and the `unslop` skill file is on the checkout. A session that is already running is not that check.
+
 ## Walk, before the sling
 
 Two pull requests are the agent UI walk. Both land before a formula sling.
