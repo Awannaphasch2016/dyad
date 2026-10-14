@@ -317,7 +317,7 @@ test("home enter and the sidebar read the sign-in role", () => {
   assert.match(side, /sharedRoleName === 'Developer'/);
   assert.equal(side.includes("includes('Project Manager')"), false);
   assert.equal(side.includes("includes('Developer')"), false);
-  assert.match(side, /sharedOrg \|\| \\'Apps\\'/);
+  assert.match(side, /sharedOrg \|\| 'Apps'/);
   assert.match(auth, /vibesdk-shared-role-name/);
   assert.match(auth, /vibesdk-shared-org/);
   assert.match(auth, /removeItem\('vibesdk-shared-role-name'\)/);

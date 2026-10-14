@@ -623,6 +623,8 @@ test("the Vibe SDK workflow stays off the Dyad devbox", () => {
     "utf8",
   );
   assert.match(workflow, /preview-vibesdk/);
+  assert.match(workflow, /VIBESDK_METHODOLOGY: speckit-phased/);
+  assert.match(workflow, /head\.ref == 'cursor\/speckit-live-pack-0539'/);
   assert.match(workflow, /vibesdk-preview-pr-/);
   assert.match(workflow, /doppler-project: dyad/);
   assert.match(workflow, /doppler-config: preview/);

@@ -152,14 +152,22 @@ export function patchAskQuestionsTool(source) {
     .replace(
       custom,
       `${custom}\n\t\t\t\t\t\ttargetRole: z\n\t\t\t\t\t\t\t.enum(['project-manager', 'developer'])\n\t\t\t\t\t\t\t.optional()\n\t\t\t\t\t\t\t.describe('Who answers. project-manager for requirements and UX. developer for files and code.'),\n`,
+    )
+    .replace(
+      "'Call this tool once with all the questions you need answered, then end your turn and wait for the user. Do not write or edit files until the scope is clear or the user tells you to proceed with your assumptions.',",
+      "'Call this tool when the current step says to ask. Write the files named by the current step before asking. Set targetRole to project-manager for requirements and UX, and developer for files and code.',",
     );
 }
 
 export function patchThink(source) {
   const field =
     "\tprotected static readonly PROJECT_NAME_PREFIX_MAX_LENGTH = 20;\n";
-  const prompt =
-    "'2. Call the `ask_questions` tool with all the concise, targeted clarifying questions you need answered. Each question can include predefined options and can allow multiple selections and/or a custom free-text answer.',";
+  const prompt = `			'## Clarify before building',
+			'If the request is underspecified or ambiguous (e.g. a one-line idea with no details on features, scope, data, or design), do NOT start writing files yet. Instead, on this turn:',
+			'1. Briefly state the assumptions you would make to proceed.',
+			'2. Call the \`ask_questions\` tool with all the concise, targeted clarifying questions you need answered. Each question can include predefined options and can allow multiple selections and/or a custom free-text answer.',
+			'3. End your turn after calling \`ask_questions\`. Do not write/edit files or deploy until the scope is clear or the user tells you to proceed with your assumptions.',
+			'If the request is already clear and specific, skip this and go straight to building.',`;
   const importAnchor =
     "import { WebSocketMessageResponses } from '../../constants';";
   const holdReset =
@@ -205,12 +213,19 @@ export function patchThink(source) {
     .replace(
       importAnchor,
       `${importAnchor}\nimport { publishOrganizationQuestion } from '../../../services/org/run';
-import { advanceMethodology, methodologyStepPrompt } from '../../../services/org/methodology';`,
+import { advanceMethodology, methodologyStepId, methodologyStepPrompt, methodologyToolDecision } from '../../../services/org/methodology';`,
     )
-    .replace(field, `${field}\n\tprivate organizationHold = false;\n`)
+    .replace(
+      field,
+      `${field}\n\tprivate organizationHold = false;\n\tprivate methodologyStepAtStart = '';\n`,
+    )
     .replace(
       prompt,
-      "'2. Call the `ask_questions` tool with exactly one question. Set targetRole to project-manager for requirements, product, naming, and UX. Set targetRole to developer for files, code, and technical choices. Do not write the question text in your message.',",
+      `			'## Current step',
+			'The current step is appended at the end of this prompt. Follow that step.',
+			'When the step names files, write those files on this turn. Do not call ask_questions instead of writing them.',
+			'When the step tells you to call ask_questions, call it once. Set targetRole to project-manager for requirements, product, naming, and UX. Set targetRole to developer for files, code, and technical choices. Do not write the question text in your message. Then end the turn.',
+			'Do not call deploy_space unless the current step says it is allowed.',`,
     )
     .replace(holdReset, `\t\tthis.organizationHold = false;\n${holdReset}`)
     .replace(textDelta, "\t\t\t\t\taccumulated.text += delta;")
@@ -226,13 +241,17 @@ import { advanceMethodology, methodologyStepPrompt } from '../../../services/org
 				});
 			}
 			this.organizationHold = false;
-			if (!asked) await advanceMethodology(this.env, this.getAgentId(), 'turn');`,
+			if (!asked && (await methodologyStepId(this.env, this.getAgentId())) === this.methodologyStepAtStart) {
+				await advanceMethodology(this.env, this.getAgentId(), 'turn');
+			}`,
     )
     .replace(
       toolOutput,
       `				const toolName = toolNames.get(toolCallId) || 'tool';
 				const args = toolInputs.get(toolCallId) || {};
 				if (toolName === 'ask_questions') {
+					const decision = await methodologyToolDecision(this.env, this.getAgentId(), 'ask_questions', args);
+					if (!decision.allow) return;
 					this.organizationHold = true;
 					await publishOrganizationQuestion({
 						env: this.env,
@@ -251,7 +270,18 @@ import { advanceMethodology, methodologyStepPrompt } from '../../../services/org
     )
     .replace(
       "await stub.chat(text, forwarder);",
-      "await this.configureThinkAgent();\n\t\t\tawait stub.chat(text, forwarder);",
+      "this.methodologyStepAtStart = await methodologyStepId(this.env, this.getAgentId());\n\t\t\tawait this.configureThinkAgent();\n\t\t\tawait stub.chat(text, forwarder);",
+    )
+    .replace(
+      "In a building turn, do NOT end after only writing files:",
+      "Call deploy_space only when the current step says it is allowed.",
+    )
+    .replace(
+      `'1. After writing or editing files, call \`deploy_space\` to commit and deploy so the preview rebuilds.',
+			'2. Then call \`get_browser_console_logs\` to inspect the running preview for client-side errors (JS exceptions, failed fetches, missing assets, hydration errors).',
+			'3. If the deploy reports build errors or the console shows errors, fix the code and repeat from step 1 until the deploy succeeds and the console is clean.',
+			'A building turn should finish with a successful \`deploy_space\` and a clean \`get_browser_console_logs\` check.',`,
+      "'After deploy_space succeeds, call get_browser_console_logs and fix errors the console shows.',",
     );
 }
 
@@ -259,7 +289,8 @@ export function patchThinkAgent(source) {
   const importAnchor = "import { createSetTitleTool } from './set-title-tool';";
   const writeAnchor = "write: createWriteTool({ ops }),";
   const editAnchor = "edit: createEditTool({ ops }),";
-  const deployAnchor = "deploy_space: createDeploySpaceTool({ getStub: () => this.getSpaceStub() }),";
+  const deployAnchor =
+    "deploy_space: createDeploySpaceTool({ getStub: () => this.getSpaceStub() }),";
   requireAnchor(source, importAnchor, "think agent import");
   requireAnchor(source, writeAnchor, "think write");
   requireAnchor(source, editAnchor, "think edit");
@@ -271,15 +302,15 @@ export function patchThinkAgent(source) {
     )
     .replace(
       writeAnchor,
-      "write: this.guardMethodologyTool('write', createWriteTool({ ops })),"
+      "write: this.guardMethodologyTool('write', createWriteTool({ ops })),",
     )
     .replace(
       editAnchor,
-      "edit: this.guardMethodologyTool('edit', createEditTool({ ops })),"
+      "edit: this.guardMethodologyTool('edit', createEditTool({ ops })),",
     )
     .replace(
       `${deployAnchor}`,
-      "deploy_space: this.guardMethodologyTool('deploy_space', createDeploySpaceTool({ getStub: () => this.getSpaceStub() })),"
+      "deploy_space: this.guardMethodologyTool('deploy_space', createDeploySpaceTool({ getStub: () => this.getSpaceStub() })),",
     )
     .replace(
       "override getTools(): ToolSet {",
@@ -290,7 +321,10 @@ export function patchThinkAgent(source) {
 			execute: async (input: unknown, ...rest: unknown[]) => {
 				const decision = await methodologyToolDecision(this.env, this.name, name, input);
 				if (!decision.allow) return decision.message;
-				return execute?.(input, ...rest);
+				const result = await execute?.(input, ...rest);
+				if (!decision.followUp) return result;
+				const body = typeof result === 'string' ? result : JSON.stringify(result ?? '');
+				return body + '\\n\\n' + decision.followUp;
 			},
 		};
 	}
@@ -664,18 +698,20 @@ export function patchSidebar(source) {
     source.slice(0, iconEnd) +
     "\tconst getVisibilityIcon = (_visibility: App['visibility']) => null;" +
     source.slice(iconClose + "\n\t};".length)
-  ).replace(
-    pathAnchor,
-    `\tconst sharedRoleName = sessionStorage.getItem('vibesdk-shared-role-name') ?? '';
+  )
+    .replace(
+      pathAnchor,
+      `\tconst sharedRoleName = sessionStorage.getItem('vibesdk-shared-role-name') ?? '';
 	const sharedOrg = sessionStorage.getItem('vibesdk-shared-org') ?? '';
 	const getAppPath = (app: App) =>
 		sharedRoleName === 'Project Manager' || sharedRoleName === 'Developer' || app.userId === user?.id
 			? \`/chat/\${app.id}\`
 			: \`/app/\${app.id}\`;`,
-  ).replace(
-    labelAnchor,
-    '\t\t\t\t\t\t\t<span className="text-xs font-funky-mono">\n\t\t\t\t\t\t\t\t{sharedOrg || \'Apps\'}\n\t\t\t\t\t\t\t</span>',
-  );
+    )
+    .replace(
+      labelAnchor,
+      "\t\t\t\t\t\t\t<span className=\"text-xs font-funky-mono\">\n\t\t\t\t\t\t\t\t{sharedOrg || 'Apps'}\n\t\t\t\t\t\t\t</span>",
+    );
 }
 
 export function patchAppsHook(source) {
@@ -1323,7 +1359,10 @@ export async function applyOrganizationRun(checkout) {
   await mkdir(join(checkout, "worker/api/controllers/org"), {
     recursive: true,
   });
-  await writeFile(join(checkout, "worker/services/org/methodology.ts"), methodologyModuleSource());
+  await writeFile(
+    join(checkout, "worker/services/org/methodology.ts"),
+    methodologyModuleSource(),
+  );
   await writeFile(join(checkout, "worker/services/org/run.ts"), orgRunSource());
   await writeFile(
     join(checkout, "worker/api/controllers/org/controller.ts"),
