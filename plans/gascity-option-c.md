@@ -73,28 +73,28 @@ edited as written. **Leave** means that place keeps today's behavior.
 A row is finished only when every Change cell is true and every Leave
 cell still behaves as it does today.
 
-| Column | Where it lives |
-| --- | --- |
-| Chat lock | `src/chat_stream/` host. One owner per chat. |
-| Agent loop | `handleLocalAgentStream`. |
+| Column       | Where it lives                                |
+| ------------ | --------------------------------------------- |
+| Chat lock    | `src/chat_stream/` host. One owner per chat.  |
+| Agent loop   | `handleLocalAgentStream`.                     |
 | Tool wrapper | The `execute` closure in `buildAgentToolSet`. |
-| Transcript | `messages` and `chat:response:chunk`. |
-| Run record | `factoryHostRuns`. |
-| Bridge | `factory_host_bridge_server.ts`. |
-| HITL | `hitlQuestions` and `answerHitlQuestion`. |
-| Phase chrome | `FactoryPhaseBar.tsx`. |
-| Workspace | App directory, git, preview process. |
+| Transcript   | `messages` and `chat:response:chunk`.         |
+| Run record   | `factoryHostRuns`.                            |
+| Bridge       | `factory_host_bridge_server.ts`.              |
+| HITL         | `hitlQuestions` and `answerHitlQuestion`.     |
+| Phase chrome | `FactoryPhaseBar.tsx`.                        |
+| Workspace    | App directory, git, preview process.          |
 | GasCity task | Supervisor workflow cursor. Not in this repo. |
 
-| Intention | Chat lock | Agent loop | Tool wrapper | Transcript | Run record | Bridge | HITL | Phase chrome | Workspace | GasCity task |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| One wrapper runs every Dyad tool | Leave. | Leave. `streamText` still receives the tool set. | Change. Move the closure body into `invokeRegisteredTool`. `buildAgentToolSet` calls it. | Leave. | Leave. | Leave. No route in this row. | Leave. Consent is still the call inside the wrapper. | Leave. | Leave. | Leave. |
-| GasCity calls the model for a factory turn | Change. The factory owner is the GasCity task. | Change. A factory prompt does not enter `handleLocalAgentStream`. | Leave. GasCity does not get a second wrapper. | Leave. | Change. Store the GasCity task id. `intentId` is no longer the execution key. | Change. `POST /runs` stops dispatching a local-agent intent. | Leave. | Change. Kickoff calls GasCity instead of `streamMessage`. | Leave. | Change. GasCity stores the cursor and calls the model. |
-| The message list shows that turn while it runs | Leave. | Leave. | Leave. | Change. Events write the streaming row through `chat:response:chunk`. The chunk schema stays. | Change. Store the last applied event cursor. | Change. Event route: text, activity, input-required, end, error. | Leave. | Leave. | Leave. | Change. GasCity emits events. It does not write `messages`. |
-| A factory tool runs through the wrapper | Leave. The turn already holds the lock. | Leave. | Change. The bridge calls `invokeRegisteredTool` by name. Allowlist: `read_file`, `list_files`, `grep`, `code_search`, `write_file`, `search_replace`, `git_status`, `git_diff`. | Leave. Tool XML still comes from the wrapper callbacks. | Leave. | Change. Tool route. Reject `execute_sandbox_script`, sub-agents, and MCP names. | Leave. Consent still blocks in Dyad. | Leave. | Leave. The same `execute` writes the same directory. | Change. GasCity sends the tool name and args and waits for the string. |
-| Cancel and one answer go back to GasCity | Change. Cancel releases the factory owner. | Leave. | Change. The in-flight `execute` sees the task abort signal. | Change. Cancel sets `wasCancelled`. No new message type. | Change. The same task id continues across the answer, or the status becomes canceled. | Change. Cancel route. | Change. One answer resumes that task. The question stays on `hitlQuestions`. | Leave. The reply uses the existing composer. | Leave. | Change. GasCity receives cancel and the answer. |
-| Ordinary chat still runs with GasCity down | Leave. | Leave. | Leave. | Leave. | Leave. | Leave. | Leave. | Leave. | Leave. | Leave. |
-| Formula and preview stay put | Leave. | Leave. | Leave. | Leave. | Leave. | Leave. | Leave. | Leave. Approval and document download stay. | Leave. | Leave. Do not change `gascity_formula_client.ts`. |
+| Intention                                      | Chat lock                                      | Agent loop                                                        | Tool wrapper                                                                                                                                                                    | Transcript                                                                                    | Run record                                                                            | Bridge                                                                          | HITL                                                                         | Phase chrome                                              | Workspace                                            | GasCity task                                                           |
+| ---------------------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | --------------------------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------- |
+| One wrapper runs every Dyad tool               | Leave.                                         | Leave. `streamText` still receives the tool set.                  | Change. Move the closure body into `invokeRegisteredTool`. `buildAgentToolSet` calls it.                                                                                        | Leave.                                                                                        | Leave.                                                                                | Leave. No route in this row.                                                    | Leave. Consent is still the call inside the wrapper.                         | Leave.                                                    | Leave.                                               | Leave.                                                                 |
+| GasCity calls the model for a factory turn     | Change. The factory owner is the GasCity task. | Change. A factory prompt does not enter `handleLocalAgentStream`. | Leave. GasCity does not get a second wrapper.                                                                                                                                   | Leave.                                                                                        | Change. Store the GasCity task id. `intentId` is no longer the execution key.         | Change. `POST /runs` stops dispatching a local-agent intent.                    | Leave.                                                                       | Change. Kickoff calls GasCity instead of `streamMessage`. | Leave.                                               | Change. GasCity stores the cursor and calls the model.                 |
+| The message list shows that turn while it runs | Leave.                                         | Leave.                                                            | Leave.                                                                                                                                                                          | Change. Events write the streaming row through `chat:response:chunk`. The chunk schema stays. | Change. Store the last applied event cursor.                                          | Change. Event route: text, activity, input-required, end, error.                | Leave.                                                                       | Leave.                                                    | Leave.                                               | Change. GasCity emits events. It does not write `messages`.            |
+| A factory tool runs through the wrapper        | Leave. The turn already holds the lock.        | Leave.                                                            | Change. The bridge calls `invokeRegisteredTool` by name. Allowlist: `read_file`, `list_files`, `grep`, `code_search`, `write_file`, `search_replace`, `git_status`, `git_diff`. | Leave. Tool XML still comes from the wrapper callbacks.                                       | Leave.                                                                                | Change. Tool route. Reject `execute_sandbox_script`, sub-agents, and MCP names. | Leave. Consent still blocks in Dyad.                                         | Leave.                                                    | Leave. The same `execute` writes the same directory. | Change. GasCity sends the tool name and args and waits for the string. |
+| Cancel and one answer go back to GasCity       | Change. Cancel releases the factory owner.     | Leave.                                                            | Change. The in-flight `execute` sees the task abort signal.                                                                                                                     | Change. Cancel sets `wasCancelled`. No new message type.                                      | Change. The same task id continues across the answer, or the status becomes canceled. | Change. Cancel route.                                                           | Change. One answer resumes that task. The question stays on `hitlQuestions`. | Leave. The reply uses the existing composer.              | Leave.                                               | Change. GasCity receives cancel and the answer.                        |
+| Ordinary chat still runs with GasCity down     | Leave.                                         | Leave.                                                            | Leave.                                                                                                                                                                          | Leave.                                                                                        | Leave.                                                                                | Leave.                                                                          | Leave.                                                                       | Leave.                                                    | Leave.                                               | Leave.                                                                 |
+| Formula and preview stay put                   | Leave.                                         | Leave.                                                            | Leave.                                                                                                                                                                          | Leave.                                                                                        | Leave.                                                                                | Leave.                                                                          | Leave.                                                                       | Leave. Approval and document download stay.               | Leave.                                               | Leave. Do not change `gascity_formula_client.ts`.                      |
 
 ## Slices
 
@@ -150,13 +150,13 @@ a consent test for each mutating tool. Do not add
 
 ## Failure behavior
 
-| Failure | Behavior |
-| --- | --- |
-| GasCity unreachable | The factory send fails in the window. Ordinary chat still streams. |
-| Consent denied or path jail | The tool route returns that error. GasCity chooses the next model step. |
-| User cancels | Dyad aborts the tool and notifies GasCity. The transcript ends with `wasCancelled`. |
-| Dyad quits during a tool | The route dies. GasCity keeps the task cursor. The file edit does not move. |
-| Duplicate event or tool call | The idempotency key makes the second call return the first result. |
+| Failure                      | Behavior                                                                            |
+| ---------------------------- | ----------------------------------------------------------------------------------- |
+| GasCity unreachable          | The factory send fails in the window. Ordinary chat still streams.                  |
+| Consent denied or path jail  | The tool route returns that error. GasCity chooses the next model step.             |
+| User cancels                 | Dyad aborts the tool and notifies GasCity. The transcript ends with `wasCancelled`. |
+| Dyad quits during a tool     | The route dies. GasCity keeps the task cursor. The file edit does not move.         |
+| Duplicate event or tool call | The idempotency key makes the second call return the first result.                  |
 
 ## Tests
 

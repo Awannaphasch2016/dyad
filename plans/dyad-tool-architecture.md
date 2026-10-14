@@ -12,15 +12,15 @@ they close over is Dyad's.
 
 ## 1. Where the pieces live
 
-| Piece | File | Role |
-| --- | --- | --- |
-| One tool | `src/pro/main/ipc/handlers/local_agent/tools/<name>.ts` | Schema, description, `execute` |
-| Tool contract | `ToolDefinition` and `AgentContext` in `tools/types.ts` | What every tool must satisfy |
-| Registry | `TOOL_DEFINITIONS` in `tool_definitions.ts` | The only list the agent knows |
-| Filter | `shouldIncludeTool` | Ask, Plan, Build, consent "never", Pro, blueprint |
-| Adapter | `buildAgentToolSet` | Turns a `ToolDefinition` into an AI SDK tool |
-| Loop | `handleLocalAgentStream` in `local_agent_handler.ts` | Builds the context, calls `streamText({ tools })` |
-| User MCP tools | `getMcpTools` in the same handler | Merged into the same `ToolSet` after the registry |
+| Piece          | File                                                    | Role                                              |
+| -------------- | ------------------------------------------------------- | ------------------------------------------------- |
+| One tool       | `src/pro/main/ipc/handlers/local_agent/tools/<name>.ts` | Schema, description, `execute`                    |
+| Tool contract  | `ToolDefinition` and `AgentContext` in `tools/types.ts` | What every tool must satisfy                      |
+| Registry       | `TOOL_DEFINITIONS` in `tool_definitions.ts`             | The only list the agent knows                     |
+| Filter         | `shouldIncludeTool`                                     | Ask, Plan, Build, consent "never", Pro, blueprint |
+| Adapter        | `buildAgentToolSet`                                     | Turns a `ToolDefinition` into an AI SDK tool      |
+| Loop           | `handleLocalAgentStream` in `local_agent_handler.ts`    | Builds the context, calls `streamText({ tools })` |
+| User MCP tools | `getMcpTools` in the same handler                       | Merged into the same `ToolSet` after the registry |
 
 `read_file` is the shape of the rest. `readFileTool` is a const object.
 Its `execute` is `(args, ctx: AgentContext) => Promise<string>`. It is
@@ -90,9 +90,9 @@ such as `execute_sql` uses the linked database and SQL consent.
 
 Two ways exist to call `execute`:
 
-| Caller | What it skips |
-| --- | --- |
-| `buildAgentToolSet` | Nothing in the list above |
+| Caller                           | What it skips                                                |
+| -------------------------------- | ------------------------------------------------------------ |
+| `buildAgentToolSet`              | Nothing in the list above                                    |
 | A test, or any other direct call | Consent, blueprint gate, mode filter, mutation tracking, XML |
 
 `read_file.spec.ts` calls `readFileTool.execute(args, mockContext)` with
@@ -102,14 +102,14 @@ in the wrapper, not in `read_file`.
 
 ## 4. What GasCity can and cannot reuse
 
-| Piece | Reusable as it is | Why |
-| --- | --- | --- |
-| `TOOL_DEFINITIONS` names and Zod schemas | Yes, inside this process | Plain data plus Zod |
-| `tool.execute` | Yes, if the caller builds an `AgentContext` and accepts the skipped checks | Tests already do this |
-| `buildAgentToolSet` | Only from the Electron main process | Closes over consent, DB, and the chat turn |
-| `handleLocalAgentStream` | No | That is the agent loop |
-| The string result | Yes | A caller can show it or pass it to another model |
-| The XML card | Only if the caller drives `onXmlComplete` | The message list parses those tags |
+| Piece                                    | Reusable as it is                                                          | Why                                              |
+| ---------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------ |
+| `TOOL_DEFINITIONS` names and Zod schemas | Yes, inside this process                                                   | Plain data plus Zod                              |
+| `tool.execute`                           | Yes, if the caller builds an `AgentContext` and accepts the skipped checks | Tests already do this                            |
+| `buildAgentToolSet`                      | Only from the Electron main process                                        | Closes over consent, DB, and the chat turn       |
+| `handleLocalAgentStream`                 | No                                                                         | That is the agent loop                           |
+| The string result                        | Yes                                                                        | A caller can show it or pass it to another model |
+| The XML card                             | Only if the caller drives `onXmlComplete`                                  | The message list parses those tags               |
 
 What blocks a direct call from GasCity:
 
@@ -132,13 +132,13 @@ whoever calls the tool.
 
 ## 5. How this compares with the usual patterns
 
-| Pattern | What it standardizes | What Dyad does |
-| --- | --- | --- |
-| Methods on an agent class | The tool exists only on that object | Not this. Tools are module-level objects. |
-| A registry of functions | Discovery and a callable list | `TOOL_DEFINITIONS`, then filtered per turn. |
-| AI SDK / function calling | Name, description, JSON schema, result back to the model | `buildAgentToolSet` is this adapter. Schemas are Zod until `asSchema().jsonSchema`. |
-| MCP `tools/list` and `tools/call` | A process boundary. The caller does not import the function. | Dyad is an MCP client. It is not an MCP server for its own tools. |
-| A2A tasks | Agent-to-agent lifecycle | Does not describe tools. |
+| Pattern                           | What it standardizes                                         | What Dyad does                                                                      |
+| --------------------------------- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| Methods on an agent class         | The tool exists only on that object                          | Not this. Tools are module-level objects.                                           |
+| A registry of functions           | Discovery and a callable list                                | `TOOL_DEFINITIONS`, then filtered per turn.                                         |
+| AI SDK / function calling         | Name, description, JSON schema, result back to the model     | `buildAgentToolSet` is this adapter. Schemas are Zod until `asSchema().jsonSchema`. |
+| MCP `tools/list` and `tools/call` | A process boundary. The caller does not import the function. | Dyad is an MCP client. It is not an MCP server for its own tools.                   |
+| A2A tasks                         | Agent-to-agent lifecycle                                     | Does not describe tools.                                                            |
 
 Dyad already has the registry and the function-calling adapter. It does
 not have a process boundary in front of its own tools. That boundary is
