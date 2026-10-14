@@ -10,7 +10,7 @@ The preview deploy sets `VIBESDK_METHODOLOGY` to `speckit-phased`. Create copies
 
 The host walks the Spec Kit steps already stored for that id. It does not sling Gas City, and it does not start the GIT Conference run in [PR #159](https://github.com/Awannaphasch2016/dyad/pull/159).
 
-The first step writes `spec.md` and does not deploy. A clarification is one Orange question. The named role answers in the existing prompt box.
+The first step writes `spec.md` and does not deploy. `ask_questions` is refused until that file is written. Writing it moves the host to the next step, and the tool result tells the agent to follow that step before the turn ends. A clarification is one Orange question. The named role answers in the existing prompt box.
 
 ## The recording
 

@@ -7,8 +7,14 @@ import {
   resolveMethodology,
   stepPrompt,
   toolDecision,
+  writeAdvances,
 } from "./methodology-catalog.mjs";
-import { orgRunSource, patchCodingAgent, patchThink, patchThinkAgent } from "./vibesdk-org-run.mjs";
+import {
+  orgRunSource,
+  patchCodingAgent,
+  patchThink,
+  patchThinkAgent,
+} from "./vibesdk-org-run.mjs";
 
 test("the default pack is speckit-phased and unresolved packs are refused", () => {
   const speckit = resolveMethodology(undefined);
@@ -35,8 +41,16 @@ test("the default pack is speckit-phased and unresolved packs are refused", () =
     const pack = resolveMethodology(id);
     assert.equal(pack.ok, true, id);
     assert.equal(pack.record.steps[0].artifacts[0], artifact);
-    assert.equal(pack.record.steps.some((step) => step.id === "accept-discovery"), true, id);
-    assert.equal(pack.record.steps.some((step) => step.id === "accept-delivery"), true, id);
+    assert.equal(
+      pack.record.steps.some((step) => step.id === "accept-discovery"),
+      true,
+      id,
+    );
+    assert.equal(
+      pack.record.steps.some((step) => step.id === "accept-delivery"),
+      true,
+      id,
+    );
   }
   const unknown = resolveMethodology("not-a-pack");
   assert.equal(unknown.ok, false);
@@ -48,11 +62,53 @@ test("a stored pack changes the step text and the file gate", () => {
   const gsd = resolveMethodology("gsd-build").record;
   assert.match(stepPrompt(speckit, "requirements"), /spec\.md/);
   assert.match(stepPrompt(gsd, "requirements"), /\.planning\/PROJECT\.md/);
-  assert.equal(toolDecision(speckit, "requirements", "write", { path: "spec.md" }).allow, true);
-  assert.equal(toolDecision(speckit, "requirements", "write", { path: "src/App.tsx" }).allow, false);
-  assert.equal(toolDecision(speckit, "requirements", "deploy_space", {}).allow, false);
-  assert.equal(toolDecision(speckit, "implement", "deploy_space", {}).allow, true);
-  assert.equal(toolDecision(gsd, "requirements", "write", { path: ".planning/PROJECT.md" }).allow, true);
+  assert.equal(
+    toolDecision(speckit, "requirements", "write", { path: "spec.md" }).allow,
+    true,
+  );
+  assert.equal(
+    toolDecision(speckit, "requirements", "write", { path: "src/App.tsx" })
+      .allow,
+    false,
+  );
+  assert.equal(
+    toolDecision(speckit, "requirements", "deploy_space", {}).allow,
+    false,
+  );
+  assert.equal(
+    toolDecision(speckit, "requirements", "ask_questions", {}).allow,
+    false,
+  );
+  assert.match(
+    toolDecision(speckit, "requirements", "ask_questions", {}).message,
+    /spec\.md/,
+  );
+  assert.equal(
+    toolDecision(speckit, "clarify", "ask_questions", {}).allow,
+    true,
+  );
+  assert.equal(
+    toolDecision(speckit, "review", "ask_questions", {}).allow,
+    true,
+  );
+  assert.equal(
+    toolDecision(speckit, "implement", "deploy_space", {}).allow,
+    true,
+  );
+  assert.equal(
+    writeAdvances(speckit, "requirements", { path: "spec.md" }),
+    true,
+  );
+  assert.equal(
+    writeAdvances(speckit, "requirements", { path: "src/App.tsx" }),
+    false,
+  );
+  assert.equal(writeAdvances(speckit, "clarify", { path: "spec.md" }), false);
+  assert.equal(
+    toolDecision(gsd, "requirements", "write", { path: ".planning/PROJECT.md" })
+      .allow,
+    true,
+  );
   assert.equal(nextStepId(speckit, "requirements", "turn"), "clarify");
   assert.equal(nextStepId(speckit, "implement", "turn"), "implement");
   assert.equal(nextStepId(speckit, "implement", "deploy"), "review");
@@ -60,12 +116,27 @@ test("a stored pack changes the step text and the file gate", () => {
 });
 
 test("the builder prompt receives the current step and does not contain a pack procedure", async () => {
-  const source = await readFile("/tmp/vibesdk-full/worker/agents/core/behaviors/think.ts", "utf8");
-  const agent = await readFile("/tmp/vibesdk-full/worker/agents/think/ThinkAgent.ts", "utf8");
+  const source = await readFile(
+    "/tmp/vibesdk-full/worker/agents/core/behaviors/think.ts",
+    "utf8",
+  );
+  const agent = await readFile(
+    "/tmp/vibesdk-full/worker/agents/think/ThinkAgent.ts",
+    "utf8",
+  );
   const patched = patchThink(source);
   const tools = patchThinkAgent(agent);
-  assert.match(patched, /methodologyStepPrompt\(this\.env, this\.getAgentId\(\)\)/);
-  assert.match(patched, /advanceMethodology\(this\.env, this\.getAgentId\(\), 'turn'\)/);
+  assert.match(
+    patched,
+    /methodologyStepPrompt\(this\.env, this\.getAgentId\(\)\)/,
+  );
+  assert.match(
+    patched,
+    /advanceMethodology\(this\.env, this\.getAgentId\(\), 'turn'\)/,
+  );
+  assert.match(patched, /methodologyStepAtStart/);
+  assert.equal(patched.includes("do NOT start writing files"), false);
+  assert.equal(patched.includes("do NOT end after only writing files"), false);
   assert.equal(patched.includes("NEEDS CLARIFICATION"), false);
   assert.equal(patched.includes("superpowers-development"), false);
   assert.equal(patched.includes("bmad-story"), false);
@@ -83,7 +154,10 @@ test("the builder prompt receives the current step and does not contain a pack p
       "        return this.state;",
     ].join("\n"),
   );
-  assert.ok(coding.indexOf("assertRunnableMethodology(this.env)") < coding.indexOf("await this.saveToDatabase();"));
+  assert.ok(
+    coding.indexOf("assertRunnableMethodology(this.env)") <
+      coding.indexOf("await this.saveToDatabase();"),
+  );
   const run = orgRunSource();
   assert.match(run, /methodology_step/);
   assert.equal(run.includes("phase"), false);
