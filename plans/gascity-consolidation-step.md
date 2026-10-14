@@ -189,6 +189,28 @@ Each group has one command that prints facts and changes nothing. A failed deplo
 | Walk                           | `ops-axi walk status`            | Last walk conclusion and artifact names.                          | `ops-axi walk dyad`                                                 |
 | Cursor key                     | `ops-axi cursor probe`           | `GET /v1/me`, then one plan-mode agent that is deleted.           | `ops-axi cursor factory` stays out. It runs the old factory poller. |
 
+## Doppler project and config on every command
+
+A stage is a Doppler config. The same command runs against `dev`, `preview`, or `prd` by naming that config. The workflow file stays one file.
+
+```sh
+ops-axi preview status 177 --project dyad --config preview
+ops-axi preview status 177 --project dyad --config dev
+```
+
+The default is the pair that command uses today, so a call with no flags keeps the current behavior. The job prints `project=` and `config=` before it reads secrets. A write refuses to run when its flags are omitted and it has no default.
+
+Two workflows already read two configs, so those commands take two pairs. `hitl-cursor-probe.yml` reads `dyad` / `preview` and `aws` / `dev`. `scripts/gascity/host-wrapper.sh` reads `dyad` / `prd` and `aws` / `dev`. `dyad-bridge-signin.yml` reads `dyad` / `preview` only.
+
+| Command                                                     | Default                                                                    |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `preview status`, `preview up`, `preview logs`, `walk dyad` | `--project dyad --config preview`                                          |
+| `rollout`, `host status`                                    | `--project dyad --config prd` and `--aws-project aws --aws-config dev`     |
+| `cursor probe`                                              | `--project dyad --config preview` and `--aws-project aws --aws-config dev` |
+| `formula deploy`, `formula status`                          | `--project dyad --config preview`                                          |
+| `doppler status`                                            | `--project dyad`, then the manifest's source configs                       |
+| `bolt status`                                               | `--project bolt --config preview`                                          |
+
 ## Walk, before the sling
 
 Two pull requests are the agent UI walk. Both land before a formula sling.
