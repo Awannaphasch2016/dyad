@@ -356,6 +356,9 @@ test("the inventory workflow only lists machines", () => {
   assert.match(workflow, /name: GasCity inventory/);
   assert.match(workflow, /group: gascity-inventory/);
   assert.match(workflow, /list_gascity_running\.py/);
+  assert.match(workflow, /describe_running_containers\.py/);
+  assert.match(workflow, /read_host_containers\.py/);
+  assert.match(workflow, /read_image_paths\.py/);
   assert.match(workflow, /setup_formula_role\.py --admin/);
   assert.match(workflow, /role-session-name: gascity-inventory/);
   assert.equal(workflow.includes("gascity-rollout"), false);
