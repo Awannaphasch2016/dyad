@@ -78,7 +78,7 @@ test("a successful dispatch finds the run created after the request", async () =
   assert.ok(gh.calls[1].includes("--event"), "polls dispatch runs only");
 });
 
-test("a refused dispatch reruns the latest completed run on the branch", async () => {
+test("a refused dispatch fails and does not list or rerun older runs", async () => {
   const gh = fakeGh({
     "workflow run": {
       status: 1,
@@ -88,48 +88,33 @@ test("a refused dispatch reruns the latest completed run on the branch", async (
     "run list": { stdout: JSON.stringify([RUN]) },
     "run rerun": { stdout: "" },
   });
-  const started = await startRun(gh, {
-    workflow: "ec2-access-check.yml",
-    ref: "cursor/x",
-    sleep: noSleep,
-    now,
-  });
-  assert.equal(started.mode, "rerun");
-  assert.equal(started.run.databaseId, 4242);
-  assert.match(started.reason, /could not find any workflows/);
-  assert.deepEqual(gh.calls.at(-1), ["run", "rerun", "4242"]);
+  await assert.rejects(
+    startRun(gh, {
+      workflow: "ec2-access-check.yml",
+      ref: "cursor/x",
+      sleep: noSleep,
+      now,
+    }),
+    (error) =>
+      error.code === "DISPATCH_REFUSED" &&
+      /does not rerun an older run/.test(error.message),
+  );
+  assert.deepEqual(
+    gh.calls.map((call) => call.slice(0, 2).join(" ")),
+    ["workflow run"],
+  );
 });
 
-test("a refused dispatch attaches to a run that is still going", async () => {
+test("a workflow without workflow_dispatch is a refused dispatch", async () => {
   const gh = fakeGh({
     "workflow run": {
       status: 1,
       stderr: "HTTP 422: Workflow does not have 'workflow_dispatch' trigger",
     },
-    "run list": {
-      stdout: JSON.stringify([
-        { ...RUN, status: "in_progress", conclusion: "" },
-      ]),
-    },
-  });
-  const started = await startRun(gh, {
-    workflow: "x.yml",
-    ref: "b",
-    sleep: noSleep,
-    now,
-  });
-  assert.equal(started.mode, "attach");
-  assert.equal(gh.calls.length, 2, "does not rerun a live run");
-});
-
-test("a refused dispatch with no earlier run is a clear error", async () => {
-  const gh = fakeGh({
-    "workflow run": { status: 1, stderr: "HTTP 404: Not Found" },
-    "run list": { stdout: "[]" },
   });
   await assert.rejects(
     startRun(gh, { workflow: "x.yml", ref: "b", sleep: noSleep, now }),
-    (error) => error.code === "NO_RUN_TO_RERUN",
+    (error) => error.code === "DISPATCH_REFUSED",
   );
 });
 

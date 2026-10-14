@@ -1,0 +1,46 @@
+# Print the published toolbox digest. Changes nothing and holds no secret.
+name: Toolbox status
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read the package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          image="ghcr.io/${owner}/axi-toolbox"
+          gh api --paginate "/users/${owner}/packages/container/axi-toolbox/versions" \
+            > "$RUNNER_TEMP/versions.json"
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const versions = JSON.parse(readFileSync(process.argv[1], "utf8"));
+            const list = Array.isArray(versions) ? versions : [];
+            const chosen = list.find((version) =>
+              (version.metadata?.container?.tags || []).some((tag) => tag.startsWith("sha-")),
+            ) || list[0];
+            if (!chosen) {
+              console.log("image=absent");
+              process.exit(1);
+            }
+            const name = String(chosen.name || "");
+            const digest = name.startsWith("sha256:") ? name : `sha256:${name}`;
+            const tags = chosen.metadata?.container?.tags || [];
+            const sha = tags.find((tag) => tag.startsWith("sha-")) || "absent";
+            if (!/^sha256:[0-9a-f]{64}$/.test(digest)) {
+              console.log("image=absent");
+              process.exit(1);
+            }
+            console.log(`image=${process.argv[2]}@${digest}`);
+            console.log(`tag=${sha}`);
+          ' "$RUNNER_TEMP/versions.json" "$image"

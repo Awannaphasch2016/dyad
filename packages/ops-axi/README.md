@@ -25,7 +25,11 @@ Exit codes: `0` run passed and verification held, `1` run failed or verification
 
 ## When GitHub refuses to dispatch
 
-GitHub only dispatches workflow files that exist on the repository's default branch. Most of this fork's operational workflows live on feature branches, so a dispatch is refused with "Workflow does not have 'workflow_dispatch' trigger". `ops-axi` then reruns the latest run of that workflow on `--ref` and reports `mode: rerun` with the commit it reran. A rerun uses that run's commit, not the branch tip; push the branch to get a fresh run if the workflow file changed. If a run is still in progress, `ops-axi` attaches to it (`mode: attach`).
+GitHub only dispatches a workflow file that exists on the repository's default branch. A refused dispatch fails the command with `code: DISPATCH_REFUSED`. The command does not rerun an older run, because that rerun would ignore the arguments from this call.
+
+## Doppler project and config
+
+Every command accepts `--project` and `--config`. A command that reads a second config also accepts `--aws-project` and `--aws-config`. The default is the pair that command uses today. The workflow prints `project=` and `config=` before it reads secrets. `formula role` and `preview secrets` write a config and have no default, so they exit before calling `gh` when those flags are omitted.
 
 ## Secrets
 
@@ -33,16 +37,9 @@ Result lines whose key looks like a secret (`TOKEN`, `KEY`, `SECRET`, `PASSWORD`
 
 ## Operations
 
-| Command          | Workflow                   | Default ref                          | Verifies                               |
-| ---------------- | -------------------------- | ------------------------------------ | -------------------------------------- |
-| `ec2 check`      | `ec2-access-check.yml`     | `cursor/axi-toolbox-image-plan-531e` | run passes                             |
-| `formula role`   | `preview-formula-role.yml` | `cursor/formula-config-ui-55d6`      | run passes                             |
-| `formula verify` | `ec2-access-check.yml`     | `cursor/axi-toolbox-image-plan-531e` | `AWS_PREVIEW_FORMULA_ROLE_ARN=present` |
-| `formula deploy` | `preview-formula.yml`      | `cursor/formula-config-ui-55d6`      | `url=https://…`                        |
-| `rollout <sha>`  | `gascity-rollout.yml`      | `cursor/browser-dyad-ui-bbea`        | run passes                             |
-| `doppler status` | `doppler-organize.yml`     | `cursor/axi-toolbox-image-plan-531e` | `doppler_oidc=http-200…`               |
+`ops-axi --help` lists every command. The catalog lives in `lib/catalog.js`. Adding an operation is one entry: name, repository, workflow file, default ref, optional positional input, optional Doppler default, optional verify list.
 
-The catalog lives in `lib/catalog.js`. Adding an operation is one entry: name, workflow file, default ref, optional positional input, optional verify list.
+`cursor factory` is not a command. `walk dyad` and `walk vibe` are added when `ui-walk.yml` exists. `pr open` dispatches `pr-open.yml`, which uses a GitHub App to push the branch and open the pull request. That workflow does not merge.
 
 ## Tests
 

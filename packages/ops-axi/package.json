@@ -1,7 +1,7 @@
 {
   "name": "ops-axi",
   "version": "0.1.0",
-  "description": "Operations AXI for this repository: run the preview, formula, and rollout workflows as commands.",
+  "description": "Operations AXI: start a named workflow, wait, and report the key=value lines. Holds no Doppler or AWS credential.",
   "type": "module",
   "private": true,
   "bin": {

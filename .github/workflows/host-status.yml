@@ -1,0 +1,112 @@
+# Print the commit on the Gas City host. Does not roll the host forward.
+name: Host status
+
+on:
+  workflow_dispatch:
+    inputs:
+      doppler-project:
+        description: Doppler project
+        required: false
+        type: string
+      doppler-config:
+        description: Doppler config
+        required: false
+        type: string
+      aws-project:
+        description: Second Doppler project
+        required: false
+        type: string
+      aws-config:
+        description: Second Doppler config
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Name the Doppler pair
+        env:
+          PROJECT: ${{ inputs.doppler-project }}
+          CONFIG: ${{ inputs.doppler-config }}
+          AWS_PROJECT: ${{ inputs.aws-project }}
+          AWS_CONFIG: ${{ inputs.aws-config }}
+        run: |
+          set -euo pipefail
+          project="${PROJECT:-dyad}"
+          config="${CONFIG:-prd}"
+          aws_project="${AWS_PROJECT:-aws}"
+          aws_config="${AWS_CONFIG:-dev}"
+          [[ "$project" =~ ^[A-Za-z0-9_-]+$ ]]
+          [[ "$config" =~ ^[A-Za-z0-9_-]+$ ]]
+          [[ "$aws_project" =~ ^[A-Za-z0-9_-]+$ ]]
+          [[ "$aws_config" =~ ^[A-Za-z0-9_-]+$ ]]
+          echo "project=${project}"
+          echo "config=${config}"
+          echo "aws_project=${aws_project}"
+          echo "aws_config=${aws_config}"
+
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Log in to Doppler by OIDC
+        id: doppler
+        uses: ./.github/actions/doppler-oidc
+        with:
+          identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+
+      - name: Fetch the SSH key from Doppler when GitHub has none
+        if: steps.doppler.outputs.ok == 'true'
+        env:
+          SYNCED_EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          DOPPLER_PROJECT: ${{ inputs.doppler-project }}
+          DOPPLER_CONFIG: ${{ inputs.doppler-config }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${SYNCED_EC2_SSH_KEY//[[:space:]]/}" ]]; then
+            echo "ec2_ssh_key_fetch=skipped reason=github-secret-present"
+            exit 0
+          fi
+          project="${DOPPLER_PROJECT:-dyad}"
+          config="${DOPPLER_CONFIG:-prd}"
+          [[ "$project" =~ ^[A-Za-z0-9_-]+$ ]]
+          [[ "$config" =~ ^[A-Za-z0-9_-]+$ ]]
+          status="$(curl -sS -o "$RUNNER_TEMP/key.json" -w '%{http_code}' \
+            -H "Authorization: Bearer ${DOPPLER_TOKEN}" \
+            "https://api.doppler.com/v3/configs/config/secret?project=${project}&config=${config}&name=EC2_SSH_KEY" || echo 000)"
+          echo "ec2_ssh_key_fetch=http-${status} project=${project} config=${config}"
+          if [[ "$status" == "200" ]]; then
+            umask 077
+            jq -r '.value.computed // empty' "$RUNNER_TEMP/key.json" > "$RUNNER_TEMP/gascity-ec2"
+            [[ -s "$RUNNER_TEMP/gascity-ec2" ]] || rm -f "$RUNNER_TEMP/gascity-ec2"
+          fi
+          rm -f "$RUNNER_TEMP/key.json"
+
+      - name: Read the host commit
+        env:
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          keyfile="$RUNNER_TEMP/gascity-ec2"
+          if [[ ! -f "$keyfile" ]]; then
+            python3 scripts/gascity/write_ssh_key.py "$keyfile"
+          fi
+          ssh -i "$keyfile" \
+            -o UserKnownHostsFile="$GITHUB_WORKSPACE/.github/gascity_known_hosts" \
+            -o StrictHostKeyChecking=yes \
+            -o IdentitiesOnly=yes \
+            -o ConnectTimeout=20 \
+            ubuntu@13.251.216.187 \
+            "git -C /opt/gascity/weaver-plus rev-parse HEAD; git -C /opt/gascity/weaver-plus rev-parse --abbrev-ref HEAD" \
+            | tee "$RUNNER_TEMP/host.txt"
+          commit="$(sed -n '1p' "$RUNNER_TEMP/host.txt")"
+          branch="$(sed -n '2p' "$RUNNER_TEMP/host.txt")"
+          [[ "$commit" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$branch" =~ ^[A-Za-z0-9._/-]+$ ]]
+          echo "commit=${commit}"
+          echo "branch=${branch}"

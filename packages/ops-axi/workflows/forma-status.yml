@@ -1,0 +1,60 @@
+# Print the latest Forma deployment. Changes nothing.
+# This file is dispatched in Awannaphasch2016/forma. Copy it to
+# .github/workflows/forma-status.yml on that repository's default branch.
+name: Forma status
+
+on:
+  workflow_dispatch:
+    inputs:
+      doppler-project:
+        description: Doppler project
+        required: false
+        type: string
+      doppler-config:
+        description: Doppler config
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read the latest deployment
+        env:
+          PROJECT: ${{ inputs.doppler-project }}
+          CONFIG: ${{ inputs.doppler-config }}
+        run: |
+          set -euo pipefail
+          project="${PROJECT:-none}"
+          config="${CONFIG:-none}"
+          echo "project=${project}"
+          echo "config=${config}"
+          curl -fsSL \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/Awannaphasch2016/forma/deployments?per_page=1" \
+            > "$RUNNER_TEMP/deployments.json"
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const list = JSON.parse(readFileSync(process.argv[1], "utf8"));
+            const deployment = Array.isArray(list) ? list[0] : null;
+            if (!deployment) {
+              console.log("sha=absent");
+              console.log("environment=absent");
+              console.log("state=absent");
+              process.exit(0);
+            }
+            console.log(`sha=${deployment.sha || "absent"}`);
+            console.log(`environment=${deployment.environment || "absent"}`);
+            console.log(`statuses_url=${deployment.statuses_url || "absent"}`);
+          ' "$RUNNER_TEMP/deployments.json"
+          url="$(jq -r '.[0].statuses_url // empty' "$RUNNER_TEMP/deployments.json")"
+          if [ -n "$url" ]; then
+            state="$(curl -fsSL -H "Accept: application/vnd.github+json" "$url" | jq -r '.[0].state // "absent"')"
+            echo "state=${state}"
+          else
+            echo "state=absent"
+          fi
