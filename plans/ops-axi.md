@@ -1,6 +1,6 @@
 # ops-axi
 
-Status: not started. This plan creates the ops-axi repository, publishes its image, and adds the commands a Cursor cloud agent runs. It does not sling a formula.
+Status: the command catalog is on `cursor/ops-axi-commands-f1a5`. Creating `Awannaphasch2016/ops-axi` returned `createRepository` 403 for this token, so the CLI and the image workflow are still in this repository. The image build is `.github/workflows/axi-toolbox-image.yml` on that branch. It publishes `ghcr.io/awannaphasch2016/axi-toolbox` with a commit tag and the `gh-axi` version. There is no `latest` tag. This plan does not sling a formula.
 
 The image registry is GitHub Container Registry, `ghcr.io`. That is the registry `axi-toolbox` already uses. This plan does not publish to Google `gcr.io`.
 

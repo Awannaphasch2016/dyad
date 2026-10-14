@@ -1,6 +1,8 @@
 # Consolidation step: one branch on PR #155
 
-Status: not started. This step assembles the branch. It does not sling, and it does not call Doppler or ECS.
+Status: queued next on PR #177. Not started. Run this after the ops-axi command branch. This step assembles the branch. It does not sling, and it does not call Doppler or ECS.
+
+The ops-axi catalog is on `cursor/ops-axi-commands-f1a5`. This pull request's next change is the cherry-pick below. Do not start it in the same step as another ops-axi command.
 
 ## What this step keeps
 
@@ -80,7 +82,7 @@ The manifest project is `dyad`. Its `ci` names are `AWS_PREVIEW_FORMULA_ROLE_ARN
 
 The operator surface is [PR #92](https://github.com/Awannaphasch2016/dyad/pull/92), branch `cursor/axi-toolbox-image-plan-531e`. `packages/ops-axi` starts a workflow, waits, and reads the `key=value` lines. It holds no Doppler or AWS credential. The next slice opened on that PR adds the workflows in the second table to `packages/ops-axi/lib/catalog.js`. `ops-axi run <file> --ref <branch>` can already start one that has no named command.
 
-GitHub dispatches a workflow file only when that file is on the default branch. These files live on feature branches, so a dispatch from this agent returns HTTP 403 or "Workflow does not have workflow_dispatch trigger". `ops-axi` then reruns the latest run on that ref.
+GitHub dispatches a workflow file only when that file is on the default branch. These files live on feature branches, so a dispatch from this agent returns HTTP 403 or "Workflow does not have workflow_dispatch trigger". A refused dispatch now fails the command. It does not rerun an older run.
 
 Named commands already on PR #92:
 
