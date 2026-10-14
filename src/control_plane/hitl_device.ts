@@ -168,6 +168,7 @@ export async function answerHitlQuestion(
     body: string;
     dispatch?: FactoryRunDispatch;
     cursorFollowUp?: CursorFollowUpSender;
+    skipResume?: boolean;
   },
 ): Promise<{ view: HitlQuestionView; resolved: boolean }> {
   const row = database
@@ -224,6 +225,7 @@ export async function answerHitlQuestion(
     body: input.body,
     createdAt: answeredAt,
   });
+  if (input.skipResume) return { view, resolved: true };
   const resolved = await resumeLocalRun(database, {
     appId: updated.appId,
     phase: updated.phase,

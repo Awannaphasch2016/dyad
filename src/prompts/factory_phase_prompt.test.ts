@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { extractFactoryPhaseSummary } from "@/lib/factoryPhase";
 import { extractFactoryRequest } from "@/lib/factoryRequest";
+import { extractPhaseFinished } from "@/lib/factoryStop";
 import {
   appendFactoryPhaseSystemPrompt,
   factoryPhaseSystemPrompt,
@@ -15,14 +15,15 @@ describe("factoryPhaseSystemPrompt", () => {
   it("tells Discovery to ask for the three answers without coding", () => {
     const prompt = factoryPhaseSystemPrompt("discovery");
     expect(prompt).toContain("Start Discovery.");
-    expect(prompt).toContain("planning_questionnaire");
+    expect(prompt).toContain("## Request for project-manager");
     expect(prompt).toContain("Do not write, edit, or plan code");
     expect(prompt).toContain(
       "Do not ask about frameworks, templates, or stacks",
     );
     expect(prompt).not.toContain("Starting template");
     expect(prompt).not.toContain("Discovery screen");
-    expect(prompt).toContain("## Discovery summary");
+    expect(prompt).toContain("## Phase finished");
+    expect(prompt).not.toContain("## Discovery summary");
   });
 
   it("keeps Delivery read-only and Implementation building", () => {
@@ -34,12 +35,13 @@ describe("factoryPhaseSystemPrompt", () => {
     );
   });
 
-  it("asks for a summary shape the approval parser accepts", () => {
+  it("asks for a finish marker with bullets", () => {
     for (const phase of ["discovery", "implementation", "delivery"] as const) {
       const prompt = factoryPhaseSystemPrompt(phase);
-      const template = prompt.slice(prompt.indexOf("## "));
-      const block = template.split("\n\n")[0];
-      expect(extractFactoryPhaseSummary(block, phase)).not.toBeNull();
+      const start = prompt.indexOf("## Phase finished");
+      expect(start).toBeGreaterThan(-1);
+      const block = prompt.slice(start).split("\n\n")[0] ?? "";
+      expect(extractPhaseFinished(block)).not.toBeNull();
     }
   });
 

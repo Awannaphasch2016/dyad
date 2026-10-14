@@ -116,6 +116,7 @@ export const queryKeys = {
     comments: (appId: number | null) => ["factory", "comments", appId] as const,
     questions: (appId: number | null, phase: string | null) =>
       ["factory", "questions", appId, phase] as const,
+    machines: (appId: number | null) => ["factory", "machines", appId] as const,
     answerLock: (chatId: number | null) =>
       ["factory", "answer-lock", chatId] as const,
   },

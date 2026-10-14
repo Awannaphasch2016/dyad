@@ -7,7 +7,7 @@ const bridgeUrl = process.env.DYAD_BRIDGE_URL ?? "http://127.0.0.1:8372";
 module.exports = defineConfig({
   testDir: __dirname,
   testMatch: /.*\.spec\.ts/,
-  timeout: 150 * 60 * 1000,
+  timeout: 180 * 1000,
   expect: { timeout: 30_000 },
   workers: 1,
   retries: 0,
@@ -34,8 +34,13 @@ module.exports = defineConfig({
     cwd: root,
     url: bridgeUrl,
     reuseExistingServer: !process.env.CI,
-    timeout: 10 * 60 * 1000,
+    timeout: 75 * 1000,
     stdout: "pipe",
     stderr: "pipe",
+    // npm start detaches Electron. SIGKILL of the xvfb-run group leaves that
+    // process holding stdout, so Playwright waits on the pipe until the job
+    // is killed. SIGTERM lets the supervisor stop Electron, then SIGKILL
+    // follows if the shell is still up.
+    gracefulShutdown: { signal: "SIGTERM", timeout: 5_000 },
   },
 });

@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -11,8 +10,9 @@ import {
 } from "./signin";
 
 const BRIDGE_URL = process.env.DYAD_BRIDGE_URL ?? "http://127.0.0.1:8372";
+// One Dyad process. Both roles walk Discovery through Delivery in this run.
 const USER_DATA = process.env.DYAD_DEV_USER_DATA_DIR?.trim() ?? "";
-const QUESTION_WAIT_MS = 20 * 60 * 1000;
+const QUESTION_WAIT_MS = 45_000;
 const OUTPUT_DIR = path.join(process.cwd(), "e2e-bridge/output");
 const VIDEO_DIR = path.join(process.cwd(), "e2e-bridge/videos");
 
@@ -38,10 +38,6 @@ const evidence: {
 function answerFromBody(body: string): string {
   const compact = body.replace(/\s+/g, " ").trim().slice(0, 180);
   return `Recorded from the question: ${compact}`;
-}
-
-function promptHash(body: string, answer: string): string {
-  return createHash("sha256").update(`${body}\n\n${answer}`).digest("hex");
 }
 
 function databasePath(): string {
@@ -121,15 +117,28 @@ async function signedInPage(
   };
 }
 
+async function ensureSignedInShell(page: Page): Promise<void> {
+  const button = page.getByTestId("title-bar-user-button");
+  if (await button.isVisible().catch(() => false)) return;
+  // A full reload restarts Clerk. While that session is still loading, the
+  // title bar is absent even though the home composer is on screen.
+  const appeared = await button
+    .waitFor({ state: "visible", timeout: 15_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (appeared) return;
+  await page.reload();
+  await expect(button).toBeVisible({ timeout: 20_000 });
+}
+
 async function openFactoryApp(
   page: Page,
   appName: string,
   chatId: number,
 ): Promise<void> {
-  await page.goto(BRIDGE_URL);
-  await expect(page.getByTestId("title-bar-user-button")).toBeVisible({
-    timeout: 60_000,
-  });
+  // Both browsers are already on the signed-in home page. Reloading here
+  // restarts Clerk and can sit on the loading session for the whole timeout.
+  await ensureSignedInShell(page);
   const item = page.getByTestId(`app-list-item-${appName}`);
   if (!(await item.isVisible().catch(() => false))) {
     // The rail control is a link. Hovering a button named Apps never
@@ -201,6 +210,7 @@ async function waitForBeat(
   pm: Page,
   dev: Page,
   phase: Phase,
+  answeredIds: readonly string[] = [],
 ): Promise<"summary" | { id: string }> {
   const summary = new RegExp(`${phaseLabel(phase)} summary`, "i");
   const started = Date.now();
@@ -222,7 +232,10 @@ async function waitForBeat(
       return "summary";
     }
     const id = (await openQuestionId(pm)) ?? (await openQuestionId(dev));
-    if (id) return { id };
+    // One browser can still show "Status: open" for a question that was
+    // already submitted. Treating that card as a new beat fails the split,
+    // because the answer form is already gone.
+    if (id && !answeredIds.includes(id)) return { id };
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
   throw new Error(
@@ -237,9 +250,17 @@ async function showSplit(
 ): Promise<{ target: Page; other: Page; role: string; body: string }> {
   const pmForm = pm.getByTestId(`hitl-answer-${id}`);
   const devForm = dev.getByTestId(`hitl-answer-${id}`);
-  await expect(pmForm.or(devForm)).toBeVisible({ timeout: 30_000 });
-  const pmAnswers = await pmForm.isVisible().catch(() => false);
-  const devAnswers = await devForm.isVisible().catch(() => false);
+  // These forms are in two browser contexts. Locator.or() throws
+  // "Locators must belong to the same frame" across contexts.
+  const started = Date.now();
+  let pmAnswers = false;
+  let devAnswers = false;
+  while (Date.now() - started < 30_000) {
+    pmAnswers = await pmForm.isVisible().catch(() => false);
+    devAnswers = await devForm.isVisible().catch(() => false);
+    if (pmAnswers !== devAnswers) break;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
   if (pmAnswers === devAnswers) {
     throw new Error(`Question ${id} was offered to both roles or to neither.`);
   }
@@ -260,28 +281,19 @@ async function showSplit(
   return { target, other, role, body };
 }
 
-async function waitForFollowUp(
-  appId: number,
-  phase: Phase,
-  body: string,
-  answer: string,
-): Promise<string> {
-  const hash = promptHash(body, answer);
-  const started = Date.now();
-  while (Date.now() - started < 60_000) {
-    const rows = await readRowsSoon(
-      `SELECT run_id AS runId
-       FROM factory_host_runs
-       WHERE app_id = ? AND phase = ? AND prompt_hash = ?`,
-      [appId, phase, hash],
-    );
-    const runId = rows[0]?.runId;
-    if (typeof runId === "string") return runId;
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-  }
-  throw new Error(
-    `${phaseLabel(phase)} follow-up prompt did not contain the submitted answer.`,
-  );
+async function waitForReview(appId: number, phase: Phase): Promise<void> {
+  await expect
+    .poll(
+      async () =>
+        (
+          await readRowsSoon(
+            `SELECT status FROM factory_phase_machines WHERE app_id = ? AND phase = ?`,
+            [appId, phase],
+          )
+        )[0]?.status,
+      { timeout: 30_000 },
+    )
+    .toBe("awaiting_review");
 }
 
 async function selectPhase(page: Page, phase: Phase): Promise<void> {
@@ -378,7 +390,7 @@ test("two signed-in browsers walk Discovery, Implementation, and Delivery", asyn
     await walkPhase(pm, dev, created.app.id, "implementation", true);
     await expect(pm.getByTestId("factory-phase-delivery")).toBeDisabled();
     await expect(dev.getByTestId("factory-phase-delivery")).toBeDisabled();
-    await approveAndOpenNext(pm, dev, "delivery");
+    await approveAndOpenNext(dev, pm, "delivery");
 
     await walkPhase(pm, dev, created.app.id, "delivery", false);
     const pmDelivery = pm.getByTestId("factory-phase-continue");
@@ -387,6 +399,8 @@ test("two signed-in browsers walk Discovery, Implementation, and Delivery", asyn
     await expect(devDelivery).toBeDisabled();
     await expect(pmDelivery).toContainText("Approve delivery");
     await pmDelivery.click();
+    await expect(pm.getByTestId("factory-phase-download")).toBeVisible();
+    await expect(dev.getByTestId("factory-phase-download")).toBeVisible();
     await expect
       .poll(
         async () =>
@@ -401,7 +415,8 @@ test("two signed-in browsers walk Discovery, Implementation, and Delivery", asyn
       .toEqual(
         expect.arrayContaining(["discovery", "implementation", "delivery"]),
       );
-    await expect(dev.getByTestId("factory-phase-continue")).toBeDisabled();
+    await expect(pm.getByTestId("factory-phase-continue")).toHaveCount(0);
+    await expect(dev.getByTestId("factory-phase-continue")).toHaveCount(0);
   } finally {
     const snapshot = await snapshotEvidence(evidence.appId).catch((error) => ({
       error: error instanceof Error ? error.message : "evidence unread",
@@ -440,7 +455,14 @@ async function walkPhase(
   await selectPhase(dev, phase);
   let sawQuestion = false;
   for (let turn = 0; turn < 6; turn += 1) {
-    const beat = await waitForBeat(pm, dev, phase);
+    const beat = await waitForBeat(
+      pm,
+      dev,
+      phase,
+      evidence.questions
+        .filter((question) => question.phase === phase)
+        .map((question) => question.id),
+    );
     if (beat === "summary") {
       if (requireQuestion && !sawQuestion) {
         throw new Error(
@@ -458,9 +480,7 @@ async function walkPhase(
       await dev.goto(BRIDGE_URL);
       await expect(pm.getByTestId(`hitl-question-${beat.id}`)).toBeVisible();
       await dev.goto(returnUrl);
-      await expect(dev.getByTestId("title-bar-user-button")).toBeVisible({
-        timeout: 60_000,
-      });
+      await ensureSignedInShell(dev);
       await expect(dev.getByTestId("factory-phase-bar")).toBeVisible();
       evidence.leftAppWhileQuestionOpen = true;
       split = await showSplit(pm, dev, beat.id);
@@ -473,31 +493,31 @@ async function walkPhase(
     await expect(split.other.getByTestId(`hitl-body-${beat.id}`)).toHaveCount(
       0,
     );
-    const resumeRunId = await waitForFollowUp(appId, phase, split.body, answer);
+    await waitForReview(appId, phase);
     evidence.questions.push({
       id: beat.id,
       phase,
       role: split.role,
-      resumeRunId,
+      resumeRunId: null,
     });
   }
   throw new Error(`${phaseLabel(phase)} kept asking after six answers.`);
 }
 
 async function approveAndOpenNext(
-  pm: Page,
-  dev: Page,
+  approver: Page,
+  other: Page,
   next: "implementation" | "delivery",
 ): Promise<void> {
-  const pmContinue = pm.getByTestId("factory-phase-continue");
-  const devContinue = dev.getByTestId("factory-phase-continue");
-  await expect(pmContinue).toBeEnabled();
-  await expect(devContinue).toBeDisabled();
-  await expect(pmContinue).toContainText("Approve and continue");
-  await pmContinue.click();
-  await expect(pm.getByTestId("chat-input-container")).toHaveCount(0);
-  await selectPhase(pm, next);
-  await selectPhase(dev, next);
+  const approverContinue = approver.getByTestId("factory-phase-continue");
+  const otherContinue = other.getByTestId("factory-phase-continue");
+  await expect(approverContinue).toBeEnabled();
+  await expect(otherContinue).toBeDisabled();
+  await expect(approverContinue).toContainText("Approve and continue");
+  await approverContinue.click();
+  await expect(approver.getByTestId("chat-input-container")).toHaveCount(0);
+  await selectPhase(approver, next);
+  await selectPhase(other, next);
 }
 
 async function snapshotEvidence(appId: number | null): Promise<{
@@ -511,9 +531,16 @@ async function snapshotEvidence(appId: number | null): Promise<{
   }>;
   answers: Array<{ id: unknown; questionId: unknown }>;
   approvals: Array<{ phase: unknown; roleId: unknown }>;
+  machines: Array<{ phase: unknown; status: unknown; iteration: unknown }>;
 }> {
   if (appId == null) {
-    return { runs: [], questions: [], answers: [], approvals: [] };
+    return {
+      runs: [],
+      questions: [],
+      answers: [],
+      approvals: [],
+      machines: [],
+    };
   }
   const runs = await readRowsSoon(
     `SELECT run_id AS runId, phase, idempotency_key AS idempotencyKey
@@ -536,5 +563,9 @@ async function snapshotEvidence(appId: number | null): Promise<{
     `SELECT phase, role_id AS roleId FROM factory_phase_approvals WHERE app_id = ?`,
     [appId],
   );
-  return { runs, questions, answers, approvals };
+  const machines = await readRowsSoon(
+    `SELECT phase, status, iteration FROM factory_phase_machines WHERE app_id = ? ORDER BY phase`,
+    [appId],
+  );
+  return { runs, questions, answers, approvals, machines };
 }

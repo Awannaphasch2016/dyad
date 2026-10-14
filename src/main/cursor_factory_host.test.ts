@@ -128,7 +128,7 @@ describe("settleCursorFactoryRun", () => {
     const client: CursorFactoryClient = {
       getRun: vi.fn(async () => ({
         status: "FINISHED",
-        message: "## Discovery summary\n- **Page name:** Tiny Bakery",
+        message: "## Phase finished\n- **Page name:** Tiny Bakery",
       })),
       followUp: vi.fn(),
       createAgent: vi.fn(),

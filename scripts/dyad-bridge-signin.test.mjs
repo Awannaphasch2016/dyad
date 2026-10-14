@@ -18,6 +18,8 @@ test("the bridge workflow reads Dyad preview through OIDC and does not print sec
   assert.match(workflow, /doppler-config:\s*preview/);
   assert.match(workflow, /id-token:\s*write/);
   assert.match(workflow, /DYAD_BROWSER_BRIDGE:\s*"1"/);
+  assert.match(workflow, /DYAD_FACTORY_SCRIPT:\s*"record"/);
+  assert.match(workflow, /timeout-minutes:\s*5/);
   assert.match(workflow, /WEWEBPLUS_DATABASE_URL:\s*""/);
   assert.doesNotMatch(workflow, /DOPPLER_ADMIN_TOKEN/);
   assert.doesNotMatch(workflow, /verify_bridge/);
@@ -48,5 +50,7 @@ test("opening the shared app uses the Apps link and cannot wait forever", () => 
   assert.match(spec, /chat-list-item-/);
   assert.doesNotMatch(spec, /app-details-screenshot-open-in-chat/);
   assert.match(config, /actionTimeout:\s*30_000/);
+  assert.match(config, /gracefulShutdown:\s*\{\s*signal:\s*"SIGTERM"/);
+  assert.match(config, /timeout:\s*5_000/);
   assert.match(signIn, /timeout:\s*60_000/);
 });

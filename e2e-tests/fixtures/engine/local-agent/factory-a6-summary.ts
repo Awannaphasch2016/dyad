@@ -4,7 +4,7 @@ export const fixture: LocalAgentFixture = {
   description: "Factory follow-up that writes the implementation summary",
   turns: [
     {
-      text: `## Implementation summary
+      text: `## Phase finished
 
 - The page lists the lunch menu.`,
     },

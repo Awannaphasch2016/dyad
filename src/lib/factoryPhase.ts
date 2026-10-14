@@ -88,9 +88,44 @@ export function factoryPhaseHint(phase: FactoryPhase): string {
     return "wewebplus asks about the page name, one sentence, and what goes on the page. Approve once its Discovery summary looks right.";
   }
   if (phase === "implementation") {
-    return "Send the prefilled summary to start the build, then review the preview. Approve once the page looks right.";
+    return "The developer reviews the build after the summary is written. Approve once the page looks right.";
   }
-  return "wewebplus summarizes what was built. Approve delivery when the trial is finished.";
+  return "wewebplus writes the delivery summary after the recap finishes. Approve delivery when that summary looks right.";
+}
+
+export function factoryPhaseApproverLabel(phase: FactoryPhase): string {
+  return phase === "implementation" ? "Developer" : "Project Manager";
+}
+
+/** Status line for the phase bar. The snapshot status is the source. */
+export function factoryPhaseStatusLine(input: {
+  phase: FactoryPhase;
+  status: string;
+  viewerCanApprove: boolean;
+}): string {
+  const label = factoryPhaseLabel(input.phase);
+  switch (input.status) {
+    case "locked":
+      return `Starting ${label}.`;
+    case "executing":
+      return `Working in ${label}.`;
+    case "waiting_for_answer":
+      return `Waiting on an answer in ${label}.`;
+    case "running_hooks":
+      return `Writing the ${label} summary.`;
+    case "awaiting_review":
+      return input.viewerCanApprove
+        ? `Review the ${label} summary.`
+        : `Waiting on ${factoryPhaseApproverLabel(input.phase)} to approve ${label}.`;
+    case "approved":
+      return `${label} is approved.`;
+    case "incomplete":
+      return "Stopped before it finished. No question is open.";
+    case "failed":
+      return "The run failed.";
+    default:
+      return factoryPhaseHint(input.phase);
+  }
 }
 
 export interface FactoryPhaseProgress {
@@ -100,17 +135,12 @@ export interface FactoryPhaseProgress {
   started: ReadonlySet<FactoryPhase>;
 }
 
-/**
- * A phase counts as approved once the person pressed Continue on it, or once
- * the following phase's chat has messages (which only happens after Continue).
- */
+/** A phase is approved only when its approval record exists. */
 export function isFactoryPhaseApproved(
   phase: FactoryPhase,
   progress: FactoryPhaseProgress,
 ): boolean {
-  if (progress.approved.has(phase)) return true;
-  const next = nextFactoryPhase(phase);
-  return next != null && progress.started.has(next);
+  return progress.approved.has(phase);
 }
 
 /** Discovery is always open; each later phase opens when the one before it is approved. */
@@ -139,22 +169,20 @@ export function latestUnlockedFactoryPhase(
 }
 
 /**
- * The approve control belongs to the phase that is still in progress.
- * It is gone once that phase was approved, a later phase has started, or
- * Delivery has posted its summary and the run is finished.
+ * Approve and reject belong to a phase that is waiting for review.
+ * A summary heading does not show them, and approving hides them.
  */
 export function showFactoryPhaseApproval({
   phase,
   progress,
-  hasPhaseSummary,
+  status,
 }: {
   phase: FactoryPhase;
   progress: FactoryPhaseProgress;
-  hasPhaseSummary: boolean;
+  status: string | null;
 }): boolean {
   if (isFactoryPhaseApproved(phase, progress)) return false;
-  if (phase === "delivery" && hasPhaseSummary) return false;
-  return true;
+  return status === "awaiting_review";
 }
 
 export type FactoryPhaseShade = "not-started" | "in-progress" | "finished";
@@ -166,31 +194,24 @@ export type FactoryPhaseShade = "not-started" | "in-progress" | "finished";
 export function factoryPhaseShade({
   phase,
   progress,
-  hasPhaseSummary,
 }: {
   phase: FactoryPhase;
   progress: FactoryPhaseProgress;
-  hasPhaseSummary: boolean;
 }): FactoryPhaseShade {
-  if (
-    isFactoryPhaseApproved(phase, progress) ||
-    (phase === "delivery" && hasPhaseSummary)
-  ) {
-    return "finished";
-  }
+  if (isFactoryPhaseApproved(phase, progress)) return "finished";
   if (progress.started.has(phase)) return "in-progress";
   return "not-started";
 }
 
-/** Approval needs Dyad's finished phase summary; an ordinary reply is not enough. */
+/** Approval is enabled only while the phase is in review and the agent is idle. */
 export function canContinueFactoryPhase({
-  hasPhaseSummary,
+  status,
   isStreaming,
 }: {
-  hasPhaseSummary: boolean;
+  status: string | null;
   isStreaming: boolean;
 }): boolean {
-  return hasPhaseSummary && !isStreaming;
+  return status === "awaiting_review" && !isStreaming;
 }
 
 export function factoryPhaseSummaryHeading(phase: FactoryPhase): string {

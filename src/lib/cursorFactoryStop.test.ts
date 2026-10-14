@@ -24,24 +24,24 @@ describe("classifyCursorFactoryStop", () => {
     ).toBeNull();
   });
 
-  it("treats FINISHED with a request as human-required", () => {
+  it("treats FINISHED with a request as a question", () => {
     expect(
       classifyCursorFactoryStop({
         cursorStatus: "FINISHED",
         finalMessage: request,
         phase,
       }),
-    ).toBe("human-required");
+    ).toBe("question_opened");
   });
 
-  it("lets a request beat a summary on a finished Cursor run", () => {
+  it("lets a request beat a finish marker on a finished Cursor run", () => {
     expect(
       classifyCursorFactoryStop({
         cursorStatus: "finished",
-        finalMessage: `${summary}\n\n${request}`,
+        finalMessage: `## Phase finished\n- **Page:** Tiny Bakery\n\n${request}`,
         phase,
       }),
-    ).toBe("human-required");
+    ).toBe("question_opened");
   });
 
   it("maps the other terminal Cursor statuses", () => {
@@ -51,37 +51,47 @@ describe("classifyCursorFactoryStop", () => {
         finalMessage: "boom",
         phase,
       }),
-    ).toBe("recoverable-failure");
+    ).toBe("agent_failed");
     expect(
       classifyCursorFactoryStop({
         cursorStatus: "ERROR",
         finalMessage: null,
         phase,
       }),
-    ).toBe("infrastructure-error");
+    ).toBe("agent_failed");
     expect(
       classifyCursorFactoryStop({
         cursorStatus: "CANCELLED",
         finalMessage: request,
         phase,
       }),
-    ).toBe("abandoned");
+    ).toBe("agent_stopped_unclear");
     expect(
       classifyCursorFactoryStop({
         cursorStatus: "EXPIRED",
         finalMessage: summary,
         phase,
       }),
-    ).toBe("abandoned");
+    ).toBe("agent_stopped_unclear");
   });
 
-  it("is ready for approval when the finished message is only the summary", () => {
+  it("does not treat a summary heading as a finished Cursor run", () => {
     expect(
       classifyCursorFactoryStop({
         cursorStatus: "FINISHED",
         finalMessage: summary,
         phase,
       }),
-    ).toBe("ready-for-approval");
+    ).toBe("agent_stopped_unclear");
+  });
+
+  it("finishes when the Cursor message has the phase-finished marker", () => {
+    expect(
+      classifyCursorFactoryStop({
+        cursorStatus: "FINISHED",
+        finalMessage: "## Phase finished\n- **Page:** Tiny Bakery",
+        phase,
+      }),
+    ).toBe("agent_finished");
   });
 });

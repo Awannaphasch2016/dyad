@@ -270,7 +270,7 @@ describe.skipIf(!live)("cursor factory poller", () => {
           );
           console.log(`attempt=${n} result=${redact(finished.message)}`);
           if (n === 3) break;
-          if (stop !== "human-required" || !requestMarker) break;
+          if (stop !== "question_opened" || !requestMarker) break;
           const prefixed = `cursor-run:${cursorRunId}`;
           const existing = database
             .select()
@@ -352,11 +352,11 @@ describe.skipIf(!live)("cursor factory poller", () => {
           previousRunId = cursorRunId;
           cursorRunId = nextRunId;
         }
-        expect(attempts[0]?.stop).toBe("human-required");
+        expect(attempts[0]?.stop).toBe("question_opened");
         expect(attempts[0]?.role).toBe("project-manager");
-        expect(attempts[1]?.stop).toBe("human-required");
+        expect(attempts[1]?.stop).toBe("question_opened");
         expect(attempts[1]?.role).toBe("developer");
-        expect(attempts[2]?.stop).toBe("ready-for-approval");
+        expect(attempts[2]?.stop).toBe("agent_finished");
         expect(attempts[2]?.marker).toBe("absent");
         expect(followUpNewRunId).toBe(true);
         expect(previousRunId).not.toBeNull();

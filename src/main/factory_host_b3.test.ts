@@ -361,7 +361,7 @@ describe("factory loop inside implementation", () => {
     ]);
     expect(db.select().from(hitlQuestions).all()).toHaveLength(2);
     expect(stops[2]).toEqual({
-      stop: "ready-for-approval",
+      stop: "agent_finished",
       questionId: null,
     });
     expectDeliveryLocked();

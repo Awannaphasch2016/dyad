@@ -243,10 +243,10 @@ describe("factory request loop", () => {
     expect(prompts[2]).toContain(DEV_ANSWER);
     expect(db.select().from(factoryHostRuns).all()).toHaveLength(3);
     expect(db.select().from(hitlQuestions).all()).toHaveLength(2);
-    expect(stops[0]?.stop).toBe("human-required");
-    expect(stops[1]?.stop).toBe("human-required");
+    expect(stops[0]?.stop).toBe("question_opened");
+    expect(stops[1]?.stop).toBe("question_opened");
     expect(stops[2]).toEqual({
-      stop: "ready-for-approval",
+      stop: "agent_finished",
       questionId: null,
     });
     const hidden = await request(path, {}, "outsider");

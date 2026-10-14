@@ -7,6 +7,7 @@ on:
   push:
     branches:
       - cursor/dyad-bridge-signin-d072
+      - cursor/phase-completion-machine-d072
     paths:
       - .github/workflows/dyad-bridge-signin.yml
       - e2e-bridge/**
@@ -101,9 +102,11 @@ jobs:
           sudo apt-get install -y xvfb
           npx playwright install --with-deps chromium
 
-      - name: Walk both browsers
+      - name: Record both browsers
+        timeout-minutes: 5
         env:
           CI: "true"
+          DYAD_FACTORY_SCRIPT: "record"
           DYAD_BROWSER_BRIDGE: "1"
           DYAD_BROWSER_BRIDGE_PORT: "8372"
           DYAD_BROWSER_BRIDGE_HOST: "127.0.0.1"

@@ -27,7 +27,6 @@ export const ADMIN_ROLES: readonly AdminRole[] = [
     name: "Project Manager",
     permissions: [
       { id: "approve-discovery", label: "Approve discovery" },
-      { id: "approve-implementation", label: "Approve implementation" },
       { id: "approve-delivery", label: "Approve delivery" },
       { id: "view-page", label: "View the page" },
       { id: "comment", label: "Comment on a phase" },
@@ -37,6 +36,7 @@ export const ADMIN_ROLES: readonly AdminRole[] = [
     id: "developer",
     name: "Developer",
     permissions: [
+      { id: "approve-implementation", label: "Approve implementation" },
       { id: "view-page", label: "View the page" },
       { id: "comment", label: "Comment on a phase" },
       { id: "work-implementation", label: "Work in implementation" },

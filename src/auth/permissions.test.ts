@@ -12,7 +12,8 @@ describe("clerk role gates", () => {
       true,
     );
     expect(roleHasPermission("project-manager", "approve-delivery")).toBe(true);
-    expect(roleHasPermission("developer", "approve-implementation")).toBe(
+    expect(roleHasPermission("developer", "approve-implementation")).toBe(true);
+    expect(roleHasPermission("project-manager", "approve-implementation")).toBe(
       false,
     );
     expect(roleHasPermission("developer", "work-implementation")).toBe(true);
@@ -35,6 +36,13 @@ describe("clerk role gates", () => {
       approvalGate({
         status: "signed-in",
         roleId: "developer",
+        phase: "implementation",
+      }),
+    ).toEqual({ allowed: true });
+    expect(
+      approvalGate({
+        status: "signed-in",
+        roleId: "project-manager",
         phase: "implementation",
       }),
     ).toEqual({

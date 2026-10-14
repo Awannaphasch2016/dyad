@@ -40,6 +40,27 @@ export const HitlQuestionViewSchema = z.object({
   canAnswer: z.boolean(),
 });
 
+export const PhaseMachineSchema = z.object({
+  phase: z.enum(["discovery", "implementation", "delivery"]),
+  status: z.enum([
+    "locked",
+    "executing",
+    "waiting_for_answer",
+    "running_hooks",
+    "awaiting_review",
+    "approved",
+    "incomplete",
+    "failed",
+  ]),
+  iteration: z.number(),
+  openQuestionId: z.string().nullable(),
+  hookAttempt: z.number(),
+  summary: z.string().nullable(),
+  feedback: z.string().nullable(),
+  failureReason: z.string().nullable(),
+  finishText: z.string().nullable(),
+});
+
 export const factoryContracts = {
   listApprovals: defineContract({
     channel: "factory:list-approvals",
@@ -95,6 +116,28 @@ export const factoryContracts = {
       phase: z.enum(["discovery", "implementation", "delivery"]),
     }),
     output: z.object({ questions: z.array(HitlQuestionViewSchema) }),
+  }),
+  listPhaseMachines: defineContract({
+    channel: "factory:list-phase-machines",
+    input: z.object({ appId: z.number() }),
+    output: z.object({ machines: z.array(PhaseMachineSchema) }),
+  }),
+  rejectPhase: defineContract({
+    channel: "factory:reject-phase",
+    input: z.object({
+      appId: z.number(),
+      phase: z.enum(["discovery", "implementation", "delivery"]),
+      feedback: z.string(),
+    }),
+    output: z.void(),
+  }),
+  retryPhase: defineContract({
+    channel: "factory:retry-phase",
+    input: z.object({
+      appId: z.number(),
+      phase: z.enum(["discovery", "implementation", "delivery"]),
+    }),
+    output: z.void(),
   }),
   answerQuestion: defineContract({
     channel: "factory:answer-question",

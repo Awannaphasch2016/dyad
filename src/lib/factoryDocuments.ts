@@ -1,8 +1,4 @@
-import {
-  type FactoryPhase,
-  type FactoryPhaseShade,
-  factoryPhaseLabel,
-} from "./factoryPhase";
+import { type FactoryPhase, factoryPhaseLabel } from "./factoryPhase";
 
 export interface FactoryDocumentSource {
   phase: FactoryPhase;
@@ -28,9 +24,9 @@ interface Requirement {
   text: string;
 }
 
-/** A phase can be downloaded once its stage is finished. */
-export function canDownloadFactoryDocument(shade: FactoryPhaseShade): boolean {
-  return shade === "finished";
+/** Download opens after Delivery is approved, for every role. */
+export function canDownloadFactoryDocument(deliveryApproved: boolean): boolean {
+  return deliveryApproved;
 }
 
 export function summaryField(
