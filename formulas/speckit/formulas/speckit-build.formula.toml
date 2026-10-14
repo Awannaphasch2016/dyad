@@ -1,0 +1,242 @@
+description = """
+Spec Kit command sequence on the Gas City build-base contract.
+
+This formula does not run the Spec Kit workflow engine. The engine's gates
+and this graph would both try to own resume.
+
+Artifacts land under artifact_root:
+- spec.md from specify
+- plan.md from plan
+- tasks.md from tasks
+
+Inserted steps:
+- clarify after requirements, at most five questions, written into spec.md
+- review-spec after clarify and before plan
+- approve-implementation after review (converge) and before finalize
+
+Spec Kit's published workflow aborts on a rejected gate. This formula sends
+the feedback to the previous producing step instead, so a tenant rejection
+stays on the same stage.
+
+gc.hitl.kind and gc.hitl.role are metadata for the host. The formula schedules
+gc.run-operator and does not check an organization membership.
+interaction_mode does not skip suspend or gate steps.
+"""
+formula = "speckit-build"
+version = 1
+contract = "graph.v2"
+extends = ["build-base"]
+target_required = true
+
+[catalog]
+name = "speckit-build"
+description = "Run build-base as Spec Kit commands: specify, clarify, spec gate, plan, plan gate, tasks, implement, converge."
+
+[metadata.gc.methodology]
+allowed_drain_policies = ["separate", "same-session"]
+implementation_strategy = "drain"
+interaction_modes = ["interactive", "autonomous", "headless"]
+review_modes = ["report", "agent", "interactive"]
+
+[vars]
+[vars.implementation_target]
+description = "Worker that implements one Spec Kit task."
+default = "gc.implementation-worker"
+
+[vars.planning_formula]
+description = "Planning formula. The Spec Kit sequence lives on speckit-build."
+default = "planning-base"
+
+[vars.decomposition_formula]
+description = "Decomposition formula. Tasks are written by the decompose step of speckit-build."
+default = "decomposition-base"
+
+[vars.implementation_formula]
+description = "Per-task drain formula."
+default = "do-work"
+
+[vars.implementation_item_formula]
+description = "Shared-session per-task formula."
+default = "do-work-item"
+
+[vars.code_review_formula]
+description = "Review formula used when a host delegates review."
+default = "review"
+
+[vars.review_fix_formula]
+description = "Fix loop used after converge finds missing tasks."
+default = "fix-loop-base"
+
+[[steps]]
+id = "requirements"
+title = "Specify"
+needs = ["prepare"]
+metadata = { "gc.run_target" = "gc.requirements-planner", "gc.build.artifact_schema" = "gc.build.requirements.v1", "gc.build.artifact_path_keys" = "gc.build.requirements_path,gc.var.requirements_path" }
+description = """
+Write {{artifact_root}}/spec.md for what the change must do.
+Mark anything unresolved as NEEDS CLARIFICATION. Do not write the plan or the tasks.
+"""
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+
+[[steps]]
+id = "clarify"
+title = "Clarify"
+needs = ["requirements"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.hitl.kind" = "suspend", "gc.hitl.role" = "project-manager" }
+description = """
+This step is a suspend. Ask at most five questions, one batch, aimed at the
+project manager. Write each answer into spec.md and remove the matching
+NEEDS CLARIFICATION marker. Do not answer as the operator.
+If nothing is unresolved, record that and finish the step without a question.
+interaction_mode does not skip a real ambiguity.
+"""
+
+[[steps]]
+id = "review-spec"
+title = "Review the spec"
+needs = ["clarify"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.hitl.kind" = "gate", "gc.hitl.role" = "project-manager" }
+description = """
+This step is a gate. It runs only after spec.md exists and clarify has finished.
+The project manager approves or rejects the spec.
+Reject returns to clarify with the feedback. Approve opens plan.
+The operator must not choose approve.
+"""
+
+[[steps]]
+id = "plan"
+title = "Plan"
+needs = ["review-spec"]
+metadata = { "gc.run_target" = "gc.design-author", "gc.build.artifact_schema" = "gc.build.plan.v1", "gc.build.artifact_path_keys" = "gc.build.plan_path,gc.var.plan_path" }
+description = """
+Write {{artifact_root}}/plan.md for how to implement the approved spec.
+Do not generate tasks in this step.
+"""
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+
+[[steps]]
+id = "plan-review"
+title = "Review the plan"
+needs = ["plan"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.hitl.kind" = "gate", "gc.hitl.role" = "project-manager" }
+description = """
+This step is a gate. The project manager approves or rejects plan.md.
+Reject returns to plan with the feedback. Approve opens tasks.
+The operator must not choose approve.
+"""
+
+[[steps]]
+id = "decompose"
+title = "Tasks"
+needs = ["plan-review"]
+metadata = { "gc.run_target" = "gc.task-decomposer", "gc.build.artifact_schema" = "gc.build.decomposition.v1", "gc.build.artifact_path_keys" = "gc.build.decomposition_path,gc.var.decomposition_path" }
+description = """
+Write {{artifact_root}}/tasks.md as checkboxes derived from the approved plan.
+Do not implement them here.
+"""
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+
+[[steps]]
+id = "implement"
+title = "Implement tasks in separate sessions"
+needs = ["decompose"]
+condition = "{{drain_policy}} == separate"
+metadata = { "gc.run_target" = "{{implementation_target}}" }
+description = """
+Drain tasks.md in separate sessions. Each session may suspend for the developer
+when the task is ambiguous. That suspend does not finish the drain.
+"""
+
+[steps.drain]
+context = "separate"
+formula = "do-work"
+member_access = "exclusive"
+
+[[steps]]
+id = "implement-same-session"
+title = "Implement tasks in one shared session"
+needs = ["decompose"]
+condition = "{{drain_policy}} == same-session"
+metadata = { "gc.run_target" = "{{implementation_target}}" }
+description = """
+Drain tasks.md in one shared session, one item at a time.
+"""
+
+[steps.drain]
+context = "shared"
+formula = "do-work-item"
+on_item_failure = "skip_remaining"
+member_access = "exclusive"
+
+[steps.drain.item]
+single_lane = true
+
+[[steps]]
+id = "review"
+title = "Converge"
+needs = ["summarize-implementation"]
+metadata = { "gc.run_target" = "gc.implementation-reviewer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path" }
+description = """
+Compare the codebase with spec.md, plan.md, and tasks.md.
+Append any missing work to tasks.md. This is a completion check.
+It does not accept the phase.
+"""
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+
+[[steps]]
+id = "approve-implementation"
+title = "Developer accepts the implementation"
+needs = ["review"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.hitl.kind" = "gate", "gc.hitl.role" = "developer" }
+description = """
+This step is a gate. Spec Kit's published workflow has no gate after implement.
+This one exists so a tenant developer accepts the converge report before finalize.
+Reject returns to the implement drain with the feedback.
+The operator must not approve.
+"""
+
+[[steps]]
+id = "finalize"
+title = "Finalize the Spec Kit build"
+needs = ["approve-implementation"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path" }
+description = """
+Write the final report: spec, plan, tasks, converge report, and the developer approval.
+Publishing stays on the inherited publish step.
+"""
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"

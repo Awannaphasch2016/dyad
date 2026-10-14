@@ -1,0 +1,90 @@
+description = """
+Four-way research fan-out for one GSD phase.
+
+Stack, features, architecture, and pitfalls run as sibling lanes. The
+synthesizer starts only after all four have written their notes. This keeps
+the parallel work on the formula instead of inside one researcher prompt.
+"""
+formula = "gsd-research"
+type = "expansion"
+version = 1
+contract = "graph.v2"
+
+[[template]]
+id = "{target}.setup-gsd-research"
+title = "Prepare GSD research lanes"
+metadata = { "gc.run_target" = "gc.run-operator" }
+description = """
+Create the research directory under artifact_root for this phase.
+Record the four lane names: stack, features, architecture, pitfalls.
+Do not write RESEARCH.md here.
+"""
+
+[[template]]
+id = "{target}.gsd-research-lanes"
+title = "Run the four GSD research lanes"
+needs = ["{target}.setup-gsd-research"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description = """
+Wait until every lane child has finished. Then this parent is done.
+A lane that suspends does not cancel the other lanes.
+"""
+
+[[template.children]]
+id = "{target}.research-stack"
+title = "Research the stack"
+metadata = { "gc.run_target" = "gc.design-author" }
+description = """
+Write stack notes for this phase: libraries, runtime, and constraints already in the repo.
+Do not pick a package that has not been checked. Tag an unchecked package [ASSUMED].
+"""
+
+[[template.children]]
+id = "{target}.research-features"
+title = "Research the features"
+metadata = { "gc.run_target" = "gc.requirements-planner" }
+description = """
+Write feature notes from REQUIREMENTS.md and CONTEXT.md.
+List the behaviors this phase must demonstrate.
+"""
+
+[[template.children]]
+id = "{target}.research-architecture"
+title = "Research the architecture"
+metadata = { "gc.run_target" = "gc.design-author" }
+description = """
+Write architecture notes: where the change fits, and which existing boundaries it must keep.
+"""
+
+[[template.children]]
+id = "{target}.research-pitfalls"
+title = "Research the pitfalls"
+metadata = { "gc.run_target" = "gc.review-synthesizer" }
+description = """
+Write pitfall notes: likely failure modes, bad package substitutions, and tests that must exist.
+"""
+
+[[template.children]]
+id = "{target}.synthesize-research"
+title = "Synthesize GSD research"
+needs = [
+  "{target}.research-stack",
+  "{target}.research-features",
+  "{target}.research-architecture",
+  "{target}.research-pitfalls",
+]
+metadata = { "gc.run_target" = "gc.design-author" }
+description = """
+Write RESEARCH.md from the four lane notes.
+A package tagged [ASSUMED] or [SUS] must be listed for a developer checkpoint before install.
+Do not drop a lane because it disagreed with the others.
+"""
+
+[[template]]
+id = "{target}"
+title = "Finish GSD research"
+needs = ["{target}.gsd-research-lanes"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description = """
+Confirm RESEARCH.md exists and names all four lanes. This is not an approval.
+"""
