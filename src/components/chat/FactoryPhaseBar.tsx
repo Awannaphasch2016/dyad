@@ -47,7 +47,6 @@ import { approvalGate } from "@/auth/permissions";
 import { useClerkRole, useClerkSession } from "@/auth/session";
 import { queryKeys } from "@/lib/queryKeys";
 import { cn } from "@/lib/utils";
-import { HitlQuestionList } from "./HitlQuestionList";
 
 function approvalsStorageKey(appId: number): string {
   return `dyad:factory-phase-approvals:${appId}`;
@@ -174,16 +173,6 @@ export function FactoryPhaseBar() {
 
   const current = chats.find((chat) => chat.id === chatId);
   const phase = enabled ? phaseFromTitle(current?.title) : null;
-  const questionsQuery = useQuery({
-    queryKey: queryKeys.factory.questions(appId, phase),
-    enabled: appId != null && phase != null,
-    queryFn: async () => {
-      if (appId == null || phase == null) return [];
-      const result = await ipc.factory.listQuestions({ appId, phase });
-      return result.questions;
-    },
-    refetchInterval: factoryViewRefetchInterval(appId != null && phase != null),
-  });
   const phaseUnlocked =
     phase != null && isFactoryPhaseUnlocked(phase, progress);
   const fallbackPhase = latestUnlockedFactoryPhase(progress);
@@ -480,25 +469,6 @@ export function FactoryPhaseBar() {
           </Button>
         )}
       </div>
-      {phase && (
-        <HitlQuestionList
-          questions={
-            machine == null || machine.status === "waiting_for_answer"
-              ? (questionsQuery.data ?? [])
-              : []
-          }
-          pending={false}
-          onAnswer={(questionId, body) => {
-            void ipc.factory
-              .answerQuestion({ appId, questionId, body })
-              .then(() =>
-                queryClient.invalidateQueries({
-                  queryKey: queryKeys.factory.questions(appId, phase),
-                }),
-              );
-          }}
-        />
-      )}
       <p
         className={cn("mt-2 text-xs text-muted-foreground")}
         aria-live="polite"

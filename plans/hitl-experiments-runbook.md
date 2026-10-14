@@ -9,7 +9,7 @@ Revised again after the storage and session review. The scaffolding already on t
 3. Each browser has its own Clerk session. The bridge today stores one token for every tab. That has to become one token per connection.
 4. The app row in that SQLite file is owned by the organization. Questions and approvals stay in that file. `presentQuestion` already shows the body and the form only to the target role, and the waiting line to the other role.
 5. While a window is looking at that app, it refetches that app's phase state, phase chats, and questions. Leaving the app stops that window's refetch. It does not stop the run, and it does not change the other window.
-6. A factory phase has no chat composer and no comment box. The person answers a card or approves. Discovery, Implementation, and Delivery each start on their own when the phase opens.
+6. A factory phase uses the chat composer and hides the comment box. The person answers in the composer's question box, or approves. Discovery, Implementation, and Delivery each start on their own when the phase opens.
 7. The agent writes the question. The test checks the role, the order, the pause, and the resume. It does not require a fixed sentence.
 8. The Cursor key stays in the Dyad process. The desktop poller creates the question and sends the follow-up when the form is submitted.
 
@@ -51,7 +51,7 @@ The poll stops when this window leaves the chat page, because the phase bar unmo
 
 ## What a person can do
 
-On a factory phase chat, do not render `ChatInput` or the phase comment form. `HitlQuestionList` and the approve button are the controls.
+On a factory phase chat, render `ChatInput` and do not render the phase comment form. An open question is answered in the composer. The approve button stays on the phase bar.
 
 `factoryPhaseKickoff` already returns a start string for Discovery and Delivery, and an effect sends it when that phase chat is empty. Implementation returns nothing, and **Approve and continue** only fills the composer via `continuePrefill`. Implementation gets that same string as its kickoff. `approveAndContinue` records the approval and selects the next phase. It does not wait for Send.
 

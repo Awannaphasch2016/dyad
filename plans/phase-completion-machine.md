@@ -55,7 +55,7 @@ People need one visible lifecycle. The agent works, stops with a question or wit
 ### User Flow
 
 1. Discovery is unlocked. Implementation and Delivery stay locked until the previous phase is `approved`.
-2. Opening Discovery sends `entered`. The phase prompt starts the agent. Nobody presses Send. The composer stays hidden.
+2. Opening Discovery sends `entered`. The phase prompt starts the agent. Nobody presses Send. The composer stays on the phase chat, and an open question is answered there.
 3. If the agent writes `## Request for <role>`, the machine opens the existing question card and waits. The target submits. The same agent continues with that answer. The other role never sees the question body.
 4. When the agent writes `## Phase finished` and no request is open, hooks run. The summary hook posts `## <Phase> summary` into that phase chat. The status line says the summary is being written.
 5. After the hook succeeds, the phase is `awaiting_review`. The approver sees Approve and Reject. The other role sees both disabled.

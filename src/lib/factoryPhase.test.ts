@@ -394,13 +394,13 @@ Here is what I understood. Approve to continue, or tell me what to change.
     expect(factoryViewRefetchInterval(false)).toBe(false);
   });
 
-  it("hides the composer on a factory phase chat", () => {
+  it("shows the composer on a factory phase chat", () => {
     const chats = [
       { title: "Discovery" },
       { title: "Implementation" },
       { title: "Delivery" },
     ];
-    expect(showFactoryPhaseComposer(chats, "Discovery")).toBe(false);
+    expect(showFactoryPhaseComposer(chats, "Discovery")).toBe(true);
     expect(showFactoryPhaseComposer(chats, "Notes")).toBe(true);
     expect(showFactoryPhaseComposer([{ title: "Notes" }], "Notes")).toBe(true);
   });

@@ -171,7 +171,7 @@ async function openFactoryApp(
 }
 
 async function assertFactoryChrome(page: Page): Promise<void> {
-  await expect(page.getByTestId("chat-input-container")).toHaveCount(0);
+  await expect(page.getByTestId("chat-input-container")).toBeVisible();
   await expect(page.getByTestId("factory-phase-comments")).toHaveCount(0);
   await expect(page.locator("body")).not.toContainText("already approved");
   await expect(page.locator("body")).not.toContainText(
@@ -266,6 +266,9 @@ async function showSplit(
   const target = pmAnswers ? pm : dev;
   const other = pmAnswers ? dev : pm;
   const role = pmAnswers ? "project-manager" : "developer";
+  await expect(
+    target.getByTestId("chat-input-container").getByTestId(`hitl-answer-${id}`),
+  ).toBeVisible();
   await expect(target.getByTestId(`hitl-body-${id}`)).toBeVisible();
   await expect(other.getByTestId(`hitl-body-${id}`)).toHaveCount(0);
   await expect(other.getByTestId(`hitl-answer-${id}`)).toHaveCount(0);
@@ -514,7 +517,7 @@ async function approveAndOpenNext(
   await expect(otherContinue).toBeDisabled();
   await expect(approverContinue).toContainText("Approve and continue");
   await approverContinue.click();
-  await expect(approver.getByTestId("chat-input-container")).toHaveCount(0);
+  await expect(approver.getByTestId("chat-input-container")).toBeVisible();
   await selectPhase(approver, next);
   await selectPhase(other, next);
 }

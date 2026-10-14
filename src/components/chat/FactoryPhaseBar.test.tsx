@@ -342,7 +342,7 @@ describe("FactoryPhaseBar", () => {
     });
   });
 
-  it("rereads questions and approvals for the factory app on screen", async () => {
+  it("rereads approvals for the factory app on screen", async () => {
     getState.mockResolvedValue({
       appId: 7,
       factoryHostManaged: false,
@@ -358,7 +358,9 @@ describe("FactoryPhaseBar", () => {
         ? options.refetchInterval
         : undefined;
     };
-    expect(interval(queryKeys.factory.questions(7, "discovery"))).toBe(1_000);
+    expect(
+      interval(queryKeys.factory.questions(7, "discovery")),
+    ).toBeUndefined();
     expect(interval(queryKeys.factory.approvals(7))).toBe(1_000);
   });
 
