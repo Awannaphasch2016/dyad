@@ -1,15 +1,15 @@
 # openspec
 
-Gas City formula for an OpenSpec-shaped change. It extends `build-base`. It does not vendor the OpenSpec CLI.
+Gas City formulas for an OpenSpec change. They do not vendor the OpenSpec CLI. Gas City orders the steps. The CLI validates and archives when it is on PATH.
 
-Launch with the same variables as the other build packs:
+`openspec-build` is the native sequence. `specs` and `design` both wait only on the proposal. `tasks` waits on both. `accept-apply` is the propose-workflow pause: one bead, one mail to `human`, and a verdict check. `approve` starts the task drain. `request-changes` revises the change artifacts. Archive runs after finalize, and publish waits for archive.
+
+`openspec-phased` adds Discovery, Implementation, and Delivery gates. The Discovery gate is that same pause before apply. Implementation is the drain plus review. Delivery is the final report. Archive waits for the delivery verdict.
 
 ```sh
-gc import add https://github.com/Awannaphasch2016/gascity-packs.git//openspec
+gc import add --name gc https://github.com/gastownhall/gascity-packs.git//gascity
 gc sling gc.run-operator <bead-id> --on openspec-build \
   --var artifact_root=openspec/changes/<change-name>
 ```
 
-`artifact_root` is the change folder. The formula writes `proposal.md`, `specs/**/spec.md`, `design.md`, and `tasks.md` there.
-
-Suspend and gate steps are graph nodes scheduled on `gc.run-operator`. The formula tells that operator to stop and wait for a person. Gas City does not check an organization role, and `gc.hitl.role` is metadata for the host that does. Headless mode does not skip those steps.
+Use `--on openspec-phased` for the three phase gates. `artifact_root` receives `proposal.md`, `specs/**/spec.md`, `design.md`, and `tasks.md`.
