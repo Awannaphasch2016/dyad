@@ -1,5 +1,7 @@
 # gsd
 
+This sketch is outside the OpenSpec, Spec Kit, BMAD, Superpowers, gstack, Compound Engineering, and build-basic matrix in `formulas/README.md`.
+
 Gas City formula for the GSD phase loop from [gsd-build/get-shit-done](https://github.com/gsd-build/get-shit-done): discuss, plan, execute in waves, verify, ship. It extends `build-base`. It does not vendor the GSD command files.
 
 ```sh

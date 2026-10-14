@@ -1,0 +1,161 @@
+description = """
+Three-phase human gates on compound-build.
+
+Column 2 is the upstream compound-build formula, including its reviewer fanout.
+Discovery closes after decomposition and before the work drain.
+Implementation closes after code review and before compound resolution.
+Delivery closes after finalization and before publish.
+"""
+formula = "compound-phased"
+version = 1
+contract = "graph.v2"
+extends = ["compound-build"]
+target_required = true
+
+[catalog]
+name = "compound-phased"
+description = "Compound Engineering build with Discovery, Implementation, and Delivery human gates."
+
+[[steps]]
+id = "accept-discovery"
+title = "Discovery gate"
+needs = ["decompose"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "discovery", "gc.human_gate.question" = "Approve these discovery artifacts and start implementation?" }
+description = """
+Hold this cut until a person records a verdict.
+approve continues to the next phase. request-changes runs the revision child again.
+The revision child is the producing step for this gate: it applies human_gate.feedback to the artifacts this phase already wrote.
+Mail goes to the human mailbox. This formula does not name an organization role.
+"""
+
+[steps.check]
+max_attempts = 6
+
+[steps.check.check]
+mode = "exec"
+path = "../assets/scripts/checks/human-gate-verdict.sh"
+timeout = "10m"
+
+[[steps.children]]
+id = "revise-discovery"
+title = "Revise discovery artifacts"
+metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "discovery" }
+description_file = "../assets/workflows/revise-phase.md"
+
+[[steps.children]]
+id = "confirm-discovery"
+title = "Ask for the discovery verdict"
+needs = ["revise-discovery"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "discovery", "gc.human_gate.question" = "Approve these discovery artifacts and start implementation?", "human_gate.loop_step" = "accept-discovery" }
+description_file = "../assets/workflows/confirm-human-gate.md"
+
+[[steps]]
+id = "accept-implementation"
+title = "Implementation gate"
+needs = ["review"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "implementation", "gc.human_gate.question" = "Approve this implementation and its review?" }
+description = """
+Hold this cut until a person records a verdict.
+approve continues to the next phase. request-changes runs the revision child again.
+The revision child is the producing step for this gate: it applies human_gate.feedback to the artifacts this phase already wrote.
+Mail goes to the human mailbox. This formula does not name an organization role.
+"""
+
+[steps.check]
+max_attempts = 6
+
+[steps.check.check]
+mode = "exec"
+path = "../assets/scripts/checks/human-gate-verdict.sh"
+timeout = "10m"
+
+[[steps.children]]
+id = "revise-implementation"
+title = "Revise implementation artifacts"
+metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "implementation" }
+description_file = "../assets/workflows/revise-phase.md"
+
+[[steps.children]]
+id = "confirm-implementation"
+title = "Ask for the implementation verdict"
+needs = ["revise-implementation"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "implementation", "gc.human_gate.question" = "Approve this implementation and its review?", "human_gate.loop_step" = "accept-implementation" }
+description_file = "../assets/workflows/confirm-human-gate.md"
+
+[[steps]]
+id = "accept-delivery"
+title = "Delivery gate"
+needs = ["finalize"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "delivery", "gc.human_gate.question" = "Approve delivery and allow publish?" }
+description = """
+Hold this cut until a person records a verdict.
+approve continues to the next phase. request-changes runs the revision child again.
+The revision child is the producing step for this gate: it applies human_gate.feedback to the artifacts this phase already wrote.
+Mail goes to the human mailbox. This formula does not name an organization role.
+"""
+
+[steps.check]
+max_attempts = 6
+
+[steps.check.check]
+mode = "exec"
+path = "../assets/scripts/checks/human-gate-verdict.sh"
+timeout = "10m"
+
+[[steps.children]]
+id = "revise-delivery"
+title = "Revise delivery artifacts"
+metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "delivery" }
+description_file = "../assets/workflows/revise-phase.md"
+
+[[steps.children]]
+id = "confirm-delivery"
+title = "Ask for the delivery verdict"
+needs = ["revise-delivery"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "delivery", "gc.human_gate.question" = "Approve delivery and allow publish?", "human_gate.loop_step" = "accept-delivery" }
+description_file = "../assets/workflows/confirm-human-gate.md"
+
+[[steps]]
+id = "implement"
+title = "Drain Compound Engineering work"
+needs = ["accept-discovery"]
+condition = "{{drain_policy}} == separate"
+metadata = { "gc.run_target" = "{{implementation_target}}" }
+description_file = "../assets/workflows/implement.md"
+
+[steps.drain]
+context = "separate"
+formula = "compound-work"
+member_access = "exclusive"
+
+[[steps]]
+id = "implement-same-session"
+title = "Drain Compound Engineering work in one shared session"
+needs = ["accept-discovery"]
+condition = "{{drain_policy}} == same-session"
+metadata = { "gc.run_target" = "{{implementation_target}}" }
+description_file = "../assets/workflows/implement-same-session.md"
+
+[steps.drain]
+context = "shared"
+formula = "compound-work-item"
+on_item_failure = "skip_remaining"
+member_access = "exclusive"
+
+[steps.drain.item]
+single_lane = true
+
+[[steps]]
+id = "finalize"
+title = "Compound finalization"
+needs = ["accept-implementation"]
+metadata = { "gc.run_target" = "compound-engineering.ce-compound", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path" }
+expand = "compound-resolution"
+description_file = "../assets/workflows/finalize.md"
+
+[[steps]]
+id = "publish"
+title = "Optionally publish"
+needs = ["accept-delivery"]
+metadata = { "gc.run_target" = "gc.publisher" }
+description_file = "../assets/workflows/publish.md"

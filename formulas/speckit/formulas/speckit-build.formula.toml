@@ -1,26 +1,13 @@
 description = """
 Spec Kit command sequence on the Gas City build-base contract.
 
-This formula does not run the Spec Kit workflow engine. The engine's gates
-and this graph would both try to own resume.
+This formula does not run specify workflow. The workflow engine owns its own
+TTY gates, and this graph would fight it for resume.
 
-Artifacts land under artifact_root:
-- spec.md from specify
-- plan.md from plan
-- tasks.md from tasks
-
-Inserted steps:
-- clarify after requirements, at most five questions, written into spec.md
-- review-spec after clarify and before plan
-- approve-implementation after review (converge) and before finalize
-
-Spec Kit's published workflow aborts on a rejected gate. This formula sends
-the feedback to the previous producing step instead, so a tenant rejection
-stays on the same stage.
-
-gc.hitl.kind and gc.hitl.role are metadata for the host. The formula schedules
-gc.run-operator and does not check an organization membership.
-interaction_mode does not skip suspend or gate steps.
+Commands, in order: specify, clarify, plan, tasks, implement, converge.
+clarify sends at most five questions, and only when spec.md still contains
+NEEDS CLARIFICATION. Plan and tasks do not stop for a person.
+The task drain is the implement command. converge appends missing work to tasks.md.
 """
 formula = "speckit-build"
 version = 1
@@ -30,7 +17,7 @@ target_required = true
 
 [catalog]
 name = "speckit-build"
-description = "Run build-base as Spec Kit commands: specify, clarify, spec gate, plan, plan gate, tasks, implement, converge."
+description = "Run Spec Kit commands as Gas City steps: specify, clarify, plan, tasks, implement, converge. Does not run specify workflow."
 
 [metadata.gc.methodology]
 allowed_drain_policies = ["separate", "same-session"]
@@ -48,7 +35,7 @@ description = "Planning formula. The Spec Kit sequence lives on speckit-build."
 default = "planning-base"
 
 [vars.decomposition_formula]
-description = "Decomposition formula. Tasks are written by the decompose step of speckit-build."
+description = "Decomposition formula. Tasks are written by the decompose step."
 default = "decomposition-base"
 
 [vars.implementation_formula]
@@ -75,6 +62,7 @@ metadata = { "gc.run_target" = "gc.requirements-planner", "gc.build.artifact_sch
 description = """
 Write {{artifact_root}}/spec.md for what the change must do.
 Mark anything unresolved as NEEDS CLARIFICATION. Do not write the plan or the tasks.
+Do not run specify workflow.
 """
 
 [steps.check]
@@ -89,35 +77,33 @@ timeout = "5m"
 id = "clarify"
 title = "Clarify"
 needs = ["requirements"]
-metadata = { "gc.run_target" = "gc.run-operator", "gc.hitl.kind" = "suspend", "gc.hitl.role" = "project-manager" }
+metadata = { "gc.run_target" = "gc.run-operator" }
 description = """
-This step is a suspend. Ask at most five questions, one batch, aimed at the
-project manager. Write each answer into spec.md and remove the matching
-NEEDS CLARIFICATION marker. Do not answer as the operator.
-If nothing is unresolved, record that and finish the step without a question.
+Read {{artifact_root}}/spec.md.
+When it contains no NEEDS CLARIFICATION markers, close this step without sending mail.
+When it does, send exactly one gc mail send human for this attempt. Ask at most five questions in that one mail. Include this bead id and the spec path. Do not pass --notify.
+Wait for the reply. Write each answer into spec.md and remove the matching marker.
+Do not invent an answer. Do not run specify workflow.
+If a reply is already on the bead or in the mail thread, apply it instead of sending another mail.
 interaction_mode does not skip a real ambiguity.
 """
 
-[[steps]]
-id = "review-spec"
-title = "Review the spec"
-needs = ["clarify"]
-metadata = { "gc.run_target" = "gc.run-operator", "gc.hitl.kind" = "gate", "gc.hitl.role" = "project-manager" }
-description = """
-This step is a gate. It runs only after spec.md exists and clarify has finished.
-The project manager approves or rejects the spec.
-Reject returns to clarify with the feedback. Approve opens plan.
-The operator must not choose approve.
-"""
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = "../assets/scripts/checks/speckit-clarified.sh"
+timeout = "10m"
 
 [[steps]]
 id = "plan"
 title = "Plan"
-needs = ["review-spec"]
+needs = ["clarify"]
 metadata = { "gc.run_target" = "gc.design-author", "gc.build.artifact_schema" = "gc.build.plan.v1", "gc.build.artifact_path_keys" = "gc.build.plan_path,gc.var.plan_path" }
 description = """
-Write {{artifact_root}}/plan.md for how to implement the approved spec.
-Do not generate tasks in this step.
+Write {{artifact_root}}/plan.md for how to implement the spec.
+Do not generate tasks in this step. Do not run specify workflow.
 """
 
 [steps.check]
@@ -130,23 +116,22 @@ timeout = "5m"
 
 [[steps]]
 id = "plan-review"
-title = "Review the plan"
+title = "Record the Spec Kit plan"
 needs = ["plan"]
-metadata = { "gc.run_target" = "gc.run-operator", "gc.hitl.kind" = "gate", "gc.hitl.role" = "project-manager" }
+metadata = { "gc.run_target" = "gc.run-operator" }
 description = """
-This step is a gate. The project manager approves or rejects plan.md.
-Reject returns to plan with the feedback. Approve opens tasks.
-The operator must not choose approve.
+Spec Kit does not stop for a person between plan and tasks.
+Record the plan path and close this anchor. Do not send mail.
 """
 
 [[steps]]
 id = "decompose"
 title = "Tasks"
-needs = ["plan-review"]
+needs = ["plan"]
 metadata = { "gc.run_target" = "gc.task-decomposer", "gc.build.artifact_schema" = "gc.build.decomposition.v1", "gc.build.artifact_path_keys" = "gc.build.decomposition_path,gc.var.decomposition_path" }
 description = """
-Write {{artifact_root}}/tasks.md as checkboxes derived from the approved plan.
-Do not implement them here.
+Write {{artifact_root}}/tasks.md as checkboxes derived from the plan.
+Do not implement them here. Do not run specify workflow.
 """
 
 [steps.check]
@@ -164,8 +149,8 @@ needs = ["decompose"]
 condition = "{{drain_policy}} == separate"
 metadata = { "gc.run_target" = "{{implementation_target}}" }
 description = """
-Drain tasks.md in separate sessions. Each session may suspend for the developer
-when the task is ambiguous. That suspend does not finish the drain.
+Drain tasks.md in separate sessions. This is the implement command.
+Do not run specify workflow. Do not edit source files from this control bead.
 """
 
 [steps.drain]
@@ -181,6 +166,7 @@ condition = "{{drain_policy}} == same-session"
 metadata = { "gc.run_target" = "{{implementation_target}}" }
 description = """
 Drain tasks.md in one shared session, one item at a time.
+Do not run specify workflow.
 """
 
 [steps.drain]
@@ -200,7 +186,7 @@ metadata = { "gc.run_target" = "gc.implementation-reviewer", "gc.build.artifact_
 description = """
 Compare the codebase with spec.md, plan.md, and tasks.md.
 Append any missing work to tasks.md. This is a completion check.
-It does not accept the phase.
+Do not run specify workflow.
 """
 
 [steps.check]
@@ -212,25 +198,13 @@ path = ".gc/scripts/checks/build-artifact-valid.sh"
 timeout = "5m"
 
 [[steps]]
-id = "approve-implementation"
-title = "Developer accepts the implementation"
-needs = ["review"]
-metadata = { "gc.run_target" = "gc.run-operator", "gc.hitl.kind" = "gate", "gc.hitl.role" = "developer" }
-description = """
-This step is a gate. Spec Kit's published workflow has no gate after implement.
-This one exists so a tenant developer accepts the converge report before finalize.
-Reject returns to the implement drain with the feedback.
-The operator must not approve.
-"""
-
-[[steps]]
 id = "finalize"
 title = "Finalize the Spec Kit build"
-needs = ["approve-implementation"]
+needs = ["review"]
 metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path" }
 description = """
-Write the final report: spec, plan, tasks, converge report, and the developer approval.
-Publishing stays on the inherited publish step.
+Write the final report: spec, plan, tasks, and the converge report.
+Publishing stays on the publish step.
 """
 
 [steps.check]

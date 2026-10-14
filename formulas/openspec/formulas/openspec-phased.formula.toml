@@ -1,0 +1,184 @@
+description = """
+Three-phase human gates on the OpenSpec Gas City formula.
+
+Discovery is the native pause before apply: proposal, parallel specs and design,
+tasks, and scenario validation are already on openspec-build. The Discovery
+gate is the only pause before apply.
+
+Implementation is the task drain plus review. Delivery is the final report.
+Archive and publish wait for the delivery verdict.
+"""
+formula = "openspec-phased"
+version = 1
+contract = "graph.v2"
+extends = ["openspec-build"]
+target_required = true
+
+[catalog]
+name = "openspec-phased"
+description = "OpenSpec change with Discovery, Implementation, and Delivery human gates."
+
+[vars.keep_native_apply_gate]
+description = "Leave false. The Discovery gate owns the pause before apply."
+default = "false"
+
+[[steps]]
+id = "accept-apply"
+title = "Native pause before apply"
+needs = ["scenario-validate"]
+condition = "{{keep_native_apply_gate}}"
+metadata = { "gc.run_target" = "gc.run-operator" }
+description = """
+Skipped. openspec-phased asks this question as the Discovery gate.
+"""
+
+[[steps]]
+id = "accept-discovery"
+title = "Discovery gate"
+needs = ["scenario-validate"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "discovery", "gc.human_gate.question" = "Approve these discovery artifacts and start implementation?" }
+description = """
+Hold this cut until a person records a verdict.
+approve continues to the next phase. request-changes runs the revision child again.
+The revision child is the producing step for this gate: it applies human_gate.feedback to the artifacts this phase already wrote.
+Mail goes to the human mailbox. This formula does not name an organization role.
+"""
+
+[steps.check]
+max_attempts = 6
+
+[steps.check.check]
+mode = "exec"
+path = "../assets/scripts/checks/human-gate-verdict.sh"
+timeout = "10m"
+
+[[steps.children]]
+id = "revise-discovery"
+title = "Revise discovery artifacts"
+metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "discovery" }
+description_file = "../assets/workflows/revise-phase.md"
+
+[[steps.children]]
+id = "confirm-discovery"
+title = "Ask for the discovery verdict"
+needs = ["revise-discovery"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "discovery", "gc.human_gate.question" = "Approve these discovery artifacts and start implementation?", "human_gate.loop_step" = "accept-discovery" }
+description_file = "../assets/workflows/confirm-human-gate.md"
+
+[[steps]]
+id = "accept-implementation"
+title = "Implementation gate"
+needs = ["review"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "implementation", "gc.human_gate.question" = "Approve this implementation and its review?" }
+description = """
+Hold this cut until a person records a verdict.
+approve continues to the next phase. request-changes runs the revision child again.
+The revision child is the producing step for this gate: it applies human_gate.feedback to the artifacts this phase already wrote.
+Mail goes to the human mailbox. This formula does not name an organization role.
+"""
+
+[steps.check]
+max_attempts = 6
+
+[steps.check.check]
+mode = "exec"
+path = "../assets/scripts/checks/human-gate-verdict.sh"
+timeout = "10m"
+
+[[steps.children]]
+id = "revise-implementation"
+title = "Revise implementation artifacts"
+metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "implementation" }
+description_file = "../assets/workflows/revise-phase.md"
+
+[[steps.children]]
+id = "confirm-implementation"
+title = "Ask for the implementation verdict"
+needs = ["revise-implementation"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "implementation", "gc.human_gate.question" = "Approve this implementation and its review?", "human_gate.loop_step" = "accept-implementation" }
+description_file = "../assets/workflows/confirm-human-gate.md"
+
+[[steps]]
+id = "accept-delivery"
+title = "Delivery gate"
+needs = ["finalize"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "delivery", "gc.human_gate.question" = "Approve delivery and allow publish?" }
+description = """
+Hold this cut until a person records a verdict.
+approve continues to the next phase. request-changes runs the revision child again.
+The revision child is the producing step for this gate: it applies human_gate.feedback to the artifacts this phase already wrote.
+Mail goes to the human mailbox. This formula does not name an organization role.
+"""
+
+[steps.check]
+max_attempts = 6
+
+[steps.check.check]
+mode = "exec"
+path = "../assets/scripts/checks/human-gate-verdict.sh"
+timeout = "10m"
+
+[[steps.children]]
+id = "revise-delivery"
+title = "Revise delivery artifacts"
+metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "delivery" }
+description_file = "../assets/workflows/revise-phase.md"
+
+[[steps.children]]
+id = "confirm-delivery"
+title = "Ask for the delivery verdict"
+needs = ["revise-delivery"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "delivery", "gc.human_gate.question" = "Approve delivery and allow publish?", "human_gate.loop_step" = "accept-delivery" }
+description_file = "../assets/workflows/confirm-human-gate.md"
+
+[[steps]]
+id = "implement"
+title = "Apply OpenSpec tasks in separate sessions"
+needs = ["accept-discovery"]
+condition = "{{drain_policy}} == separate"
+metadata = { "gc.run_target" = "{{implementation_target}}" }
+description_file = "../assets/workflows/implement.md"
+
+[steps.drain]
+context = "separate"
+formula = "do-work"
+member_access = "exclusive"
+
+[[steps]]
+id = "implement-same-session"
+title = "Apply OpenSpec tasks in one shared session"
+needs = ["accept-discovery"]
+condition = "{{drain_policy}} == same-session"
+metadata = { "gc.run_target" = "{{implementation_target}}" }
+description_file = "../assets/workflows/implement-same-session.md"
+
+[steps.drain]
+context = "shared"
+formula = "do-work-item"
+on_item_failure = "skip_remaining"
+member_access = "exclusive"
+
+[steps.drain.item]
+single_lane = true
+
+[[steps]]
+id = "finalize"
+title = "Finalize the OpenSpec build"
+needs = ["accept-implementation"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path" }
+description_file = "../assets/workflows/finalize.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+
+[[steps]]
+id = "archive"
+title = "Archive the OpenSpec change"
+needs = ["accept-delivery"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/archive.md"
