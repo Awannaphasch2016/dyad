@@ -248,4 +248,43 @@ describe("FactoryPhaseBar", () => {
     expect(approveAccountPhase).not.toHaveBeenCalled();
     expect(streamMessage).not.toHaveBeenCalled();
   });
+
+  it("selects the next phase when its bead opens and does not prefill", async () => {
+    const discovery = {
+      appId: 7,
+      factoryHostManaged: true,
+      gasCityProjectId: "project-1",
+      approvedPhases: [],
+      formula: "speckit-phased",
+      currentStepId: "accept-discovery",
+      stepTitle: "Discovery gate",
+      openPhase: "discovery",
+      closedPhases: [],
+      gateWaiting: true,
+      workflowTaskId: "task-1",
+    };
+    getState.mockResolvedValueOnce(discovery).mockResolvedValue({
+      ...discovery,
+      currentStepId: "implement",
+      stepTitle: "Implement",
+      openPhase: "implementation",
+      closedPhases: ["discovery"],
+      gateWaiting: false,
+    });
+    getChat.mockResolvedValue({ messages: [] });
+
+    renderBar();
+    expect(
+      (await screen.findByTestId("factory-formula-step")).textContent,
+    ).toBe("Discovery gate");
+    expect(selectChat).not.toHaveBeenCalled();
+    await waitFor(
+      () => {
+        expect(selectChat).toHaveBeenCalledWith({ chatId: 2, appId: 7 });
+      },
+      { timeout: 4_000 },
+    );
+    expect(selectChat.mock.calls[0]?.[0]).not.toHaveProperty("prefillInput");
+    expect(streamMessage).not.toHaveBeenCalled();
+  });
 });

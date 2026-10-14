@@ -61,6 +61,8 @@ type FactorySession = {
   invocationRef?: ChatStreamInvocationRef;
   streamId?: number;
   updatedFiles: boolean;
+  /** The visible chat stream has already received chat:response:end. */
+  streamReleased: boolean;
   settled: boolean;
   resolve: (result: TurnResult) => void;
   done: Promise<TurnResult>;
@@ -85,9 +87,10 @@ function taskAbortController(taskId: string): AbortController {
   return created;
 }
 
-function publishSession(
+function publishChat(
   database: FactoryHostDatabase,
   session: FactorySession,
+  chatId: number,
 ): void {
   const rows = database
     .select({
@@ -105,15 +108,27 @@ function publishSession(
       isCompactionSummary: messages.isCompactionSummary,
     })
     .from(messages)
-    .where(eq(messages.chatId, session.chatId))
+    .where(eq(messages.chatId, chatId))
     .orderBy(asc(messages.id))
     .all();
   safeSend(session.sender, "chat:response:chunk", {
-    chatId: session.chatId,
+    chatId,
     invocationRef: session.invocationRef,
     streamId: session.streamId,
     messages: toRendererMessages(rows as RendererMessageRow[]),
   } satisfies ChatStreamChunkPayload);
+}
+
+function releaseVisibleStream(session: FactorySession): void {
+  if (session.streamReleased) return;
+  session.streamReleased = true;
+  safeSend(session.sender, "chat:response:end", {
+    chatId: session.chatId,
+    invocationRef: session.invocationRef,
+    streamId: session.streamId,
+    updatedFiles: session.updatedFiles,
+    wasCancelled: false,
+  } satisfies ChatStreamEndPayload);
 }
 
 function finishSession(
@@ -125,7 +140,7 @@ function finishSession(
   const session = sessions.get(taskId);
   if (!session || session.settled) return;
   session.settled = true;
-  if (sendEnd) {
+  if (sendEnd && !session.streamReleased) {
     safeSend(session.sender, "chat:response:end", {
       chatId: session.chatId,
       invocationRef: session.invocationRef,
@@ -367,7 +382,12 @@ export function applyFactoryTurnEvent(
   const snapshot = applyFactoryHostEvent(database, input);
   if (!snapshot.appended) return snapshot;
   const session = sessions.get(snapshot.runId);
-  if (session) publishSession(database, session);
+  if (session && input.type === "text") {
+    publishChat(database, session, snapshot.chatId);
+  }
+  if (session && input.type === "input-required") {
+    releaseVisibleStream(session);
+  }
   if (input.type === "end") {
     finishSession(snapshot.runId, "completed", undefined, true);
   } else if (input.type === "error") {
@@ -408,6 +428,7 @@ function attachSession(params: {
     invocationRef: params.invocationRef,
     streamId: params.streamId,
     updatedFiles: false,
+    streamReleased: false,
     settled: false,
     resolve: resolveResult,
     done,

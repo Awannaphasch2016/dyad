@@ -103,7 +103,6 @@ describe("factory orchestrator", () => {
     expect(sent.at(-1)).toBe("chat:response:end");
     expect(sent).toEqual([
       "chat:response:chunk",
-      "chat:response:chunk",
       "chat:response:end",
       "chat:response:end",
     ]);
@@ -163,6 +162,142 @@ describe("factory orchestrator", () => {
     });
     expect(readFactoryState(database, appId).closedPhases).toEqual([
       "discovery",
+    ]);
+    database.$client.close();
+    fs.rmSync(appDir, { recursive: true, force: true });
+  });
+
+  it("paints the bead chat and releases the stream at the gate", async () => {
+    const database = createInMemoryTestDb();
+    const appDir = fs.mkdtempSync(path.join(os.tmpdir(), "factory-paint-"));
+    const appId = Number(
+      database.insert(apps).values({ name: "Factory", path: appDir }).run()
+        .lastInsertRowid,
+    );
+    for (const title of ["Discovery", "Implementation", "Delivery"]) {
+      database.insert(chats).values({ appId, title }).run();
+    }
+    linkFactoryApp(database, appId, "gc-paint");
+    const phaseChats = Object.fromEntries(
+      database
+        .select()
+        .from(chats)
+        .all()
+        .map((row) => [row.title, row.id]),
+    ) as Record<string, number>;
+    const sent: { channel: string; chatId?: number }[] = [];
+    let releaseGate: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+    let reachedGate: () => void = () => {};
+    const reached = new Promise<void>((resolve) => {
+      reachedGate = resolve;
+    });
+    const pending = runFactoryOrchestratedTurn({
+      database,
+      sender: {
+        isDestroyed: () => false,
+        send: (channel, payload) => {
+          const body = payload as { chatId?: number } | undefined;
+          sent.push({ channel, chatId: body?.chatId });
+        },
+      },
+      chatId: phaseChats.Discovery,
+      appId,
+      phase: "discovery",
+      prompt: "Build the site",
+      abortSignal: new AbortController().signal,
+      notify: async (payload) => {
+        const taskId = payload.taskId as string;
+        applyFactoryTurnEvent(database, {
+          appId,
+          phase: "discovery",
+          taskId,
+          cursor: 1,
+          type: "text",
+          content: "Specify",
+          stepId: "requirements",
+        });
+        applyFactoryTurnEvent(database, {
+          appId,
+          phase: "discovery",
+          taskId,
+          cursor: 2,
+          type: "activity",
+          content: "routing beads",
+          stepId: "requirements",
+        });
+        applyFactoryTurnEvent(database, {
+          appId,
+          phase: "discovery",
+          taskId,
+          cursor: 3,
+          type: "input-required",
+          content: "Approve these discovery artifacts?",
+          stepId: "accept-discovery",
+        });
+        reachedGate();
+        await gate;
+        applyFactoryTurnEvent(database, {
+          appId,
+          phase: "implementation",
+          taskId,
+          cursor: 4,
+          type: "text",
+          content: "Implementing",
+          stepId: "implement",
+        });
+        applyFactoryTurnEvent(database, {
+          appId,
+          phase: "delivery",
+          taskId,
+          cursor: 5,
+          type: "end",
+          content: "published",
+          stepId: "publish",
+        });
+      },
+    });
+    await reached;
+    expect(sent).toEqual([
+      { channel: "chat:response:chunk", chatId: phaseChats.Discovery },
+      { channel: "chat:response:end", chatId: phaseChats.Discovery },
+    ]);
+    expect(readFactoryState(database, appId)).toMatchObject({
+      currentStepId: "accept-discovery",
+      gateWaiting: true,
+      closedPhases: [],
+    });
+    const duringGate = database
+      .select()
+      .from(messages)
+      .all()
+      .map((row) => row.content);
+    expect(duringGate).toEqual(["Build the site", "Specify"]);
+    releaseGate();
+    await expect(pending).resolves.toBe("completed");
+    expect(sent).toEqual([
+      { channel: "chat:response:chunk", chatId: phaseChats.Discovery },
+      { channel: "chat:response:end", chatId: phaseChats.Discovery },
+      { channel: "chat:response:chunk", chatId: phaseChats.Implementation },
+    ]);
+    const byChat = new Map<number, string[]>();
+    for (const row of database.select().from(messages).all()) {
+      const contents = byChat.get(row.chatId) ?? [];
+      contents.push(row.content);
+      byChat.set(row.chatId, contents);
+    }
+    expect(byChat.get(phaseChats.Discovery)).toEqual([
+      "Build the site",
+      "Specify",
+    ]);
+    expect(byChat.get(phaseChats.Implementation)).toEqual(["Implementing"]);
+    expect(byChat.get(phaseChats.Delivery) ?? []).toEqual([]);
+    expect(readFactoryState(database, appId).closedPhases).toEqual([
+      "discovery",
+      "implementation",
+      "delivery",
     ]);
     database.$client.close();
     fs.rmSync(appDir, { recursive: true, force: true });
