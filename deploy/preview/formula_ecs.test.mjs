@@ -285,6 +285,12 @@ test("the formula workflow deploys to ECS and does not cook", () => {
   assert.match(workflow, /id-token: write/);
   assert.match(workflow, /Dockerfile\.gascity/);
   assert.match(workflow, /formula_ecs\.mjs sync/);
+  assert.match(workflow, /store_formula_supervisor\.py --from-doppler/);
+  assert.match(workflow, /read_formula_supervisor_env\.py/);
+  const storeAt = workflow.indexOf("Store the GasCity supervisor settings");
+  const attachAt = workflow.indexOf("Attach the Neon preview branch");
+  assert.ok(storeAt !== -1 && attachAt !== -1 && storeAt < attachAt);
+  assert.equal(workflow.includes("set -x"), false);
   assert.match(workflow, /data-dyad-browser-bridge/);
   assert.match(workflow, /https:\/\/formula\.anakwannaphaschaiyong\.com/);
   assert.equal(workflow.includes("pr-79"), false);
