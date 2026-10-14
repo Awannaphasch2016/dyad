@@ -1,0 +1,104 @@
+# Runbook for HITL Experiments A and B
+
+How to run the two experiments named in `plans/hitl-workflow-semantics.md` against this repository. Section 9 is the short list to check when the experiments are done.
+
+Everything the experiments add is scaffolding on an experiment branch. Whether any of it stays is a decision at the end (section 8), not a premise.
+
+## 1. What is being tested
+
+Experiment A: an agent run ends asking for a role; a request is created and routed; the target role answers; a new run starts carrying the answer; nothing is lost across a host restart. No GasCity bead, no Neon worker, no display-name matching.
+
+Experiment B: on top of A, advancing a phase requires the approving role, on both Continue paths, and the agent's summary is necessary but not sufficient.
+
+Not tested: configurable phases, Paperclip, self-hosted Cursor workers, Spec Kit or OpenSpec installation, any UI beyond what the checks need.
+
+## 2. Ground rules
+
+- Branch per experiment: `cursor/hitl-experiment-a-<suffix>`, `cursor/hitl-experiment-b-<suffix>`. B branches from A.
+- Deterministic first. Prove each step in Vitest before touching the dev app or Cursor. Harnesses: `createFactoryHostBridgeServer({ database, resolveCaller })` as in `src/main/factory_host_bridge_hitl.test.ts`; the node chat-flow harness (`src/testing/CHAT_FLOW_HARNESS.md`) with a fake-LLM fixture under `e2e-tests/fixtures/`.
+- Throwaway scripts (Cursor API probes, curl loops) live in `/tmp` or `.claude/tmp/`, not in the tree.
+- No schema change to Neon. SQLite changes only if a column is unavoidable; prefer reusing `hitl_questions` and `factoryHostRuns`.
+- GasCity, `scripts/gascity/resolve_hitl_answer.py`, and `hitl.py` are not edited. The experiment must work with the bridge alone.
+- Record every run, request, and answer id in the experiment log so the exit criteria can be checked from data, not memory.
+
+## 3. Preconditions
+
+| Id  | Check                                                                                                                                                                                                                             | Done when                                                                                                                                                                                    |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P1  | Baseline. Run `npm test -- src/control_plane/hitl.test.ts src/main/factory_host_bridge_hitl.test.ts src/main/factory_host_bridge_server.test.ts`. Read `FactoryPhaseBar.tsx` `recordApproval` and confirm the two approval paths. | Green. A note recording: `answerHitlQuestion` returns `resolved: false`; `QuestionBody` requires `gateBeadId`; `factoryHost.approvePhase` has no permission check, `factory.approve` does.   |
+| P2  | Cursor key. From a `/tmp` script with `@cursor/sdk` or curl against `https://api.cursor.com/v1`: `GET /me`, `POST /agents` on a throwaway repository, poll the run, send one follow-up, read the final message.                   | The key type (user, service account, team admin) is recorded. Run statuses seen are recorded. Whether a follow-up produces a new run id is recorded. Whether any webhook exists is recorded. |
+| P3  | Two sign-ins. Two dev instances with distinct `DYAD_DEV_USER_DATA_DIR`, one signed in as the project manager, one as the developer, both on one organization app with the three phase chats.                                      | Each instance lists the same app. A question posted by machine token for `project-manager` shows its body in the PM instance and status only in the developer instance.                      |
+
+P1 and P3 gate A1. P2 gates A6 only.
+
+## 4. Experiment A, local agent
+
+| Step | Change or action                                                                                                                                                                                                                                                                                                                           | Test                                                                                                                                                                                                                                                         | Done when                                                                                                                                           |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A1   | Marker. One format the agent writes when it needs a person: a heading `## Request for <role>` followed by the body, parsed the same way `extractFactoryPhaseSummary` parses `## <Phase> summary`. Roles are the two in `ADMIN_ROLE_IDS`. Prompt text tells the agent when to write it and to stop after writing it.                        | Unit test for the parser: present, absent, unknown role, two markers in one message (last wins), marker inside a code fence (ignored).                                                                                                                       | Parser returns `{ role, body }` or `null` for each case.                                                                                            |
+| A2   | Classifier. Pure function from `(run status, final message)` to one of `human-required`, `ready-for-approval`, `completed-unverified`, `recoverable-failure`, `infrastructure-error`, `abandoned`, following the table in the semantics document section 2.                                                                                | Unit test with one case per row, plus `finished` with both a summary and a request (request wins).                                                                                                                                                           | One output per input, no `undefined` path.                                                                                                          |
+| A3   | Request without a bead. In the bridge, make `gateBeadId` optional and accept `stepId` values outside `GATE_ROLE` when `targetRoleId` is a valid role; store `beadId: null`. `GATE_ROLE` ids keep their fixed role. The run end handler creates the question through the same code path as the bridge, not through HTTP.                    | Extend `factory_host_bridge_hitl.test.ts`: a question with no `gateBeadId` and `stepId: "question"` is created; `plan-approve` with the wrong role is still refused.                                                                                         | Both assertions pass; existing tests unchanged.                                                                                                     |
+| A4   | Resume edge. When an answer is stored for a question whose `runId` is a local factory run, start a new run with `startFactoryRun` on the same app and phase, prompt = the original request body plus the answer, idempotency key `${questionId}:resume`. Return `resolved: true` from `answerHitlQuestion` only when the run was accepted. | Bridge test with a fake `dispatchChatIntent`: answer → one dispatched intent whose prompt contains the answer → a second answer attempt dispatches nothing.                                                                                                  | Exactly one resume run per answered question. `resolved` is `true` once.                                                                            |
+| A5   | Durability. On host start, select answered questions without a resume run and start them. Idempotency on `${questionId}:resume` makes a double start harmless.                                                                                                                                                                             | Test: answer stored, no dispatch (simulate crash by passing a dispatcher that throws), restart the service object, dispatcher now records one intent.                                                                                                        | One resume run after restart, none duplicated.                                                                                                      |
+| A6   | End to end on the local agent. Fixture: first run writes `## Request for project-manager`; second run (prompt contains the answer) writes `## Request for developer`; third run writes `## Implementation summary`. Drive through the node chat-flow harness and the bridge in one test.                                                   | Assert: three `factoryHostRuns` rows; two `hitl_questions` with the right roles; the developer instance cannot read the PM body (`presentQuestion`); the third run's final message classifies as `ready-for-approval`; an outsider org lists zero questions. | All assertions pass. Then repeat P3 by hand with the dev app and the same fixture served by the fake LLM, and record screenshots of both instances. |
+
+Exit criterion for A, from the semantics document: two requests answered by two different roles in one phase, the second run's prompt containing the first answer, and the request store returning nothing for a second organization.
+
+## 5. Experiment A, Cursor Cloud Agent
+
+Only after P2.
+
+| Step | Change or action                                                                                                                                                                                                                                                                             | Done when                                                                                                          |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| C1   | A run record for a Cursor run. Reuse `factoryHostRuns` with `runId` prefixed `cursor-run:` and the Cursor agent id and run id stored where `intentId` is today, or in one new nullable column if the shape does not fit. No new table.                                                       | A row can be written and read back for a Cursor run.                                                               |
+| C2   | A poller in a `/tmp` script, not in the tree: start an agent with the same prompt text as A6, poll until terminal, feed `(status, final message)` to the A2 classifier through a small exported entry point, and if `human-required` post the question to the bridge with the machine token. | The first run yields one question for `project-manager` in the dev app.                                            |
+| C3   | Resume for the Cursor backend: the A4 edge, when the question's `runId` is `cursor-run:`, sends a follow-up with the answer instead of dispatching a chat intent. For the experiment this may be the `/tmp` script polling the bridge for answered questions.                                | The follow-up's run writes `## Request for developer`; the developer answers; the next follow-up writes a summary. |
+| C4   | Record what the carrier cost. Did the model write the marker every time? How many polls per run? Did a follow-up produce a new run id (from P2)? Was the token in the agent's environment needed, or did the poller alone suffice?                                                           | A table of attempts with marker present or absent, run status, and poll count.                                     |
+
+Exit criterion: the A exit criterion holds with the Cursor backend for the two requests, and the attempt table shows how often the marker was missing.
+
+## 6. Experiment B
+
+Branch from the A branch after A6.
+
+| Step | Change or action                                                                                                                                                                                                                                              | Test                                                                                                                                           | Done when                                                           |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| B1   | One approval check. The host-managed path (`factoryHostContracts.approvePhase`) passes the same `approve-<phase>` permission check that `factory_records.approvePhase` uses through `requireOwnedApp`. The bridge's machine-token approve route is unchanged. | Handler test: developer session → `DyadError`; project-manager session → approval row; machine token over the bridge → approval row as before. | Both IPC paths refuse the developer and accept the project manager. |
+| B2   | Summary necessary, not sufficient. No change expected; `canContinueFactoryPhase` already requires the summary. Confirm the developer sees the Continue control disabled or refused after the summary, and the project manager sees it enabled.                | Manual in the two dev instances from P3, after the A6 fixture reaches `## Discovery summary`.                                                  | Screenshot pair: developer refused, project manager approved.       |
+| B3   | A inside B. After the project manager approves Discovery, run the A6 fixture in Implementation.                                                                                                                                                               | Same assertions as A6, scoped to `phase = implementation`; Delivery stays locked (`isFactoryPhaseUnlocked` false) throughout.                  | Assertions pass; Delivery chat has no messages.                     |
+
+Exit criterion, from the semantics document: a developer's Continue on Discovery is refused on both IPC paths, a project manager's is accepted on both, and Implementation runs the A loop afterward.
+
+## 7. Order
+
+P1 → P3 → A1 → A2 → A3 → A4 → A5 → A6 → B1 → B2 → B3, with P2 → C1 → C2 → C3 → C4 anywhere after A4. Each step's test is committed with the step. No step starts until the previous step's "Done when" holds.
+
+## 8. Decisions to make when both are done
+
+| Decision                                                     | Evidence to use                                                                                       |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| Is a bead needed to hold a request?                          | A3 to A6 ran with `beadId: null` and resumed through the bridge alone, or did not.                    |
+| Which carrier does a Cursor agent use to signal a request?   | C4 marker-missing rate; whether the poller alone sufficed.                                            |
+| Does the resume edge stay in the bridge or move to a worker? | A5 restart behavior; C3 whether polling the bridge for answers was enough.                            |
+| Does `resolve_hitl_answer.py` stay?                          | If A4 resumes without it, it is only needed for bead-backed gates that still exist.                   |
+| Keep the A3 relaxation of `GATE_ROLE`?                       | Whether any request in A6 or C2 needed a role outside the two in `ADMIN_ROLE_IDS`.                    |
+| Which approval path survives?                                | B1: if one check serves both, the host-managed path can call `factory_records.approvePhase` directly. |
+
+## 9. Verification list
+
+Check each line against data in the experiment log or a test name. A line without evidence is not done.
+
+1. The three baseline test files pass before any change (P1).
+2. The recorded Cursor key type, and whether a follow-up makes a new run id (P2).
+3. Two dev instances, two roles, one app: the developer sees status only on a PM question (P3).
+4. Parser test: five cases, including marker in a code fence ignored (A1).
+5. Classifier test: one case per row of the status × marker table, request beats summary (A2).
+6. A question stored with `beadId: null`; `plan-approve` with the wrong role still refused (A3).
+7. One answer → exactly one resume run whose prompt contains the answer; second answer → none (A4).
+8. Crash between answer and resume → one resume run after restart, not two (A5).
+9. Three runs, two requests, two roles, outsider org sees nothing, third run classifies as ready-for-approval (A6).
+10. Same loop with a Cursor Cloud Agent, plus a table of marker present or missing per attempt (C1–C4).
+11. Developer Continue refused and project manager accepted on both IPC paths (B1).
+12. Delivery stays locked while the A loop runs inside Implementation (B3).
+13. Nothing in `scripts/gascity/`, GasCity, Neon schema, or Paperclip was changed to make 1–12 pass.
+14. Each decision in section 8 has a row of evidence filled in.
