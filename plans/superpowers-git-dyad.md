@@ -152,22 +152,7 @@ That is the smallest change from the working job: replace the OpenRouter call wi
 
 One workflow, `.github/workflows/ui-walk.yml`, taken from the `hitl` job with the branch pin removed (`github.event.pull_request.head.ref == 'cursor/vibesdk-org-prompt-hitl-0539'`). `workflow_dispatch` takes a config path. One runner, `e2e-walk/walk.mjs`, taken from `two-roles.spec.js`. The spec's Vibe SDK selectors move into a config file. The runner reads the config. It does not mention an app by name.
 
-A config names:
-
-| Field        | Vibe SDK today                                                                                          | Dyad for this run                                                         |
-| ------------ | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `url`        | `VIBESDK_URL`                                                                                           | The bridge URL                                                            |
-| `roles`      | Project Manager and Developer user ids from `scripts/doppler/vibesdk-hitl-accounts.mjs`                 | The same two Wewebplus memberships                                        |
-| `start`      | Project Manager types "Build a website for a neighborhood shop." Developer Enter must not create an app | No first prompt. Discovery starts itself                                  |
-| `question`   | `org-question`                                                                                          | The question body inside `chat-input-container`                           |
-| `waiting`    | `org-waiting`                                                                                           | `hitl-wait-*`                                                             |
-| `reply`      | Last `textarea`, then Enter                                                                             | The composer field, then "Submit answer"                                  |
-| `approve`    | None                                                                                                    | Phase bar Approve                                                         |
-| `sendBack`   | None                                                                                                    | Phase bar Send back                                                       |
-| `completion` | At least one answer, then three quiet minutes                                                           | Delivery approved, then download visible to both                          |
-| `decider`    | OpenRouter, one short sentence                                                                          | Cursor Cloud Agent. Approve only when the signed-in role matches the gate |
-
-Switching builder or methodology is a second config file. The workflow, the Clerk ticket, the poll loop, the Cursor client, and the artifact upload stay. Bolt and a later pack get a config, not a copy of the spec.
+The knots a config may set are listed in [plans/ui-walk.md](plans/ui-walk.md). Switching builder or methodology is a second config file. The workflow, the Clerk ticket, the poll loop, the Cursor client, and the artifact upload stay.
 
 ### Evidence
 
