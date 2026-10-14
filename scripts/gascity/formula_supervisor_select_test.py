@@ -11,10 +11,13 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from formula_supervisor_select import (  # noqa: E402
+    SUPERVISOR_URL,
     choose_supervisor,
     missing_required,
+    ordered_configs,
     secret_file_from_log,
     service_targets_supervisor,
+    setting_state,
     tunnel_url_from_config,
     updates_for_preview,
     usable_city_name,
@@ -76,6 +79,21 @@ class SelectTest(unittest.TestCase):
             },
         )
         self.assertEqual(missing_required(chosen), [])
+
+    def test_other_configs_do_not_use_a_generic_city_name(self):
+        chosen = choose_supervisor(
+            {},
+            {},
+            None,
+            [{"GAS_CITY_SUPERVISOR_URL": "https://dev.example", "CITY_NAME": "not-this", "GC_CITY": "wewebplus"}],
+        )
+        self.assertEqual(chosen["GAS_CITY_SUPERVISOR_URL"], "https://dev.example")
+        self.assertEqual(chosen["GAS_CITY_CITY_NAME"], "wewebplus")
+        self.assertEqual(ordered_configs(["stg", "preview", "dev", "prd"]), ["preview", "prd", "dev", "stg"])
+        self.assertEqual(
+            setting_state(SUPERVISOR_URL, {"GAS_CITY_SUPERVISOR_URL": "http://127.0.0.1:8372"}, {}, False),
+            "rejected",
+        )
 
     def test_host_is_last_and_grant_is_optional(self):
         chosen = choose_supervisor(

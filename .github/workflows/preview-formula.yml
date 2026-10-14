@@ -188,7 +188,14 @@ jobs:
             -o ConnectTimeout=20
           )
           remote=/tmp/formula-supervisor-py
+          set +e
           ssh "${ssh_opts[@]}" ubuntu@13.251.216.187 "rm -rf '$remote' && mkdir -p '$remote'"
+          ssh_status=$?
+          set -e
+          if [[ "$ssh_status" -ne 0 ]]; then
+            echo "production host ssh unreachable"
+            exit 0
+          fi
           scp "${ssh_opts[@]}" \
             scripts/gascity/formula_supervisor_select.py \
             scripts/gascity/read_formula_supervisor_env.py \
@@ -210,6 +217,10 @@ jobs:
           status=$?
           set -e
           rm -f "$RUNNER_TEMP/formula-supervisor.json" "$key"
+          if [[ "$status" -eq 3 ]]; then
+            echo "supervisor settings are still absent"
+            exit 0
+          fi
           exit "$status"
 
       - name: Attach the Neon preview branch

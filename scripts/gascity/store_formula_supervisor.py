@@ -13,9 +13,10 @@ from formula_supervisor_select import (
     WRITE_GRANT,
     choose_supervisor,
     missing_required,
+    ordered_configs,
     secret_file_from_log,
+    setting_state,
     updates_for_preview,
-    usable,
 )
 
 PROJECT = "dyad"
@@ -43,6 +44,35 @@ def download(token, project, config):
         return error.code, {}
 
 
+def doppler_get(token, url):
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            body = json.loads(response.read().decode("utf-8"))
+            return response.status, body if isinstance(body, dict) else {}
+    except urllib.error.HTTPError as error:
+        error.read()
+        return error.code, {}
+
+
+def config_names(token, project):
+    status, body = doppler_get(token, f"https://api.doppler.com/v3/configs?project={project}&per_page=100")
+    configs = body.get("configs") if status == 200 else None
+    if not isinstance(configs, list):
+        print(f"doppler configs http {status} project={project}")
+        return ["preview", "prd"]
+    names = [item.get("name") for item in configs if isinstance(item, dict)]
+    ordered = ordered_configs([*names, "preview"])
+    print(f"doppler configs project={project} {','.join(ordered)}")
+    return ordered
+
+
 def post_secrets(token, secrets):
     payload = {"project": PROJECT, "config": CONFIG, "secrets": secrets}
     request = urllib.request.Request(
@@ -64,35 +94,46 @@ def post_secrets(token, secrets):
         return error.code
 
 
-def print_states(preview, chosen, updates, wrote):
+def print_states(preview, updates, wrote):
     for name in STATUS_NAMES:
-        if usable(name, preview.get(name)):
-            state = "present"
-        elif name in updates and wrote:
-            state = "copied"
+        print(f"{name}: {setting_state(name, preview, updates, wrote)}")
+
+
+def load_configs(token):
+    preview = {}
+    prd = {}
+    extra = []
+    for config in config_names(token, PROJECT):
+        status, body = download(token, PROJECT, config)
+        if config == CONFIG:
+            if status != 200:
+                return None
+            preview = body
+        elif status != 200:
+            continue
+        elif config == "prd":
+            prd = body
         else:
-            state = "absent"
-        print(f"{name}: {state}")
+            extra.append(body)
+    return preview, prd, extra
 
 
 def apply_settings(token, host=None):
-    status, preview = download(token, PROJECT, CONFIG)
-    if status != 200:
+    loaded = load_configs(token)
+    if loaded is None:
         return 1
-    prd_status, prd = download(token, PROJECT, "prd")
-    if prd_status != 200:
-        prd = {}
-    chosen = choose_supervisor(preview, prd, host)
+    preview, prd, extra = loaded
+    chosen = choose_supervisor(preview, prd, host, extra)
     updates = updates_for_preview(preview, chosen)
     wrote = False
     if updates:
         http = post_secrets(token, updates)
         print(f"doppler secrets set http {http} project={PROJECT} config={CONFIG}")
         if http not in (200, 201):
-            print_states(preview, chosen, updates, False)
+            print_states(preview, updates, False)
             return 1
         wrote = True
-    print_states(preview, chosen, updates, wrote)
+    print_states(preview, updates, wrote)
     if missing_required(chosen):
         print("supervisor settings are still absent")
         return 3

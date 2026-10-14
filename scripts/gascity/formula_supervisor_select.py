@@ -90,12 +90,22 @@ def _first(names, *sources):
     return ""
 
 
-def choose_supervisor(preview, prd=None, host=None):
-    """Prefer a usable preview value, then prd, then the host file."""
-    chosen = {}
-    for canonical, names in NAMES.items():
-        chosen[canonical] = _first(names, preview, prd, host)
-    return chosen
+def ordered_configs(names):
+    found = [name for name in names if isinstance(name, str) and name]
+    ordered = [name for name in ("preview", "prd") if name in found]
+    ordered.extend(sorted(name for name in found if name not in ordered))
+    return ordered
+
+
+def choose_supervisor(preview, prd=None, host=None, extra=None):
+    """Prefer a usable preview value, then prd, then other configs, then the host file."""
+    specific_city = tuple(name for name in CITY_NAMES if name != "CITY_NAME")
+    extras = [item for item in extra or [] if isinstance(item, dict)]
+    return {
+        SUPERVISOR_URL: _first(URL_NAMES, preview, prd, host) or _first(URL_NAMES, *extras),
+        CITY_NAME: _first(CITY_NAMES, preview, prd, host) or _first(specific_city, *extras),
+        WRITE_GRANT: _first(GRANT_NAMES, preview, prd, host) or _first(GRANT_NAMES, *extras),
+    }
 
 
 def updates_for_preview(preview, chosen):
@@ -109,6 +119,17 @@ def updates_for_preview(preview, chosen):
 
 def missing_required(chosen):
     return [name for name in REQUIRED if not chosen.get(name)]
+
+
+def setting_state(name, preview, updates, wrote):
+    raw = preview.get(name) if isinstance(preview, dict) else None
+    if usable(name, raw):
+        return "present"
+    if name in updates and wrote:
+        return "copied"
+    if _text(raw):
+        return "rejected"
+    return "absent"
 
 
 def secret_file_from_log(text):
