@@ -36,13 +36,26 @@ test("help lists every operation and the dispatch note", () => {
 });
 
 test("operations resolve to their workflow and default ref", () => {
-  const { words, flags } = parseArgs(["formula", "role"]);
+  const { words, flags } = parseArgs([
+    "formula",
+    "role",
+    "--project",
+    "dyad",
+    "--config",
+    "preview",
+  ]);
   const op = resolve(words, flags);
   assert.equal(op.workflow, "preview-formula-role.yml");
   assert.equal(op.ref, "cursor/formula-config-ui-55d6");
 
   const rollout = resolve(...Object.values(parseArgs(["rollout", "5e952bbc"])));
-  assert.deepEqual(rollout.fields, ["commit=5e952bbc"]);
+  assert.deepEqual(rollout.fields, [
+    "commit=5e952bbc",
+    "doppler-project=dyad",
+    "doppler-config=prd",
+    "aws-project=aws",
+    "aws-config=dev",
+  ]);
 
   assert.throws(
     () => resolve(...Object.values(parseArgs(["rollout", "not-a-sha"]))),
@@ -170,21 +183,25 @@ test("--no-wait returns after the run is found", async () => {
   assert.ok(!gh.calls.some((call) => call[1] === "watch"));
 });
 
-test("a refused dispatch is reported as a rerun with its commit", async () => {
+test("a refused dispatch fails and does not rerun an older run", async () => {
   const gh = fakeGh({
     "workflow run": { status: 1, stderr: "HTTP 404: Not Found" },
     "run list": { stdout: JSON.stringify([RUN]) },
     "run rerun": { stdout: "" },
-    "run watch": { status: 0 },
-    "run view": { stdout: log(["ec2_ssh=ok"]) },
   });
   const c = capture();
   const code = await main(["ec2", "check"], { ...c.io, gh });
-  assert.equal(code, 0);
-  assert.match(c.out(), /mode: rerun/);
-  assert.match(c.out(), /dispatch_refused: HTTP 404: Not Found/);
-  assert.match(c.out(), /commit: 5e952bbc/);
-  assert.match(c.out(), /merge the workflow file to the default branch/);
+  assert.equal(code, 3);
+  assert.match(c.err(), /code: DISPATCH_REFUSED/);
+  assert.match(c.err(), /does not rerun an older run/);
+  assert.equal(
+    gh.calls.some((call) => call[0] === "run" && call[1] === "rerun"),
+    false,
+  );
+  assert.equal(
+    gh.calls.some((call) => call[0] === "run" && call[1] === "list"),
+    false,
+  );
 });
 
 test("errors print error and code and exit with the right status", async () => {

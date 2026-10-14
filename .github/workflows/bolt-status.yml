@@ -1,0 +1,37 @@
+# Print the HTTP status of the bolt walkthrough worker. Changes nothing.
+name: Bolt status
+
+on:
+  workflow_dispatch:
+    inputs:
+      doppler-project:
+        description: Doppler project
+        required: false
+        type: string
+      doppler-config:
+        description: Doppler config
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read the worker
+        env:
+          PROJECT: ${{ inputs.doppler-project }}
+          CONFIG: ${{ inputs.doppler-config }}
+        run: |
+          set -euo pipefail
+          project="${PROJECT:-bolt}"
+          config="${CONFIG:-preview}"
+          echo "project=${project}"
+          echo "config=${config}"
+          url="https://bolt-walkthrough-55d6.karant-test-egress-canary.workers.dev"
+          code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$url" || echo 000)"
+          echo "url=${url}"
+          echo "http=${code}"

@@ -5,6 +5,23 @@ name: EC2 access check
 
 on:
   workflow_dispatch:
+    inputs:
+      doppler-project:
+        description: Doppler project
+        required: false
+        type: string
+      doppler-config:
+        description: Doppler config
+        required: false
+        type: string
+      aws-project:
+        description: Second Doppler project
+        required: false
+        type: string
+      aws-config:
+        description: Second Doppler config
+        required: false
+        type: string
   push:
     branches:
       - cursor/axi-toolbox-image-plan-531e
@@ -27,6 +44,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Name the Doppler pair
+        env:
+          PROJECT: ${{ inputs.doppler-project }}
+          CONFIG: ${{ inputs.doppler-config }}
+        run: |
+          set -euo pipefail
+          project="${PROJECT:-dyad}"
+          config="${CONFIG:-preview}"
+          [[ "$project" =~ ^[A-Za-z0-9_-]+$ ]]
+          [[ "$config" =~ ^[A-Za-z0-9_-]+$ ]]
+          echo "project=${project}"
+          echo "config=${config}"
+
       - name: Checkout
         uses: actions/checkout@v5
 
@@ -69,16 +99,22 @@ jobs:
         if: steps.doppler.outputs.ok == 'true'
         env:
           SYNCED_EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          DOPPLER_PROJECT: ${{ inputs.doppler-project }}
+          DOPPLER_CONFIG: ${{ inputs.doppler-config }}
         run: |
           set -euo pipefail
           if [[ -n "${SYNCED_EC2_SSH_KEY//[[:space:]]/}" ]]; then
             echo "ec2_ssh_key_fetch=skipped reason=github-secret-present"
             exit 0
           fi
+          project="${DOPPLER_PROJECT:-dyad}"
+          config="${DOPPLER_CONFIG:-preview}"
+          [[ "$project" =~ ^[A-Za-z0-9_-]+$ ]]
+          [[ "$config" =~ ^[A-Za-z0-9_-]+$ ]]
           status="$(curl -sS -o "$RUNNER_TEMP/key.json" -w '%{http_code}' \
             -H "Authorization: Bearer ${DOPPLER_TOKEN}" \
-            "https://api.doppler.com/v3/configs/config/secret?project=dyad&config=preview&name=EC2_SSH_KEY" || echo 000)"
-          echo "ec2_ssh_key_fetch=http-${status} project=dyad config=preview"
+            "https://api.doppler.com/v3/configs/config/secret?project=${project}&config=${config}&name=EC2_SSH_KEY" || echo 000)"
+          echo "ec2_ssh_key_fetch=http-${status} project=${project} config=${config}"
           if [[ "$status" == "200" ]]; then
             umask 077
             jq -r '.value.computed // empty' "$RUNNER_TEMP/key.json" > "$RUNNER_TEMP/gascity-ec2"

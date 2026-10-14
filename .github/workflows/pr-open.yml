@@ -1,0 +1,117 @@
+# Open a pull request on another repository. Does not merge.
+# The cloud agent token only dispatches this workflow. The GitHub App,
+# installed on the target repository, pushes the branch and opens the
+# pull request. The App private key is a repository secret. It is not
+# in the toolbox image.
+name: Open a pull request
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: owner/repo that receives the pull request
+        required: true
+        type: string
+      title:
+        description: Pull request title
+        required: true
+        type: string
+      head:
+        description: Head branch
+        required: true
+        type: string
+      base:
+        description: Base branch
+        required: false
+        default: main
+        type: string
+      body:
+        description: Pull request body
+        required: false
+        type: string
+      source-repo:
+        description: Repository the App fetches the head ref from
+        required: false
+        type: string
+      source-ref:
+        description: Ref in source-repo
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  open:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Require the GitHub App
+        env:
+          APP_ID: ${{ secrets.OPS_AXI_APP_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "$APP_ID" ]; then
+            echo "app=absent"
+            echo "OPS_AXI_APP_ID is not set on this repository" >&2
+            exit 1
+          fi
+          echo "app=present"
+
+      - name: Split the target
+        id: target
+        env:
+          TARGET: ${{ inputs.target }}
+        run: |
+          set -euo pipefail
+          [[ "$TARGET" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]
+          echo "owner=${TARGET%%/*}" >> "$GITHUB_OUTPUT"
+          echo "repo=${TARGET#*/}" >> "$GITHUB_OUTPUT"
+
+      - name: Create the App token
+        id: app
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.OPS_AXI_APP_ID }}
+          private-key: ${{ secrets.OPS_AXI_APP_PRIVATE_KEY }}
+          owner: ${{ steps.target.outputs.owner }}
+          repositories: ${{ steps.target.outputs.repo }}
+
+      - name: Push the source ref when one was named
+        if: inputs.source-repo != '' && inputs.source-ref != ''
+        env:
+          APP_TOKEN: ${{ steps.app.outputs.token }}
+          SOURCE_TOKEN: ${{ github.token }}
+          SOURCE_REPO: ${{ inputs.source-repo }}
+          SOURCE_REF: ${{ inputs.source-ref }}
+          TARGET: ${{ inputs.target }}
+          HEAD: ${{ inputs.head }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]
+          [[ "$SOURCE_REF" =~ ^[A-Za-z0-9._/-]+$ ]]
+          [[ "$HEAD" =~ ^[A-Za-z0-9._/-]+$ ]]
+          git -c "http.extraheader=AUTHORIZATION: bearer ${SOURCE_TOKEN}" \
+            clone --bare "https://github.com/${SOURCE_REPO}.git" "$RUNNER_TEMP/source.git"
+          git --git-dir "$RUNNER_TEMP/source.git" \
+            -c "http.extraheader=AUTHORIZATION: bearer ${APP_TOKEN}" \
+            push "https://github.com/${TARGET}.git" \
+            "${SOURCE_REF}:refs/heads/${HEAD}"
+
+      - name: Open the pull request
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          TARGET: ${{ inputs.target }}
+          TITLE: ${{ inputs.title }}
+          HEAD: ${{ inputs.head }}
+          BASE: ${{ inputs.base }}
+          BODY: ${{ inputs.body }}
+        run: |
+          set -euo pipefail
+          url="$(gh pr create \
+            --repo "$TARGET" \
+            --base "$BASE" \
+            --head "$HEAD" \
+            --title "$TITLE" \
+            --body "${BODY:-Opened by ops-axi.}")"
+          echo "pr_url=${url}"

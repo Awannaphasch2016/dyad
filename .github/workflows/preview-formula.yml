@@ -3,6 +3,23 @@ name: Preview formula
 
 on:
   workflow_dispatch:
+    inputs:
+      doppler-project:
+        description: Doppler project
+        required: false
+        type: string
+      doppler-config:
+        description: Doppler config
+        required: false
+        type: string
+      aws-project:
+        description: Second Doppler project
+        required: false
+        type: string
+      aws-config:
+        description: Second Doppler config
+        required: false
+        type: string
   push:
     branches:
       - cursor/formula-config-ui-55d6
@@ -21,6 +38,19 @@ jobs:
     outputs:
       arn: ${{ steps.role.outputs.arn }}
     steps:
+      - name: Name the Doppler pair
+        env:
+          PROJECT: ${{ inputs.doppler-project }}
+          CONFIG: ${{ inputs.doppler-config }}
+        run: |
+          set -euo pipefail
+          project="${PROJECT:-dyad}"
+          config="${CONFIG:-preview}"
+          [[ "$project" =~ ^[A-Za-z0-9_-]+$ ]]
+          [[ "$config" =~ ^[A-Za-z0-9_-]+$ ]]
+          echo "project=${project}"
+          echo "config=${config}"
+
       - name: Checkout
         uses: actions/checkout@v5
 

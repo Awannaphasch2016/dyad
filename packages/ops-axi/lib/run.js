@@ -64,6 +64,19 @@ async function listRuns(gh, { workflow, ref, limit = 10, event }) {
   return JSON.parse(stdout || "[]");
 }
 
+export async function pollRun(
+  gh,
+  { workflow, ref, after, event, sleep = defaultSleep, attempts = 20 },
+) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const runs = await listRuns(gh, { workflow, ref, event });
+    const fresh = runs.find((run) => Date.parse(run.createdAt) >= after - 5000);
+    if (fresh) return fresh;
+    await sleep(3000);
+  }
+  return null;
+}
+
 export async function startRun(
   gh,
   { workflow, ref, fields = [], sleep = defaultSleep, now = () => Date.now() },
@@ -75,49 +88,28 @@ export async function startRun(
     await gh(args);
   } catch (error) {
     if (!isDispatchRefusal(error)) throw error;
-    return rerunLatest(gh, {
-      workflow,
-      ref,
-      reason: error.message.split("\n")[0],
-    });
+    throw new GhError(
+      `GitHub refused to dispatch ${workflow} on ${ref} (${error.message.split("\n")[0]}). This command does not rerun an older run.`,
+      { code: "DISPATCH_REFUSED" },
+    );
   }
 
   // gh workflow run does not return the run id. Poll for a dispatch run on
   // this branch created after we asked.
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    const runs = await listRuns(gh, {
-      workflow,
-      ref,
-      event: "workflow_dispatch",
-    });
-    const fresh = runs.find(
-      (run) => Date.parse(run.createdAt) >= dispatchedAt - 5000,
-    );
-    if (fresh) return { mode: "dispatch", run: fresh };
-    await sleep(3000);
-  }
+  const fresh = await pollRun(gh, {
+    workflow,
+    ref,
+    after: dispatchedAt,
+    event: "workflow_dispatch",
+    sleep,
+  });
+  if (fresh) return { mode: "dispatch", run: fresh };
   throw new GhError(
     "Dispatch was accepted but no run appeared within 60 seconds",
     {
       code: "RUN_NOT_FOUND",
     },
   );
-}
-
-async function rerunLatest(gh, { workflow, ref, reason }) {
-  const runs = await listRuns(gh, { workflow, ref, limit: 1 });
-  const latest = runs[0];
-  if (!latest) {
-    throw new GhError(
-      `GitHub refused the dispatch (${reason}) and there is no earlier run of ${workflow} on ${ref} to rerun`,
-      { code: "NO_RUN_TO_RERUN" },
-    );
-  }
-  if (latest.status !== "completed") {
-    return { mode: "attach", run: latest, reason };
-  }
-  await gh(["run", "rerun", String(latest.databaseId)]);
-  return { mode: "rerun", run: latest, reason };
 }
 
 export async function waitForRun(gh, runId, { interval = 15 } = {}) {

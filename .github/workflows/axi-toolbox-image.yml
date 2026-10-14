@@ -9,6 +9,7 @@ on:
     branches:
       - main
       - cursor/axi-toolbox-image-plan-531e
+      - cursor/ops-axi-commands-f1a5
     paths:
       - docker/axi/**
       - packages/ops-axi/**

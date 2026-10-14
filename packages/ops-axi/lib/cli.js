@@ -1,13 +1,32 @@
 // Command surface. Output follows the AXI house style: compact key/value
 // blocks, a help[] block with next steps, and `error:`/`code:` on failure.
 import { readFileSync } from "node:fs";
-import { DEFAULT_REPO, OPERATIONS, findOperation } from "./catalog.js";
+import { OPERATIONS, findOperation, DYAD_REPO } from "./catalog.js";
 import { GhError, makeGh } from "./gh.js";
-import { readResults, startRun, waitForRun } from "./run.js";
+import { pollRun, readResults, startRun, waitForRun } from "./run.js";
+import { installDigest } from "./toolbox.js";
 
 const VERSION = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8"),
 ).version;
+
+const FLAG_VALUES = new Set([
+  "--ref",
+  "--repo",
+  "--field",
+  "-f",
+  "-R",
+  "--project",
+  "--config",
+  "--aws-project",
+  "--aws-config",
+  "--title",
+  "--head",
+  "--base",
+  "--body",
+  "--source-repo",
+  "--source-ref",
+]);
 
 export const HELP = `usage: ops-axi <operation> [flags]
 operations[${Object.keys(OPERATIONS).length + 1}]:
@@ -19,43 +38,60 @@ ${Object.entries(OPERATIONS)
   .join("\n")}
   run <workflow.yml> - start any workflow file that declares workflow_dispatch
 flags:
-  --ref <branch>      branch whose workflow file and code run (each operation has a default)
-  --repo <owner/repo> repository (default ${DEFAULT_REPO}, or GH_REPO)
-  --field <k=v>       workflow_dispatch input (repeatable, run only)
-  --no-wait           start the run and return its URL without waiting
-  --json              print the result as JSON
+  --ref <branch>         branch whose workflow file and code run (each operation has a default)
+  --repo <owner/repo>    repository that owns the workflow (each operation has a default)
+  --project <name>       Doppler project. Default is the pair that command uses today
+  --config <name>        Doppler config
+  --aws-project <name>   second Doppler project, when the command reads two
+  --aws-config <name>    second Doppler config
+  --field <k=v>          workflow_dispatch input (repeatable, run only)
+  --title <text>         pull request title (pr open)
+  --head <branch>        branch to open (pr open)
+  --base <branch>        base branch (pr open, default main)
+  --body <text>          pull request body (pr open)
+  --source-repo <o/r>    repository the App fetches the branch from (pr open)
+  --source-ref <ref>     ref in --source-repo (pr open)
+  --no-wait              start the run and return its URL without waiting
+  --json                 print the result as JSON
 notes:
-  GitHub only dispatches workflow files that exist on the default branch. When
-  it refuses, ops-axi reruns the latest run of that workflow on --ref instead
-  and says so with mode: rerun. A rerun uses that run's commit, not the branch tip.
+  GitHub only dispatches a workflow file that exists on the default branch.
+  A refused dispatch fails this command. It does not rerun an older run,
+  because that rerun would ignore the arguments from this call.
+  A write with no Doppler default exits before it changes anything when
+  --project and --config are omitted.
   Result lines are the key=value lines the workflow prints. Values whose key
   looks secret are shown as <redacted>.
+  pr open does not merge. cursor factory is not a command. Walk commands are
+  added when ui-walk.yml exists.
 examples:
   ops-axi ec2 check
-  ops-axi formula role
-  ops-axi formula verify
-  ops-axi formula deploy
   ops-axi doppler status
+  ops-axi preview status 177 --project dyad --config dev
   ops-axi rollout 5e952bbc
-  ops-axi run preview-wake.yml --ref cursor/preview-wake-34-bbea`;
+  ops-axi toolbox use sha256:${"a".repeat(64)}
+  ops-axi pr open Awannaphasch2016/forma --title "Add status" --head cursor/status`;
 
 export function parseArgs(argv) {
   const words = [];
   const flags = { fields: [], wait: true, json: false };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
-    if (
-      arg === "--ref" ||
-      arg === "--repo" ||
-      arg === "--field" ||
-      arg === "-f" ||
-      arg === "-R"
-    ) {
+    if (FLAG_VALUES.has(arg)) {
       const value = argv[i + 1];
       if (value === undefined) throw new UsageError(`${arg} needs a value`);
       i += 1;
       if (arg === "--ref") flags.ref = value;
       else if (arg === "--repo" || arg === "-R") flags.repo = value;
+      else if (arg === "--project") flags.project = value;
+      else if (arg === "--config") flags.config = value;
+      else if (arg === "--aws-project") flags.awsProject = value;
+      else if (arg === "--aws-config") flags.awsConfig = value;
+      else if (arg === "--title") flags.title = value;
+      else if (arg === "--head") flags.head = value;
+      else if (arg === "--base") flags.base = value;
+      else if (arg === "--body") flags.body = value;
+      else if (arg === "--source-repo") flags.sourceRepo = value;
+      else if (arg === "--source-ref") flags.sourceRef = value;
       else flags.fields.push(value);
     } else if (arg === "--no-wait") flags.wait = false;
     else if (arg === "--json") flags.json = true;
@@ -74,6 +110,28 @@ export class UsageError extends Error {
   }
 }
 
+export function applyDoppler(name, op, flags) {
+  if (
+    op.requiresDoppler &&
+    !(op.doppler?.project && op.doppler?.config) &&
+    (!flags.project || !flags.config)
+  ) {
+    throw new UsageError(
+      `${name} writes a Doppler config and needs --project and --config`,
+    );
+  }
+  const project = flags.project || op.doppler?.project;
+  const config = flags.config || op.doppler?.config;
+  const awsProject = flags.awsProject || op.doppler?.awsProject;
+  const awsConfig = flags.awsConfig || op.doppler?.awsConfig;
+  const fields = [];
+  if (project) fields.push(`doppler-project=${project}`);
+  if (config) fields.push(`doppler-config=${config}`);
+  if (awsProject) fields.push(`aws-project=${awsProject}`);
+  if (awsConfig) fields.push(`aws-config=${awsConfig}`);
+  return { project, config, awsProject, awsConfig, fields };
+}
+
 export function resolve(words, flags) {
   if (words[0] === "run") {
     const workflow = words[1];
@@ -83,19 +141,27 @@ export function resolve(words, flags) {
       );
     }
     if (!flags.ref) throw new UsageError("run needs --ref <branch>");
+    const doppler = applyDoppler(`run ${workflow}`, {}, flags);
     return {
       name: `run ${workflow}`,
+      kind: "dispatch",
+      repo: flags.repo || process.env.GH_REPO || DYAD_REPO,
       workflow,
       ref: flags.ref,
-      fields: flags.fields,
+      fields: [...flags.fields, ...doppler.fields],
       verify: [],
+      project: doppler.project,
+      config: doppler.config,
     };
   }
   const found = findOperation(words);
   if (!found)
     throw new UsageError(`Unknown operation: ${words.join(" ") || "(none)"}`);
   const { name, op, rest } = found;
-  const fields = [...flags.fields];
+  const doppler = applyDoppler(name, op, flags);
+  const fields = [...(op.fixed || [])];
+  let digest;
+  let pr;
   if (op.positional) {
     const value = rest[0];
     if (!value || !op.positional.pattern.test(value)) {
@@ -103,16 +169,42 @@ export function resolve(words, flags) {
         `${name} needs <${op.positional.name}> matching ${op.positional.pattern}`,
       );
     }
-    fields.push(`${op.positional.field}=${value}`);
+    if (rest.length > 1) {
+      throw new UsageError(`${name} takes one positional argument`);
+    }
+    if (op.kind !== "toolbox-use")
+      fields.push(`${op.positional.field}=${value}`);
+    if (op.kind === "toolbox-use") digest = value;
+    if (op.positional.field === "pr") pr = value;
   } else if (rest.length) {
     throw new UsageError(`${name} takes no positional arguments`);
   }
+  if (op.needsTitle) {
+    if (!flags.title) throw new UsageError(`${name} needs --title`);
+    if (!flags.head) throw new UsageError(`${name} needs --head`);
+    fields.push(`title=${flags.title}`);
+    fields.push(`head=${flags.head}`);
+    fields.push(`base=${flags.base || "main"}`);
+    if (flags.body) fields.push(`body=${flags.body}`);
+    if (flags.sourceRepo) fields.push(`source-repo=${flags.sourceRepo}`);
+    if (flags.sourceRef) fields.push(`source-ref=${flags.sourceRef}`);
+  }
+  if (op.kind !== "label" && op.kind !== "toolbox-use") {
+    fields.push(...doppler.fields);
+  }
   return {
     name,
+    kind: op.kind || "dispatch",
+    labelAction: op.labelAction,
+    repo: flags.repo || op.repo,
     workflow: op.workflow,
     ref: flags.ref || op.defaultRef,
     fields,
-    verify: op.verify,
+    verify: op.verify || [],
+    project: doppler.project,
+    config: doppler.config,
+    digest,
+    pr,
   };
 }
 
@@ -142,16 +234,16 @@ export function render({
     "run:",
     `  operation: ${operation.name}`,
     `  workflow: ${operation.workflow}`,
-    `  ref: ${operation.ref}`,
+    `  ref: ${started.ref || operation.ref}`,
     `  mode: ${started.mode}`,
+  ];
+  if (operation.project) lines.push(`  project: ${operation.project}`);
+  if (operation.config) lines.push(`  config: ${operation.config}`);
+  lines.push(
     `  id: ${started.run.databaseId}`,
     `  url: ${started.run.url}`,
-  ];
-  if (started.reason) lines.push(`  dispatch_refused: ${started.reason}`);
-  if (started.mode === "rerun" || started.mode === "attach") {
-    lines.push(`  commit: ${String(started.run.headSha || "").slice(0, 8)}`);
-  }
-  lines.push(`  conclusion: ${conclusion}`);
+    `  conclusion: ${conclusion}`,
+  );
   if (results && results.size) {
     lines.push(`results[${results.size}]:`);
     for (const [key, value] of results) lines.push(`  ${key}: ${value}`);
@@ -180,10 +272,11 @@ export function renderError(error) {
     help.push(
       "Starting a run needs a token with actions: write on this repository; a read-only token can only watch runs",
     );
-  if (error.code === "NO_RUN_TO_RERUN") {
+  if (error.code === "DISPATCH_REFUSED") {
     help.push(
-      "Push the branch once so a run exists, or merge the workflow file to the default branch",
+      "The workflow file has to be on the default branch before a dispatch can start",
     );
+    help.push("This command does not rerun an older run");
   }
   if (error.code === "GH_NOT_INSTALLED")
     help.push("Install gh: https://cli.github.com");
@@ -192,6 +285,35 @@ export function renderError(error) {
     for (const line of help) lines.push(`  ${line}`);
   }
   return lines.join("\n");
+}
+
+async function startLabel(gh, operation, io) {
+  const flag =
+    operation.labelAction === "add" ? "--add-label" : "--remove-label";
+  await gh(["pr", "edit", operation.pr, flag, "preview"]);
+  const viewed = await gh([
+    "pr",
+    "view",
+    operation.pr,
+    "--json",
+    "headRefName,url",
+  ]);
+  const pull = JSON.parse(viewed.stdout);
+  const after = (io.now || Date.now)();
+  const run = await pollRun(gh, {
+    workflow: operation.workflow,
+    ref: pull.headRefName,
+    after,
+    event: "pull_request",
+    sleep: io.sleep,
+  });
+  if (!run) {
+    throw new GhError(
+      `The preview label changed on pull request ${operation.pr} but preview.yml did not start`,
+      { code: "RUN_NOT_FOUND" },
+    );
+  }
+  return { mode: "label", run, ref: pull.headRefName };
 }
 
 export async function main(argv, io = {}) {
@@ -222,16 +344,43 @@ export async function main(argv, io = {}) {
     return 2;
   }
 
-  const repo = flags.repo || process.env.GH_REPO || DEFAULT_REPO;
+  if (operation.kind === "toolbox-use") {
+    try {
+      const installed = await installDigest({
+        digest: operation.digest,
+        binDir: io.binDir,
+        pinPath: io.pinPath,
+        docker: io.docker,
+      });
+      out(
+        [
+          "toolbox:",
+          `  digest: ${installed.digest}`,
+          `  image: ${installed.image}`,
+          `  bin: ${installed.binDir}`,
+          `  pin: ${installed.pinPath}`,
+        ].join("\n"),
+      );
+      return 0;
+    } catch (error) {
+      err(renderError(error));
+      return error.code === "VALIDATION_ERROR" ? 2 : 3;
+    }
+  }
+
+  const repo = flags.repo || operation.repo;
   const gh = io.gh || makeGh({ repo });
   try {
-    const started = await startRun(gh, {
-      workflow: operation.workflow,
-      ref: operation.ref,
-      fields: operation.fields,
-      sleep: io.sleep,
-      now: io.now,
-    });
+    const started =
+      operation.kind === "label"
+        ? await startLabel(gh, operation, io)
+        : await startRun(gh, {
+            workflow: operation.workflow,
+            ref: operation.ref,
+            fields: operation.fields,
+            sleep: io.sleep,
+            now: io.now,
+          });
     if (!flags.wait) {
       out(
         render({
@@ -254,18 +403,15 @@ export async function main(argv, io = {}) {
         `Logs: gh run view ${started.run.databaseId} --log-failed -R ${repo}`,
       );
     }
-    if (started.mode === "rerun") {
-      help.push(
-        "Dispatch was refused; merge the workflow file to the default branch to run the branch tip",
-      );
-    }
     if (flags.json) {
       out(
         JSON.stringify({
           operation: operation.name,
           workflow: operation.workflow,
-          ref: operation.ref,
+          ref: started.ref || operation.ref,
           mode: started.mode,
+          project: operation.project,
+          config: operation.config,
           id: started.run.databaseId,
           url: started.run.url,
           conclusion,
