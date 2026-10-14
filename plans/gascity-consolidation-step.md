@@ -220,7 +220,7 @@ This repo has no `.cursor/environment.json`. A new agent session gets `ops-axi` 
 `install` runs once per environment build, as a login shell, and new sessions boot from that snapshot. Put the binaries on the default `PATH`:
 
 ```sh
-digest=sha256:49e83dc64a665870cb28ab55a10ef63b2e2df7369519f4c02086cfdfb5e28b12
+digest=sha256:444324acb964125600819dcea0b617dad511d9e6f2d36a694e098cb6bf98e888
 id="$(docker create ghcr.io/awannaphasch2016/axi-toolbox@${digest})"
 docker cp "$id:/opt/axi/bin/ops-axi" /usr/local/bin/ops-axi
 docker cp "$id:/opt/axi/bin/gh-axi" /usr/local/bin/gh-axi
@@ -229,7 +229,7 @@ chmod 755 /usr/local/bin/ops-axi /usr/local/bin/gh-axi
 gh-axi setup hooks
 ```
 
-That digest is the published image that carries `packages/ops-axi`. The image has no Doppler or GitHub token. The session's `GH_TOKEN` is what `ops-axi` uses to start workflows.
+That digest is the image published by run [38642254744](https://github.com/Awannaphasch2016/dyad/actions/runs/38642254744) from `cursor/ops-axi-commands-f1a5`. It carries the command catalog. The image has no Doppler or GitHub token. The session's `GH_TOKEN` is what `ops-axi` uses to start workflows.
 
 `ops-axi toolbox use <digest>` is the version command. It checks the image exists, replaces `/usr/local/bin/ops-axi` and `gh-axi` from that image, and writes the digest into the `install` pin. Other sessions see it after the next environment build. `gh-axi update` inside the image does nothing useful: `/opt/axi` is owned by root and the image runs as `agent`.
 

@@ -4,6 +4,8 @@ Status: the command catalog is on `cursor/ops-axi-commands-f1a5`. Creating `Awan
 
 The image registry is GitHub Container Registry, `ghcr.io`. That is the registry `axi-toolbox` already uses. This plan does not publish to Google `gcr.io`.
 
+Run [38642254744](https://github.com/Awannaphasch2016/dyad/actions/runs/38642254744) printed `image=ghcr.io/awannaphasch2016/axi-toolbox@sha256:444324acb964125600819dcea0b617dad511d9e6f2d36a694e098cb6bf98e888`.
+
 ## Repository
 
 Create `Awannaphasch2016/ops-axi`. Move `packages/ops-axi` and `docker/axi` out of this repo into that one. The toolbox image builds from the new repository.
