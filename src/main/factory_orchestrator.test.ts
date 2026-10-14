@@ -4,7 +4,12 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { apps, chats, messages } from "@/db/schema";
 import { createInMemoryTestDb } from "@/testing/test_db";
-import { linkFactoryApp } from "./factory_host_service";
+import {
+  linkFactoryApp,
+  openOrchestratedRun,
+  readFactoryState,
+} from "./factory_host_service";
+import { FACTORY_FORMULA } from "@/lib/factoryFormula";
 import {
   isFactoryOrchestratedChat,
   runFactoryOrchestratedTurn,
@@ -54,6 +59,10 @@ describe("factory orchestrator", () => {
       abortSignal: new AbortController().signal,
       idempotencyKey: "turn-1",
       notify: async (payload) => {
+        expect(payload).toMatchObject({
+          type: "sling",
+          formula: "speckit-phased",
+        });
         const taskId = payload.taskId as string;
         applyFactoryTurnEvent(database, {
           appId,
@@ -105,6 +114,56 @@ describe("factory orchestrator", () => {
         .all()
         .map((row) => row.content),
     ).toEqual(["Build the counter", "Working"]);
+    database.$client.close();
+    fs.rmSync(appDir, { recursive: true, force: true });
+  });
+
+  it("keeps the next phase locked until the gate bead closes", () => {
+    const database = createInMemoryTestDb();
+    const appDir = fs.mkdtempSync(path.join(os.tmpdir(), "factory-bead-"));
+    const appId = Number(
+      database.insert(apps).values({ name: "Factory", path: appDir }).run()
+        .lastInsertRowid,
+    );
+    for (const title of ["Discovery", "Implementation", "Delivery"]) {
+      database.insert(chats).values({ appId, title }).run();
+    }
+    linkFactoryApp(database, appId, "gc-bead");
+    const opened = openOrchestratedRun(database, {
+      appId,
+      phase: "discovery",
+      prompt: "Build the site",
+      idempotencyKey: FACTORY_FORMULA,
+      formula: FACTORY_FORMULA,
+    });
+    applyFactoryTurnEvent(database, {
+      appId,
+      phase: "discovery",
+      taskId: opened.runId,
+      cursor: 1,
+      type: "input-required",
+      content: "Approve these discovery artifacts?",
+      stepId: "accept-discovery",
+    });
+    expect(readFactoryState(database, appId)).toMatchObject({
+      formula: "speckit-phased",
+      currentStepId: "accept-discovery",
+      openPhase: "discovery",
+      closedPhases: [],
+      gateWaiting: true,
+    });
+    applyFactoryTurnEvent(database, {
+      appId,
+      phase: "implementation",
+      taskId: opened.runId,
+      cursor: 2,
+      type: "text",
+      content: "Implementing",
+      stepId: "implement",
+    });
+    expect(readFactoryState(database, appId).closedPhases).toEqual([
+      "discovery",
+    ]);
     database.$client.close();
     fs.rmSync(appDir, { recursive: true, force: true });
   });

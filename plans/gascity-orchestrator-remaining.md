@@ -1,6 +1,6 @@
 # GasCity as orchestrator: remaining work
 
-Status: plan. No new runtime change in this document.
+Status: Dyad now slings `speckit-phased` once and the phase bar follows that bead. GasCity itself is not running in this repo, and non-factory chats still enter `handleLocalAgentStream` until a city is available to receive them.
 
 ## Important points
 
@@ -29,26 +29,26 @@ The phase bar and the formula bead are different state. Clicking **Approve and c
 
 Same rule as [PR #129](https://github.com/Awannaphasch2016/dyad/pull/129). A row is one intention. A column is one place this path stores or decides state. **Change** means the intention is unfinished until that cell is edited as written. **Leave** means that place keeps today's behavior. A row is finished only when every Change cell is true and every Leave cell still behaves as it does today.
 
-| Column | Where it lives |
-| --- | --- |
-| Approval row | `factoryPhaseApprovals`, returned as `approvedPhases` by `readFactoryState`. |
-| Phase rules | `src/lib/factoryPhase.ts`. Unlock, shade, show-approval, and the summary heading. |
-| Phase bar | `FactoryPhaseBar.tsx`. The three buttons, **Approve and continue**, and the prefill. |
-| Open chat | `selectChat` and the chat whose title is Discovery, Implementation, or Delivery. |
-| Transcript | `messages` in that chat, painted by `chat:response:chunk`. |
-| Questions | `hitlQuestions` and `HitlQuestionList` on the bar. |
-| Run row | `factoryHostRuns`: task id, status, event cursor. |
+| Column        | Where it lives                                                                         |
+| ------------- | -------------------------------------------------------------------------------------- |
+| Approval row  | `factoryPhaseApprovals`, returned as `approvedPhases` by `readFactoryState`.           |
+| Phase rules   | `src/lib/factoryPhase.ts`. Unlock, shade, show-approval, and the summary heading.      |
+| Phase bar     | `FactoryPhaseBar.tsx`. The three buttons, **Approve and continue**, and the prefill.   |
+| Open chat     | `selectChat` and the chat whose title is Discovery, Implementation, or Delivery.       |
+| Transcript    | `messages` in that chat, painted by `chat:response:chunk`.                             |
+| Questions     | `hitlQuestions` and `HitlQuestionList` on the bar.                                     |
+| Run row       | `factoryHostRuns`: task id, status, event cursor.                                      |
 | Formula beads | The GasCity workflow. Step beads, `needs`, and `human_gate.verdict`. Not a Dyad table. |
-| Guest session | The GasCity session that executes the open bead. |
+| Guest session | The GasCity session that executes the open bead.                                       |
 
-| Intention | Approval row | Phase rules | Phase bar | Open chat | Transcript | Questions | Run row | Formula beads | Guest session |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| The bar shows the phase the formula is in | Change. This row is not the unlock. A stored approval must not paint Implementation open while `accept-discovery` is open. | Change. Unlock and shade read the open bead's phase. A chat that merely has messages is not "started." | Change. The lock, the shade, and the selected button read that cursor. | Change. The open chat is the phase of the open bead. | Leave. The chunk schema stays. | Leave. | Change. One workflow id and the current step id. The bar polls that, not one prompt row per phase. | Change. Dyad reads the open bead. GasCity remains the writer. | Leave. The bead picks the phase. The session does not. |
-| Approve writes the gate verdict and does not open the next phase | Change. The click does not insert `factoryPhaseApprovals` to mean the phase is done. | Change. The button is enabled when the matching gate bead is waiting. A `## Discovery summary` heading is not the enablement. | Change. **Approve and continue** does not call `selectChat` and does not prefill the next chat. | Change. The click stays on the gate's phase. | Leave. | Leave. Clarify still uses a question. The verdict is `human_gate.verdict`, not a second answer row. | Leave. GasCity's events still set the status. The click does not mark the run completed. | Change. The click writes `approve` or `request-changes` on the open confirmation bead. | Leave. The same session waits, then continues. |
-| The window shows the step inside the phase | Leave. | Change. In progress means a bead in that phase is open. | Change. The open phase shows the step title: specify, clarify, plan, tasks, implement, converge, the report, or publish. | Change. Discovery steps stay on Discovery. Implementation steps stay on Implementation. | Change. The text is the open bead's events. The bar does not kick off a local prompt to fill the chat. | Change. The list shows a question only when the open bead asked one. | Change. The current step id is on the run row the bar polls. | Change. The bar reads that bead's id and title. | Change. The text is that session's output. |
-| The next phase unlocks only when the gate bead closes | Change. `approvedPhases` is not the lock. | Change. Implementation unlocks only after `accept-discovery` is `approve`. "The next chat has messages" is not approval. The same rule binds Delivery to `accept-implementation`. | Change. The next button stays disabled until that bead closes. | Change. The next chat is not selected on the click. | Leave. | Leave. | Change. Status stays `input-required` while the gate is open, and `running` when the next bead is routed. | Change. The `needs` edge releases the next step. The bar observes the closed bead. | Leave. |
-| Request changes stays in the same phase | Change. The click does not insert an approval. | Change. The shade stays in progress. | Change. The same phase stays selected. There is no continue. | Leave. It is already that phase's chat. | Change. The revision child's text appends in that chat. | Leave. | Change. The same workflow id returns to `running` on the revision bead. | Change. `request-changes` reruns the revision child. The gate bead stays open. | Leave. |
-| Delivery approval does not finish the run before publish | Change. The click does not mark Delivery finished. | Change. The finished shade waits until the publish bead has closed. A delivery summary heading is not finished. | Change. **Approve delivery** writes the verdict. Publish is the next step the bar shows. | Leave. The chat stays Delivery through publish. | Change. Publish's result is shown in the Delivery chat. | Leave. | Change. The run is completed only when the workflow's terminal step closes. | Change. `publish` needs `accept-delivery`. The bar reads the publish bead. | Leave. |
+| Intention                                                        | Approval row                                                                                                               | Phase rules                                                                                                                                                                       | Phase bar                                                                                                                | Open chat                                                                               | Transcript                                                                                             | Questions                                                                                           | Run row                                                                                                   | Formula beads                                                                          | Guest session                                          |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| The bar shows the phase the formula is in                        | Change. This row is not the unlock. A stored approval must not paint Implementation open while `accept-discovery` is open. | Change. Unlock and shade read the open bead's phase. A chat that merely has messages is not "started."                                                                            | Change. The lock, the shade, and the selected button read that cursor.                                                   | Change. The open chat is the phase of the open bead.                                    | Leave. The chunk schema stays.                                                                         | Leave.                                                                                              | Change. One workflow id and the current step id. The bar polls that, not one prompt row per phase.        | Change. Dyad reads the open bead. GasCity remains the writer.                          | Leave. The bead picks the phase. The session does not. |
+| Approve writes the gate verdict and does not open the next phase | Change. The click does not insert `factoryPhaseApprovals` to mean the phase is done.                                       | Change. The button is enabled when the matching gate bead is waiting. A `## Discovery summary` heading is not the enablement.                                                     | Change. **Approve and continue** does not call `selectChat` and does not prefill the next chat.                          | Change. The click stays on the gate's phase.                                            | Leave.                                                                                                 | Leave. Clarify still uses a question. The verdict is `human_gate.verdict`, not a second answer row. | Leave. GasCity's events still set the status. The click does not mark the run completed.                  | Change. The click writes `approve` or `request-changes` on the open confirmation bead. | Leave. The same session waits, then continues.         |
+| The window shows the step inside the phase                       | Leave.                                                                                                                     | Change. In progress means a bead in that phase is open.                                                                                                                           | Change. The open phase shows the step title: specify, clarify, plan, tasks, implement, converge, the report, or publish. | Change. Discovery steps stay on Discovery. Implementation steps stay on Implementation. | Change. The text is the open bead's events. The bar does not kick off a local prompt to fill the chat. | Change. The list shows a question only when the open bead asked one.                                | Change. The current step id is on the run row the bar polls.                                              | Change. The bar reads that bead's id and title.                                        | Change. The text is that session's output.             |
+| The next phase unlocks only when the gate bead closes            | Change. `approvedPhases` is not the lock.                                                                                  | Change. Implementation unlocks only after `accept-discovery` is `approve`. "The next chat has messages" is not approval. The same rule binds Delivery to `accept-implementation`. | Change. The next button stays disabled until that bead closes.                                                           | Change. The next chat is not selected on the click.                                     | Leave.                                                                                                 | Leave.                                                                                              | Change. Status stays `input-required` while the gate is open, and `running` when the next bead is routed. | Change. The `needs` edge releases the next step. The bar observes the closed bead.     | Leave.                                                 |
+| Request changes stays in the same phase                          | Change. The click does not insert an approval.                                                                             | Change. The shade stays in progress.                                                                                                                                              | Change. The same phase stays selected. There is no continue.                                                             | Leave. It is already that phase's chat.                                                 | Change. The revision child's text appends in that chat.                                                | Leave.                                                                                              | Change. The same workflow id returns to `running` on the revision bead.                                   | Change. `request-changes` reruns the revision child. The gate bead stays open.         | Leave.                                                 |
+| Delivery approval does not finish the run before publish         | Change. The click does not mark Delivery finished.                                                                         | Change. The finished shade waits until the publish bead has closed. A delivery summary heading is not finished.                                                                   | Change. **Approve delivery** writes the verdict. Publish is the next step the bar shows.                                 | Leave. The chat stays Delivery through publish.                                         | Change. Publish's result is shown in the Delivery chat.                                                | Leave.                                                                                              | Change. The run is completed only when the workflow's terminal step closes.                               | Change. `publish` needs `accept-delivery`. The bar reads the publish bead.             | Leave.                                                 |
 
 ## What changed, and why
 
@@ -64,13 +64,13 @@ formula into beads and routing each bead to a guest session. Dyad's
 native agent loop is legacy. It is not a second supported way to run an
 agent.
 
-| Earlier statement | Correction | Why |
-| --- | --- | --- |
-| GasCity runs only the three phase chats. | GasCity runs the whole formula, including every methodology step and every gate. | A phase chat is a view of a gate. The chapters inside the phase are formula steps. |
-| Prove it by writing `src/counter.ts`. | Sling `speckit-phased` from the existing packs. | [PR #148](https://github.com/Awannaphasch2016/dyad/pull/148), [PR #154](https://github.com/Awannaphasch2016/dyad/pull/154), [PR #156](https://github.com/Awannaphasch2016/dyad/pull/156), and [PR #159](https://github.com/Awannaphasch2016/dyad/pull/159) already define that run. |
-| A per-phase prompt is close enough if the text describes Spec Kit. | The prompt payload does not name a formula and does not create a bead graph. | Today's `type: prompt` can be followed or ignored by whoever receives it. A formula run cannot skip a `needs` edge. |
-| Ask, Build, Agent, and Plan stay on `handleLocalAgentStream`. | That loop is legacy. Every agent turn runs in a GasCity guest session. | Two agent loops means two orchestrators. Dyad keeps the window, the files, and the verdict. |
-| **Approve and continue** unlocks the next phase. | The click writes `human_gate.verdict` on the open gate bead. The bar moves when that bead closes. | Today the click inserts `factoryPhaseApprovals` and switches chats. The bead never sees it. |
+| Earlier statement                                                  | Correction                                                                                        | Why                                                                                                                                                                                                                                                                                 |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GasCity runs only the three phase chats.                           | GasCity runs the whole formula, including every methodology step and every gate.                  | A phase chat is a view of a gate. The chapters inside the phase are formula steps.                                                                                                                                                                                                  |
+| Prove it by writing `src/counter.ts`.                              | Sling `speckit-phased` from the existing packs.                                                   | [PR #148](https://github.com/Awannaphasch2016/dyad/pull/148), [PR #154](https://github.com/Awannaphasch2016/dyad/pull/154), [PR #156](https://github.com/Awannaphasch2016/dyad/pull/156), and [PR #159](https://github.com/Awannaphasch2016/dyad/pull/159) already define that run. |
+| A per-phase prompt is close enough if the text describes Spec Kit. | The prompt payload does not name a formula and does not create a bead graph.                      | Today's `type: prompt` can be followed or ignored by whoever receives it. A formula run cannot skip a `needs` edge.                                                                                                                                                                 |
+| Ask, Build, Agent, and Plan stay on `handleLocalAgentStream`.      | That loop is legacy. Every agent turn runs in a GasCity guest session.                            | Two agent loops means two orchestrators. Dyad keeps the window, the files, and the verdict.                                                                                                                                                                                         |
+| **Approve and continue** unlocks the next phase.                   | The click writes `human_gate.verdict` on the open gate bead. The bar moves when that bead closes. | Today the click inserts `factoryPhaseApprovals` and switches chats. The bead never sees it.                                                                                                                                                                                         |
 
 ## Prompt versus formula
 
@@ -80,7 +80,14 @@ title is Discovery, Implementation, or Delivery.
 `factory_orchestrator.ts` then POSTs:
 
 ```json
-{ "type": "prompt", "appId": 1, "chatId": 2, "phase": "discovery", "prompt": "...", "taskId": "gas-city-run:..." }
+{
+  "type": "prompt",
+  "appId": 1,
+  "chatId": 2,
+  "phase": "discovery",
+  "prompt": "...",
+  "taskId": "gas-city-run:..."
+}
 ```
 
 That payload is a string plus a phase name. It does not name
@@ -106,12 +113,12 @@ A genuine formula run has all four of these:
 4. The agent that executes a bead runs inside a GasCity guest session.
    Dyad does not call the model for that bead.
 
-| | Prompt | Formula run |
-| --- | --- | --- |
-| What Dyad sends | `type: prompt` and the user's text | One sling of `speckit-phased` |
-| What GasCity stores | A task id, if anything is listening | A workflow of step beads |
-| Who decides the next chapter | Whoever reads the prompt | The formula's `needs` edges |
-| What a skipped gate looks like | The model continues | The downstream bead stays blocked |
+|                                | Prompt                              | Formula run                       |
+| ------------------------------ | ----------------------------------- | --------------------------------- |
+| What Dyad sends                | `type: prompt` and the user's text  | One sling of `speckit-phased`     |
+| What GasCity stores            | A task id, if anything is listening | A workflow of step beads          |
+| Who decides the next chapter   | Whoever reads the prompt            | The formula's `needs` edges       |
+| What a skipped gate looks like | The model continues                 | The downstream bead stays blocked |
 
 ## Guest session
 
@@ -124,12 +131,12 @@ start a second one.
 subscription: which chat should receive `chat:response:chunk`. It holds no
 model call.
 
-| Piece | Owns | Does not own |
-| --- | --- | --- |
-| Dyad window | Composer, message list, cancel button, gate question | The agent process, the formula graph, the next step |
-| Dyad tool route | `invokeRegisteredTool` for files on this machine: schema, consent, path jail | Choosing the tool, calling the model |
-| GasCity orchestrator | Compile `speckit-phased`, route ready beads, run checks, open the next step | The user's files, the pixels |
-| Guest session | The agent process for one bead, or the operator session the formula targets | A private copy of the methodology, a second loop inside Dyad |
+| Piece                | Owns                                                                         | Does not own                                                 |
+| -------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Dyad window          | Composer, message list, cancel button, gate question                         | The agent process, the formula graph, the next step          |
+| Dyad tool route      | `invokeRegisteredTool` for files on this machine: schema, consent, path jail | Choosing the tool, calling the model                         |
+| GasCity orchestrator | Compile `speckit-phased`, route ready beads, run checks, open the next step  | The user's files, the pixels                                 |
+| Guest session        | The agent process for one bead, or the operator session the formula targets  | A private copy of the methodology, a second loop inside Dyad |
 
 `handleLocalAgentStream` is the legacy path. It calls the model from
 Electron. New turns do not enter it, including Ask, Build, Agent, and
@@ -180,18 +187,18 @@ For the validation run the formula is `speckit-phased` from
 session executes the bead GasCity routes. It does not choose the next
 row.
 
-| Step | Kind | Who advances it |
-| --- | --- | --- |
-| `requirements` | Specify. Writes `spec.md`. | GasCity routes the bead. The guest session executes it. |
-| `clarify` | At most five questions, only while `spec.md` contains `NEEDS CLARIFICATION`. | GasCity holds the step. Dyad shows the question and returns the answer. |
-| `plan`, `plan-review`, `decompose` | Plan and tasks. | GasCity |
-| `accept-discovery` | Discovery gate, after tasks and before the implement drain. | GasCity holds the bead. Dyad records `human_gate.verdict`. |
-| `implement` or `implement-same-session` | Task drain. | GasCity, only after Discovery is approved. |
-| `review` | Converge. | GasCity |
-| `accept-implementation` | Implementation gate, after converge and before the final report. | Same split as Discovery. |
-| `finalize` | Final report. | GasCity |
-| `accept-delivery` | Delivery gate, after the report and before publish. | Same split as Discovery. |
-| `publish` | Push or an explicit no-op. | GasCity, after the Delivery verdict is `approve`. |
+| Step                                    | Kind                                                                         | Who advances it                                                         |
+| --------------------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `requirements`                          | Specify. Writes `spec.md`.                                                   | GasCity routes the bead. The guest session executes it.                 |
+| `clarify`                               | At most five questions, only while `spec.md` contains `NEEDS CLARIFICATION`. | GasCity holds the step. Dyad shows the question and returns the answer. |
+| `plan`, `plan-review`, `decompose`      | Plan and tasks.                                                              | GasCity                                                                 |
+| `accept-discovery`                      | Discovery gate, after tasks and before the implement drain.                  | GasCity holds the bead. Dyad records `human_gate.verdict`.              |
+| `implement` or `implement-same-session` | Task drain.                                                                  | GasCity, only after Discovery is approved.                              |
+| `review`                                | Converge.                                                                    | GasCity                                                                 |
+| `accept-implementation`                 | Implementation gate, after converge and before the final report.             | Same split as Discovery.                                                |
+| `finalize`                              | Final report.                                                                | GasCity                                                                 |
+| `accept-delivery`                       | Delivery gate, after the report and before publish.                          | Same split as Discovery.                                                |
+| `publish`                               | Push or an explicit no-op.                                                   | GasCity, after the Delivery verdict is `approve`.                       |
 
 `request-changes` reruns that gate's revision child. Silence leaves the
 bead open. The phase changes because the formula's `needs` edge is
@@ -209,13 +216,13 @@ owns the agent process. Dyad still only displays it and serves tools.
 
 Do not add a new methodology and do not script a counter module.
 
-| Reference | Use it for |
-| --- | --- |
-| [PR #148](https://github.com/Awannaphasch2016/dyad/pull/148) `formulas/speckit` | `speckit-build`: specify, clarify, plan, tasks, implement, converge. Extends `build-base`. Does not run `specify workflow`. |
-| [PR #154](https://github.com/Awannaphasch2016/dyad/pull/154) `speckit-phased` | The same sequence plus the three gates. `src/lib/methodologyPacks.test.ts` checks the `needs` edges. |
-| [PR #156](https://github.com/Awannaphasch2016/dyad/pull/156) | The frozen GIT Conference input. Native skills and ungated `speckit-build` stay there. This proof does not start them. |
+| Reference                                                                                | Use it for                                                                                                                                                                                                                                                                      |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [PR #148](https://github.com/Awannaphasch2016/dyad/pull/148) `formulas/speckit`          | `speckit-build`: specify, clarify, plan, tasks, implement, converge. Extends `build-base`. Does not run `specify workflow`.                                                                                                                                                     |
+| [PR #154](https://github.com/Awannaphasch2016/dyad/pull/154) `speckit-phased`            | The same sequence plus the three gates. `src/lib/methodologyPacks.test.ts` checks the `needs` edges.                                                                                                                                                                            |
+| [PR #156](https://github.com/Awannaphasch2016/dyad/pull/156)                             | The frozen GIT Conference input. Native skills and ungated `speckit-build` stay there. This proof does not start them.                                                                                                                                                          |
 | [PR #159](https://github.com/Awannaphasch2016/dyad/pull/159) `plans/speckit-full-run.md` | One `gc sling` of `speckit-phased` on `Awannaphasch2016/sdd-gitcon-impl` at `baseline/speckit-1.1.2` (`a41476e8d1330c90e49eb2dacf8b729ebb3a16f5`), specification `gitcon-v1`, then AC-01 through AC-20. The executor is `gc sling`, not `experiments/sdd/bin/start-worker.mjs`. |
-| [PR #146](https://github.com/Awannaphasch2016/dyad/pull/146) | The file and transcript door. Its `type: prompt` path is the legacy handoff this plan replaces for factory runs. |
+| [PR #146](https://github.com/Awannaphasch2016/dyad/pull/146)                             | The file and transcript door. Its `type: prompt` path is the legacy handoff this plan replaces for factory runs.                                                                                                                                                                |
 
 Import `gascity` from `gastownhall/gascity-packs` so `extends` can resolve
 `build-base`. Put this repo's `formulas/speckit` on the formula path.
@@ -281,14 +288,14 @@ describes Spec Kit, is not this proof.
 
 ### 6. Keep the failures visible
 
-| Failure | What the user sees |
-| --- | --- |
-| GasCity down or the guest session does not start | The send fails in the window. Dyad does not start its legacy agent. |
-| `speckit-phased` does not resolve | The run stops. Dyad does not play the steps locally. |
-| Consent denied or path jail | The tool route returns the error. The file is unchanged. The guest session decides the next model step. |
-| Gate left unanswered | The bead stays open. The next phase does not start. |
-| User cancels | The tool aborts. The transcript ends cancelled. The guest session stops. |
-| Dyad quits during a tool | The route dies. GasCity keeps the workflow. The file edit does not move. |
+| Failure                                          | What the user sees                                                                                      |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| GasCity down or the guest session does not start | The send fails in the window. Dyad does not start its legacy agent.                                     |
+| `speckit-phased` does not resolve                | The run stops. Dyad does not play the steps locally.                                                    |
+| Consent denied or path jail                      | The tool route returns the error. The file is unchanged. The guest session decides the next model step. |
+| Gate left unanswered                             | The bead stays open. The next phase does not start.                                                     |
+| User cancels                                     | The tool aborts. The transcript ends cancelled. The guest session stops.                                |
+| Dyad quits during a tool                         | The route dies. GasCity keeps the workflow. The file edit does not move.                                |
 
 ## Out of scope
 

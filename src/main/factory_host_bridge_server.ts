@@ -23,6 +23,7 @@ import {
   cancelFactoryTask,
   invokeFactoryTool,
   resumeFactoryTaskFromAnswer,
+  submitFactoryGateVerdict,
 } from "./factory_orchestrator";
 import { defaultVerifySessionToken } from "@/control_plane/access";
 import {
@@ -68,6 +69,7 @@ const EventBody = z.object({
   cursor: z.number().int().positive(),
   type: z.enum(["text", "activity", "input-required", "end", "error"]),
   content: z.string().max(200_000),
+  stepId: z.string().trim().min(1).max(128).optional(),
 });
 const Phase = z.enum(["discovery", "implementation", "delivery"]);
 
@@ -326,6 +328,7 @@ export function createFactoryHostBridgeServer(options: {
             cursor: body.cursor,
             type: body.type,
             content: body.content,
+            stepId: body.stepId,
           }),
         );
         return;
@@ -382,7 +385,14 @@ export function createFactoryHostBridgeServer(options: {
         if (!readFactoryState(database, appId).factoryHostManaged) {
           throw new FactoryHostError("App is not linked to Gas City", 409);
         }
-        json(response, 200, approveFactoryPhase(database, appId, phase));
+        const state = readFactoryState(database, appId);
+        json(
+          response,
+          200,
+          state.formula
+            ? await submitFactoryGateVerdict(database, appId, phase)
+            : approveFactoryPhase(database, appId, phase),
+        );
         return;
       }
       if (

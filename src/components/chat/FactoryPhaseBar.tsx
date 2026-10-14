@@ -163,7 +163,21 @@ export function FactoryPhaseBar() {
     const summary = latestFactoryPhaseSummary(messages, item);
     if (summary) summaries.set(item, summary);
   });
-  const progress = { approved: new Set(approvedPhases), started };
+  const formulaActive = hostManaged && Boolean(factoryStateQuery.data?.formula);
+  const closedPhases = new Set<FactoryPhase>(
+    factoryStateQuery.data?.closedPhases ?? [],
+  );
+  const openPhase = factoryStateQuery.data?.openPhase ?? null;
+  const progress = formulaActive
+    ? {
+        approved: closedPhases,
+        started: new Set(
+          FACTORY_PHASES.filter(
+            (item) => closedPhases.has(item) || item === openPhase,
+          ),
+        ),
+      }
+    : { approved: new Set(approvedPhases), started };
   const hostSettled =
     !enabled || factoryStateQuery.isSuccess || factoryStateQuery.isError;
   const progressLoaded =
@@ -263,19 +277,27 @@ export function FactoryPhaseBar() {
     accountType:
       session.status === "signed-in" ? (session.account?.type ?? null) : null,
   });
-  const canApprove =
-    canContinueFactoryPhase({
-      hasPhaseSummary: phaseSummary != null,
-      isStreaming,
-    }) && gate.allowed;
+  const gateIsOpen =
+    formulaActive &&
+    factoryStateQuery.data?.gateWaiting === true &&
+    phase != null &&
+    phase === openPhase;
+  const canApprove = formulaActive
+    ? gateIsOpen && gate.allowed && !isStreaming
+    : canContinueFactoryPhase({
+        hasPhaseSummary: phaseSummary != null,
+        isStreaming,
+      }) && gate.allowed;
   const alreadyApproved = isFactoryPhaseApproved(phase, progress);
   const showApproval =
     progressLoaded &&
-    showFactoryPhaseApproval({
-      phase,
-      progress,
-      hasPhaseSummary: phaseSummary != null,
-    });
+    (formulaActive
+      ? gateIsOpen
+      : showFactoryPhaseApproval({
+          phase,
+          progress,
+          hasPhaseSummary: phaseSummary != null,
+        }));
 
   const phaseShade = factoryPhaseShade({
     phase,
@@ -324,6 +346,10 @@ export function FactoryPhaseBar() {
   };
 
   const approveAndContinue = async () => {
+    if (formulaActive) {
+      await recordApproval();
+      return;
+    }
     if (!next || !nextChat) return;
     await recordApproval();
     selectChat({
@@ -399,6 +425,11 @@ export function FactoryPhaseBar() {
           >
             Approve delivery
           </Button>
+        )}
+        {formulaActive && factoryStateQuery.data?.stepTitle && (
+          <span data-testid="factory-formula-step" className="text-sm">
+            {factoryStateQuery.data.stepTitle}
+          </span>
         )}
         {canDownload && (
           <Button

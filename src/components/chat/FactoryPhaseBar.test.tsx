@@ -197,18 +197,43 @@ describe("FactoryPhaseBar", () => {
     expect(streamMessage).not.toHaveBeenCalled();
   });
 
-  it("approves a Gas City phase through the host bridge", async () => {
+  it("writes the open gate verdict and stays on that phase", async () => {
     getState.mockResolvedValue({
       appId: 7,
       factoryHostManaged: true,
       gasCityProjectId: "project-1",
       approvedPhases: [],
+      formula: "speckit-phased",
+      currentStepId: "accept-discovery",
+      stepTitle: "Discovery gate",
+      openPhase: "discovery",
+      closedPhases: [],
+      gateWaiting: true,
+      workflowTaskId: "task-1",
     });
-    getChat.mockImplementation(async (chatId: number) =>
-      chatId === 1 ? { messages: [discoverySummary] } : { messages: [] },
-    );
+    getChat.mockResolvedValue({ messages: [] });
+    approvePhase.mockResolvedValue({
+      appId: 7,
+      factoryHostManaged: true,
+      gasCityProjectId: "project-1",
+      approvedPhases: [],
+      formula: "speckit-phased",
+      currentStepId: "accept-discovery",
+      stepTitle: "Discovery gate",
+      openPhase: "discovery",
+      closedPhases: [],
+      gateWaiting: true,
+      workflowTaskId: "task-1",
+    });
 
     renderBar();
+    expect(
+      (await screen.findByTestId("factory-formula-step")).textContent,
+    ).toBe("Discovery gate");
+    expect(screen.getByTestId("factory-phase-implementation")).toHaveProperty(
+      "disabled",
+      true,
+    );
     const approve = await screen.findByRole("button", {
       name: "Approve and continue to Implementation",
     });
@@ -219,6 +244,7 @@ describe("FactoryPhaseBar", () => {
         phase: "discovery",
       });
     });
+    expect(selectChat).not.toHaveBeenCalled();
     expect(approveAccountPhase).not.toHaveBeenCalled();
     expect(streamMessage).not.toHaveBeenCalled();
   });

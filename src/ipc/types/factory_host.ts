@@ -12,6 +12,13 @@ export const FactoryStateSchema = z.object({
   factoryHostManaged: z.boolean(),
   gasCityProjectId: z.string().nullable(),
   approvedPhases: z.array(FactoryPhaseSchema),
+  formula: z.string().nullable(),
+  currentStepId: z.string().nullable(),
+  stepTitle: z.string().nullable(),
+  openPhase: FactoryPhaseSchema.nullable(),
+  closedPhases: z.array(FactoryPhaseSchema),
+  gateWaiting: z.boolean(),
+  workflowTaskId: z.string().nullable(),
 });
 
 export const factoryHostContracts = {

@@ -16,6 +16,7 @@ import {
   phaseFromTitle,
   type FactoryPhase,
 } from "@/lib/factoryPhase";
+import { closedFormulaPhases, formulaStep } from "@/lib/factoryFormula";
 import { escapeXmlContent } from "../../shared/xmlEscape";
 
 export type FactoryHostDatabase = typeof productionDb;
@@ -27,6 +28,22 @@ export class FactoryHostError extends Error {
   ) {
     super(message);
   }
+}
+
+function chatIdForPhase(
+  database: Pick<FactoryHostDatabase, "select">,
+  appId: number,
+  phase: FactoryPhase,
+) {
+  const rows = database
+    .select({ id: chats.id, title: chats.title })
+    .from(chats)
+    .where(eq(chats.appId, appId))
+    .orderBy(asc(chats.id))
+    .all();
+  const chatId = factoryPhaseChats(rows)[phase]?.id;
+  if (!chatId) throw new FactoryHostError("Phase chat not found", 404);
+  return chatId;
 }
 
 function requireApp(database: FactoryHostDatabase, appId: number) {
@@ -77,12 +94,48 @@ export function readFactoryState(database: FactoryHostDatabase, appId: number) {
     .orderBy(asc(factoryPhaseApprovals.id))
     .all()
     .map((row) => row.phase);
+  const formulaRun = latestFormulaRun(database, appId);
+  const step = formulaStep(formulaRun?.currentStepId);
+  const closedPhases = formulaRun?.formula
+    ? closedFormulaPhases(
+        formulaRun.currentStepId,
+        formulaRun.orchestratorStatus,
+      )
+    : [];
   return {
     appId,
     factoryHostManaged: app.factoryHostManaged,
     gasCityProjectId: app.gasCityProjectId,
     approvedPhases: approvals,
+    formula: formulaRun?.formula ?? null,
+    currentStepId: formulaRun?.currentStepId ?? null,
+    stepTitle: step?.title ?? null,
+    openPhase: step?.phase ?? null,
+    closedPhases,
+    gateWaiting:
+      formulaRun?.orchestratorStatus === "input-required" &&
+      step?.gate === true,
+    workflowTaskId: formulaRun?.runId ?? null,
   };
+}
+
+function latestFormulaRun(database: FactoryHostDatabase, appId: number) {
+  const rows = database
+    .select()
+    .from(factoryHostRuns)
+    .where(eq(factoryHostRuns.appId, appId))
+    .all()
+    .filter((row) => row.formula);
+  rows.sort(
+    (left, right) => right.updatedAt.getTime() - left.updatedAt.getTime(),
+  );
+  const open = rows.find(
+    (row) =>
+      row.orchestratorStatus !== "completed" &&
+      row.orchestratorStatus !== "cancelled" &&
+      row.orchestratorStatus !== "errored",
+  );
+  return open ?? rows[0] ?? null;
 }
 
 export function linkFactoryApp(
@@ -294,6 +347,7 @@ export function openOrchestratedRun(
     phase: FactoryPhase;
     prompt: string;
     idempotencyKey: string;
+    formula?: string;
   },
 ) {
   const state = readFactoryState(database, input.appId);
@@ -336,6 +390,7 @@ export function openOrchestratedRun(
         intentId: runId,
         acceptance: "accepted",
         gasCityTaskId: runId,
+        formula: input.formula ?? null,
         orchestratorStatus: "running",
         assistantMessageId,
       })
@@ -383,12 +438,23 @@ export function applyFactoryHostEvent(
     cursor: number;
     type: FactoryEventType;
     content: string;
+    stepId?: string | null;
   },
 ) {
+  const step = input.stepId ? formulaStep(input.stepId) : null;
+  if (input.stepId && !step) {
+    throw new FactoryHostError("Unknown formula step", 400);
+  }
   const applied = database.transaction((tx) => {
     const run = loadFactoryRun(tx, input.taskId);
-    if (!run || run.appId !== input.appId || run.phase !== input.phase) {
+    if (!run || run.appId !== input.appId) {
       throw new FactoryHostError("Run not found", 404);
+    }
+    if (!run.formula && run.phase !== input.phase) {
+      throw new FactoryHostError("Run not found", 404);
+    }
+    if (step && step.phase !== input.phase) {
+      throw new FactoryHostError("Formula step is not in this phase", 409);
     }
     if (input.cursor <= run.eventCursor) {
       return { runId: run.runId, appended: false };
@@ -403,7 +469,11 @@ export function applyFactoryHostEvent(
     ) {
       throw new FactoryHostError("Run is already finished", 409);
     }
-    let assistantMessageId = run.assistantMessageId;
+    const nextChatId = step
+      ? chatIdForPhase(tx, input.appId, step.phase)
+      : run.chatId;
+    const phaseChanged = nextChatId !== run.chatId;
+    let assistantMessageId = phaseChanged ? null : run.assistantMessageId;
     if (input.content.length > 0) {
       if (assistantMessageId) {
         const row = tx
@@ -420,7 +490,7 @@ export function applyFactoryHostEvent(
           tx
             .insert(messages)
             .values({
-              chatId: run.chatId,
+              chatId: nextChatId,
               role: "assistant",
               content: input.content,
             })
@@ -439,6 +509,9 @@ export function applyFactoryHostEvent(
     tx.update(factoryHostRuns)
       .set({
         assistantMessageId,
+        chatId: nextChatId,
+        phase: step?.phase ?? run.phase,
+        currentStepId: step?.id ?? run.currentStepId,
         orchestratorStatus,
         eventCursor: input.cursor,
         updatedAt: new Date(),
