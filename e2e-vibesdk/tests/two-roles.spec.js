@@ -118,7 +118,7 @@ test("the project manager starts the organization app and each role answers the 
   browser,
 }) => {
   test.skip(!process.env.VIBESDK_URL, "VIBESDK_URL is required");
-  test.setTimeout(8 * 60 * 1000);
+  test.setTimeout(12 * 60 * 1000);
   mkdirSync("artifacts", { recursive: true });
   const pmContext = await browser.newContext({
     recordVideo: {
@@ -159,8 +159,12 @@ test("the project manager starts the organization app and each role answers the 
 
     const appLink = dev.locator(`a[href="${appUrl.pathname}"]`);
     await expect(appLink.first()).toBeVisible({ timeout: 45_000 });
-    await expect(pm.getByText("Wewebplus", { exact: true }).first()).toBeVisible();
-    await expect(dev.getByText("Wewebplus", { exact: true }).first()).toBeVisible();
+    await expect(
+      pm.getByText("Wewebplus", { exact: true }).first(),
+    ).toBeVisible();
+    await expect(
+      dev.getByText("Wewebplus", { exact: true }).first(),
+    ).toBeVisible();
     await appLink.first().click();
     await expect(pm.getByRole("button", { name: "Make public" })).toHaveCount(
       0,
@@ -189,6 +193,15 @@ test("the project manager starts the organization app and each role answers the 
     ).toBeVisible();
     await shot(pm, "project-manager-named-turn");
     await shot(dev, "developer-sees-named-turn");
+
+    await expect(pm.getByText("spec.md").first()).toBeVisible({
+      timeout: 120_000,
+    });
+    await expect(dev.getByText("spec.md").first()).toBeVisible({
+      timeout: 30_000,
+    });
+    await shot(pm, "spec-kit-first-step");
+    await shot(dev, "developer-sees-spec");
 
     const deadline = Date.now() + 3 * 60 * 1000;
     let quietSince = 0;

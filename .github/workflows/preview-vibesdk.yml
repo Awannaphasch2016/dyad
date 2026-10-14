@@ -117,6 +117,7 @@ jobs:
         env:
           PR: ${{ github.event.pull_request.number }}
           CLOUDFLARE_ACCOUNT_ID: ${{ env.PREVIEW_CLOUDFLARE_ACCOUNT_ID }}
+          VIBESDK_METHODOLOGY: speckit-phased
         run: node deploy/preview/vibesdk-preview.mjs up --pr "$PR"
 
       - name: Comment the preview URL
@@ -137,7 +138,7 @@ jobs:
 
   hitl:
     needs: deploy
-    if: needs.deploy.result == 'success' && github.event.pull_request.head.ref == 'cursor/vibesdk-session-scope-run-0539'
+    if: needs.deploy.result == 'success' && github.event.pull_request.head.ref == 'cursor/speckit-live-pack-0539'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     permissions:
