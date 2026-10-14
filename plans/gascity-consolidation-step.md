@@ -274,6 +274,16 @@ Two slices. The first lands on PR #92, in `packages/ops-axi`. The second is the 
 6. `unslop` stays in git at `.claude/skills/unslop/SKILL.md`. The environment does not keep a second copy.
 7. Build the environment from that commit. A new session is the check: `ops-axi --help` prints the catalog, and the `unslop` skill file is on the checkout. A session that is already running is not that check.
 
+### Its own repository
+
+`ops-axi` gets its own repository. The toolbox image builds from that repository. A catalog entry names the repository that owns the workflow, so a Dyad preview command still starts `Awannaphasch2016/dyad` and a Forma command starts the Forma repository. An agent on any repository installs the same binary from the image.
+
+### Open a pull request on another repository
+
+No workflow in this repo opens a pull request on another repository. `DYAD_GITHUB_APP_ID` is used by the review and stale-PR workflows. Those tokens request `contents: read` and `pull-requests: write`, and the scripts pass `context.repo`, which is this repository.
+
+The command is `ops-axi pr open <owner>/<repo>`. It dispatches one workflow in the ops-axi repository. That workflow uses a GitHub App installed on the repositories the account wants agents to write. The app needs contents write and pull requests write on each of those repositories. The cloud agent's `GH_TOKEN` only needs permission to dispatch that one workflow. The agent does not receive a token that can push to the other repository.
+
 ## Walk, before the sling
 
 Two pull requests are the agent UI walk. Both land before a formula sling.
