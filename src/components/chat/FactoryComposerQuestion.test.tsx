@@ -112,11 +112,9 @@ describe("FactoryComposerQuestion", () => {
       </QueryClientProvider>,
     );
     await waitFor(() => {
-      const options = client
-        .getQueryCache()
-        .find({
-          queryKey: queryKeys.factory.questions(7, "discovery"),
-        })?.options;
+      const options = client.getQueryCache().find({
+        queryKey: queryKeys.factory.questions(7, "discovery"),
+      })?.options;
       const interval =
         options && "refetchInterval" in options
           ? options.refetchInterval
