@@ -4,44 +4,140 @@ Status: plan. No new runtime change in this document.
 
 ## What changed, and why
 
-The previous draft of this plan said GasCity orchestrates only the three
-chats titled Discovery, Implementation, and Delivery, and that the proof
-was a new counter file written through the tool door. That reading is
-wrong.
+Two corrections landed on the previous draft.
 
-Those three names are human gates on a methodology formula. They are not
-the factory. The methodology's own steps (specify, clarify, plan, tasks,
-the implement drain, converge, and the rest of that pack's graph) are
-also GasCity's work. So are the transitions between phases. Dyad does
-not walk that graph and does not start the next phase on its own.
+The first draft limited GasCity to the three phase chats and proposed a
+counter-file demo. Those three names are human gates on a methodology
+formula. The proof reuses `speckit-phased`.
 
-The proof reuses the packs that already describe a complete three-phase
-run. It does not invent another demonstration.
+This revision corrects the execution path. A prompt that names the
+methodology is still a prompt. A formula run is GasCity compiling that
+formula into beads and routing each bead to a guest session. Dyad's
+native agent loop is legacy. It is not a second supported way to run an
+agent.
 
 | Earlier statement | Correction | Why |
 | --- | --- | --- |
 | GasCity runs only the three phase chats. | GasCity runs the whole formula, including every methodology step and every gate. | A phase chat is a view of a gate. The chapters inside the phase are formula steps. |
-| Delivery is the third chat, and that is the end of orchestration. | Delivery is the last gate on `speckit-phased`, after the final report and before publish. | Publish is still a formula step. GasCity releases it when the Delivery verdict is `approve`. |
-| Prove it by writing `src/counter.ts` from a scripted page. | Prove it by slinging `speckit-phased` from the existing packs. | [PR #148](https://github.com/Awannaphasch2016/dyad/pull/148), [PR #154](https://github.com/Awannaphasch2016/dyad/pull/154), [PR #156](https://github.com/Awannaphasch2016/dyad/pull/156), and [PR #159](https://github.com/Awannaphasch2016/dyad/pull/159) already define that run. |
-| Formula editing stays out of this work. | The formula page is not the orchestrator. Invoking the formula is the start of the factory. | The app must call GasCity. Editing TOML is still not this plan. |
+| Prove it by writing `src/counter.ts`. | Sling `speckit-phased` from the existing packs. | [PR #148](https://github.com/Awannaphasch2016/dyad/pull/148), [PR #154](https://github.com/Awannaphasch2016/dyad/pull/154), [PR #156](https://github.com/Awannaphasch2016/dyad/pull/156), and [PR #159](https://github.com/Awannaphasch2016/dyad/pull/159) already define that run. |
+| A per-phase prompt is close enough if the text describes Spec Kit. | The prompt payload does not name a formula and does not create a bead graph. | Today's `type: prompt` can be followed or ignored by whoever receives it. A formula run cannot skip a `needs` edge. |
+| Ask, Build, Agent, and Plan stay on `handleLocalAgentStream`. | That loop is legacy. Every agent turn runs in a GasCity guest session. | Two agent loops means two orchestrators. Dyad keeps the window, the files, and the verdict. |
+
+## Prompt versus formula
+
+Today a factory chat does not execute a formula. After `chat:stream:start`,
+`chat_stream_handlers.ts` calls `runFactoryOrchestratedTurn` when the chat
+title is Discovery, Implementation, or Delivery.
+`factory_orchestrator.ts` then POSTs:
+
+```json
+{ "type": "prompt", "appId": 1, "chatId": 2, "phase": "discovery", "prompt": "...", "taskId": "gas-city-run:..." }
+```
+
+That payload is a string plus a phase name. It does not name
+`speckit-phased`. GasCity does not compile a graph, open step beads, or
+hold `implement` until `accept-discovery` closes. A listener can hand the
+string to a model and hope the model follows Spec Kit. The model can skip
+clarify, reorder tasks, or walk past a gate. Nothing in the city rejects
+that. That is prompting an agent. It is not a formula run.
+
+A genuine formula run has all four of these:
+
+1. Dyad invokes the formula by name, once: sling `speckit-phased` with
+   `artifact_root` set. The user's words are the work item. They are not
+   the method.
+2. GasCity compiles the formula. `gc formula show speckit-phased` shows
+   the steps and the `needs` edges already checked by
+   `src/lib/methodologyPacks.test.ts` in
+   [PR #154](https://github.com/Awannaphasch2016/dyad/pull/154). Cook or
+   sling materializes one bead per step.
+3. GasCity's orchestrator routes a bead only when every bead it `needs`
+   is closed. `accept-discovery` stays open until `human_gate.verdict` is
+   `approve`. The implement drain cannot start before that.
+4. The agent that executes a bead runs inside a GasCity guest session.
+   Dyad does not call the model for that bead.
+
+| | Prompt | Formula run |
+| --- | --- | --- |
+| What Dyad sends | `type: prompt` and the user's text | One sling of `speckit-phased` |
+| What GasCity stores | A task id, if anything is listening | A workflow of step beads |
+| Who decides the next chapter | Whoever reads the prompt | The formula's `needs` edges |
+| What a skipped gate looks like | The model continues | The downstream bead stays blocked |
+
+## Guest session
+
+A guest session is the GasCity session that owns the agent process. Gas
+City creates one when work is slung: an on-demand session by default, the
+live process `gc session list` shows. The model runs there. Dyad does not
+start a second one.
+
+`FactorySession` in `factory_orchestrator.ts` is not that. It is a window
+subscription: which chat should receive `chat:response:chunk`. It holds no
+model call.
+
+| Piece | Owns | Does not own |
+| --- | --- | --- |
+| Dyad window | Composer, message list, cancel button, gate question | The agent process, the formula graph, the next step |
+| Dyad tool route | `invokeRegisteredTool` for files on this machine: schema, consent, path jail | Choosing the tool, calling the model |
+| GasCity orchestrator | Compile `speckit-phased`, route ready beads, run checks, open the next step | The user's files, the pixels |
+| Guest session | The agent process for one bead, or the operator session the formula targets | A private copy of the methodology, a second loop inside Dyad |
+
+`handleLocalAgentStream` is the legacy path. It calls the model from
+Electron. New turns do not enter it, including Ask, Build, Agent, and
+Plan. There is no fallback when GasCity is down: the send fails in the
+window. Leaving the function in the tree until its call sites are gone is
+deletion work. It is not a supported execution option.
+
+File tools stay behind the existing wrapper because the files are on the
+user's machine. That wrapper is not an agent loop. GasCity decides the
+call. Dyad executes the one tool and returns the string.
+
+```mermaid
+sequenceDiagram
+  participant User
+  participant App as Dyad window
+  participant GC as GasCity orchestrator
+  participant Session as Guest session
+  participant Wrap as invokeRegisteredTool
+
+  User->>App: start the factory
+  App->>GC: sling speckit-phased once
+  GC->>GC: compile steps into beads
+  loop Each ready bead
+    GC->>Session: route the bead
+    Session->>Wrap: tool name and args, when the step touches files
+    Wrap-->>Session: string, or a consent or path error
+    Session-->>App: text for the message list
+  end
+  GC-->>App: Discovery gate is open
+  User->>App: approve or request changes
+  App->>GC: human_gate.verdict on that bead
+  GC->>GC: approve releases implement
+  Note over GC,Session: Implementation and Delivery follow the same session path
+```
+
+A side page that posts tool calls in a fixed order is a simulation. A
+phase bar that submits the next chat is Dyad sequencing work. A prompt
+that says "follow Spec Kit" is still a prompt. None of those is this
+architecture.
 
 ## Where orchestration begins and ends
 
-GasCity's job starts when the application slings one formula, and it
-ends when that formula reaches its terminal step or stops on an open
-gate or an error.
+GasCity's job starts when Dyad slings one formula, and it ends when that
+formula reaches its terminal step or stops on an open gate or an error.
 
 For the validation run the formula is `speckit-phased` from
-[PR #154](https://github.com/Awannaphasch2016/dyad/pull/154). GasCity
-walks this order. Dyad does not.
+[PR #154](https://github.com/Awannaphasch2016/dyad/pull/154). The guest
+session executes the bead GasCity routes. It does not choose the next
+row.
 
 | Step | Kind | Who advances it |
 | --- | --- | --- |
-| `requirements` | Specify. Writes `spec.md`. | GasCity |
-| `clarify` | At most five questions, only while `spec.md` contains `NEEDS CLARIFICATION`. | GasCity. Dyad shows the question and returns the answer. |
+| `requirements` | Specify. Writes `spec.md`. | GasCity routes the bead. The guest session executes it. |
+| `clarify` | At most five questions, only while `spec.md` contains `NEEDS CLARIFICATION`. | GasCity holds the step. Dyad shows the question and returns the answer. |
 | `plan`, `plan-review`, `decompose` | Plan and tasks. | GasCity |
 | `accept-discovery` | Discovery gate, after tasks and before the implement drain. | GasCity holds the bead. Dyad records `human_gate.verdict`. |
-| `implement` or `implement-same-session` | Task drain. | GasCity |
+| `implement` or `implement-same-session` | Task drain. | GasCity, only after Discovery is approved. |
 | `review` | Converge. | GasCity |
 | `accept-implementation` | Implementation gate, after converge and before the final report. | Same split as Discovery. |
 | `finalize` | Final report. | GasCity |
@@ -50,64 +146,15 @@ walks this order. Dyad does not.
 
 `request-changes` reruns that gate's revision child. Silence leaves the
 bead open. The phase changes because the formula's `needs` edge is
-satisfied, not because the phase bar starts another chat.
+satisfied.
 
-The same boundary applies to the other packs in PR #154 (`openspec-phased`,
-`bmad-phased`, `superpowers-phased`, `gstack-phased`, `compound-phased`,
-`build-basic-phased`). Each pack keeps its own step order. The three
-gates sit on that order. This validation run slings Spec Kit only, as
+The same boundary applies to the other packs in PR #154. This validation
+run slings Spec Kit only, as
 [PR #159](https://github.com/Awannaphasch2016/dyad/pull/159) already froze.
 
-Outside a factory formula, Ask, Build, Agent, and Plan stay on Dyad's
-local agent. Those chats are not chapters of the factory. If GasCity is
-down, they still stream.
-
-## Who owns what
-
-| Responsibility | GasCity | Dyad |
-| --- | --- | --- |
-| Which formula runs, and the step order inside it | Owns. The graph is the formula TOML. | Invokes it once. Does not reorder steps. |
-| Which agent runs a step, drains, and fan-out | Owns. | Does not choose the agent. |
-| Phase transition | Owns. `accept-discovery` releases `implement`. | Displays the phase. Does not start the next one. |
-| Human gate | Owns the confirmation bead and reads `human_gate.verdict`. | Shows the question and writes the verdict from the person's answer. |
-| Files in the user's app | Calls the existing tool route and waits. | `invokeRegisteredTool`: schema, consent, path jail, then `tool.execute`. |
-| Transcript in the window | Posts events. | Paints `chat:response:chunk` on the message list. |
-| Ordinary non-factory chat | Not involved. | `handleLocalAgentStream`. |
-| Formula source | Executes the pack already written. | Does not copy `TOOL_DEFINITIONS` into the pack, and does not rewrite the pack for this proof. |
-
-[PR #146](https://github.com/Awannaphasch2016/dyad/pull/146) is the file
-and transcript door only. A factory phase chat currently notifies
-GasCity with a per-phase prompt, and `POST /runs` records a task without
-starting the local agent. That door stays. It is not yet a formula sling,
-so it is not yet evidence that GasCity is running the factory.
-
-```mermaid
-sequenceDiagram
-  participant User
-  participant App as Dyad
-  participant GC as GasCity
-  participant Wrap as invokeRegisteredTool
-
-  User->>App: start the factory
-  App->>GC: sling speckit-phased once
-  loop Each formula step, including steps inside a phase
-    GC->>GC: choose the agent and run that step
-    GC->>Wrap: tool name and args, when the step touches files
-    Wrap-->>GC: string, or a consent or path error
-    GC-->>App: events for the message list
-  end
-  GC-->>App: Discovery gate is open
-  User->>App: approve or request changes
-  App->>GC: human_gate.verdict on that bead
-  GC->>GC: approve opens Implementation
-  Note over GC: Implementation and Delivery follow the same way
-  GC-->>App: publish recorded, or the run stopped
-```
-
-A side page that posts tool and event calls in a fixed order is a
-simulation. It does not count. A phase bar that submits the next chat
-when the previous chat looks finished is Dyad managing the cursor. That
-does not count either.
+A chat that is not this factory still uses a guest session. It does not
+use `handleLocalAgentStream`. If that chat has no formula, GasCity still
+owns the agent process. Dyad still only displays it and serves tools.
 
 ## References to reuse
 
@@ -116,74 +163,83 @@ Do not add a new methodology and do not script a counter module.
 | Reference | Use it for |
 | --- | --- |
 | [PR #148](https://github.com/Awannaphasch2016/dyad/pull/148) `formulas/speckit` | `speckit-build`: specify, clarify, plan, tasks, implement, converge. Extends `build-base`. Does not run `specify workflow`. |
-| [PR #154](https://github.com/Awannaphasch2016/dyad/pull/154) `speckit-phased` | The same sequence plus `accept-discovery`, `accept-implementation`, and `accept-delivery`. `src/lib/methodologyPacks.test.ts` already checks those `needs` edges. |
+| [PR #154](https://github.com/Awannaphasch2016/dyad/pull/154) `speckit-phased` | The same sequence plus the three gates. `src/lib/methodologyPacks.test.ts` checks the `needs` edges. |
 | [PR #156](https://github.com/Awannaphasch2016/dyad/pull/156) | The frozen GIT Conference input. Native skills and ungated `speckit-build` stay there. This proof does not start them. |
-| [PR #159](https://github.com/Awannaphasch2016/dyad/pull/159) `plans/speckit-full-run.md` | The one execution: repository `Awannaphasch2016/sdd-gitcon-impl` at `baseline/speckit-1.1.2` (`a41476e8d1330c90e49eb2dacf8b729ebb3a16f5`), specification `gitcon-v1`, then the existing AC-01 through AC-20 verifier. The executor is `gc sling`, not `experiments/sdd/bin/start-worker.mjs`. |
+| [PR #159](https://github.com/Awannaphasch2016/dyad/pull/159) `plans/speckit-full-run.md` | One `gc sling` of `speckit-phased` on `Awannaphasch2016/sdd-gitcon-impl` at `baseline/speckit-1.1.2` (`a41476e8d1330c90e49eb2dacf8b729ebb3a16f5`), specification `gitcon-v1`, then AC-01 through AC-20. The executor is `gc sling`, not `experiments/sdd/bin/start-worker.mjs`. |
+| [PR #146](https://github.com/Awannaphasch2016/dyad/pull/146) | The file and transcript door. Its `type: prompt` path is the legacy handoff this plan replaces for factory runs. |
 
 Import `gascity` from `gastownhall/gascity-packs` so `extends` can resolve
 `build-base`. Put this repo's `formulas/speckit` on the formula path.
 If `gc` cannot resolve `speckit-phased`, stop. Do not imitate the graph
-inside Dyad.
+inside Dyad, and do not fall back to the native agent.
+
+## Evidence
+
+The run counts only when all of these are true together:
+
+- `gc formula show speckit-phased` lists the steps above, and the workflow
+  beads close in that order.
+- `gc session list` shows the guest session that executed the bead, and
+  `gc session logs` for that id shows the agent doing the step.
+- The Dyad message list shows the same text and the gate question while
+  the bead is open. The Discovery verdict is what releases `implement`.
+- The main-process log for that turn does not enter
+  `handleLocalAgentStream`.
+- Implementation's files appear because the guest session called the tool
+  route. A second prompt from the phase bar is not what started
+  Implementation.
 
 ## Slices
 
-### 1. Invoke one formula
+### 1. One agent path
 
-The application starts the factory by slinging `speckit-phased` with
-`artifact_root` set, as the Spec Kit README already shows. One task id
-covers the run. Dyad does not send a fresh prompt to open Implementation
-or Delivery.
+Stop sending new turns to `handleLocalAgentStream`. Every send opens or
+continues a GasCity guest session and paints that session's replies on
+the message list. Ask, Build, Agent, and Plan use this path. A missing
+city fails the send. Do not keep a native fallback.
 
-The tool route, event route, and cancel route from PR #146 stay the way
-a step touches files and the way text reaches the message list. Do not
-add a second protocol and do not copy `TOOL_DEFINITIONS`.
+The tool route from PR #146 stays the way a guest session touches files.
+Do not copy `TOOL_DEFINITIONS` into the session.
 
-### 2. GasCity walks the existing graph
+### 2. Invoke one formula
 
-On that sling, GasCity runs the steps in the table above. File edits go
-through `POST /v1/apps/:appId/tools/:toolName` and wait for the string.
-Text for the window goes through the event route, cursor starting at 1.
-A human gate posts `input-required` and waits. The answer writes
-`human_gate.verdict` on that bead (`approve` or `request-changes`).
-GasCity then continues the same task. Cancel stops the model and stops
+The factory starts by slinging `speckit-phased` with `artifact_root` set.
+One workflow id covers the run. Dyad does not send a fresh prompt to open
+Implementation or Delivery. Retire `type: prompt` as the factory handoff.
+
+### 3. GasCity walks the existing graph
+
+On that sling, GasCity runs the steps in the table above inside guest
+sessions. File edits go through `POST /v1/apps/:appId/tools/:toolName`
+and wait for the string. Text for the window goes through the event
+route, cursor starting at 1. A human gate posts `input-required` and
+waits. The answer writes `human_gate.verdict` on that bead. GasCity then
+continues the same workflow. Cancel stops the guest session and stops
 waiting on tools.
 
-Discovery's steps are specify through tasks. Implementation's steps are
-the drain and converge. Delivery's steps are the final report and
-publish. All of those steps are GasCity's.
+### 4. Show the real run
 
-### 3. Show the real run
-
-Use the input frozen in PR #159. Record the Dyad window and the GasCity
-step log together.
-
-The log must show `requirements`, `clarify`, `plan`, `decompose`,
-`accept-discovery`, the implement drain, `review`, `accept-implementation`,
-`finalize`, `accept-delivery`, and `publish`, in that order. The window
-must show the user the gate question and the assistant text while the
-step runs. Implementation's files must appear because a formula step
-called `write_file` or `search_replace`, and the Discovery verdict must
-be what released that step. An ordinary chat in the same app, whose title
-is not part of this run, must still use the local agent.
+Use the input frozen in PR #159. Record the Dyad window beside
+`gc session logs` and the bead closures.
 
 Replace the bridge-page recording. A script that calls the tool route in
-a fixed order, or a phase bar that starts the next chat itself, is not
-this proof.
+a fixed order, a phase bar that starts the next chat, or a prompt that
+describes Spec Kit, is not this proof.
 
-### 4. Keep the failures visible
+### 5. Keep the failures visible
 
 | Failure | What the user sees |
 | --- | --- |
-| Orchestrator URL unset or GasCity down | The factory sling fails in the window. Ask, Build, Agent, and Plan still stream. |
+| GasCity down or the guest session does not start | The send fails in the window. Dyad does not start its legacy agent. |
 | `speckit-phased` does not resolve | The run stops. Dyad does not play the steps locally. |
-| Consent denied or path jail | The tool route returns the error. The file is unchanged. GasCity decides the next model step. |
+| Consent denied or path jail | The tool route returns the error. The file is unchanged. The guest session decides the next model step. |
 | Gate left unanswered | The bead stays open. The next phase does not start. |
-| User cancels | The tool aborts. The transcript ends cancelled. GasCity receives `type: cancel`. |
-| Dyad quits during a tool | The route dies. GasCity keeps the task. The file edit does not move. |
+| User cancels | The tool aborts. The transcript ends cancelled. The guest session stops. |
+| Dyad quits during a tool | The route dies. GasCity keeps the workflow. The file edit does not move. |
 
 ## Out of scope
 
-- Rewriting `handleLocalAgentStream` or moving Ask, Build, Agent, or Plan.
+- Keeping `handleLocalAgentStream` as a supported path beside guest sessions.
 - A new methodology pack, or a counter-file demonstration.
 - Starting the native Spec Kit skill run or ungated `speckit-build` from PR #156.
 - An MCP server for Dyad's tools.
@@ -195,8 +251,8 @@ this proof.
 ## Important points
 
 1. GasCity orchestrates the whole factory formula, not only the three phase chats.
-2. Discovery, Implementation, and Delivery are human gates on that formula. The methodology steps inside them are GasCity's too.
-3. Dyad invokes the formula once, shows the window, runs local tools, and writes the gate verdict. It does not choose the next step or the next phase.
-4. The proof slings `speckit-phased` from PR #148, PR #154, and PR #159. It does not build another demo.
-5. PR #146 is the file and transcript door. A per-phase prompt is not yet a formula run.
-6. Ordinary Ask, Build, Agent, and Plan stay on Dyad when they are not part of the factory.
+2. Discovery, Implementation, and Delivery are human gates. The methodology steps inside them are beads GasCity routes.
+3. A prompt that describes the methodology is not a formula run. The formula run is a sling that materializes those beads.
+4. The agent process lives in a GasCity guest session. Dyad is the window, the tool route, and the verdict.
+5. `handleLocalAgentStream` is legacy. New turns do not use it, and there is no native fallback.
+6. The proof slings `speckit-phased` from PR #148, PR #154, and PR #159, and shows the guest session log beside the Dyad window.
