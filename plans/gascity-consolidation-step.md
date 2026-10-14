@@ -211,6 +211,26 @@ Two workflows already read two configs, so those commands take two pairs. `hitl-
 | `doppler status`                                            | `--project dyad`, then the manifest's source configs                       |
 | `bolt status`                                               | `--project bolt --config preview`                                          |
 
+## New Cursor sessions
+
+This repo has no `.cursor/environment.json`. A new agent session gets `ops-axi` only when the cloud environment's `install` copies it onto the snapshot. An already running session keeps the disk it booted with.
+
+`install` runs once per environment build, as a login shell, and new sessions boot from that snapshot. Put the binaries on the default `PATH`:
+
+```sh
+digest=sha256:49e83dc64a665870cb28ab55a10ef63b2e2df7369519f4c02086cfdfb5e28b12
+id="$(docker create ghcr.io/awannaphasch2016/axi-toolbox@${digest})"
+docker cp "$id:/opt/axi/bin/ops-axi" /usr/local/bin/ops-axi
+docker cp "$id:/opt/axi/bin/gh-axi" /usr/local/bin/gh-axi
+docker rm "$id"
+chmod 755 /usr/local/bin/ops-axi /usr/local/bin/gh-axi
+gh-axi setup hooks
+```
+
+That digest is the published image that carries `packages/ops-axi`. The image has no Doppler or GitHub token. The session's `GH_TOKEN` is what `ops-axi` uses to start workflows.
+
+`ops-axi toolbox use <digest>` is the version command. It checks the image exists, replaces `/usr/local/bin/ops-axi` and `gh-axi` from that image, and writes the digest into the `install` pin. Other sessions see it after the next environment build. `gh-axi update` inside the image does nothing useful: `/opt/axi` is owned by root and the image runs as `agent`.
+
 ## Walk, before the sling
 
 Two pull requests are the agent UI walk. Both land before a formula sling.
