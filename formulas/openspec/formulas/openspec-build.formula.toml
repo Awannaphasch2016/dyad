@@ -1,0 +1,269 @@
+description = """
+OpenSpec-shaped change on the Gas City build-base contract.
+
+Artifacts land under artifact_root:
+- proposal.md
+- specs/**/spec.md, each changed requirement carrying a #### Scenario:
+- design.md
+- tasks.md
+
+Inserted steps, in order, between the inherited anchors:
+- clarify after requirements (a question; the proposal is not finished)
+- delta-specs after clarify and before plan
+- scenario-validate after decompose and before either implement drain
+- approve-implementation after review (a person accepts the finished change)
+- archive after that approval and before finalize
+
+gc.hitl.kind and gc.hitl.role are metadata for the host. This formula runtime
+schedules gc.run-operator and does not check an organization membership.
+The operator must not answer a suspend or pass a gate.
+interaction_mode does not skip suspend or gate steps.
+"""
+formula = "openspec-build"
+version = 1
+contract = "graph.v2"
+extends = ["build-base"]
+target_required = true
+
+[catalog]
+name = "openspec-build"
+description = "Run build-base as an OpenSpec change: proposal, scenarios, design, tasks, apply, then a human acceptance before archive."
+
+[metadata.gc.methodology]
+allowed_drain_policies = ["separate", "same-session"]
+implementation_strategy = "drain"
+interaction_modes = ["interactive", "autonomous", "headless"]
+review_modes = ["report", "agent", "interactive"]
+
+[vars]
+[vars.implementation_target]
+description = "Worker that applies one OpenSpec task."
+default = "gc.implementation-worker"
+
+[vars.planning_formula]
+description = "Planning formula. The OpenSpec sequence lives on openspec-build."
+default = "planning-base"
+
+[vars.decomposition_formula]
+description = "Decomposition formula. Tasks are written by the decompose step of openspec-build."
+default = "decomposition-base"
+
+[vars.implementation_formula]
+description = "Per-task drain formula."
+default = "do-work"
+
+[vars.implementation_item_formula]
+description = "Shared-session per-task formula."
+default = "do-work-item"
+
+[vars.code_review_formula]
+description = "Review formula used when a host delegates review."
+default = "review"
+
+[vars.review_fix_formula]
+description = "Fix loop used after a failed review."
+default = "fix-loop-base"
+
+[[steps]]
+id = "requirements"
+title = "Write the OpenSpec proposal"
+needs = ["prepare"]
+metadata = { "gc.run_target" = "gc.requirements-planner", "gc.build.artifact_schema" = "gc.build.requirements.v1", "gc.build.artifact_path_keys" = "gc.build.requirements_path,gc.var.requirements_path" }
+description = """
+Write {{artifact_root}}/proposal.md.
+
+Include why the change is needed, what is out of scope, and the capability names.
+Leave a question in the proposal when a requirement is ambiguous.
+Do not write specs, design, or tasks in this step.
+"""
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+
+[[steps]]
+id = "clarify"
+title = "Ask the project manager about the proposal"
+needs = ["requirements"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.hitl.kind" = "suspend", "gc.hitl.role" = "project-manager" }
+description = """
+This step is a suspend. The proposal is not finished.
+
+Read the open questions in proposal.md. Ask the project manager.
+Write the answer back into the proposal. Do not invent the answer.
+Do not start design or tasks. interaction_mode does not skip this step.
+A host that can route by organization role must use gc.hitl.role.
+This formula only schedules the operator.
+"""
+
+[[steps]]
+id = "delta-specs"
+title = "Write OpenSpec delta specs"
+needs = ["clarify"]
+metadata = { "gc.run_target" = "gc.requirements-planner" }
+description = """
+Write one specs/<capability>/spec.md per capability named in the proposal.
+Under each added or modified requirement, add at least one #### Scenario: with
+WHEN and THEN. Do not mark a requirement done by leaving it as prose.
+"""
+
+[[steps]]
+id = "plan"
+title = "Write the OpenSpec design"
+needs = ["delta-specs"]
+metadata = { "gc.run_target" = "gc.design-author", "gc.build.artifact_schema" = "gc.build.plan.v1", "gc.build.artifact_path_keys" = "gc.build.plan_path,gc.var.plan_path" }
+description = """
+Write {{artifact_root}}/design.md for how the change is implemented.
+The design consumes the proposal and the delta specs. It does not add requirements.
+"""
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+
+[[steps]]
+id = "plan-review"
+title = "Project manager accepts the change set"
+needs = ["plan"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.hitl.kind" = "gate", "gc.hitl.role" = "project-manager" }
+description = """
+This step is a gate. It runs only after proposal, specs, and design exist.
+
+Show those files to the project manager. Record approve or reject, who decided,
+and when. Do not approve as the operator.
+Reject returns to clarify with the feedback. Approve opens decompose.
+interaction_mode does not skip this step.
+"""
+
+[[steps]]
+id = "decompose"
+title = "Write OpenSpec tasks"
+needs = ["plan-review"]
+metadata = { "gc.run_target" = "gc.task-decomposer", "gc.build.artifact_schema" = "gc.build.decomposition.v1", "gc.build.artifact_path_keys" = "gc.build.decomposition_path,gc.var.decomposition_path" }
+description = """
+Write {{artifact_root}}/tasks.md as a checkbox list.
+Every task names the scenario it satisfies. Do not start implementation.
+"""
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+
+[[steps]]
+id = "scenario-validate"
+title = "Count scenarios and tasks"
+needs = ["decompose"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description = """
+This is a completion check, not an approval.
+Confirm every added or modified requirement has a #### Scenario:, and tasks.md
+has at least one unchecked task. Record the counts on the workflow bead.
+Failure retries this step. It does not ask a person.
+"""
+
+[[steps]]
+id = "implement"
+title = "Apply OpenSpec tasks in separate sessions"
+needs = ["scenario-validate"]
+condition = "{{drain_policy}} == separate"
+metadata = { "gc.run_target" = "{{implementation_target}}" }
+description = """
+Drain the tasks as separate sessions. Each session checks one task and the
+scenario it names. A session may suspend for the developer. That suspend does
+not finish the drain.
+"""
+
+[steps.drain]
+context = "separate"
+formula = "do-work"
+member_access = "exclusive"
+
+[[steps]]
+id = "implement-same-session"
+title = "Apply OpenSpec tasks in one shared session"
+needs = ["scenario-validate"]
+condition = "{{drain_policy}} == same-session"
+metadata = { "gc.run_target" = "{{implementation_target}}" }
+description = """
+Drain the tasks in one shared session, one item at a time.
+A suspend stays on that item.
+"""
+
+[steps.drain]
+context = "shared"
+formula = "do-work-item"
+on_item_failure = "skip_remaining"
+member_access = "exclusive"
+
+[steps.drain.item]
+single_lane = true
+
+[[steps]]
+id = "review"
+title = "Review the applied change"
+needs = ["summarize-implementation"]
+metadata = { "gc.run_target" = "gc.implementation-reviewer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path" }
+description = """
+Write the review report. Compare the diff with the scenarios and the checked tasks.
+This report is evidence for the next gate. The reviewer does not accept the phase.
+"""
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+
+[[steps]]
+id = "approve-implementation"
+title = "Developer accepts the applied change"
+needs = ["review"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.hitl.kind" = "gate", "gc.hitl.role" = "developer" }
+description = """
+This step is a gate. It runs only after the review report exists.
+The developer approves or rejects that report and the diff.
+Reject returns to the implement drain with the feedback.
+Approve opens archive. The operator must not approve.
+"""
+
+[[steps]]
+id = "archive"
+title = "Archive the OpenSpec change"
+needs = ["approve-implementation"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description = """
+Move the delta specs into the main spec tree and record the archive path.
+Do this only after approve-implementation. A missing approval leaves this step unstarted.
+"""
+
+[[steps]]
+id = "finalize"
+title = "Finalize the OpenSpec build"
+needs = ["archive"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path" }
+description = """
+Write the final report: proposal, scenario counts, review report, developer approval, archive path.
+Publishing stays on the inherited publish step.
+"""
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
