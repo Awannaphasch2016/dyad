@@ -327,6 +327,21 @@ import { advanceMethodology, methodologyStepId, methodologyStepPrompt, methodolo
       "let beadTurns = 0;\n\t\t\tdo {\n\t\t\t\tthis.methodologyStepAtStart = await methodologyStepId(this.env, this.getAgentId());\n\t\t\t\tawait this.configureThinkAgent();\n\t\t\t\tawait stub.chat(beadTurns === 0 ? text : 'Continue the current step.', forwarder);\n\t\t\t\tbeadTurns += 1;\n\t\t\t\tif (this.organizationHold || beadTurns >= 4) break;\n\t\t\t\tconst stepNow = await methodologyStepId(this.env, this.getAgentId());\n\t\t\t\tif (stepNow === this.methodologyStepAtStart) await advanceMethodology(this.env, this.getAgentId(), 'turn');\n\t\t\t} while (beadTurns < 4);",
     )
     .replace(
+      `		try {
+			const url = await this.getBrowserPreviewURL();
+			this.broadcast(WebSocketMessageResponses.DEPLOYMENT_COMPLETED, { previewURL: url });
+		} catch (e) {
+			this.logger.warn('Failed to surface preview after deploy_space', e);
+		}`,
+      `		try {
+			const url = await this.getBrowserPreviewURL();
+			this.broadcast(WebSocketMessageResponses.DEPLOYMENT_COMPLETED, { previewURL: url });
+			await advanceMethodology(this.env, this.getAgentId(), 'deploy');
+		} catch (e) {
+			this.logger.warn('Failed to surface preview after deploy_space', e);
+		}`,
+    )
+    .replace(
       "In a building turn, do NOT end after only writing files:",
       "Call deploy_space only when the current step says it is allowed.",
     )
@@ -868,14 +883,6 @@ function firstQuestion(args: Record<string, unknown> | undefined): { body: strin
 	return { body: first.question.trim(), targetRole: assigned.targetRole, assignment: assigned.assignment };
 }
 
-function send(connection: WebSocket, data: Record<string, unknown>): void {
-	try {
-		connection.send(JSON.stringify({ type: 'conversation_response', ...data }));
-	} catch {
-		// A closed socket does not receive the question.
-	}
-}
-
 const actorsByConnection = new Map<string, Actor>();
 
 function actorFrom(value: unknown): Actor | null {
@@ -1174,25 +1181,9 @@ export async function publishOrganizationQuestion(input: {
 		await input.env.DB.prepare('INSERT INTO questions (id, org_id, app_id, target_role_id, body, status, assignment, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').bind(id, orgId, input.appId, question.targetRole, question.body, 'open', question.assignment, Date.now()).run();
 		stored = { id, org_id: orgId, app_id: input.appId, target_role_id: question.targetRole, body: question.body, status: 'open', assignment: question.assignment };
 	}
-	const targetRole = stored?.target_role_id ?? question.targetRole;
-	const body = stored?.body ?? question.body;
-	for (const socket of input.sockets) {
-		const actor = readOrganizationRole(socket);
-		if (actor?.role === targetRole) {
-			send(socket, {
-				message: '',
-				conversationId: input.conversationId,
-				isStreaming: false,
-				tool: { name: 'ask_questions', status: 'success', args: { questions: [{ question: body }] } },
-			});
-		} else {
-			send(socket, {
-				message: waitingLine(targetRole),
-				conversationId: input.conversationId,
-				isStreaming: false,
-			});
-		}
-	}
+	void stored;
+	void input.sockets;
+	void input.conversationId;
 }
 
 export async function acceptOrganizationAnswer(env: Env, appId: string, connection: WebSocket, message: string): Promise<{ allow: boolean; message: string; turn?: { id: string; body: string; name: string; role: string; label: string } }> {
@@ -1229,17 +1220,9 @@ function hostNarration(text: string): boolean {
 }
 
 function keepBeadMessage(message: Record<string, unknown>): boolean {
-	const content = typeof message.content === 'string' ? message.content : '';
-	if (hostNarration(content)) return false;
-	if (message.role === 'user') return true;
-	if (message.role === 'tool') return message.name === 'ask_questions';
-	if (message.role !== 'assistant') return true;
-	const calls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
-	return calls.some((call) => {
-		if (!call || typeof call !== 'object') return false;
-		const named = call as { function?: { name?: unknown } };
-		return named.function?.name === 'ask_questions';
-	});
+	const content = typeof message.content === 'string' ? message.content.trim() : '';
+	if (hostNarration(content) || message.role !== 'user') return false;
+	return content.length > 0;
 }
 
 function stripBodies(value: unknown, hidden: { body: string; target_role_id: string }[]): unknown {

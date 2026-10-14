@@ -882,6 +882,10 @@ const REDEPLOY_AFTER_ATTEMPT = 8;
 						</p>
 `);
   assert.match(pane, /return 'terminal'/);
+  assert.match(pane, /response\.status === 401 \|\| response\.status === 403/);
+  assert.equal(pane.includes("response.status === 404"), false);
+  assert.equal(pane.includes("response.status === 503"), false);
+  assert.match(pane, /MAX_RETRIES = 15/);
   assert.match(pane, /Preview cannot show this snapshot\./);
   assert.match(pane, /Opening preview/);
   assert.equal(pane.includes("requestRedeploy"), false);

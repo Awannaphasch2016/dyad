@@ -217,6 +217,8 @@ test("the project manager starts the organization app and each role answers the 
         const previewButton = page.getByTitle("Preview");
         if ((await previewButton.count()) > 0)
           await previewButton.first().click();
+        const retry = page.getByRole("button", { name: "Try Again" });
+        if ((await retry.count()) > 0) await retry.first().click();
       }
       const pmQuestion = await questionText(pm);
       const devQuestion = await questionText(dev);

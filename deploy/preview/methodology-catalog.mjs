@@ -817,7 +817,6 @@ export async function methodologyToolDecision(env: unknown, appId: string, tool:
   const stepId = stored?.methodology_step || resolved.record.steps[0].id;
   const step = stepAt(resolved.record, stepId);
   const decision = toolDecision(resolved.record, stepId, tool, input);
-  if (decision.allow && tool === "deploy_space") await advanceMethodology(database, appId, "deploy");
   if (decision.allow && writeAdvances(step, input)) {
     await advanceMethodology(database, appId, "turn");
     const nextId = await methodologyStepId(database, appId);

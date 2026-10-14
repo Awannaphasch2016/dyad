@@ -138,6 +138,10 @@ test("the builder prompt receives the current step and does not contain a pack p
   assert.equal(patched.includes("message: accumulated.text"), false);
   assert.equal(patched.includes("buildToolBroadcastPayload"), false);
   assert.match(patched, /handleDeploySpaceOutput/);
+  assert.match(
+    patched,
+    /advanceMethodology\(this\.env, this\.getAgentId\(\), 'deploy'\)/,
+  );
   assert.match(patched, /publishOrganizationQuestion/);
   assert.equal(patched.includes("do NOT start writing files"), false);
   assert.equal(patched.includes("do NOT end after only writing files"), false);

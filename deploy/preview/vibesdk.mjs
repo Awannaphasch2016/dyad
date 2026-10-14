@@ -486,7 +486,7 @@ export function patchPreviewPane(source) {
   let next = replaceOnce(
     source,
     "const MAX_RETRIES = 10;\nconst REDEPLOY_AFTER_ATTEMPT = 8;\n",
-    "const MAX_RETRIES = 3;\n",
+    "const MAX_RETRIES = 15;\n",
     "preview retry cap",
   );
   next = replaceOnce(
@@ -501,7 +501,7 @@ export function patchPreviewPane(source) {
 					console.log('Preview not ready (status:', response.status, ')');
 					return null;
 				}`,
-    `				if (response.status === 401 || response.status === 403 || response.status === 404 || response.status === 500 || response.status === 503) {
+    `				if (response.status === 401 || response.status === 403) {
 					console.log('Preview cannot be shown (status:', response.status, ')');
 					return 'terminal';
 				}
