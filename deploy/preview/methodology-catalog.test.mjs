@@ -24,10 +24,19 @@ test("the default pack is speckit-phased and unresolved packs are refused", () =
   assert.equal(openspec.ok, true);
   assert.equal(openspec.record.steps[0].artifacts[0], "proposal.md");
 
-  for (const id of ["superpowers-phased", "bmad-phased", "gstack-phased", "compound-phased", "build-basic-phased"]) {
-    const refused = resolveMethodology(id);
-    assert.equal(refused.ok, false, id);
-    assert.match(refused.message, /not imported/);
+  const phasePacks = {
+    "bmad-phased": "bmad/readiness.md",
+    "superpowers-phased": "superpowers/spec.md",
+    "gstack-phased": "gstack/plan.md",
+    "compound-phased": "compound/tasks.md",
+    "build-basic-phased": "build-basic/tasks.md",
+  };
+  for (const [id, artifact] of Object.entries(phasePacks)) {
+    const pack = resolveMethodology(id);
+    assert.equal(pack.ok, true, id);
+    assert.equal(pack.record.steps[0].artifacts[0], artifact);
+    assert.equal(pack.record.steps.some((step) => step.id === "accept-discovery"), true, id);
+    assert.equal(pack.record.steps.some((step) => step.id === "accept-delivery"), true, id);
   }
   const unknown = resolveMethodology("not-a-pack");
   assert.equal(unknown.ok, false);

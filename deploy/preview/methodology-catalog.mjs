@@ -1,10 +1,10 @@
 // Formula ids the Vibe SDK host can store on an app.
-// Runnable means every extended formula is either in this repo or the imported
-// gascity base. Upstream packs stay unresolved until they are imported.
+// The phase packs are the column-3 formulas from
+// https://github.com/Awannaphasch2016/dyad/pull/154
+// A pack with steps is runnable here. The host walks those steps. It does not
+// sling the upstream Gas City formula.
 
 export const DEFAULT_METHODOLOGY = "speckit-phased";
-
-const LOCAL_BASES = new Set(["build-base"]);
 
 export const METHODOLOGY_CATALOG = [
   pack("speckit-build", "formulas/speckit", ["build-base"], [
@@ -67,11 +67,57 @@ export const METHODOLOGY_CATALOG = [
     wait("approve-ship", "project-manager", [], "Call ask_questions with exactly one question for the project-manager asking whether to ship. Do not write files."),
     write("finalize", [".planning/VERIFICATION.md"], "Write .planning/VERIFICATION.md. Do not call deploy_space."),
   ]),
-  pack("bmad-phased", "formulas/bmad-hitl", ["bmad-build"], []),
-  pack("superpowers-phased", "formulas/superpowers-hitl", ["superpowers-build"], []),
-  pack("gstack-phased", "formulas/gstack-hitl", ["gstack-build"], []),
-  pack("compound-phased", "formulas/compound-hitl", ["compound-build"], []),
-  pack("build-basic-phased", "formulas/build-basic-hitl", ["build-basic"], []),
+  pack("bmad-phased", "formulas/bmad-hitl", ["bmad-build"], [
+    write("implementation-readiness", ["bmad/readiness.md"], "Write bmad/readiness.md for whether the stories are ready to build. Do not write product files."),
+    wait("accept-discovery", "project-manager", [], "Call ask_questions with exactly one question for the project-manager asking whether to start story development. Do not write files."),
+    implement("implement", "Develop the stories. You may write the product files, call deploy_space, then get_browser_console_logs."),
+    write("review", ["*"], "Review the stories against bmad/readiness.md. Do not call deploy_space."),
+    wait("accept-implementation", "project-manager", [], "Call ask_questions with exactly one question for the project-manager asking whether the story development is accepted. Do not write files."),
+    write("finalize", ["bmad/final-report.md"], "Write bmad/final-report.md. Do not call deploy_space."),
+    wait("accept-delivery", "project-manager", [], "Call ask_questions with exactly one question for the project-manager asking whether to publish. Do not write files."),
+    write("publish", ["bmad/publish.md"], "Write bmad/publish.md recording the result. Do not call deploy_space."),
+  ]),
+  pack("superpowers-phased", "formulas/superpowers-hitl", ["superpowers-build"], [
+    write("decompose", ["superpowers/spec.md", "superpowers/tasks.md"], "Write superpowers/spec.md and superpowers/tasks.md. Do not write product files."),
+    wait("accept-discovery", "project-manager", [], "Call ask_questions with exactly one question for the project-manager asking whether to start implementation. Do not write files."),
+    implement("implement", "Implement superpowers/tasks.md. You may write the product files, call deploy_space, then get_browser_console_logs."),
+    write("review", ["*"], "Review the code against superpowers/spec.md. Do not call deploy_space."),
+    wait("accept-implementation", "project-manager", [], "Call ask_questions with exactly one question for the project-manager asking whether the implementation is accepted. Do not write files."),
+    write("finalize", ["superpowers/final-report.md"], "Write superpowers/final-report.md. Do not call deploy_space."),
+    wait("accept-delivery", "project-manager", [], "Call ask_questions with exactly one question for the project-manager asking whether to publish. Do not write files."),
+    write("publish", ["superpowers/publish.md"], "Write superpowers/publish.md recording the result. Do not call deploy_space."),
+  ]),
+  pack("gstack-phased", "formulas/gstack-hitl", ["gstack-build"], [
+    write("decompose", ["gstack/plan.md"], "Write gstack/plan.md. Do not write product files."),
+    wait("accept-discovery", "project-manager", [], "Call ask_questions with exactly one question for the project-manager asking whether to start implementation. Do not write files."),
+    implement("implement", "Implement gstack/plan.md. You may write the product files, call deploy_space, then get_browser_console_logs."),
+    write("review", ["*"], "Review the result against gstack/plan.md. Do not call deploy_space."),
+    wait("accept-implementation", "project-manager", [], "Call ask_questions with exactly one question for the project-manager asking whether the implementation is accepted. Do not write files."),
+    write("qa", ["gstack/qa.md"], "Write gstack/qa.md for the checks that still fail. Do not call deploy_space."),
+    write("sprint-report", ["gstack/sprint-report.md"], "Write gstack/sprint-report.md. Do not call deploy_space."),
+    wait("accept-delivery", "project-manager", [], "Call ask_questions with exactly one question for the project-manager asking whether to publish. Do not write files."),
+    write("publish", ["gstack/publish.md"], "Write gstack/publish.md recording the result. Do not call deploy_space."),
+  ]),
+  pack("compound-phased", "formulas/compound-hitl", ["compound-build"], [
+    write("decompose", ["compound/tasks.md"], "Write compound/tasks.md. Do not write product files."),
+    wait("accept-discovery", "project-manager", [], "Call ask_questions with exactly one question for the project-manager asking whether to start the work. Do not write files."),
+    implement("implement", "Carry out compound/tasks.md. You may write the product files, call deploy_space, then get_browser_console_logs."),
+    write("review", ["*"], "Review the result against compound/tasks.md. Do not call deploy_space."),
+    wait("accept-implementation", "project-manager", [], "Call ask_questions with exactly one question for the project-manager asking whether the work is accepted. Do not write files."),
+    write("finalize", ["compound/final-report.md"], "Write compound/final-report.md. Do not call deploy_space."),
+    wait("accept-delivery", "project-manager", [], "Call ask_questions with exactly one question for the project-manager asking whether to publish. Do not write files."),
+    write("publish", ["compound/publish.md"], "Write compound/publish.md recording the result. Do not call deploy_space."),
+  ]),
+  pack("build-basic-phased", "formulas/build-basic-hitl", ["build-basic"], [
+    write("decompose", ["build-basic/tasks.md"], "Write build-basic/tasks.md. Do not write product files."),
+    wait("accept-discovery", "project-manager", [], "Call ask_questions with exactly one question for the project-manager asking whether to start implementation. Do not write files."),
+    implement("implement", "Carry out build-basic/tasks.md. You may write the product files, call deploy_space, then get_browser_console_logs."),
+    write("review", ["*"], "Review the result against build-basic/tasks.md. Do not call deploy_space."),
+    wait("accept-implementation", "project-manager", [], "Call ask_questions with exactly one question for the project-manager asking whether the implementation is accepted. Do not write files."),
+    write("finalize", ["build-basic/final-report.md"], "Write build-basic/final-report.md. Do not call deploy_space."),
+    wait("accept-delivery", "project-manager", [], "Call ask_questions with exactly one question for the project-manager asking whether to publish. Do not write files."),
+    write("publish", ["build-basic/publish.md"], "Write build-basic/publish.md recording the result. Do not call deploy_space."),
+  ]),
 ];
 
 function write(id, artifacts, instruction) {
@@ -88,12 +134,8 @@ function implement(id, instruction) {
 
 function pack(id, directory, bases, steps) {
   const file = `${directory}/formulas/${id}.formula.toml`;
-  const runnable = bases.every((name) => LOCAL_BASES.has(name) || METHODOLOGY_CATALOG_IDS().has(name)) && steps.length > 0;
+  const runnable = steps.length > 0;
   return { id, pack: directory, file, extends: bases, runnable, steps };
-}
-
-function METHODOLOGY_CATALOG_IDS() {
-  return new Set(["speckit-build", "openspec-build", "gsd-build", "speckit-phased", "openspec-phased"]);
 }
 
 export function resolveMethodology(id) {
