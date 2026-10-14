@@ -97,15 +97,52 @@ def ordered_configs(names):
     return ordered
 
 
-def choose_supervisor(preview, prd=None, host=None, extra=None):
-    """Prefer a usable preview value, then prd, then other configs, then the host file."""
+def _extras(extra):
+    return [item for item in extra or [] if isinstance(item, dict)]
+
+
+def choose_supervisor(preview, prd=None, host=None, extra=None, supplied=None):
+    """Prefer preview, then other Doppler configs, then the host, then a repository secret."""
     specific_city = tuple(name for name in CITY_NAMES if name != "CITY_NAME")
-    extras = [item for item in extra or [] if isinstance(item, dict)]
+    extras = _extras(extra)
     return {
-        SUPERVISOR_URL: _first(URL_NAMES, preview, prd, host) or _first(URL_NAMES, *extras),
-        CITY_NAME: _first(CITY_NAMES, preview, prd, host) or _first(specific_city, *extras),
-        WRITE_GRANT: _first(GRANT_NAMES, preview, prd, host) or _first(GRANT_NAMES, *extras),
+        SUPERVISOR_URL: _first(URL_NAMES, preview, prd, *extras, host, supplied),
+        CITY_NAME: (
+            _first(CITY_NAMES, preview, prd)
+            or _first(specific_city, *extras)
+            or _first(CITY_NAMES, host)
+            or _first((CITY_NAME,), supplied)
+        ),
+        WRITE_GRANT: _first(GRANT_NAMES, preview, prd, *extras, host, supplied),
     }
+
+
+def _source_has(names, source, value, canonical):
+    if not isinstance(source, dict):
+        return False
+    wanted = _text(value)
+    for name in names:
+        candidate = _text(source.get(name))
+        if candidate == wanted and usable(canonical, candidate):
+            return True
+    return False
+
+
+def origin_of(name, value, preview, prd=None, host=None, extra=None, supplied=None):
+    if not value:
+        return ""
+    names = NAMES[name]
+    specific = tuple(item for item in names if item != "CITY_NAME") if name == CITY_NAME else names
+    if _source_has(names, preview, value, name) or _source_has(names, prd, value, name):
+        return "preview" if _source_has(names, preview, value, name) else "doppler"
+    for item in _extras(extra):
+        if _source_has(specific, item, value, name):
+            return "doppler"
+    if _source_has(names, host, value, name):
+        return "host"
+    if _source_has((name,), supplied, value, name):
+        return "secret"
+    return ""
 
 
 def updates_for_preview(preview, chosen):
@@ -121,11 +158,13 @@ def missing_required(chosen):
     return [name for name in REQUIRED if not chosen.get(name)]
 
 
-def setting_state(name, preview, updates, wrote):
+def setting_state(name, preview, updates, wrote, origin=""):
     raw = preview.get(name) if isinstance(preview, dict) else None
     if usable(name, raw):
         return "present"
     if name in updates and wrote:
+        if origin == "secret" and not _text(raw):
+            return "created"
         return "copied"
     if _text(raw):
         return "rejected"

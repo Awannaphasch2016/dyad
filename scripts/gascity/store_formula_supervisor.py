@@ -14,6 +14,7 @@ from formula_supervisor_select import (
     choose_supervisor,
     missing_required,
     ordered_configs,
+    origin_of,
     secret_file_from_log,
     setting_state,
     updates_for_preview,
@@ -94,9 +95,14 @@ def post_secrets(token, secrets):
         return error.code
 
 
-def print_states(preview, updates, wrote):
+def supplied_settings():
+    return {name: os.environ.get(name, "") for name in STATUS_NAMES}
+
+
+def print_states(preview, updates, wrote, origins):
     for name in STATUS_NAMES:
-        print(f"{name}: {setting_state(name, preview, updates, wrote)}")
+        state = setting_state(name, preview, updates, wrote, origins.get(name, ""))
+        print(f"{name}: {state}")
 
 
 def load_configs(token):
@@ -123,17 +129,22 @@ def apply_settings(token, host=None):
     if loaded is None:
         return 1
     preview, prd, extra = loaded
-    chosen = choose_supervisor(preview, prd, host, extra)
+    supplied = supplied_settings()
+    chosen = choose_supervisor(preview, prd, host, extra, supplied)
+    origins = {
+        name: origin_of(name, chosen.get(name, ""), preview, prd, host, extra, supplied)
+        for name in STATUS_NAMES
+    }
     updates = updates_for_preview(preview, chosen)
     wrote = False
     if updates:
         http = post_secrets(token, updates)
         print(f"doppler secrets set http {http} project={PROJECT} config={CONFIG}")
         if http not in (200, 201):
-            print_states(preview, updates, False)
+            print_states(preview, updates, False, origins)
             return 1
         wrote = True
-    print_states(preview, updates, wrote)
+    print_states(preview, updates, wrote, origins)
     if missing_required(chosen):
         print("supervisor settings are still absent")
         return 3

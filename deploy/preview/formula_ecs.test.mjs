@@ -285,8 +285,30 @@ test("the formula workflow deploys to ECS and does not cook", () => {
   assert.match(workflow, /id-token: write/);
   assert.match(workflow, /Dockerfile\.gascity/);
   assert.match(workflow, /formula_ecs\.mjs sync/);
-  assert.match(workflow, /store_formula_supervisor\.py --from-doppler/);
-  assert.match(workflow, /read_formula_supervisor_env\.py/);
+  assert.match(workflow, /store_formula_supervisor_job\.sh/);
+  assert.match(workflow, /secrets\.GAS_CITY_SUPERVISOR_URL/);
+  assert.match(workflow, /secrets\.GAS_CITY_CITY_NAME/);
+  assert.match(workflow, /secrets\.GAS_CITY_CITY_WRITE_GRANT/);
+  const writer = readFileSync(
+    new URL(
+      "../../scripts/gascity/store_formula_supervisor_job.sh",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const secretsWorkflow = readFileSync(
+    new URL(
+      "../../.github/workflows/preview-formula-secrets.yml",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  assert.match(writer, /store_formula_supervisor\.py --from-doppler/);
+  assert.match(writer, /read_formula_supervisor_env\.py/);
+  assert.equal(writer.includes("set -x"), false);
+  assert.match(secretsWorkflow, /store_formula_supervisor_job\.sh/);
+  assert.match(secretsWorkflow, /workflow_dispatch:/);
+  assert.equal(secretsWorkflow.includes("gascity-rollout"), false);
   const storeAt = workflow.indexOf("Store the GasCity supervisor settings");
   const attachAt = workflow.indexOf("Attach the Neon preview branch");
   assert.ok(storeAt !== -1 && attachAt !== -1 && storeAt < attachAt);

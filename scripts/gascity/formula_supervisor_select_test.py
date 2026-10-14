@@ -11,10 +11,12 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from formula_supervisor_select import (  # noqa: E402
+    CITY_NAME,
     SUPERVISOR_URL,
     choose_supervisor,
     missing_required,
     ordered_configs,
+    origin_of,
     secret_file_from_log,
     service_targets_supervisor,
     setting_state,
@@ -95,7 +97,35 @@ class SelectTest(unittest.TestCase):
             "rejected",
         )
 
-    def test_host_is_last_and_grant_is_optional(self):
+    def test_repository_secret_creates_a_missing_name(self):
+        supplied = {
+            "GAS_CITY_SUPERVISOR_URL": "https://city.example",
+            "GAS_CITY_CITY_NAME": "wewebplus",
+            "GAS_CITY_CITY_WRITE_GRANT": "",
+        }
+        chosen = choose_supervisor({}, {}, None, None, supplied)
+        self.assertEqual(chosen[SUPERVISOR_URL], "https://city.example")
+        self.assertEqual(chosen[CITY_NAME], "wewebplus")
+        self.assertEqual(origin_of(SUPERVISOR_URL, chosen[SUPERVISOR_URL], {}, None, None, None, supplied), "secret")
+        self.assertEqual(
+            setting_state(SUPERVISOR_URL, {}, {SUPERVISOR_URL: chosen[SUPERVISOR_URL]}, True, "secret"),
+            "created",
+        )
+        preview = {"GAS_CITY_SUPERVISOR_URL": "https://preview.example", "GAS_CITY_CITY_NAME": "wewebplus"}
+        kept = choose_supervisor(preview, {}, None, None, {"GAS_CITY_SUPERVISOR_URL": "https://secret.example"})
+        self.assertEqual(kept[SUPERVISOR_URL], "https://preview.example")
+        self.assertEqual(updates_for_preview(preview, kept), {})
+        rejected = choose_supervisor(
+            {},
+            None,
+            None,
+            None,
+            {"GAS_CITY_SUPERVISOR_URL": "http://127.0.0.1:8372", "GAS_CITY_CITY_NAME": "wewebplus"},
+        )
+        self.assertEqual(rejected[SUPERVISOR_URL], "")
+        self.assertEqual(rejected[CITY_NAME], "wewebplus")
+
+    def test_host_supplies_values_when_doppler_is_empty(self):
         chosen = choose_supervisor(
             {},
             {},
