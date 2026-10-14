@@ -1,5 +1,7 @@
 # OpenSpec and Spec Kit packs, with human gates on the factory phases
 
+Superseded by [methodology-pack-architecture.md](methodology-pack-architecture.md). Native packs do not embed Discovery, Implementation, and Delivery. Those phases are one optional overlay, and the overlay accepts any number of phases. This file remains as the earlier gate sketch.
+
 Plan for the first Gas City packs. No pack code in this change.
 
 The factory phases stay Discovery, Implementation, and Delivery (`src/lib/factoryPhase.ts`). The plan gate is the human approval that ends Discovery and opens Implementation. Delivery is the last approval, after the build has its own acceptance.
