@@ -82,6 +82,9 @@ test("the preview database export uses the child branch, not the parent URL", ()
       CLOUDFLARE_API_TOKEN: "cf-token",
       CLOUDFLARE_ZONE_ID: "cf-zone",
       CLOUDFLARE_ACCOUNT_ID: "cf-account",
+      GAS_CITY_SUPERVISOR_URL: "https://city.example",
+      GAS_CITY_CITY_NAME: "wewebplus",
+      GAS_CITY_CITY_WRITE_GRANT: "grant-token",
       CLOUDFLARE_API_TOKEN_: "must-not-export",
       CLOUDFLARE_ZONE_ID_: "must-not-export",
       EC2_SSH_KEY: "must-not-export",
@@ -100,6 +103,9 @@ test("the preview database export uses the child branch, not the parent URL", ()
   assert.match(text, /export CLOUDFLARE_API_TOKEN='cf-token'/);
   assert.match(text, /export CLOUDFLARE_ZONE_ID='cf-zone'/);
   assert.match(text, /export CLOUDFLARE_ACCOUNT_ID='cf-account'/);
+  assert.match(text, /export GAS_CITY_SUPERVISOR_URL='https:\/\/city.example'/);
+  assert.match(text, /export GAS_CITY_CITY_NAME='wewebplus'/);
+  assert.match(text, /export GAS_CITY_CITY_WRITE_GRANT='grant-token'/);
   assert.equal(shellQuote("a'b"), "'a'\\''b'");
   assert.equal(previewBranchName(20), "preview-pr-20");
   assert.throws(() => previewBranchName("20;rm"), /Pull request number/);

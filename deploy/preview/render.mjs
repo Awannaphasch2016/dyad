@@ -11,6 +11,9 @@ const runtimeKeys = [
   "CLOUDFLARE_API_TOKEN",
   "CLOUDFLARE_ZONE_ID",
   "CLOUDFLARE_ACCOUNT_ID",
+  "GAS_CITY_SUPERVISOR_URL",
+  "GAS_CITY_CITY_NAME",
+  "GAS_CITY_CITY_WRITE_GRANT",
 ];
 
 export function shellQuote(value) {
