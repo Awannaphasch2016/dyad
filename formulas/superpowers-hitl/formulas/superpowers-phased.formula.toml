@@ -20,12 +20,12 @@ description = "Superpowers build with Discovery, Implementation, and Delivery hu
 id = "accept-discovery"
 title = "Discovery gate"
 needs = ["decompose"]
-metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "discovery", "gc.human_gate.question" = "Approve these discovery artifacts and start implementation?" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "discovery", "gc.human_gate.role" = "project-manager", "gc.human_gate.question" = "Approve these discovery artifacts and start implementation?" }
 description = """
 Hold this cut until a person records a verdict.
 approve continues to the next phase. request-changes runs the revision child again.
 The revision child is the producing step for this gate: it applies human_gate.feedback to the artifacts this phase already wrote.
-Mail goes to the human mailbox. This formula does not name an organization role.
+Mail goes to the human mailbox. Accept only a reply whose human_gate.role equals gc.human_gate.role.
 """
 
 [steps.check]
@@ -39,26 +39,26 @@ timeout = "10m"
 [[steps.children]]
 id = "revise-discovery"
 title = "Revise discovery artifacts"
-metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "discovery" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "discovery", "gc.human_gate.role" = "project-manager" }
 description_file = "../assets/workflows/revise-phase.md"
 
 [[steps.children]]
 id = "confirm-discovery"
 title = "Ask for the discovery verdict"
 needs = ["revise-discovery"]
-metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "discovery", "gc.human_gate.question" = "Approve these discovery artifacts and start implementation?", "human_gate.loop_step" = "accept-discovery" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "discovery", "gc.human_gate.role" = "project-manager", "gc.human_gate.question" = "Approve these discovery artifacts and start implementation?", "human_gate.loop_step" = "accept-discovery" }
 description_file = "../assets/workflows/confirm-human-gate.md"
 
 [[steps]]
 id = "accept-implementation"
 title = "Implementation gate"
 needs = ["review"]
-metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "implementation", "gc.human_gate.question" = "Approve this implementation and its review?" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "implementation", "gc.human_gate.role" = "developer", "gc.human_gate.question" = "Approve this implementation and its review?" }
 description = """
 Hold this cut until a person records a verdict.
 approve continues to the next phase. request-changes runs the revision child again.
 The revision child is the producing step for this gate: it applies human_gate.feedback to the artifacts this phase already wrote.
-Mail goes to the human mailbox. This formula does not name an organization role.
+Mail goes to the human mailbox. Accept only a reply whose human_gate.role equals gc.human_gate.role.
 """
 
 [steps.check]
@@ -72,26 +72,26 @@ timeout = "10m"
 [[steps.children]]
 id = "revise-implementation"
 title = "Revise implementation artifacts"
-metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "implementation" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "implementation", "gc.human_gate.role" = "developer" }
 description_file = "../assets/workflows/revise-phase.md"
 
 [[steps.children]]
 id = "confirm-implementation"
 title = "Ask for the implementation verdict"
 needs = ["revise-implementation"]
-metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "implementation", "gc.human_gate.question" = "Approve this implementation and its review?", "human_gate.loop_step" = "accept-implementation" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "implementation", "gc.human_gate.role" = "developer", "gc.human_gate.question" = "Approve this implementation and its review?", "human_gate.loop_step" = "accept-implementation" }
 description_file = "../assets/workflows/confirm-human-gate.md"
 
 [[steps]]
 id = "accept-delivery"
 title = "Delivery gate"
 needs = ["finalize"]
-metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "delivery", "gc.human_gate.question" = "Approve delivery and allow publish?" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "delivery", "gc.human_gate.role" = "project-manager", "gc.human_gate.question" = "Approve delivery and allow publish?" }
 description = """
 Hold this cut until a person records a verdict.
 approve continues to the next phase. request-changes runs the revision child again.
 The revision child is the producing step for this gate: it applies human_gate.feedback to the artifacts this phase already wrote.
-Mail goes to the human mailbox. This formula does not name an organization role.
+Mail goes to the human mailbox. Accept only a reply whose human_gate.role equals gc.human_gate.role.
 """
 
 [steps.check]
@@ -105,14 +105,14 @@ timeout = "10m"
 [[steps.children]]
 id = "revise-delivery"
 title = "Revise delivery artifacts"
-metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "delivery" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "delivery", "gc.human_gate.role" = "project-manager" }
 description_file = "../assets/workflows/revise-phase.md"
 
 [[steps.children]]
 id = "confirm-delivery"
 title = "Ask for the delivery verdict"
 needs = ["revise-delivery"]
-metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "delivery", "gc.human_gate.question" = "Approve delivery and allow publish?", "human_gate.loop_step" = "accept-delivery" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "delivery", "gc.human_gate.role" = "project-manager", "gc.human_gate.question" = "Approve delivery and allow publish?", "human_gate.loop_step" = "accept-delivery" }
 description_file = "../assets/workflows/confirm-human-gate.md"
 
 [[steps]]

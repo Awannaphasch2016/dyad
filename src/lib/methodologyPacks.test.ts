@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -120,7 +121,7 @@ const column3 = [
 ];
 
 describe("methodology pack graphs", () => {
-  it("keeps organization roles out of column 2 and column 3", () => {
+  it("keeps the old hitl role key and formula gate steps out", () => {
     const files = readdirSync(formulasRoot, { recursive: true }).flatMap(
       (entry) => {
         const rel = String(entry);
@@ -139,8 +140,33 @@ describe("methodology pack graphs", () => {
     for (const rel of files) {
       const text = read(rel);
       expect(text, rel).not.toContain("gc.hitl.role");
-      expect(text, rel).not.toContain("project-manager");
       expect(text, rel).not.toContain("[steps.gate]");
+    }
+  });
+
+  it("names the only role that can accept each human gate", () => {
+    const roleForPhase: Record<string, string> = {
+      discovery: "project-manager",
+      implementation: "developer",
+      delivery: "project-manager",
+      apply: "project-manager",
+    };
+    const gated = [...column3, "openspec/formulas/openspec-build.formula.toml"];
+    for (const rel of gated) {
+      const text = read(rel);
+      for (const [phase, role] of Object.entries(roleForPhase)) {
+        const phaseKey = `"gc.human_gate.phase" = "${phase}"`;
+        if (!text.includes(phaseKey)) continue;
+        expect(text, rel).toContain(
+          `${phaseKey}, "gc.human_gate.role" = "${role}"`,
+        );
+        expect(text, rel).not.toContain(
+          `${phaseKey}, "gc.human_gate.role" = "${role === "developer" ? "project-manager" : "developer"}"`,
+        );
+      }
+      expect(text, rel).toContain(
+        "Accept only a reply whose human_gate.role equals gc.human_gate.role.",
+      );
     }
   });
 
@@ -254,11 +280,21 @@ describe("methodology pack graphs", () => {
     const script = read(
       "human-gate/assets/scripts/checks/human-gate-verdict.sh",
     );
+    const decision = read(
+      "human-gate/assets/scripts/checks/human-gate-decision.sh",
+    );
     const prompt = read("human-gate/assets/workflows/confirm-human-gate.md");
-    expect(script).toContain("approve|approved|done|pass)");
-    expect(script).toContain("request-changes|iterate|fail|retry|");
+    const revise = read("human-gate/assets/workflows/revise-phase.md");
+    expect(script).toContain("human-gate-decision.sh");
+    expect(script).toContain('metadata["human_gate.role"]');
+    expect(script).toContain('metadata["gc.human_gate.role"]');
+    expect(decision).toContain("approve|approved|done|pass)");
+    expect(decision).toContain("request-changes|iterate|fail|retry|");
+    expect(decision).toContain("project-manager|developer");
     expect(prompt).toContain("gc mail send human");
     expect(prompt).toContain("Do not pass `--notify`.");
+    expect(prompt).toContain("human_gate.role");
+    expect(revise).toContain("human_gate.role");
     for (const dir of [
       "openspec",
       "speckit",
@@ -271,9 +307,59 @@ describe("methodology pack graphs", () => {
       expect(read(`${dir}/assets/scripts/checks/human-gate-verdict.sh`)).toBe(
         script,
       );
+      expect(read(`${dir}/assets/scripts/checks/human-gate-decision.sh`)).toBe(
+        decision,
+      );
       expect(read(`${dir}/assets/workflows/confirm-human-gate.md`)).toBe(
         prompt,
       );
+      expect(read(`${dir}/assets/workflows/revise-phase.md`)).toBe(revise);
     }
+  });
+
+  it("accepts a gate only from the role that gate names", () => {
+    const decision = path.join(
+      formulasRoot,
+      "human-gate/assets/scripts/checks/human-gate-decision.sh",
+    );
+    const run = (args: string[]) => {
+      try {
+        const stdout = execFileSync("bash", [decision, ...args], {
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+        return { status: 0, stdout, stderr: "" };
+      } catch (error) {
+        const failed = error as {
+          status: number;
+          stdout: string;
+          stderr: string;
+        };
+        return {
+          status: failed.status,
+          stdout: failed.stdout,
+          stderr: failed.stderr,
+        };
+      }
+    };
+
+    expect(run(["project-manager", "approve", "project-manager"]).status).toBe(
+      0,
+    );
+    expect(run(["developer", "approve", "developer"]).status).toBe(0);
+    const wrongRole = run(["project-manager", "approve", "developer"]);
+    expect(wrongRole.status).toBe(1);
+    expect(wrongRole.stderr).toContain("not from project-manager");
+    expect(run(["developer", "approve", "project-manager"]).status).toBe(1);
+    expect(run(["developer", "approve", ""]).status).toBe(1);
+    expect(run(["", "approve", "project-manager"]).status).toBe(1);
+    expect(run(["admin", "approve", "admin"]).status).toBe(1);
+    const changes = run(["developer", "request-changes", "developer"]);
+    expect(changes.status).toBe(1);
+    expect(changes.stderr).toContain("needs another pass");
+    const outsider = run(["developer", "request-changes", "project-manager"]);
+    expect(outsider.status).toBe(1);
+    expect(outsider.stderr).toContain("not from developer");
+    expect(run(["project-manager", "", ""]).status).toBe(1);
   });
 });

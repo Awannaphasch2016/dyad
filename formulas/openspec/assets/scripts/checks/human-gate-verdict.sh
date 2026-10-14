@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Accept a human gate when the confirmation bead's human_gate.verdict is approve.
-# request-changes, or a missing verdict, fails the check so the gate's children run again.
+# Accept a human gate when the confirmation bead's human_gate.verdict is approve
+# and human_gate.role equals the gate bead's gc.human_gate.role.
+# A different role, request-changes, or a missing verdict fails the check.
 
 set -euo pipefail
 
@@ -44,7 +45,7 @@ if [ -z "$ROOT_ID" ]; then
   exit 1
 fi
 
-VERDICT=$(
+PICKED=$(
   gmol "$ROOT_ID" |
     jq -r --arg root "$ROOT_ID" --arg attempt "$ATTEMPT" --arg step "$STEP_ID" '
       [
@@ -59,24 +60,16 @@ VERDICT=$(
         | {
             attempt: ((.metadata["gc.attempt"] // "0") | tonumber? // 0),
             updated_at: (.updated_at // ""),
-            verdict: (.metadata["human_gate.verdict"] // "")
+            verdict: (.metadata["human_gate.verdict"] // ""),
+            role: (.metadata["human_gate.role"] // "")
           }
         | select(.verdict != "")
-      ] | sort_by(.attempt, .updated_at) | last.verdict // ""
+      ] | sort_by(.attempt, .updated_at) | last // {verdict:"", role:""}
+      | "\(.verdict)\t\(.role)"
     '
 )
+VERDICT="${PICKED%%$'\t'*}"
+REPLY_ROLE="${PICKED#*$'\t'}"
+REQUIRED=$(printf '%s\n' "$BEAD_JSON" | jq -r 'if type == "array" then (.[0].metadata["gc.human_gate.role"] // "") else (.metadata["gc.human_gate.role"] // "") end')
 
-case "$VERDICT" in
-  approve|approved|done|pass)
-    echo "Human gate approved"
-    exit 0
-    ;;
-  request-changes|iterate|fail|retry|"")
-    echo "Human gate needs another pass"
-    exit 1
-    ;;
-  *)
-    echo "Unknown human-gate verdict: $VERDICT" >&2
-    exit 1
-    ;;
-esac
+"$(cd "$(dirname "$0")" && pwd)/human-gate-decision.sh" "$REQUIRED" "$VERDICT" "$REPLY_ROLE"

@@ -165,10 +165,11 @@ timeout = "5m"
 id = "accept-apply"
 title = "Stop before applying the OpenSpec change"
 needs = ["scenario-validate"]
-metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "apply", "gc.human_gate.question" = "Apply this OpenSpec change?" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "apply", "gc.human_gate.role" = "project-manager", "gc.human_gate.question" = "Apply this OpenSpec change?" }
 description = """
 OpenSpec's propose workflow stops after tasks and waits for a later request before apply.
 approve opens the task drain. request-changes runs the revision child again.
+Accept only a reply whose human_gate.role equals gc.human_gate.role.
 """
 
 [steps.check]
@@ -182,14 +183,14 @@ timeout = "10m"
 [[steps.children]]
 id = "revise-apply"
 title = "Revise the OpenSpec change"
-metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "apply" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "apply", "gc.human_gate.role" = "project-manager" }
 description_file = "../assets/workflows/revise-phase.md"
 
 [[steps.children]]
 id = "confirm-apply"
 title = "Ask whether to apply the change"
 needs = ["revise-apply"]
-metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "apply", "gc.human_gate.question" = "Apply this OpenSpec change?", "human_gate.loop_step" = "accept-apply" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.human_gate.phase" = "apply", "gc.human_gate.role" = "project-manager", "gc.human_gate.question" = "Apply this OpenSpec change?", "human_gate.loop_step" = "accept-apply" }
 description_file = "../assets/workflows/confirm-human-gate.md"
 
 [[steps]]
