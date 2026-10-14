@@ -247,7 +247,7 @@ What the environment keeps, and what the checkout keeps:
 
 ## Implementation list
 
-Two slices. The first lands on PR #92, in `packages/ops-axi`. The second is the cloud environment for this repo. Neither slice slings a formula.
+The repository, the image, and the command list are in [plans/ops-axi.md](plans/ops-axi.md). The steps below match that plan. Neither slice slings a formula.
 
 ### ops-axi
 
