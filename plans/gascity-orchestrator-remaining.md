@@ -4,12 +4,12 @@ Status: plan. No new runtime change in this document.
 
 ## Important points
 
-1. GasCity orchestrates the whole factory formula, not only the three phase chats.
-2. Discovery, Implementation, and Delivery are human gates. The methodology steps inside them are beads GasCity routes.
-3. A prompt that describes the methodology is not a formula run. The formula run is a sling that materializes those beads.
-4. The agent process lives in a GasCity guest session. Dyad is the window, the tool route, and the verdict.
-5. `handleLocalAgentStream` is legacy. New turns do not use it, and there is no native fallback.
-6. The proof slings `speckit-phased` from PR #148, PR #154, and PR #159, and shows the guest session log beside the Dyad window.
+1. GasCity orchestrates the whole factory formula. Discovery, Implementation, and Delivery are gates on that formula, not the whole job.
+2. A prompt is not a formula run. The run is one sling of `speckit-phased`, which materializes the beads.
+3. The agent runs in a GasCity guest session. `handleLocalAgentStream` is legacy, and there is no native fallback.
+4. The phase bar follows the open bead. **Approve and continue** writes `human_gate.verdict`. It does not unlock the next phase.
+5. The next phase opens only when that gate bead closes. Request changes stays in the same phase. Delivery is not finished until publish closes.
+6. The proof is `speckit-phased` from PR #148, PR #154, and PR #159. The Dyad window matches the bead, beside the guest session log.
 
 ## Change impact matrix
 
@@ -58,6 +58,7 @@ agent.
 | Prove it by writing `src/counter.ts`. | Sling `speckit-phased` from the existing packs. | [PR #148](https://github.com/Awannaphasch2016/dyad/pull/148), [PR #154](https://github.com/Awannaphasch2016/dyad/pull/154), [PR #156](https://github.com/Awannaphasch2016/dyad/pull/156), and [PR #159](https://github.com/Awannaphasch2016/dyad/pull/159) already define that run. |
 | A per-phase prompt is close enough if the text describes Spec Kit. | The prompt payload does not name a formula and does not create a bead graph. | Today's `type: prompt` can be followed or ignored by whoever receives it. A formula run cannot skip a `needs` edge. |
 | Ask, Build, Agent, and Plan stay on `handleLocalAgentStream`. | That loop is legacy. Every agent turn runs in a GasCity guest session. | Two agent loops means two orchestrators. Dyad keeps the window, the files, and the verdict. |
+| **Approve and continue** unlocks the next phase. | The click writes `human_gate.verdict` on the open gate bead. The bar moves when that bead closes. | Today the click inserts `factoryPhaseApprovals` and switches chats. The bead never sees it. |
 
 ## Prompt versus formula
 
@@ -253,7 +254,11 @@ waits. The answer writes `human_gate.verdict` on that bead. GasCity then
 continues the same workflow. Cancel stops the guest session and stops
 waiting on tools.
 
-### 4. Show the real run
+### 4. The phase bar follows the bead
+
+The bar reads the workflow's open bead. The lock, the shade, the step title, and the selected phase come from that bead. **Approve and continue** writes `approve` or `request-changes` on the confirmation bead and stays on that phase. It does not insert `factoryPhaseApprovals` as the unlock, and it does not call `selectChat` or prefill the next chat. Implementation stays locked until `accept-discovery` closes. Delivery stays locked until `accept-implementation` closes. The finished shade waits until the publish bead closes.
+
+### 5. Show the real run
 
 Use the input frozen in PR #159. Record the Dyad window beside
 `gc session logs` and the bead closures.
@@ -262,7 +267,7 @@ Replace the bridge-page recording. A script that calls the tool route in
 a fixed order, a phase bar that starts the next chat, or a prompt that
 describes Spec Kit, is not this proof.
 
-### 5. Keep the failures visible
+### 6. Keep the failures visible
 
 | Failure | What the user sees |
 | --- | --- |
