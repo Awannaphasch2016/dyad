@@ -8,6 +8,7 @@
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { methodologyModuleSource } from "./methodology-catalog.mjs";
 
 export const PM_ROLE = "project-manager";
 export const DEV_ROLE = "developer";
@@ -203,7 +204,8 @@ export function patchThink(source) {
   return source
     .replace(
       importAnchor,
-      `${importAnchor}\nimport { publishOrganizationQuestion } from '../../../services/org/run';`,
+      `${importAnchor}\nimport { publishOrganizationQuestion } from '../../../services/org/run';
+import { advanceMethodology, methodologyStepPrompt } from '../../../services/org/methodology';`,
     )
     .replace(field, `${field}\n\tprivate organizationHold = false;\n`)
     .replace(
@@ -215,14 +217,16 @@ export function patchThink(source) {
     .replace(reasoning, "\t\t\tcase 'reasoning-delta':\n\t\t\t\treturn;")
     .replace(
       finalText,
-      `			if (accumulated.text && !this.organizationHold) {
+      `			const asked = this.organizationHold;
+			if (accumulated.text && !asked) {
 				this.broadcast(WebSocketMessageResponses.CONVERSATION_RESPONSE, {
 					message: accumulated.text,
 					conversationId,
 					isStreaming: false,
 				});
 			}
-			this.organizationHold = false;`,
+			this.organizationHold = false;
+			if (!asked) await advanceMethodology(this.env, this.getAgentId(), 'turn');`,
     )
     .replace(
       toolOutput,
@@ -240,6 +244,58 @@ export function patchThink(source) {
 					return;
 				}
 				this.broadcast(WebSocketMessageResponses.CONVERSATION_RESPONSE, {`,
+    )
+    .replace(
+      "systemPrompt: this.buildSystemPrompt(modelName, aiModelConfig.provider),",
+      "systemPrompt: this.buildSystemPrompt(modelName, aiModelConfig.provider) + await methodologyStepPrompt(this.env, this.getAgentId()),",
+    )
+    .replace(
+      "await stub.chat(text, forwarder);",
+      "await this.configureThinkAgent();\n\t\t\tawait stub.chat(text, forwarder);",
+    );
+}
+
+export function patchThinkAgent(source) {
+  const importAnchor = "import { createSetTitleTool } from './set-title-tool';";
+  const writeAnchor = "write: createWriteTool({ ops }),";
+  const editAnchor = "edit: createEditTool({ ops }),";
+  const deployAnchor = "deploy_space: createDeploySpaceTool({ getStub: () => this.getSpaceStub() }),";
+  requireAnchor(source, importAnchor, "think agent import");
+  requireAnchor(source, writeAnchor, "think write");
+  requireAnchor(source, editAnchor, "think edit");
+  requireAnchor(source, deployAnchor, "think deploy");
+  return source
+    .replace(
+      importAnchor,
+      `${importAnchor}\nimport { methodologyToolDecision } from '../../services/org/methodology';`,
+    )
+    .replace(
+      writeAnchor,
+      "write: this.guardMethodologyTool('write', createWriteTool({ ops })),"
+    )
+    .replace(
+      editAnchor,
+      "edit: this.guardMethodologyTool('edit', createEditTool({ ops })),"
+    )
+    .replace(
+      `${deployAnchor}`,
+      "deploy_space: this.guardMethodologyTool('deploy_space', createDeploySpaceTool({ getStub: () => this.getSpaceStub() })),"
+    )
+    .replace(
+      "override getTools(): ToolSet {",
+      `private guardMethodologyTool(name: string, created: { execute?: (...args: unknown[]) => Promise<unknown> }) {
+		const execute = created.execute?.bind(created);
+		return {
+			...created,
+			execute: async (input: unknown, ...rest: unknown[]) => {
+				const decision = await methodologyToolDecision(this.env, this.name, name, input);
+				if (!decision.allow) return decision.message;
+				return execute?.(input, ...rest);
+			},
+		};
+	}
+
+	override getTools(): ToolSet {`,
     );
 }
 
@@ -303,7 +359,8 @@ export function patchCodingAgent(source) {
   return source
     .replace(
       importAnchor,
-      `${importAnchor}\nimport { claimOrganizationApp, rememberOrganizationRole } from "../../services/org/run";`,
+      `${importAnchor}\nimport { claimOrganizationApp, rememberOrganizationRole } from "../../services/org/run";
+import { assertRunnableMethodology } from "../../services/org/methodology";`,
     )
     .replace(
       connectAnchor,
@@ -318,7 +375,8 @@ export function patchCodingAgent(source) {
     )
     .replace(
       oweAnchor,
-      `        await this.saveToDatabase();
+      `        await assertRunnableMethodology(this.env);
+        await this.saveToDatabase();
 
         this.setState({
             ...this.state,
@@ -674,6 +732,7 @@ export function patchAppsController(source) {
 export function orgRunSource() {
   return `// Organization ownership for the Vibe SDK app row.
 // A question stores a role and a body.
+import { advanceMethodology, resolveMethodology } from './methodology';
 
 const PM_ROLE = 'project-manager';
 const DEV_ROLE = 'developer';
@@ -883,6 +942,8 @@ async function applySchema(env: Env): Promise<void> {
 	const statements = [
 		'ALTER TABLE apps ADD COLUMN org_id TEXT',
 		'ALTER TABLE apps ADD COLUMN created_by TEXT',
+		'ALTER TABLE apps ADD COLUMN methodology TEXT',
+		'ALTER TABLE apps ADD COLUMN methodology_step TEXT',
 		'CREATE TABLE IF NOT EXISTS questions (id TEXT PRIMARY KEY, org_id TEXT NOT NULL, app_id TEXT NOT NULL, target_role_id TEXT NOT NULL, body TEXT NOT NULL, status TEXT NOT NULL, assignment TEXT NOT NULL, created_at INTEGER NOT NULL)',
 		'CREATE TABLE IF NOT EXISTS answers (question_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, body TEXT NOT NULL, created_at INTEGER NOT NULL)',
 	];
@@ -910,7 +971,9 @@ export async function claimOrganizationApp(env: Env, appId: string, userId: stri
 	if (!member || member.role !== PM_ROLE) {
 		throw new Error('Only the Project Manager can create an organization app.');
 	}
-	await env.DB.prepare('UPDATE apps SET org_id = ?, created_by = ? WHERE id = ?').bind(member.orgId, userId, appId).run();
+	const resolved = resolveMethodology((env as { VIBESDK_METHODOLOGY?: string }).VIBESDK_METHODOLOGY);
+	if (!resolved.ok) throw new Error(resolved.message);
+	await env.DB.prepare('UPDATE apps SET org_id = ?, created_by = ?, methodology = ?, methodology_step = ? WHERE id = ?').bind(member.orgId, userId, resolved.record.id, resolved.record.steps[0].id, appId).run();
 }
 
 export async function organizationIdFor(env: Env, userId: string): Promise<string | null> {
@@ -1048,6 +1111,7 @@ export async function acceptOrganizationAnswer(env: Env, appId: string, connecti
 		return { allow: false, message: 'This question already has an answer.' };
 	}
 	await env.DB.prepare("UPDATE questions SET status = 'answered' WHERE id = ? AND status = 'open'").bind(open.id).run();
+	await advanceMethodology(env, appId, 'answer');
 	const name = await memberName(env, actor.userId);
 	const role = roleTitle(actor.role);
 	return { allow: true, message: '', turn: { id: open.id, body: text, name, role, label: turnLabel(name) } };
@@ -1259,6 +1323,7 @@ export async function applyOrganizationRun(checkout) {
   await mkdir(join(checkout, "worker/api/controllers/org"), {
     recursive: true,
   });
+  await writeFile(join(checkout, "worker/services/org/methodology.ts"), methodologyModuleSource());
   await writeFile(join(checkout, "worker/services/org/run.ts"), orgRunSource());
   await writeFile(
     join(checkout, "worker/api/controllers/org/controller.ts"),
@@ -1276,6 +1341,7 @@ export async function applyOrganizationRun(checkout) {
     ["worker/api/routes/index.ts", patchRouteIndex],
     ["worker/agents/think/ask-questions-tool.ts", patchAskQuestionsTool],
     ["worker/agents/core/behaviors/think.ts", patchThink],
+    ["worker/agents/think/ThinkAgent.ts", patchThinkAgent],
     ["worker/api/controllers/agent/controller.ts", patchAgentController],
     ["worker/agents/core/codingAgent.ts", patchCodingAgent],
     ["worker/agents/core/websocket.ts", patchWebsocket],

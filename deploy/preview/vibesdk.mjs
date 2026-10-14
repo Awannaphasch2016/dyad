@@ -185,6 +185,7 @@ export function previewWranglerConfig({ accountId, databaseId, kvId, names }) {
         version: "1.0.0",
       },
       CUSTOM_DOMAIN: names.host,
+      VIBESDK_METHODOLOGY: process.env.VIBESDK_METHODOLOGY || "speckit-phased",
     },
     workers_dev: true,
     preview_urls: false,
