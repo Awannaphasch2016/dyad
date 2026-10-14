@@ -624,7 +624,15 @@ test("the Vibe SDK workflow stays off the Dyad devbox", () => {
   );
   assert.match(workflow, /preview-vibesdk/);
   assert.match(workflow, /VIBESDK_METHODOLOGY: speckit-phased/);
-  assert.match(workflow, /head\.ref == 'cursor\/speckit-live-pack-0539'/);
+  assert.match(workflow, /head\.ref == 'cursor\/speckit-one-app-run-0539'/);
+  const walk = readFileSync(
+    new URL("../../e2e-vibesdk/tests/two-roles.spec.js", import.meta.url),
+    "utf8",
+  );
+  assert.match(walk, /iframe\[title="App Preview"\]/);
+  assert.match(walk, /shopReady/);
+  assert.equal(walk.includes('fill("Build a short hours page'), false);
+  assert.equal(walk.includes('name: "New build"'), false);
   assert.match(workflow, /vibesdk-preview-pr-/);
   assert.match(workflow, /doppler-project: dyad/);
   assert.match(workflow, /doppler-config: preview/);
@@ -875,6 +883,10 @@ const REDEPLOY_AFTER_ATTEMPT = 8;
 						</p>
 `);
   assert.match(pane, /return 'terminal'/);
+  assert.match(pane, /response\.status === 401 \|\| response\.status === 403/);
+  assert.equal(pane.includes("response.status === 404"), false);
+  assert.equal(pane.includes("response.status === 503"), false);
+  assert.match(pane, /MAX_RETRIES = 15/);
   assert.match(pane, /Preview cannot show this snapshot\./);
   assert.match(pane, /Opening preview/);
   assert.equal(pane.includes("requestRedeploy"), false);

@@ -229,6 +229,8 @@ test("the transcript uses three avatars and one human interaction", () => {
   assert.equal(run.includes("' · '"), false);
   assert.equal(run.includes("ALTER TABLE answers ADD"), false);
   assert.equal(run.includes("phase"), false);
+  assert.match(run, /keepBeadMessage/);
+  assert.match(run, /Continue the current step/);
 });
 
 test("the create request owes the run before any browser socket", () => {
@@ -280,8 +282,64 @@ test("the create request owes the run before any browser socket", () => {
       "\t\t\t\t\tsendWebSocketMessage(ws, 'get_conversation_state');",
     ].join("\n"),
   );
-  assert.equal(chat.includes("sendWebSocketMessage(ws, 'generate_all')"), false);
+  assert.equal(
+    chat.includes("sendWebSocketMessage(ws, 'generate_all')"),
+    false,
+  );
   assert.match(chat, /get_conversation_state/);
+  const reconnect = patchUseChat(
+    [
+      "\t\t\t\t\t// Request file generation for new chats only",
+      "\t\t\t\t\tif (!disableGenerate && urlChatId === 'new') {",
+      "\t\t\t\t\t\tlogger.debug('🔄 Starting code generation for new chat');",
+      "\t\t\t\t\t\tsetIsGenerating(true);",
+      "\t\t\t\t\t\tsendWebSocketMessage(ws, 'generate_all');",
+      "\t\t\t\t\t}",
+      "\t\t\t\t\tif (isRetry) {",
+      "\t\t\t\t\t\t// Clear old messages on reconnect to prevent duplicates",
+      "\t\t\t\t\t\tsetMessages(() => [",
+      "\t\t\t\t\t\t\tcreateAIMessage('websocket_reconnected', 'Seems we lost connection for a while there. Fixed now!', true)",
+      "\t\t\t\t\t\t]);",
+      "\t\t\t\t\t}",
+    ].join("\n"),
+  );
+  assert.match(
+    reconnect,
+    /isRetry && !sessionStorage\.getItem\('vibesdk-shared-role'\)/,
+  );
+  assert.equal(
+    reconnect.includes(
+      "if (isRetry) {\n\t\t\t\t\t\t// Clear old messages on reconnect",
+    ),
+    false,
+  );
+  const deployed = patchConversationHandler(
+    [
+      "    createAIMessage,",
+      "            case 'conversation_response': {",
+      "                // Use concrete conversationId when available; otherwise use placeholder id",
+      "                let conversationId = message.conversationId ?? 'conversation_response';",
+      "                    setIsInitialStateRestored(true);",
+      "                    ",
+      "                    if (state.shouldBeGenerating && !isGenerating) {",
+      "                        logger.debug('🔄 Reconnected with shouldBeGenerating=true, auto-resuming generation');",
+      "                        setIsGenerating(true); ",
+      "                        updateStage('code', { status: 'active' });",
+      "                        sendWebSocketMessage(websocket, 'generate_all');",
+      "                    }",
+      "                }",
+      "                break;",
+      "            case 'deployment_completed': {",
+      "                setIsPreviewDeploying(false);",
+      "                const finalPreviewURL = getPreviewUrl(message.previewURL, message.tunnelURL);",
+      "                setPreviewUrl(finalPreviewURL);",
+      "                break;",
+      "            }",
+    ].join("\n"),
+  );
+  assert.match(deployed, /setShouldRefreshPreview\(true\)/);
+  assert.match(deployed, /setShouldRefreshPreview\(false\)/);
+  assert.equal(handler.includes("setShouldRefreshPreview"), false);
 });
 
 test("opening another app clears that screen before the next poll", () => {

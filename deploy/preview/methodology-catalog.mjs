@@ -83,7 +83,7 @@ export const METHODOLOGY_CATALOG = [
       ),
       implement(
         "implement",
-        "Implement tasks.md. You may write the product files, call deploy_space, then get_browser_console_logs.",
+        "Write the shop website pages from tasks.md before calling deploy_space. The preview must show those pages. Then call get_browser_console_logs.",
       ),
       write(
         "review",
@@ -817,7 +817,6 @@ export async function methodologyToolDecision(env: unknown, appId: string, tool:
   const stepId = stored?.methodology_step || resolved.record.steps[0].id;
   const step = stepAt(resolved.record, stepId);
   const decision = toolDecision(resolved.record, stepId, tool, input);
-  if (decision.allow && tool === "deploy_space") await advanceMethodology(database, appId, "deploy");
   if (decision.allow && writeAdvances(step, input)) {
     await advanceMethodology(database, appId, "turn");
     const nextId = await methodologyStepId(database, appId);

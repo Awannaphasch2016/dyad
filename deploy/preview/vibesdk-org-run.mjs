@@ -200,7 +200,12 @@ export function patchThink(source) {
 			}`;
   const toolOutput = `				const toolName = toolNames.get(toolCallId) || 'tool';
 				const args = toolInputs.get(toolCallId) || {};
-				this.broadcast(WebSocketMessageResponses.CONVERSATION_RESPONSE, {`;
+				this.broadcast(WebSocketMessageResponses.CONVERSATION_RESPONSE, {
+					message: '',
+					conversationId,
+					isStreaming: false,
+					tool: this.buildToolBroadcastPayload(toolName, { input: args, output }, 'success', toolCallId),
+				});`;
   requireAnchor(source, field, "think field");
   requireAnchor(source, prompt, "think prompt");
   requireAnchor(source, importAnchor, "think import");
@@ -217,7 +222,7 @@ import { advanceMethodology, methodologyStepId, methodologyStepPrompt, methodolo
     )
     .replace(
       field,
-      `${field}\n\tprivate organizationHold = false;\n\tprivate methodologyStepAtStart = '';\n`,
+      `${field}\n\tprivate organizationHold = false;\n\tprivate methodologyStepAtStart = '';\n\tprivate shopPagesWritten = false;\n`,
     )
     .replace(
       prompt,
@@ -230,21 +235,7 @@ import { advanceMethodology, methodologyStepId, methodologyStepPrompt, methodolo
     .replace(holdReset, `\t\tthis.organizationHold = false;\n${holdReset}`)
     .replace(textDelta, "\t\t\t\t\taccumulated.text += delta;")
     .replace(reasoning, "\t\t\tcase 'reasoning-delta':\n\t\t\t\treturn;")
-    .replace(
-      finalText,
-      `			const asked = this.organizationHold;
-			if (accumulated.text && !asked) {
-				this.broadcast(WebSocketMessageResponses.CONVERSATION_RESPONSE, {
-					message: accumulated.text,
-					conversationId,
-					isStreaming: false,
-				});
-			}
-			this.organizationHold = false;
-			if (!asked && (await methodologyStepId(this.env, this.getAgentId())) === this.methodologyStepAtStart) {
-				await advanceMethodology(this.env, this.getAgentId(), 'turn');
-			}`,
-    )
+    .replace(finalText, `			this.organizationHold = false;`)
     .replace(
       toolOutput,
       `				const toolName = toolNames.get(toolCallId) || 'tool';
@@ -262,7 +253,70 @@ import { advanceMethodology, methodologyStepId, methodologyStepPrompt, methodolo
 					});
 					return;
 				}
-				this.broadcast(WebSocketMessageResponses.CONVERSATION_RESPONSE, {`,
+`,
+    )
+    .replace(
+      `			case 'reasoning-end': {
+				this.broadcast(WebSocketMessageResponses.CONVERSATION_RESPONSE, {
+					message: '',
+					conversationId,
+					isStreaming: true,
+					reasoning: { done: true },
+				});
+				return;
+			}`,
+      "\t\t\tcase 'reasoning-end':\n\t\t\t\treturn;",
+    )
+    .replace(
+      `				toolNames.set(toolCallId, toolName);
+				this.broadcast(WebSocketMessageResponses.CONVERSATION_RESPONSE, {
+					message: '',
+					conversationId,
+					isStreaming: true,
+					tool: this.buildToolBroadcastPayload(toolName, undefined, 'start', toolCallId),
+				});
+				return;`,
+      "\t\t\t\ttoolNames.set(toolCallId, toolName);\n\t\t\t\treturn;",
+    )
+    .replace(
+      `			case 'tool-output-error': {
+				const { toolCallId, errorText } = chunk as { toolCallId: string; errorText: string };
+				const toolName = toolNames.get(toolCallId) || 'tool';
+				const args = toolInputs.get(toolCallId) || {};
+				this.broadcast(WebSocketMessageResponses.CONVERSATION_RESPONSE, {
+					message: '',
+					conversationId,
+					isStreaming: false,
+					tool: this.buildToolBroadcastPayload(toolName, { input: args, error: errorText }, 'error', toolCallId),
+				});
+				return;
+			}`,
+      "\t\t\tcase 'tool-output-error':\n\t\t\t\treturn;",
+    )
+    .replace(
+      `	private buildToolBroadcastPayload(
+		toolName: string,
+		state: { input?: Record<string, unknown>; output?: unknown; error?: string } | undefined,
+		status: 'start' | 'success' | 'error',
+		id?: string,
+	): { name: string; status: 'start' | 'success' | 'error'; args?: Record<string, unknown>; result?: string; id?: string } {
+		const payload: { name: string; status: 'start' | 'success' | 'error'; args?: Record<string, unknown>; result?: string; id?: string } = {
+			name: toolName,
+			status,
+			args: state?.input,
+			id,
+		};
+		if (status === 'success') {
+			if (typeof state?.output === 'string') payload.result = state.output;
+			else if (state?.output !== undefined) payload.result = JSON.stringify(state.output);
+		} else if (status === 'error') {
+			if (typeof state?.error === 'string') payload.result = state.error;
+		}
+		return payload;
+	}
+
+`,
+      "",
     )
     .replace(
       "systemPrompt: this.buildSystemPrompt(modelName, aiModelConfig.provider),",
@@ -270,7 +324,22 @@ import { advanceMethodology, methodologyStepId, methodologyStepPrompt, methodolo
     )
     .replace(
       "await stub.chat(text, forwarder);",
-      "this.methodologyStepAtStart = await methodologyStepId(this.env, this.getAgentId());\n\t\t\tawait this.configureThinkAgent();\n\t\t\tawait stub.chat(text, forwarder);",
+      "let beadTurns = 0;\n\t\t\tdo {\n\t\t\t\tthis.methodologyStepAtStart = await methodologyStepId(this.env, this.getAgentId());\n\t\t\t\tawait this.configureThinkAgent();\n\t\t\t\tawait stub.chat(beadTurns === 0 ? text : 'Continue the current step.', forwarder);\n\t\t\t\tbeadTurns += 1;\n\t\t\t\tif (this.organizationHold || beadTurns >= 8) break;\n\t\t\t\tconst stepNow = await methodologyStepId(this.env, this.getAgentId());\n\t\t\t\tif (stepNow === this.methodologyStepAtStart) await advanceMethodology(this.env, this.getAgentId(), 'turn');\n\t\t\t} while (beadTurns < 8);",
+    )
+    .replace(
+      `		try {
+			const url = await this.getBrowserPreviewURL();
+			this.broadcast(WebSocketMessageResponses.DEPLOYMENT_COMPLETED, { previewURL: url });
+		} catch (e) {
+			this.logger.warn('Failed to surface preview after deploy_space', e);
+		}`,
+      `		try {
+			const url = await this.getBrowserPreviewURL();
+			this.broadcast(WebSocketMessageResponses.DEPLOYMENT_COMPLETED, { previewURL: url });
+			if (this.shopPagesWritten) await advanceMethodology(this.env, this.getAgentId(), 'deploy');
+		} catch (e) {
+			this.logger.warn('Failed to surface preview after deploy_space', e);
+		}`,
     )
     .replace(
       "In a building turn, do NOT end after only writing files:",
@@ -282,6 +351,22 @@ import { advanceMethodology, methodologyStepId, methodologyStepPrompt, methodolo
 			'3. If the deploy reports build errors or the console shows errors, fix the code and repeat from step 1 until the deploy succeeds and the console is clean.',
 			'A building turn should finish with a successful \`deploy_space\` and a clean \`get_browser_console_logs\` check.',`,
       "'After deploy_space succeeds, call get_browser_console_logs and fix errors the console shows.',",
+    )
+    .replace(
+      "await this.maybeMirrorFile(toolName, args, seenWrittenFiles);",
+      "await this.maybeMirrorFile(toolName, args, seenWrittenFiles);\n\t\t\t\t\tthis.noteShopPage(args);",
+    )
+    .replace(
+      "\t/**\n\t * The model deployed the SpaceDO itself via the `deploy_space` tool.",
+      `\tprivate noteShopPage(args: Record<string, unknown>) {
+\t\tconst path = ['path', 'filePath', 'file']
+\t\t\t.map((key) => args[key])
+\t\t\t.find((value): value is string => typeof value === 'string');
+\t\tif (path && /\\.(tsx|jsx|html|vue)$/i.test(path)) this.shopPagesWritten = true;
+\t}
+
+\t/**
+\t * The model deployed the SpaceDO itself via the \`deploy_space\` tool.`,
     );
 }
 
@@ -677,6 +762,14 @@ export function patchChat(source) {
     .replace(
       sendAnchor,
       "\t\t\tif (!sessionStorage.getItem('vibesdk-shared-role')) sendUserMessage(newMessage);",
+    )
+    .replace(
+      "\tuseEffect(() => {\n\t\tif (hasSeenPreview.current) return;\n\n\t\tconst markdownFiles = files.filter(isMarkdownFile);",
+      "\tuseEffect(() => {\n\t\tif (previewUrl && sessionStorage.getItem('vibesdk-shared-role')) {\n\t\t\tsetView('preview');\n\t\t\thasSeenPreview.current = true;\n\t\t\treturn;\n\t\t}\n\t\tif (hasSeenPreview.current) return;\n\n\t\tconst markdownFiles = files.filter(isMarkdownFile);",
+    )
+    .replace(
+      "{isThinking &&\n\t\t\t\t\t\t\t\t\t!otherMessages.some(\n\t\t\t\t\t\t\t\t\t\t(m) => m.ui?.isThinking,\n\t\t\t\t\t\t\t\t\t) && (",
+      "{isThinking &&\n\t\t\t\t\t\t\t\t\t!sessionStorage.getItem('vibesdk-shared-role') &&\n\t\t\t\t\t\t\t\t\t!otherMessages.some(\n\t\t\t\t\t\t\t\t\t\t(m) => m.ui?.isThinking,\n\t\t\t\t\t\t\t\t\t) && (",
     );
 }
 
@@ -804,14 +897,6 @@ function firstQuestion(args: Record<string, unknown> | undefined): { body: strin
 	if (!first?.question) return null;
 	const assigned = assignRole(first.targetRole);
 	return { body: first.question.trim(), targetRole: assigned.targetRole, assignment: assigned.assignment };
-}
-
-function send(connection: WebSocket, data: Record<string, unknown>): void {
-	try {
-		connection.send(JSON.stringify({ type: 'conversation_response', ...data }));
-	} catch {
-		// A closed socket does not receive the question.
-	}
 }
 
 const actorsByConnection = new Map<string, Actor>();
@@ -1112,25 +1197,9 @@ export async function publishOrganizationQuestion(input: {
 		await input.env.DB.prepare('INSERT INTO questions (id, org_id, app_id, target_role_id, body, status, assignment, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').bind(id, orgId, input.appId, question.targetRole, question.body, 'open', question.assignment, Date.now()).run();
 		stored = { id, org_id: orgId, app_id: input.appId, target_role_id: question.targetRole, body: question.body, status: 'open', assignment: question.assignment };
 	}
-	const targetRole = stored?.target_role_id ?? question.targetRole;
-	const body = stored?.body ?? question.body;
-	for (const socket of input.sockets) {
-		const actor = readOrganizationRole(socket);
-		if (actor?.role === targetRole) {
-			send(socket, {
-				message: '',
-				conversationId: input.conversationId,
-				isStreaming: false,
-				tool: { name: 'ask_questions', status: 'success', args: { questions: [{ question: body }] } },
-			});
-		} else {
-			send(socket, {
-				message: waitingLine(targetRole),
-				conversationId: input.conversationId,
-				isStreaming: false,
-			});
-		}
-	}
+	void stored;
+	void input.sockets;
+	void input.conversationId;
 }
 
 export async function acceptOrganizationAnswer(env: Env, appId: string, connection: WebSocket, message: string): Promise<{ allow: boolean; message: string; turn?: { id: string; body: string; name: string; role: string; label: string } }> {
@@ -1161,17 +1230,44 @@ export async function redactConversation(env: Env, appId: string, connection: We
 	return stripBodies(state, hidden);
 }
 
+function hostNarration(text: string): boolean {
+	const value = text.trim();
+	return value === 'Continue the current step.' || value === 'Continue the current step' || value.includes('Seems we lost connection for a while there');
+}
+
+function keepBeadMessage(message: Record<string, unknown>): boolean {
+	const content = typeof message.content === 'string' ? message.content.trim() : '';
+	if (hostNarration(content) || message.role !== 'user') return false;
+	return content.length > 0;
+}
+
 function stripBodies(value: unknown, hidden: { body: string; target_role_id: string }[]): unknown {
-	if (hidden.length === 0) return value;
 	const walk = (current: unknown): unknown => {
 		if (typeof current === 'string') {
-			let next = current;
+			let next = current.split('Continue the current step.').join('').split('Seems we lost connection for a while there. Fixed now!').join('');
 			for (const question of hidden) {
 				if (question.body && next.includes(question.body)) next = next.split(question.body).join(waitingLine(question.target_role_id));
 			}
 			return next;
 		}
-		if (Array.isArray(current)) return current.map(walk);
+		if (Array.isArray(current)) {
+			const next: unknown[] = [];
+			for (const item of current) {
+				const walked = walk(item);
+				if (!walked || typeof walked !== 'object' || Array.isArray(walked)) {
+					next.push(walked);
+					continue;
+				}
+				const record = walked as Record<string, unknown>;
+				if (typeof record.role !== 'string') {
+					next.push(walked);
+					continue;
+				}
+				if (!keepBeadMessage(record)) continue;
+				next.push(record.role === 'assistant' ? { ...record, content: '', reasoning: undefined } : record);
+			}
+			return next;
+		}
 		if (!current || typeof current !== 'object') return current;
 		const record: Record<string, unknown> = {};
 		for (const [key, child] of Object.entries(current as Record<string, unknown>)) record[key] = walk(child);
@@ -1292,7 +1388,7 @@ export function patchUserMessage(source) {
     )
     .replace(
       helperAnchor,
-      "\treturn message.replace(/<system_context>[\\s\\S]*?<\\/system_context>\\n/gi, '').trim();\n}\n\nfunction orgVisibleText(message: string): string {\n\treturn message\n\t\t.replaceAll('Waiting on the Project Manager.', '')\n\t\t.replaceAll('Waiting on the Developer.', '')\n\t\t.trim();\n}",
+      "\treturn message.replace(/<system_context>[\\s\\S]*?<\\/system_context>\\n/gi, '').trim();\n}\n\nfunction orgVisibleText(message: string): string {\n\treturn message\n\t\t.replaceAll('Waiting on the Project Manager.', '')\n\t\t.replaceAll('Waiting on the Developer.', '')\n\t\t.replaceAll('Continue the current step.', '')\n\t\t.replaceAll('Seems we lost connection for a while there. Fixed now!', '')\n\t\t.trim();\n}",
     );
 }
 
@@ -1313,7 +1409,7 @@ export function patchConversationHandler(source) {
   requireAnchor(source, importAnchor, "conversation import");
   requireAnchor(source, caseAnchor, "conversation response");
   requireAnchor(source, resumeAnchor, "conversation resume");
-  return source
+  const refreshed = source
     .replace(importAnchor, "    createAIMessage,\n    createUserMessage,\n")
     .replace(
       resumeAnchor,
@@ -1345,13 +1441,40 @@ export function patchConversationHandler(source) {
 
 `,
     );
+  const deployDone = `            case 'deployment_completed': {
+                setIsPreviewDeploying(false);
+                const finalPreviewURL = getPreviewUrl(message.previewURL, message.tunnelURL);
+                setPreviewUrl(finalPreviewURL);
+                break;
+            }`;
+  if (!refreshed.includes(deployDone)) return refreshed;
+  return refreshed.replace(
+    deployDone,
+    `            case 'deployment_completed': {
+                setIsPreviewDeploying(false);
+                const finalPreviewURL = getPreviewUrl(message.previewURL, message.tunnelURL);
+                setPreviewUrl(finalPreviewURL);
+                setTimeout(() => {
+                    setShouldRefreshPreview(true);
+                    setTimeout(() => setShouldRefreshPreview(false), 100);
+                }, 500);
+                break;
+            }`,
+  );
 }
 
 export function patchUseChat(source) {
   const anchor =
     "\t\t\t\t\t// Request file generation for new chats only\n\t\t\t\t\tif (!disableGenerate && urlChatId === 'new') {\n\t\t\t\t\t\tlogger.debug('🔄 Starting code generation for new chat');\n\t\t\t\t\t\tsetIsGenerating(true);\n\t\t\t\t\t\tsendWebSocketMessage(ws, 'generate_all');\n\t\t\t\t\t}\n";
+  const reconnect =
+    "\t\t\t\t\tif (isRetry) {\n\t\t\t\t\t\t// Clear old messages on reconnect to prevent duplicates\n\t\t\t\t\t\tsetMessages(() => [\n\t\t\t\t\t\t\tcreateAIMessage('websocket_reconnected', 'Seems we lost connection for a while there. Fixed now!', true)\n\t\t\t\t\t\t]);\n\t\t\t\t\t}";
   requireAnchor(source, anchor, "chat open generate");
-  return source.replace(anchor, "");
+  const cleared = source.replace(anchor, "");
+  if (!cleared.includes(reconnect)) return cleared;
+  return cleared.replace(
+    reconnect,
+    "\t\t\t\t\tif (isRetry && !sessionStorage.getItem('vibesdk-shared-role')) {\n\t\t\t\t\t\tsetMessages(() => [\n\t\t\t\t\t\t\tcreateAIMessage('websocket_reconnected', 'Seems we lost connection for a while there. Fixed now!', true)\n\t\t\t\t\t\t]);\n\t\t\t\t\t}",
+  );
 }
 
 export async function applyOrganizationRun(checkout) {
