@@ -118,7 +118,7 @@ test("the project manager starts the organization app and each role answers the 
   browser,
 }) => {
   test.skip(!process.env.VIBESDK_URL, "VIBESDK_URL is required");
-  test.setTimeout(1_200_000);
+  test.setTimeout(5 * 60 * 1000);
   mkdirSync("artifacts", { recursive: true });
   const pmContext = await browser.newContext({
     recordVideo: {
@@ -152,12 +152,12 @@ test("the project manager starts the organization app and each role answers the 
     const pmBox = pm.locator("textarea").first();
     await pmBox.fill(PROMPT);
     await pmBox.press("Enter");
-    await pm.waitForURL(/\/chat\/(?!new)/, { timeout: 180_000 });
+    await pm.waitForURL(/\/chat\/(?!new)/, { timeout: 90_000 });
     const appUrl = new URL(pm.url());
     await shot(pm, "project-manager-started");
 
     const appLink = dev.locator(`a[href="${appUrl.pathname}"]`);
-    await expect(appLink.first()).toBeVisible({ timeout: 90_000 });
+    await expect(appLink.first()).toBeVisible({ timeout: 45_000 });
     await appLink.first().click();
     await expect(pm.getByRole("button", { name: "Make public" })).toHaveCount(
       0,
@@ -187,7 +187,7 @@ test("the project manager starts the organization app and each role answers the 
     await shot(pm, "project-manager-named-turn");
     await shot(dev, "developer-sees-named-turn");
 
-    const deadline = Date.now() + 10 * 60 * 1000;
+    const deadline = Date.now() + 3 * 60 * 1000;
     let quietSince = 0;
     while (Date.now() < deadline && answered.size < 2) {
       const pmQuestion = await questionText(pm);
@@ -200,7 +200,7 @@ test("the project manager starts the organization app and each role answers the 
       const asked = pmQuestion || devQuestion;
       if (!speaker || !listener || !asked || answered.has(asked)) {
         if (answered.size > 0 && quietSince === 0) quietSince = Date.now();
-        if (answered.size > 0 && Date.now() - quietSince > 180_000) break;
+        if (answered.size > 0 && Date.now() - quietSince > 20_000) break;
         await pm.waitForTimeout(3000);
         continue;
       }
@@ -273,10 +273,10 @@ test("the project manager starts the organization app and each role answers the 
 
     expect(answered.size).toBeGreaterThan(0);
     await expect(pm.getByText("Orange").first()).toBeVisible({
-      timeout: 180_000,
+      timeout: 20_000,
     });
     await expect(dev.getByText("Orange").first()).toBeVisible({
-      timeout: 180_000,
+      timeout: 20_000,
     });
     await pm.waitForTimeout(2000);
     await dev.waitForTimeout(2000);

@@ -18,6 +18,9 @@ import {
   orgRunSource,
   patchAppService,
   patchChat,
+  patchCodingAgent,
+  patchConversationHandler,
+  patchUseChat,
   patchUserMessage,
   presentQuestion,
   redactQuestionText,
@@ -223,4 +226,57 @@ test("the transcript uses three avatars and one human interaction", () => {
   assert.equal(run.includes("' · '"), false);
   assert.equal(run.includes("ALTER TABLE answers ADD"), false);
   assert.equal(run.includes("phase"), false);
+});
+
+test("the create request owes the run before any browser socket", () => {
+  const coding = patchCodingAgent(
+    [
+      'import { AppService, ModelConfigService } from "worker/database";',
+      "        this.logger().info(`Agent connected for agent ${this.getAgentId()}`, { connection, ctx });",
+      "            updatedAt: new Date()",
+      "            });",
+      "        this.logger().info(`App saved successfully to database for agent ${this.state.metadata.agentId}`, {",
+      "        await this.saveToDatabase();",
+      "        ",
+      "        return this.state;",
+    ].join("\n"),
+  );
+  const owed = coding.indexOf("shouldBeGenerating: true");
+  assert.ok(owed > coding.indexOf("await this.saveToDatabase();"));
+  const handler = patchConversationHandler(
+    [
+      "    createAIMessage,",
+      "            case 'conversation_response': {",
+      "                // Use concrete conversationId when available; otherwise use placeholder id",
+      "                let conversationId = message.conversationId ?? 'conversation_response';",
+      "                    setIsInitialStateRestored(true);",
+      "                    ",
+      "                    if (state.shouldBeGenerating && !isGenerating) {",
+      "                        logger.debug('🔄 Reconnected with shouldBeGenerating=true, auto-resuming generation');",
+      "                        setIsGenerating(true); ",
+      "                        updateStage('code', { status: 'active' });",
+      "                        sendWebSocketMessage(websocket, 'generate_all');",
+      "                    }",
+      "                }",
+      "                break;",
+    ].join("\n"),
+  );
+  const restored = handler.indexOf("setIsInitialStateRestored(true);");
+  const resume = handler.indexOf(
+    "sendWebSocketMessage(websocket, 'generate_all')",
+  );
+  assert.ok(resume > handler.indexOf("}", restored));
+  const chat = patchUseChat(
+    [
+      "\t\t\t\t\t// Request file generation for new chats only",
+      "\t\t\t\t\tif (!disableGenerate && urlChatId === 'new') {",
+      "\t\t\t\t\t\tlogger.debug('🔄 Starting code generation for new chat');",
+      "\t\t\t\t\t\tsetIsGenerating(true);",
+      "\t\t\t\t\t\tsendWebSocketMessage(ws, 'generate_all');",
+      "\t\t\t\t\t}",
+      "\t\t\t\t\tsendWebSocketMessage(ws, 'get_conversation_state');",
+    ].join("\n"),
+  );
+  assert.equal(chat.includes("sendWebSocketMessage(ws, 'generate_all')"), false);
+  assert.match(chat, /get_conversation_state/);
 });

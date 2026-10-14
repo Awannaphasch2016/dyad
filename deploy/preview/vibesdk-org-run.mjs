@@ -293,9 +293,13 @@ export function patchCodingAgent(source) {
   const saveAnchor = `            updatedAt: new Date()
             });
         this.logger().info(\`App saved successfully to database for agent \${this.state.metadata.agentId}\`, {`;
+  const oweAnchor = `        await this.saveToDatabase();
+        
+        return this.state;`;
   requireAnchor(source, importAnchor, "coding import");
   requireAnchor(source, connectAnchor, "coding connect");
   requireAnchor(source, saveAnchor, "coding save");
+  requireAnchor(source, oweAnchor, "coding owe");
   return source
     .replace(
       importAnchor,
@@ -311,6 +315,17 @@ export function patchCodingAgent(source) {
             });
         await claimOrganizationApp(this.env, this.state.metadata.agentId, this.state.metadata.userId);
         this.logger().info(\`App saved successfully to database for agent \${this.state.metadata.agentId}\`, {`,
+    )
+    .replace(
+      oweAnchor,
+      `        await this.saveToDatabase();
+
+        this.setState({
+            ...this.state,
+            shouldBeGenerating: true,
+        });
+
+        return this.state;`,
     );
 }
 
@@ -1172,10 +1187,33 @@ export function patchConversationHandler(source) {
   const importAnchor = "    createAIMessage,\n";
   const caseAnchor =
     "            case 'conversation_response': {\n                // Use concrete conversationId when available; otherwise use placeholder id\n                let conversationId = message.conversationId ?? 'conversation_response';\n";
+  const resumeAnchor = `                    setIsInitialStateRestored(true);
+                    
+                    if (state.shouldBeGenerating && !isGenerating) {
+                        logger.debug('🔄 Reconnected with shouldBeGenerating=true, auto-resuming generation');
+                        setIsGenerating(true); 
+                        updateStage('code', { status: 'active' });
+                        sendWebSocketMessage(websocket, 'generate_all');
+                    }
+                }
+                break;`;
   requireAnchor(source, importAnchor, "conversation import");
   requireAnchor(source, caseAnchor, "conversation response");
+  requireAnchor(source, resumeAnchor, "conversation resume");
   return source
     .replace(importAnchor, "    createAIMessage,\n    createUserMessage,\n")
+    .replace(
+      resumeAnchor,
+      `                    setIsInitialStateRestored(true);
+                }
+                if (state.shouldBeGenerating && !isGenerating) {
+                    logger.debug('🔄 Reconnected with shouldBeGenerating=true, auto-resuming generation');
+                    setIsGenerating(true);
+                    updateStage('code', { status: 'active' });
+                    sendWebSocketMessage(websocket, 'generate_all');
+                }
+                break;`,
+    )
     .replace(
       caseAnchor,
       `${caseAnchor}                if (message.speaker && message.conversationId?.startsWith('org-answer-')) {
@@ -1194,6 +1232,13 @@ export function patchConversationHandler(source) {
 
 `,
     );
+}
+
+export function patchUseChat(source) {
+  const anchor =
+    "\t\t\t\t\t// Request file generation for new chats only\n\t\t\t\t\tif (!disableGenerate && urlChatId === 'new') {\n\t\t\t\t\t\tlogger.debug('🔄 Starting code generation for new chat');\n\t\t\t\t\t\tsetIsGenerating(true);\n\t\t\t\t\t\tsendWebSocketMessage(ws, 'generate_all');\n\t\t\t\t\t}\n";
+  requireAnchor(source, anchor, "chat open generate");
+  return source.replace(anchor, "");
 }
 
 export async function applyOrganizationRun(checkout) {
@@ -1234,6 +1279,7 @@ export async function applyOrganizationRun(checkout) {
       "src/routes/chat/utils/handle-websocket-message.ts",
       patchConversationHandler,
     ],
+    ["src/routes/chat/hooks/use-chat.ts", patchUseChat],
     ["worker/api/websocketTypes.ts", patchSocketType],
   ];
   for (const [relative, patch] of patches) {
