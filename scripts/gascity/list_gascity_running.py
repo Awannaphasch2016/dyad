@@ -2,10 +2,13 @@
 """Print running machines across AWS regions. Does not print secret values."""
 
 import json
+import re
 import subprocess
 import sys
+import time
 
 HOME_REGION = "ap-southeast-1"
+RETRY_WAITS = (15, 15, 15, 15, 15, 15)
 
 
 def aws_json(args, region):
@@ -24,6 +27,27 @@ def aws_json(args, region):
     if not proc.stdout.strip():
         return {}
     return json.loads(proc.stdout)
+
+
+def denial_label(message):
+    kind = "explicit-deny" if "explicit deny" in message.lower() else "not-allowed"
+    match = re.search(r"\(([A-Za-z]+)\)", message)
+    code = match.group(1) if match else "unknown"
+    return f"kind={kind} code={code}"
+
+
+def describe_regions(invoke, wait):
+    payload = invoke()
+    if not payload.get("denied"):
+        return payload
+    print(f"describe-regions waiting {denial_label(payload['denied'])}", flush=True)
+    for delay in RETRY_WAITS:
+        wait(delay)
+        payload = invoke()
+        if not payload.get("denied"):
+            return payload
+        print(f"describe-regions waiting {denial_label(payload['denied'])}", flush=True)
+    return payload
 
 
 def regions(payload):
@@ -94,9 +118,12 @@ def ecs_lines(region, clusters):
 
 
 def main():
-    listed = aws_json(["ec2", "describe-regions"], HOME_REGION)
+    listed = describe_regions(
+        lambda: aws_json(["ec2", "describe-regions"], HOME_REGION),
+        time.sleep,
+    )
     if listed.get("denied"):
-        print(f"describe-regions denied {listed['denied']}")
+        print(f"describe-regions denied {denial_label(listed['denied'])}")
         return 1
     found_regions = regions(listed)
     ec2_count = 0

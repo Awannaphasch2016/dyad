@@ -45,6 +45,20 @@ def trust_policy(account_id):
     }
 
 
+def policy_action_present(document, action):
+    if isinstance(document, str):
+        document = json.loads(document)
+    if not isinstance(document, dict):
+        return False
+    for statement in document.get("Statement", []):
+        actions = statement.get("Action", [])
+        if isinstance(actions, str):
+            actions = [actions]
+        if action in actions:
+            return True
+    return False
+
+
 def permissions_policy(account_id):
     task_roles = [
         f"arn:aws:iam::{account_id}:role/formula-preview-execution",
@@ -430,7 +444,33 @@ def ensure_role(aws, env, account_id):
             f"file://{policy_file}",
         ],
     )
+    live = run_aws(
+        aws,
+        env,
+        [
+            "iam",
+            "get-role-policy",
+            "--role-name",
+            ROLE_NAME,
+            "--policy-name",
+            "formula-preview",
+        ],
+    )
+    for action in (
+        "ec2:DescribeInstances",
+        "ec2:DescribeRegions",
+        "ecs:ListClusters",
+        "ecs:ListServices",
+    ):
+        state = (
+            "present"
+            if policy_action_present(live.get("PolicyDocument"), action)
+            else "absent"
+        )
+        print(f"policy {action}={state}", flush=True)
     described = run_aws(aws, env, ["iam", "get-role", "--role-name", ROLE_NAME])
+    boundary = described.get("Role", {}).get("PermissionsBoundary") or {}
+    print("boundary=" + ("present" if boundary else "absent"), flush=True)
     role_arn = described.get("Role", {}).get("Arn", "")
     if not re.fullmatch(r"arn:aws:iam::[0-9]{12}:role/[A-Za-z0-9+=,.@_-]+", role_arn):
         raise SystemExit("role arn was not created")

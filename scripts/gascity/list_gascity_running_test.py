@@ -7,7 +7,13 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from list_gascity_running import ec2_lines, ecs_lines, regions  # noqa: E402
+from list_gascity_running import (  # noqa: E402
+    denial_label,
+    describe_regions,
+    ec2_lines,
+    ecs_lines,
+    regions,
+)
 
 
 class ListTest(unittest.TestCase):
@@ -67,6 +73,31 @@ class ListTest(unittest.TestCase):
                 "region=ap-southeast-1 ecs cluster=wewebplus-formula-preview service=formula-preview desired=1 running=1 status=ACTIVE"
             ],
         )
+
+    def test_describe_regions_retries_a_fresh_denial(self):
+        self.assertEqual(
+            denial_label(
+                "An error occurred (UnauthorizedOperation) when calling the DescribeRegions operation: You are not authorized to perform this operation."
+            ),
+            "kind=not-allowed code=UnauthorizedOperation",
+        )
+        self.assertEqual(
+            denial_label("explicit deny in a service control policy"),
+            "kind=explicit-deny code=unknown",
+        )
+        calls = {"n": 0}
+        waits = []
+
+        def invoke():
+            calls["n"] += 1
+            if calls["n"] < 3:
+                return {"denied": "An error occurred (UnauthorizedOperation) denied"}
+            return {"Regions": [{"RegionName": "ap-southeast-1"}]}
+
+        payload = describe_regions(invoke, waits.append)
+        self.assertEqual(regions(payload), ["ap-southeast-1"])
+        self.assertEqual(waits, [15, 15])
+        self.assertEqual(calls["n"], 3)
 
 
 if __name__ == "__main__":

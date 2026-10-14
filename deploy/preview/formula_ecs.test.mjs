@@ -247,7 +247,10 @@ test("sync keeps one service and does not publish the factory port", async () =>
     seenDns[0].loadBalancerDns,
     "formula-preview-1.ap-southeast-1.elb.amazonaws.com",
   );
-  assert.match(seenDns[0].validationName, /\.formula\.anakwannaphaschaiyong\.com\.?$/);
+  assert.match(
+    seenDns[0].validationName,
+    /\.formula\.anakwannaphaschaiyong\.com\.?$/,
+  );
   assert.equal(seenDns[0].validationName.includes("pr-79"), false);
   const albGroup = aws.state.groups.find(
     (group) => group.GroupName === "formula-preview-alb",
@@ -342,6 +345,27 @@ test("the formula workflow deploys to ECS and does not cook", () => {
   );
 });
 
+test("the inventory workflow only lists machines", () => {
+  const workflow = readFileSync(
+    new URL(
+      "../../.github/workflows/preview-gascity-inventory.yml",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  assert.match(workflow, /name: GasCity inventory/);
+  assert.match(workflow, /group: gascity-inventory/);
+  assert.match(workflow, /list_gascity_running\.py/);
+  assert.match(workflow, /setup_formula_role\.py --admin/);
+  assert.match(workflow, /role-session-name: gascity-inventory/);
+  assert.equal(workflow.includes("gascity-rollout"), false);
+  assert.equal(workflow.includes("cook"), false);
+  assert.equal(workflow.includes("sling"), false);
+  assert.equal(workflow.includes("set -x"), false);
+  assert.equal(workflow.includes("32100"), false);
+  assert.equal(workflow.includes("6080"), false);
+});
+
 test("the production host stores the role address without printing it", () => {
   const script = readFileSync(
     new URL("../../scripts/gascity/setup_formula_role.py", import.meta.url),
@@ -391,6 +415,7 @@ test("the production host stores the role address without printing it", () => {
         "assert 'ecs:ListClusters' in text",
         "assert 'ecs:ListServices' in text",
         "assert 'ec2:TerminateInstances' not in text",
+        "assert mod.policy_action_present(mod.permissions_policy('123456789012'), 'ec2:DescribeRegions')",
         "assert 'formula-preview-execution' in text",
         "assert 'acm:RequestCertificate' in text",
         "assert 'acm:DescribeCertificate' in text",
@@ -741,7 +766,8 @@ function memoryAws() {
       const certificate = state.certificates.find(
         (item) => item.CertificateArn === flag(args, "--certificate-arn"),
       );
-      if (!certificate) throw new AwsError("missing", "ResourceNotFoundException");
+      if (!certificate)
+        throw new AwsError("missing", "ResourceNotFoundException");
       return { Certificate: certificate };
     }
     if (service === "ecs" && command === "describe-clusters") {
