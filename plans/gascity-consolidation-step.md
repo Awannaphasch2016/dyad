@@ -114,6 +114,18 @@ Remote workflows on this branch, also for that next slice:
 
 `ui-walk.yml` is described in [PR #162](https://github.com/Awannaphasch2016/dyad/pull/162) and is not a file yet. It joins this list when the file exists.
 
+## One walk
+
+The two walks are the same loop with different selectors. [PR #128](https://github.com/Awannaphasch2016/dyad/pull/128) is the Vibe loop: the `hitl` job in `preview-vibesdk.yml` runs `e2e-vibesdk/tests/two-roles.spec.js`. The Project Manager types the start prompt. The Developer’s Enter does not start an app. The loop polls `org-question`. The other role sees `org-waiting` and not the question text. The reply is one sentence from OpenRouter, typed into the last textarea. There is no Approve button. The loop stops after answers and three quiet minutes.
+
+This branch’s Dyad loop is `dyad-bridge-signin.yml` running `e2e-bridge/two-roles.spec.ts`. Both roles sign in with Clerk. The Project Manager creates the app through IPC. The loop walks Discovery, Implementation, and Delivery. A question is `hitl-question-*`. The reply is the echo `Recorded from the question: …`. Approve and continue is enabled only for `project-manager` on Discovery and Delivery and only for `developer` on Implementation. `DYAD_FACTORY_SCRIPT=record` makes `factory_phase_controller.ts` invent the question and the `## Phase finished` summary.
+
+#162 already generalizes them: one workflow `ui-walk.yml`, one runner `e2e-walk/walk.mjs`, one config per app. `vibesdk.json` reproduces the Vibe loop. `dyad.json` adds the phase bar, Submit answer, Approve, and Send back. The job holds the browsers and the Clerk tickets. One decider returns the reply. The Dyad config is the single agent UI walk for Dyad.
+
+The walker clicks the window. It does not sling. The recorded Northwind script stays out of the shared runner. A click unblocks a bead only after Submit answer and Approve write that bead.
+
+Operator AXI is the remote executor. A Cursor cloud agent looks up an `ops-axi` command when the work runs on Doppler, ECS, EC2, Devbox, or this walk. It does not perform that call from the agent VM. Grouping every workflow into that catalog is the next slice on PR #92, after this walk decision.
+
 ## Walk, before the sling
 
 Two pull requests are the agent UI walk. Both land before a formula sling.
