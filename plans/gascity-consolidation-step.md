@@ -76,6 +76,44 @@ The manifest project is `dyad`. Its `ci` names are `AWS_PREVIEW_FORMULA_ROLE_ARN
 3. Confirmed. One operator answers Discovery and Delivery as `project-manager` and Implementation as `developer`. #155 fails the check when the role is missing.
 4. The walk below drives those clicks. It is included before the sling. A click unblocks a GasCity bead only after Approve posts `human_gate.verdict` and `human_gate.role`, and after Submit answer posts the reply onto the paused bead.
 
+## Remote execution is a GitHub Actions workflow
+
+The operator surface is [PR #92](https://github.com/Awannaphasch2016/dyad/pull/92), branch `cursor/axi-toolbox-image-plan-531e`. `packages/ops-axi` starts a workflow, waits, and reads the `key=value` lines. It holds no Doppler or AWS credential. The next slice opened on that PR adds the workflows in the second table to `packages/ops-axi/lib/catalog.js`. `ops-axi run <file> --ref <branch>` can already start one that has no named command.
+
+GitHub dispatches a workflow file only when that file is on the default branch. These files live on feature branches, so a dispatch from this agent returns HTTP 403 or "Workflow does not have workflow_dispatch trigger". `ops-axi` then reruns the latest run on that ref.
+
+Named commands already on PR #92:
+
+| Command          | Workflow                   | What the job does                                                                                            |
+| ---------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `ec2 check`      | `ec2-access-check.yml`     | Prove Actions can reach the EC2 host and the host's Doppler tokens. Prints names and fingerprints.           |
+| `formula role`   | `preview-formula-role.yml` | Create the formula preview OIDC role from the EC2 host and store its ARN in Doppler.                         |
+| `formula verify` | `ec2-access-check.yml`     | From the host, require `AWS_PREVIEW_FORMULA_ROLE_ARN` present.                                               |
+| `formula deploy` | `preview-formula.yml`      | Deploy the formula pages to ECS and print the URL.                                                           |
+| `doppler status` | `doppler-organize.yml`     | OIDC into Doppler and report `dyad` against `deploy/doppler/manifest.json`. `status`, `phase1`, or `verify`. |
+| `rollout <sha>`  | `gascity-rollout.yml`      | SSH the Gas City host forward after CI. The short-lived Doppler token is not written to disk.                |
+
+Remote workflows on that same branch with no named command yet:
+
+| Workflow                | What the job does                                                                                         |
+| ----------------------- | --------------------------------------------------------------------------------------------------------- |
+| `axi-toolbox-image.yml` | Build `ghcr.io/awannaphasch2016/axi-toolbox`. It does not dispatch, SSH, or hold a Doppler token.         |
+| `preview-image.yml`     | Publish the Dyad image and update the shared preview from Devbox `Wewebplus-ci`.                          |
+| `preview.yml`           | Create, update, or destroy one preview from the preview label.                                            |
+| `preview-exec.yml`      | Run a preview on the shared Devbox.                                                                       |
+| `preview-wake.yml`      | Start the existing preview containers after the Devbox stops cloudflared.                                 |
+| `preview-secrets.yml`   | Print the Devbox public key so controller credentials can be sealed. The private key stays on the Devbox. |
+
+Remote workflows on this branch, also for that next slice:
+
+| Workflow                  | What the job does                                                                                                      |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `dyad-bridge-signin.yml`  | One Dyad process, two Playwright browsers. Fetches Doppler `dyad` / `preview` by OIDC, including `OPENROUTER_API_KEY`. |
+| `hitl-cursor-probe.yml`   | Read `CURSOR_API_KEY` from `dyad` / `preview` and call the Cloud Agents API.                                           |
+| `hitl-cursor-factory.yml` | Run the Cursor factory poller with that key. The agent request has no env block.                                       |
+
+`ui-walk.yml` is described in [PR #162](https://github.com/Awannaphasch2016/dyad/pull/162) and is not a file yet. It joins this list when the file exists.
+
 ## Walk, before the sling
 
 Two pull requests are the agent UI walk. Both land before a formula sling.
