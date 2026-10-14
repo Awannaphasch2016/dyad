@@ -66,6 +66,7 @@ import { registerKnowledgeHandlers } from "./handlers/knowledge_handlers";
 import { registerAccountHandlers } from "./handlers/account_handlers";
 import { registerFactoryHandlers } from "./handlers/factory_handlers";
 import { registerFactoryHostHandlers } from "./handlers/factory_host_handlers";
+import { registerFormulaHandlers } from "./handlers/formula_handlers";
 
 export function registerIpcHandlers() {
   // Register all IPC handlers by category
@@ -137,4 +138,5 @@ export function registerIpcHandlers() {
   registerAccountHandlers();
   registerFactoryHandlers();
   registerFactoryHostHandlers();
+  registerFormulaHandlers();
 }

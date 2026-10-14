@@ -202,6 +202,24 @@ export const controlAnswers = controlPlane.table(
   (table) => [uniqueIndex("answers_question_unique").on(table.questionId)],
 );
 
+export const controlFormulaRevisions = controlPlane.table(
+  "formula_revisions",
+  {
+    id: text("id").primaryKey(),
+    phase: text("phase").notNull(),
+    body: text("body").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("formula_revisions_phase_created_idx").on(
+      table.phase,
+      table.createdAt,
+    ),
+  ],
+);
+
 export const controlAuditEvents = controlPlane.table("audit_events", {
   id: text("id").primaryKey(),
   ownerType: text("owner_type").notNull(),

@@ -75,6 +75,7 @@ export { promptContracts } from "./prompts";
 export { clerkContracts } from "./clerk";
 export { accountContracts } from "./account";
 export { factoryContracts } from "./factory";
+export { formulaContracts } from "./formula";
 export { knowledgeContracts } from "./knowledge";
 export { templateContracts } from "./templates";
 export { proposalContracts } from "./proposals";
@@ -565,6 +566,7 @@ import { promptClient } from "./prompts";
 import { clerkClient } from "./clerk";
 import { accountClient } from "./account";
 import { factoryClient } from "./factory";
+import { formulaClient } from "./formula";
 import { knowledgeClient } from "./knowledge";
 import { templateClient } from "./templates";
 import { proposalClient } from "./proposals";
@@ -657,6 +659,7 @@ export const ipc = {
   clerk: clerkClient,
   account: accountClient,
   factory: factoryClient,
+  formula: formulaClient,
   knowledge: knowledgeClient,
   template: templateClient,
   proposal: proposalClient,

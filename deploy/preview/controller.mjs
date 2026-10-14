@@ -5,35 +5,54 @@ import { writeFileSync } from "node:fs";
 import { commandForPullRequest } from "./transition.mjs";
 import { deletePreviewBranch, ensurePreviewBranch } from "./neon.mjs";
 import { previewRuntime } from "./render.mjs";
-
-const dopplerDownloadUrl =
-  "https://api.doppler.com/v3/configs/config/secrets/download?format=json";
+import { cloudflareStatus, dopplerCloudflareNames } from "./cloudflare_env.mjs";
 
 function arg(name) {
   const index = process.argv.indexOf(name);
   return index === -1 ? "" : process.argv[index + 1] || "";
 }
 
-async function downloadDoppler(token) {
-  const response = await fetch(dopplerDownloadUrl, {
-    headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-  });
+async function downloadDoppler(token, project = "", config = "") {
+  const params = new URLSearchParams({ format: "json" });
+  if (project) params.set("project", project);
+  if (config) params.set("config", config);
+  const response = await fetch(
+    `https://api.doppler.com/v3/configs/config/secrets/download?${params}`,
+    {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+    },
+  );
   if (!response.ok) {
-    throw new Error(`Doppler download failed (${response.status})`);
+    const where = project ? ` project=${project} config=${config}` : "";
+    throw new Error(`Doppler download failed (${response.status})${where}`);
   }
   return response.json();
 }
 
 async function runtimeEnv() {
   const token = process.env.DOPPLER_TOKEN || "";
+  const admin = process.env.DOPPLER_ADMIN_TOKEN || "";
+  let downloaded = {};
   if (token) {
-    const downloaded = await downloadDoppler(token);
-    if (!process.env.NEON_API_KEY && downloaded.NEON_API_KEY) {
-      process.env.NEON_API_KEY = downloaded.NEON_API_KEY;
-    }
-    return downloaded;
+    downloaded = await downloadDoppler(token);
+  } else if (admin) {
+    console.log("doppler admin token present");
+    downloaded = await downloadDoppler(admin, "dyad", "preview");
+  } else {
+    console.log("doppler token absent");
+    return {};
   }
-  return {};
+  if (!process.env.NEON_API_KEY && downloaded.NEON_API_KEY) {
+    process.env.NEON_API_KEY = downloaded.NEON_API_KEY;
+  }
+  const names = dopplerCloudflareNames(downloaded);
+  console.log(
+    names.length
+      ? `Doppler Cloudflare names: ${names.join(", ")}`
+      : "Doppler Cloudflare names: none",
+  );
+  console.log(cloudflareStatus(downloaded, "Doppler"));
+  return downloaded;
 }
 
 async function attach(pr) {

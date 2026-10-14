@@ -1,0 +1,65 @@
+# List running EC2 instances and ECS services in every enabled region.
+# Does not deploy, open a port, or print secret values.
+name: GasCity inventory
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cursor/formula-config-ui-55d6
+    paths:
+      - scripts/gascity/list_gascity_running.py
+      - scripts/gascity/describe_running_containers.py
+      - scripts/gascity/read_host_containers.py
+      - scripts/gascity/read_image_paths.py
+      - scripts/gascity/setup_formula_role.py
+      - .github/workflows/preview-gascity-inventory.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gascity-inventory
+  cancel-in-progress: false
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Allow the inventory read
+        env:
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+        run: python3 scripts/gascity/setup_formula_role.py --admin
+
+      - name: Assume the AWS role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_PREVIEW_FORMULA_ROLE_ARN }}
+          aws-region: ap-southeast-1
+          role-session-name: gascity-inventory
+
+      - name: List running machines
+        run: python3 scripts/gascity/list_gascity_running.py
+
+      - name: Read running containers
+        env:
+          CONTAINER_IMAGE_LIST: ${{ runner.temp }}/container-images.txt
+        run: python3 scripts/gascity/describe_running_containers.py
+
+      - name: Read formula files on the container hosts
+        env:
+          DOPPLER_ADMIN_TOKEN: ${{ secrets.DOPPLER_ADMIN_TOKEN }}
+        run: |
+          key="$RUNNER_TEMP/gascity-ec2"
+          python3 scripts/gascity/prepare_ec2_ssh_key.py "$key"
+          python3 scripts/gascity/read_host_containers.py "$key"
+
+      - name: Read formula paths in the images
+        run: python3 scripts/gascity/read_image_paths.py "$RUNNER_TEMP/container-images.txt"

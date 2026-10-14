@@ -1,4 +1,10 @@
-import { type LucideIcon, Home, HelpCircle, Shield } from "lucide-react";
+import {
+  type LucideIcon,
+  FileText,
+  Home,
+  HelpCircle,
+  Shield,
+} from "lucide-react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useSidebar } from "@/components/ui/sidebar"; // import useSidebar hook
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -52,6 +58,12 @@ const items = [
     to: "/library",
     icon: Shield,
     label: "Admin",
+  },
+  {
+    title: "Formulas",
+    to: "/formulas",
+    icon: FileText,
+    label: "Formulas",
   },
 ] satisfies Array<{
   title: AppSidebarItemTitle;

@@ -42,6 +42,7 @@ import { promptContracts } from "../types/prompts";
 import { clerkContracts } from "../types/clerk";
 import { accountContracts } from "../types/account";
 import { factoryContracts } from "../types/factory";
+import { formulaContracts } from "../types/formula";
 import { knowledgeContracts } from "../types/knowledge";
 import { templateContracts } from "../types/templates";
 import { proposalContracts } from "../types/proposals";
@@ -139,6 +140,7 @@ export const VALID_INVOKE_CHANNELS = [
   ...getInvokeChannels(clerkContracts),
   ...getInvokeChannels(accountContracts),
   ...getInvokeChannels(factoryContracts),
+  ...getInvokeChannels(formulaContracts),
   ...getInvokeChannels(knowledgeContracts),
   ...getInvokeChannels(templateContracts),
   ...getInvokeChannels(proposalContracts),

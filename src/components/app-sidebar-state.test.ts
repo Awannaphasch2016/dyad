@@ -9,6 +9,18 @@ import {
 } from "@/components/app-sidebar-state";
 
 describe("app sidebar state", () => {
+  it("highlights Formulas on a formula page", () => {
+    expect(
+      isSidebarItemActive({
+        title: "Formulas",
+        pathname: "/formulas/delivery",
+      }),
+    ).toBe(true);
+    expect(
+      isSidebarItemActive({ title: "Apps", pathname: "/formulas/delivery" }),
+    ).toBe(false);
+  });
+
   it("folds chat routes into the Apps panel", () => {
     expect(getRouteSidebarPanel("/chat")).toBe("Apps");
     expect(isSidebarItemActive({ title: "Apps", pathname: "/chat" })).toBe(
