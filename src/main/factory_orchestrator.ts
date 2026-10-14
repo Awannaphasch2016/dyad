@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { ZodError } from "zod";
 import { asc, eq } from "drizzle-orm";
 import { DyadError, DyadErrorKind, isDyadError } from "@/errors/dyad_error";
@@ -14,6 +13,7 @@ import {
   type RendererMessageRow,
 } from "@/ipc/utils/renderer_chat_message";
 import { phaseFromTitle, type FactoryPhase } from "@/lib/factoryPhase";
+import { FACTORY_FORMULA, formulaStep } from "@/lib/factoryFormula";
 import { getDyadAppPath } from "@/paths/paths";
 import {
   invokeRegisteredToolByName,
@@ -28,6 +28,7 @@ import {
   FactoryHostError,
   markFactoryRunErrored,
   openOrchestratedRun,
+  readFactoryState,
   type FactoryEventType,
   type FactoryHostDatabase,
 } from "./factory_host_service";
@@ -360,6 +361,7 @@ export function applyFactoryTurnEvent(
     cursor: number;
     type: FactoryEventType;
     content: string;
+    stepId?: string | null;
   },
 ) {
   const snapshot = applyFactoryHostEvent(database, input);
@@ -430,11 +432,10 @@ export async function runFactoryOrchestratedTurn(params: {
   if (params.abortSignal.aborted) return "cancelled";
   const opened = openOrchestratedRun(params.database, {
     appId: params.appId,
-    phase: params.phase,
+    phase: "discovery",
     prompt: params.prompt,
-    idempotencyKey:
-      params.idempotencyKey ??
-      `chat-stream:${params.chatId}:${params.streamId ?? randomUUID()}`,
+    idempotencyKey: FACTORY_FORMULA,
+    formula: FACTORY_FORMULA,
   });
   const taskId = opened.runId;
   if (opened.status === "completed" || opened.status === "cancelled") {
@@ -473,10 +474,10 @@ export async function runFactoryOrchestratedTurn(params: {
   params.abortSignal.addEventListener("abort", onAbort, { once: true });
   try {
     const payload = {
-      type: "prompt",
+      type: "sling",
+      formula: FACTORY_FORMULA,
       appId: params.appId,
       chatId: params.chatId,
-      phase: params.phase,
       prompt: params.prompt,
       taskId,
     };
@@ -499,4 +500,26 @@ export async function runFactoryOrchestratedTurn(params: {
     );
   }
   return result.outcome === "cancelled" ? "cancelled" : "completed";
+}
+
+export async function submitFactoryGateVerdict(
+  database: FactoryHostDatabase,
+  appId: number,
+  phase: FactoryPhase,
+) {
+  const state = readFactoryState(database, appId);
+  const step = formulaStep(state.currentStepId);
+  if (!state.formula || !state.workflowTaskId || !step) {
+    throw new FactoryHostError("No formula run is waiting for a verdict", 409);
+  }
+  if (!state.gateWaiting || step.phase !== phase) {
+    throw new FactoryHostError("This phase gate is not open", 409);
+  }
+  await postFactoryOrchestrator({
+    type: "verdict",
+    taskId: state.workflowTaskId,
+    stepId: step.id,
+    verdict: "approve",
+  });
+  return readFactoryState(database, appId);
 }

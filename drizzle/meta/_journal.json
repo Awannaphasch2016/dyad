@@ -407,6 +407,13 @@
       "when": 1791884026773,
       "tag": "0057_workable_daimon_hellstrom",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "6",
+      "when": 1791987567388,
+      "tag": "0058_overrated_jack_power",
+      "breakpoints": true
     }
   ]
 }

@@ -402,6 +402,8 @@ export const factoryHostRuns = sqliteTable(
       .notNull()
       .default("queued"),
     gasCityTaskId: text("gas_city_task_id"),
+    formula: text("formula"),
+    currentStepId: text("current_step_id"),
     orchestratorStatus: text("orchestrator_status", {
       enum: [
         "queued",
