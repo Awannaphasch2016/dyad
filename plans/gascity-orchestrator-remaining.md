@@ -11,6 +11,18 @@ Status: plan. No new runtime change in this document.
 5. The next phase opens only when that gate bead closes. Request changes stays in the same phase. Delivery is not finished until publish closes.
 6. The proof is `speckit-phased` from PR #148, PR #154, and PR #159. The Dyad window matches the bead, beside the guest session log.
 
+## Implementation
+
+Do these in order. Do not start a later slice while an earlier one is still a prompt or a local approval row.
+
+1. **One session path.** New turns, including Ask, Build, Agent, and Plan, open or continue a GasCity session. They do not enter `handleLocalAgentStream`. If the city is down, the send fails.
+2. **One formula.** The factory slings `speckit-phased` once, using the packs in PR #148 and PR #154 and the input in PR #159. Retire `{ type: "prompt", phase }` as the handoff. One workflow id covers Discovery through publish.
+3. **Beads do the work.** GasCity routes each ready bead to that session. File edits use the existing tool route. Text for the window is that bead's events. A gate writes `human_gate.verdict` and waits.
+4. **The bar follows the bead.** The lock, the shade, the step title, and the open chat read the open bead. **Approve and continue** writes the verdict and stays on that phase. The next phase unlocks only when the gate bead closes. Delivery stays unfinished until the publish bead closes. The matrix below is this slice.
+5. **Record the Dyad window.** Show the message list and the phase bar beside `gc session logs` and the bead closures. The agent UI walk in [PR #162](https://github.com/Awannaphasch2016/dyad/pull/162) is the recording shape. It is not built yet, and the scripted videos on [PR #160](https://github.com/Awannaphasch2016/dyad/pull/160) are not this run.
+
+[PR #146](https://github.com/Awannaphasch2016/dyad/pull/146) already has the tool route, the event route, and a factory chat that does not start the local agent. That is the door. It is not slice 2, 3, or 4.
+
 ## Change impact matrix
 
 The phase bar and the formula bead are different state. Clicking **Approve and continue** inserts `factoryPhaseApprovals` and switches to the next chat. It does not write `human_gate.verdict`, so the bead stays blocked. This matrix is the edit that makes the bar follow the formula.
