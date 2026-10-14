@@ -232,6 +232,8 @@ export function patchAuthContext(source) {
 							'vibesdk-shared-role',
 							\`\${payload.data.organization} · \${payload.data.role}\`,
 						);
+						sessionStorage.setItem('vibesdk-shared-role-name', payload.data.role);
+						sessionStorage.setItem('vibesdk-shared-org', payload.data.organization);
 					}
 					return buildSessionFromLogin(payload.data);
 				}
@@ -247,7 +249,7 @@ export function patchAuthContext(source) {
     )
     .replace(
       logoutAnchor,
-      `\t\t\ttry {\n\t\t\t\tconst clerk = (window as Window & { Clerk?: { signOut?: () => Promise<void> } }).Clerk;\n\t\t\t\tif (clerk?.signOut) await clerk.signOut();\n\t\t\t\tsessionStorage.removeItem('vibesdk-shared-role');\n\t\t\t\tawait apiClient.logout();`,
+      `\t\t\ttry {\n\t\t\t\tconst clerk = (window as Window & { Clerk?: { signOut?: () => Promise<void> } }).Clerk;\n\t\t\t\tif (clerk?.signOut) await clerk.signOut();\n\t\t\t\tsessionStorage.removeItem('vibesdk-shared-role');\n\t\t\t\tsessionStorage.removeItem('vibesdk-shared-role-name');\n\t\t\t\tsessionStorage.removeItem('vibesdk-shared-org');\n\t\t\t\tawait apiClient.logout();`,
     );
 }
 

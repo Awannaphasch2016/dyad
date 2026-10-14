@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { patchAuthContext } from "./vibesdk-shared-auth.mjs";
 import {
   CREATE_REFUSAL,
   DEV_ROLE,
@@ -20,6 +21,8 @@ import {
   patchChat,
   patchCodingAgent,
   patchConversationHandler,
+  patchHome,
+  patchSidebar,
   patchUseChat,
   patchUserMessage,
   presentQuestion,
@@ -279,4 +282,45 @@ test("the create request owes the run before any browser socket", () => {
   );
   assert.equal(chat.includes("sendWebSocketMessage(ws, 'generate_all')"), false);
   assert.match(chat, /get_conversation_state/);
+});
+
+test("opening another app clears that screen before the next poll", () => {
+  const chat = patchChat.toString();
+  const effect = chat.indexOf("useEffect(() => {");
+  const poll = chat.indexOf("/api/org/question", effect);
+  for (const clear of [
+    "setOrgBody('');",
+    "setOrgWaiting('');",
+    "setOrgPending(null);",
+    "setOrgSeenQuestion('');",
+    "setOrgTurns([]);",
+    "setNewMessage('');",
+  ]) {
+    const at = chat.indexOf(clear, effect);
+    assert.ok(at > effect && at < poll, clear);
+  }
+  assert.match(
+    chat,
+    /payload\.data\.body\) setOrgSeenQuestion\(payload\.data\.body\)/,
+  );
+});
+
+test("home enter and the sidebar read the sign-in role", () => {
+  const home = patchHome.toString();
+  const side = patchSidebar.toString();
+  const auth = patchAuthContext.toString();
+  assert.match(home, /vibesdk-shared-role-name/);
+  assert.match(home, /sharedRoleName === 'Developer'/);
+  assert.equal(home.includes("includes('Developer')"), false);
+  assert.match(side, /vibesdk-shared-role-name/);
+  assert.match(side, /sharedRoleName === 'Project Manager'/);
+  assert.match(side, /sharedRoleName === 'Developer'/);
+  assert.equal(side.includes("includes('Project Manager')"), false);
+  assert.equal(side.includes("includes('Developer')"), false);
+  assert.match(side, /sharedOrg \|\| \\'Apps\\'/);
+  assert.match(auth, /vibesdk-shared-role-name/);
+  assert.match(auth, /vibesdk-shared-org/);
+  assert.match(auth, /removeItem\('vibesdk-shared-role-name'\)/);
+  assert.match(auth, /removeItem\('vibesdk-shared-org'\)/);
+  assert.match(auth, /vibesdk-shared-role'/);
 });

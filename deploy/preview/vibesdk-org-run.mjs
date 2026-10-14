@@ -436,7 +436,7 @@ export function patchHome(source) {
     throw new Error("home still mounts the extra card");
   return source.replace(
     createAnchor,
-    `${createAnchor}\t\tconst sharedRole = sessionStorage.getItem('vibesdk-shared-role') ?? '';\n\t\tif (sharedRole.includes('Developer')) return;\n`,
+    `${createAnchor}\t\tconst sharedRoleName = sessionStorage.getItem('vibesdk-shared-role-name') ?? '';\n\t\tif (sharedRoleName === 'Developer') return;\n`,
   );
 }
 
@@ -472,6 +472,12 @@ export function patchChat(source) {
 \tconst [orgSeenQuestion, setOrgSeenQuestion] = useState('');
 \tconst [orgTurns, setOrgTurns] = useState<Array<{ id: string; body: string; name: string; role: string }>>([]);
 \tuseEffect(() => {
+\t\tsetOrgBody('');
+\t\tsetOrgWaiting('');
+\t\tsetOrgPending(null);
+\t\tsetOrgSeenQuestion('');
+\t\tsetOrgTurns([]);
+\t\tsetNewMessage('');
 \t\tif (!urlChatId) return;
 \t\tlet stop = false;
 \t\tconst look = async () => {
@@ -587,8 +593,11 @@ export function patchSidebar(source) {
     "\tconst getAppPath = (app: App) =>\n\t\tapp.userId === user?.id ? `/chat/${app.id}` : `/app/${app.id}`;";
   const iconAnchor =
     "\tconst getVisibilityIcon = (visibility: App['visibility']) => {";
+  const labelAnchor =
+    '\t\t\t\t\t\t\t<span className="text-xs font-funky-mono">\n\t\t\t\t\t\t\t\tApps\n\t\t\t\t\t\t\t</span>';
   requireAnchor(source, pathAnchor, "sidebar path");
   requireAnchor(source, iconAnchor, "sidebar icon");
+  requireAnchor(source, labelAnchor, "sidebar apps label");
   const iconEnd = source.indexOf(iconAnchor);
   const iconClose = source.indexOf("\n\t};", iconEnd);
   if (iconClose < 0)
@@ -599,11 +608,15 @@ export function patchSidebar(source) {
     source.slice(iconClose + "\n\t};".length)
   ).replace(
     pathAnchor,
-    `\tconst sharedRole = sessionStorage.getItem('vibesdk-shared-role') ?? '';
+    `\tconst sharedRoleName = sessionStorage.getItem('vibesdk-shared-role-name') ?? '';
+	const sharedOrg = sessionStorage.getItem('vibesdk-shared-org') ?? '';
 	const getAppPath = (app: App) =>
-		sharedRole.includes('Project Manager') || sharedRole.includes('Developer') || app.userId === user?.id
+		sharedRoleName === 'Project Manager' || sharedRoleName === 'Developer' || app.userId === user?.id
 			? \`/chat/\${app.id}\`
 			: \`/app/\${app.id}\`;`,
+  ).replace(
+    labelAnchor,
+    '\t\t\t\t\t\t\t<span className="text-xs font-funky-mono">\n\t\t\t\t\t\t\t\t{sharedOrg || \'Apps\'}\n\t\t\t\t\t\t\t</span>',
   );
 }
 
