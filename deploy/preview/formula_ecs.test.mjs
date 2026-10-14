@@ -331,6 +331,9 @@ test("the formula workflow deploys to ECS and does not cook", () => {
   assert.equal(workflow.includes("CLOUDFLARE_"), false);
   assert.equal(compose.includes("DYAD_BROWSER_BRIDGE_HOST"), false);
   assert.match(workflow, /formula_ecs\.mjs role-arn/);
+  assert.match(workflow, /list_gascity_running\.py/);
+  assert.match(workflow, /setup_formula_role\.py --admin/);
+  assert.match(workflow, /role-session-name: gascity-inventory/);
   assert.equal(workflow.includes("::add-mask::"), false);
   assert.equal(workflow.includes("needs.role.outputs.arn"), false);
   assert.match(
@@ -383,6 +386,11 @@ test("the production host stores the role address without printing it", () => {
         "assert 'dyad@1384672033' in sub",
         "text = json.dumps(mod.permissions_policy('123456789012'))",
         "assert 'iam:CreateUser' not in text",
+        "assert 'ec2:DescribeInstances' in text",
+        "assert 'ec2:DescribeRegions' in text",
+        "assert 'ecs:ListClusters' in text",
+        "assert 'ecs:ListServices' in text",
+        "assert 'ec2:TerminateInstances' not in text",
         "assert 'formula-preview-execution' in text",
         "assert 'acm:RequestCertificate' in text",
         "assert 'acm:DescribeCertificate' in text",
