@@ -10,6 +10,7 @@ import {
 } from "./signin";
 
 const BRIDGE_URL = process.env.DYAD_BRIDGE_URL ?? "http://127.0.0.1:8372";
+// One Dyad process. Both roles walk Discovery through Delivery in this run.
 const USER_DATA = process.env.DYAD_DEV_USER_DATA_DIR?.trim() ?? "";
 const QUESTION_WAIT_MS = 45_000;
 const OUTPUT_DIR = path.join(process.cwd(), "e2e-bridge/output");
