@@ -2,7 +2,7 @@
 
 Column 2 is Gas City orchestration: each methodology keeps its own artifacts and order, and Gas City runs the steps, drains, and fan-outs. Column 3 adds Discovery, Implementation, and Delivery human gates on that graph.
 
-A blocking gate is one open confirmation bead, one `gc mail send human`, and `human-gate-verdict.sh`. `approve` continues. `request-changes` runs that gate's revision child again. The script reads `human_gate.verdict` on the bead. Dyad can write the same verdict through its answer path. These formulas do not name an organization role.
+A blocking gate is one open confirmation bead, one `gc mail send human`, and `human-gate-verdict.sh`. `approve` continues only when the reply's `human_gate.role` equals that gate's `gc.human_gate.role`. Discovery and Delivery require `project-manager`. Implementation requires `developer`. `request-changes` from that same role runs the gate's revision child again. Dyad writes both keys from the signed-in membership. A reply from any other role does not accept the gate.
 
 | Methodology | Column 2 | Column 3 |
 | --- | --- | --- |
