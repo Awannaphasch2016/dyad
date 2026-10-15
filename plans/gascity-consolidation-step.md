@@ -1,8 +1,8 @@
 # Consolidation step: one branch on PR #155
 
-Status: queued next on PR #177. Not started. Run this after the ops-axi command branch. This step assembles the branch. It does not sling, and it does not call Doppler or ECS.
+Status: queued behind the secure session. Not started. The order of record is [plans/gascity-consolidated-execution.md](plans/gascity-consolidated-execution.md). This cherry-pick runs only after `ops-axi session run echo-ok` prints `output=ok`. This step assembles the branch. It does not sling, and it does not call Doppler or ECS.
 
-The ops-axi catalog is on `cursor/ops-axi-commands-f1a5`. This pull request's next change is the cherry-pick below. Do not start it in the same step as another ops-axi command.
+The ops-axi catalog is on `cursor/ops-axi-commands-f1a5`. The next change on that catalog is `session.yml`, not this cherry-pick. Do not start the cherry-pick in the same step as the session.
 
 ## What this step keeps
 
