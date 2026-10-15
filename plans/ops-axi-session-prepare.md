@@ -1,6 +1,6 @@
 # Attach the host SSM profile with ops-axi
 
-Status: plan only. Not started. Do not cherry-pick PR #177. Do not sling.
+Status: plan only. Not started. Do not cherry-pick PR #177. Do not sling. Do not copy `preview-formula-role.yml`. The shared transport is [plans/ops-axi-horizontal-layers.md](plans/ops-axi-horizontal-layers.md). This command is a caller of `host-exec`, and that composite is extracted before this command is added.
 
 Yes. ops-axi can do the console step. `ops-axi formula role` already SSHes to `ubuntu@13.251.216.187` and the host's `aws` / `dev` keys already call IAM from `scripts/gascity/setup_formula_role.py`. The prepare command uses that path once. It does not open the AWS console, and it does not put an AWS key on the cloud agent.
 
