@@ -46,6 +46,8 @@ Permissions are scoped to the target the command names:
 
 The first slice grants only the `host` actions. ECS permissions are not on the role until the migration slice. The instance id is resolved in the job from that host. It is not typed into the agent command.
 
+The instance profile is attached by ops-axi, not by a console click. `ops-axi session prepare` uses the SSH path that `formula role` already uses, once, and adds `AmazonSSMManagedInstanceCore` to the host. The plan is [plans/ops-axi-session-prepare.md](plans/ops-axi-session-prepare.md). After `ping=Online`, `session status` and `session run echo-ok` use SSM and do not SSH.
+
 Commands are names, not a shell string from the agent:
 
 | Command | What the job runs |
