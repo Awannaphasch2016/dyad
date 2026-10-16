@@ -19,6 +19,7 @@ import {
 const ROLE_NAMES: Record<AdminRoleId, string> = {
   "project-manager": "Project Manager",
   developer: "Developer",
+  designer: "Designer",
 };
 
 export async function ensureOrgRoles(

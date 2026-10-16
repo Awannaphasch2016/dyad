@@ -40,6 +40,8 @@ vi.mock("@modelcontextprotocol/sdk/client/stdio.js", () => ({
 vi.mock("./mcp_oauth_provider", () => ({
   DyadOAuthClientProvider: class {},
   captureMcpOAuthWriteAuthority: vi.fn(() => undefined),
+  oauthStateHasTokens: (stored: string | null | undefined) =>
+    typeof stored === "string" && stored.includes("access_token"),
 }));
 
 // `secret_storage` reaches for safeStorage as soon as a row has an
@@ -315,6 +317,22 @@ describe("McpManager unreadable secrets", () => {
 
     await expect(new McpManager().getClient(1)).rejects.toThrow(
       /Could not decrypt the environment variables for "broken"/,
+    );
+    expect(mocks.createMCPClient).not.toHaveBeenCalled();
+  });
+
+  it("does not start OAuth for the remote Figma server without a token", async () => {
+    mocks.rows.set(4, {
+      id: 4,
+      name: "Figma",
+      transport: "http",
+      url: "https://mcp.figma.com/mcp",
+      oauthEnabled: true,
+      oauthState: null,
+    });
+
+    await expect(new McpManager().getClient(4)).rejects.toThrow(
+      /not on that list/,
     );
     expect(mocks.createMCPClient).not.toHaveBeenCalled();
   });

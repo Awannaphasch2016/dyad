@@ -3,6 +3,7 @@ import {
   approvalGate,
   canManageMembers,
   canSeeOrganizationAdmin,
+  canUseDesignPanel,
   roleHasPermission,
 } from "./permissions";
 
@@ -16,6 +17,10 @@ describe("clerk role gates", () => {
       false,
     );
     expect(roleHasPermission("developer", "work-implementation")).toBe(true);
+    expect(roleHasPermission("designer", "design")).toBe(true);
+    expect(roleHasPermission("designer", "approve-discovery")).toBe(false);
+    expect(roleHasPermission("project-manager", "design")).toBe(false);
+    expect(roleHasPermission("developer", "design")).toBe(false);
     expect(roleHasPermission("project-manager", "manage-members")).toBe(false);
     expect(roleHasPermission(null, "approve-discovery")).toBe(false);
   });
@@ -48,6 +53,16 @@ describe("clerk role gates", () => {
         phase: "delivery",
       }),
     ).toEqual({ allowed: true });
+    expect(
+      approvalGate({
+        status: "signed-in",
+        roleId: "designer",
+        phase: "discovery",
+      }),
+    ).toEqual({
+      allowed: false,
+      reason: "Your role can't approve this phase.",
+    });
   });
 
   it("lets only admins manage members once Clerk is configured", () => {
@@ -93,5 +108,35 @@ describe("clerk role gates", () => {
         accountType: "org",
       }),
     ).toBe(false);
+  });
+
+  it("opens the Design panel for a designer, a private owner, or an unconfigured install", () => {
+    expect(canUseDesignPanel({ status: "unconfigured", roleId: null })).toBe(
+      true,
+    );
+    expect(canUseDesignPanel({ status: "signed-out", roleId: null })).toBe(
+      false,
+    );
+    expect(
+      canUseDesignPanel({
+        status: "signed-in",
+        roleId: "designer",
+        accountType: "org",
+      }),
+    ).toBe(true);
+    expect(
+      canUseDesignPanel({
+        status: "signed-in",
+        roleId: "developer",
+        accountType: "org",
+      }),
+    ).toBe(false);
+    expect(
+      canUseDesignPanel({
+        status: "signed-in",
+        roleId: null,
+        accountType: "user",
+      }),
+    ).toBe(true);
   });
 });

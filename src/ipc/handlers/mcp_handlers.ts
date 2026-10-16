@@ -503,7 +503,13 @@ export function registerMcpHandlers() {
       void mcpManager.dispose(serverId).catch(() => {});
       const message =
         e instanceof Error ? `${e.name}: ${e.message}` : String(e);
-      logger.error(`Failed to list tools for server ${serverId}: ${message}`);
+      if (message.includes("not on that list")) {
+        logger.info(
+          `Skipped Figma remote server ${serverId}: this app is not an approved Figma client.`,
+        );
+      } else {
+        logger.error(`Failed to list tools for server ${serverId}: ${message}`);
+      }
       // Report a 401 so the UI can persistently flag a server that
       // needs auth; everything else is a generic error.
       const status: "unauthorized" | "error" = looksLikeUnauthorized(message)

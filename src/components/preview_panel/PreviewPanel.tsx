@@ -30,6 +30,7 @@ import { PublishPanel } from "./PublishPanel";
 import { SecurityPanel } from "./SecurityPanel";
 import { TestsPanel } from "./TestsPanel";
 import { PlanPanel } from "./PlanPanel";
+import { FigmaPanel } from "./FigmaPanel";
 import { PackageManagerWarningBanner } from "./PackageManagerWarningBanner";
 import { useSupabase } from "@/hooks/useSupabase";
 import { useTranslation } from "react-i18next";
@@ -338,6 +339,8 @@ export function PreviewPanel() {
                   <SecurityPanel />
                 ) : previewMode === "tests" ? (
                   <TestsPanel />
+                ) : previewMode === "figma" ? (
+                  <FigmaPanel />
                 ) : previewMode === "plan" ? (
                   <PlanPanel />
                 ) : (

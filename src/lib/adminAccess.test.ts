@@ -12,6 +12,7 @@ describe("admin access", () => {
     expect(ADMIN_ROLES.map((role) => role.id)).toEqual([
       "project-manager",
       "developer",
+      "designer",
     ]);
     expect(ADMIN_ROLES[0]?.permissions.map((item) => item.label)).toEqual([
       "Approve discovery",
@@ -25,6 +26,11 @@ describe("admin access", () => {
       "Comment on a phase",
       "Work in implementation",
     ]);
+    expect(ADMIN_ROLES[2]?.permissions.map((item) => item.label)).toEqual([
+      "View the page",
+      "Comment on a phase",
+      "Design in Figma",
+    ]);
   });
 
   it("reads only gate roles and does not invent one for an unknown person", () => {
@@ -32,6 +38,7 @@ describe("admin access", () => {
       "project-manager",
     );
     expect(roleFromMetadata({ role: "developer" })).toBe("developer");
+    expect(roleFromMetadata({ role: "designer" })).toBe("designer");
     expect(roleFromMetadata({ role: "admin" })).toBeNull();
     expect(roleFromMetadata({ role: "reviewer" })).toBeNull();
     expect(roleFromMetadata({ role: "dev" })).toBeNull();

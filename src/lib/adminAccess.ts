@@ -1,4 +1,8 @@
-export const ADMIN_ROLE_IDS = ["project-manager", "developer"] as const;
+export const ADMIN_ROLE_IDS = [
+  "project-manager",
+  "developer",
+  "designer",
+] as const;
 
 export type AdminRoleId = (typeof ADMIN_ROLE_IDS)[number];
 
@@ -42,15 +46,27 @@ export const ADMIN_ROLES: readonly AdminRole[] = [
       { id: "work-implementation", label: "Work in implementation" },
     ],
   },
+  {
+    id: "designer",
+    name: "Designer",
+    permissions: [
+      { id: "view-page", label: "View the page" },
+      { id: "comment", label: "Comment on a phase" },
+      { id: "design", label: "Design in Figma" },
+    ],
+  },
 ];
 
 export function isAdminRoleId(value: unknown): value is AdminRoleId {
-  return value === "project-manager" || value === "developer";
+  return (
+    value === "project-manager" || value === "developer" || value === "designer"
+  );
 }
 
 /**
- * Only project-manager and developer can answer a gate. An unknown value,
- * including the old admin/reviewer/dev names, is not a gate role.
+ * Recognized factory roles. An unknown value, including the old
+ * admin/reviewer/dev names, is ignored. Designer can use the Design panel
+ * and cannot answer a phase gate.
  */
 export function roleFromMetadata(metadata: unknown): AdminRoleId | null {
   if (!metadata || typeof metadata !== "object") return null;

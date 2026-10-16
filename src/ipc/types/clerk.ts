@@ -1,7 +1,11 @@
 import { z } from "zod";
 import { defineContract, createClient } from "../contracts/core";
 
-export const AdminRoleIdSchema = z.enum(["project-manager", "developer"]);
+export const AdminRoleIdSchema = z.enum([
+  "project-manager",
+  "developer",
+  "designer",
+]);
 
 export const AdminMemberSchema = z.object({
   id: z.string(),

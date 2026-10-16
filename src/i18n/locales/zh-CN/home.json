@@ -264,6 +264,7 @@
     "security": "安全",
     "publish": "发布",
     "tests": "测试",
+    "design": "设计",
     "testGate": {
       "settingsLoading": "正在加载设置…",
       "settingsUnavailable": "wewebplus 无法加载你的设置，因此无法确定测试将如何运行。",

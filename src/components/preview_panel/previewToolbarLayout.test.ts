@@ -3,6 +3,7 @@ import {
   getPreviewToolbarActionVisibility,
   isFactoryPreviewTab,
   previewTabsForFactory,
+  withDesignTab,
 } from "./previewToolbarLayout";
 
 describe("getPreviewToolbarActionVisibility", () => {
@@ -54,5 +55,25 @@ describe("previewTabsForFactory", () => {
   it("keeps every tab on other apps", () => {
     const tabs = ["preview", "code", "publish", "configure", "tests"];
     expect(previewTabsForFactory(tabs, false)).toEqual(tabs);
+  });
+});
+
+describe("withDesignTab", () => {
+  it("places Design beside Code for a designer", () => {
+    expect(withDesignTab(["preview", "code"], true, "figma")).toEqual([
+      "preview",
+      "code",
+      "figma",
+    ]);
+    expect(
+      withDesignTab(["preview", "code", "publish"], true, "figma"),
+    ).toEqual(["preview", "code", "figma", "publish"]);
+  });
+
+  it("hides Design for everyone else", () => {
+    expect(withDesignTab(["preview", "code"], false, "figma")).toEqual([
+      "preview",
+      "code",
+    ]);
   });
 });

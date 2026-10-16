@@ -264,6 +264,7 @@
     "security": "Segurança",
     "publish": "Publicar",
     "tests": "Testes",
+    "design": "Design",
     "testGate": {
       "settingsLoading": "Carregando configurações…",
       "settingsUnavailable": "O wewebplus não conseguiu carregar suas configurações, então não sabe como os testes seriam executados.",

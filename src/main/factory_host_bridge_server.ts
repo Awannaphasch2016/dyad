@@ -27,7 +27,11 @@ import {
   listHitlQuestions,
   syncRemote,
 } from "@/control_plane/hitl_device";
-import { WEWEBPLUS_ORG_ID, type HitlCaller } from "@/control_plane/hitl";
+import {
+  isAdminRoleId,
+  WEWEBPLUS_ORG_ID,
+  type HitlCaller,
+} from "@/control_plane/hitl";
 
 const MAX_BODY_BYTES = 256 * 1024;
 const LinkBody = z.object({
@@ -108,7 +112,7 @@ export function createFactoryHostBridgeServer(options: {
         return {
           orgId: verified.orgId,
           userId: verified.userId,
-          roleId: verified.roleId,
+          roleId: isAdminRoleId(verified.roleId) ? verified.roleId : null,
           displayName: verified.displayName,
         };
       } catch {

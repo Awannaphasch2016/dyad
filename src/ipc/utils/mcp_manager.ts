@@ -5,9 +5,11 @@ import { eq } from "drizzle-orm";
 
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import { FIGMA_MCP_URL } from "@/lib/figma/design";
 import {
   captureMcpOAuthWriteAuthority,
   DyadOAuthClientProvider,
+  oauthStateHasTokens,
 } from "./mcp_oauth_provider";
 import {
   decryptFromString,
@@ -124,6 +126,19 @@ export class McpManager {
       client = await createMCPClient({ transport: stdio });
     } else if (s.transport === "http") {
       if (!s.url) throw new Error(`http MCP requires url`);
+      // Figma's remote server only completes OAuth for clients on its
+      // catalog. An unlisted app gets HTTP 403 "Forbidden" during
+      // discovery, which is not a JSON OAuth error. Stop before the
+      // SDK opens that flow.
+      if (
+        s.url.replace(/\/$/, "") === FIGMA_MCP_URL &&
+        !oauthStateHasTokens(s.oauthState)
+      ) {
+        throw new DyadError(
+          "Figma only lets approved apps sign in to its remote server. This app is not on that list.",
+          DyadErrorKind.Precondition,
+        );
+      }
       const authProvider = s.oauthEnabled
         ? new DyadOAuthClientProvider({
             serverId: s.id,

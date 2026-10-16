@@ -267,6 +267,7 @@
     "security": "Security",
     "publish": "Publish",
     "tests": "Tests",
+    "design": "Design",
     "testGate": {
       "settingsLoading": "Loading settings…",
       "settingsUnavailable": "wewebplus couldn't load your settings, so it can't tell how tests would run.",

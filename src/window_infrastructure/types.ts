@@ -69,6 +69,7 @@ export const ChatTabPresentationStateSchema = z.object({
     "publish",
     "security",
     "tests",
+    "figma",
     "plan",
   ]),
   isPreviewOpen: z.boolean(),

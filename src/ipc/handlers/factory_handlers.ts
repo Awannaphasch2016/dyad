@@ -15,6 +15,7 @@ import {
   answerHitlQuestion,
   listHitlQuestions,
 } from "@/control_plane/hitl_device";
+import { isAdminRoleId } from "@/control_plane/hitl_rules";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import { factoryContracts } from "../types/factory";
 import { createTypedHandler } from "./base";
@@ -34,7 +35,7 @@ async function hitlCaller(event: { sender: { id: number } }, appId: number) {
   return {
     orgId: session.account.id,
     userId: session.userId,
-    roleId: session.roleId,
+    roleId: isAdminRoleId(session.roleId) ? session.roleId : null,
     displayName: session.displayName,
   };
 }

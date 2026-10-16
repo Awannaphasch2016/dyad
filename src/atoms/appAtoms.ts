@@ -9,6 +9,7 @@ export type PreviewMode =
   | "publish"
   | "security"
   | "tests"
+  | "figma"
   | "plan";
 
 export const previewModeAtom = atom<PreviewMode>("preview");

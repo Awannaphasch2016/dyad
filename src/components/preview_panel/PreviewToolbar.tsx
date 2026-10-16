@@ -15,6 +15,7 @@ import {
   Eye,
   FlaskConical,
   Globe,
+  Palette,
   Maximize2,
   Minimize2,
   MoreHorizontal,
@@ -37,12 +38,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { canUseDesignPanel } from "@/auth/permissions";
+import { useClerkSession } from "@/auth/session";
 import { useReducedMotionPref } from "@/hooks/useReducedMotion";
 import { useChats } from "@/hooks/useChats";
 import { hasFactoryPhases } from "@/lib/factoryPhase";
 import {
   isFactoryPreviewTab,
   previewTabsForFactory,
+  withDesignTab,
 } from "./previewToolbarLayout";
 import { useVersionPreview } from "@/hooks/useVersionPreview";
 import { useVersions } from "@/hooks/useVersions";
@@ -211,6 +215,13 @@ export const PreviewToolbar = () => {
   const selectedAppId = useAtomValue(selectedAppIdAtom);
   const { chats } = useChats(selectedAppId);
   const factoryApp = hasFactoryPhases(chats);
+  const session = useClerkSession();
+  const canDesign = canUseDesignPanel({
+    status: session.status,
+    roleId: session.status === "signed-in" ? session.roleId : null,
+    accountType:
+      session.status === "signed-in" ? session.account?.type : undefined,
+  });
   const nativeViewAppId = useAtomValue(previewNativeViewAppIdAtom);
   // Scoped to the selected app: a run belonging to a different app still owns
   // the window's native view, and treating this toolbar as native would hide
@@ -254,10 +265,14 @@ export const PreviewToolbar = () => {
   }, [isVersionSelected, previewMode, setPreviewMode]);
 
   useEffect(() => {
+    if (previewMode === "figma") {
+      if (!canDesign) setPreviewMode("preview");
+      return;
+    }
     if (factoryApp && !isFactoryPreviewTab(previewMode)) {
       setPreviewMode("preview");
     }
-  }, [factoryApp, previewMode, setPreviewMode]);
+  }, [canDesign, factoryApp, previewMode, setPreviewMode]);
 
   const problemCount = problemReport ? problemReport.problems.length : 0;
   const displayCount =
@@ -317,11 +332,20 @@ export const PreviewToolbar = () => {
       label: t("preview.publish"),
       testId: "publish-mode-button",
     },
+    figma: {
+      icon: <Palette size={16} />,
+      label: t("preview.design"),
+      testId: "figma-mode-button",
+    },
   };
 
-  const tabOrder: readonly ToolbarMode[] = previewTabsForFactory(
-    isVersionSelected ? VERSION_TAB_ORDER : TAB_ORDER,
-    factoryApp,
+  const tabOrder: readonly ToolbarMode[] = withDesignTab(
+    previewTabsForFactory(
+      isVersionSelected ? VERSION_TAB_ORDER : TAB_ORDER,
+      factoryApp,
+    ),
+    canDesign && !isVersionSelected,
+    "figma",
   );
 
   // Overflow needs real pixel widths (labels vary by locale), so an invisible
@@ -346,7 +370,7 @@ export const PreviewToolbar = () => {
     setOverflowWidth(
       Math.ceil(overflowMeasureRef.current?.getBoundingClientRect().width ?? 0),
     );
-  }, [isVersionSelected, factoryApp, i18n.language]);
+  }, [isVersionSelected, factoryApp, canDesign, i18n.language]);
 
   useLayoutEffect(() => {
     const node = tabsAreaRef.current;

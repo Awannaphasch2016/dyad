@@ -9,6 +9,17 @@ export type ClerkAuthStatus =
   | "signed-out"
   | "signed-in";
 
+export function canUseDesignPanel(input: {
+  status: ClerkAuthStatus;
+  roleId: AdminRoleId | null;
+  accountType?: "user" | "org";
+}): boolean {
+  if (input.status === "unconfigured") return true;
+  if (input.status !== "signed-in") return false;
+  if (input.accountType === "user") return true;
+  return roleHasPermission(input.roleId, "design");
+}
+
 export function roleHasPermission(
   roleId: AdminRoleId | null,
   permissionId: string,

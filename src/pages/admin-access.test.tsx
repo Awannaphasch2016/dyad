@@ -53,6 +53,10 @@ it("shows members and a roles-permissions table", async () => {
   const rolesTable = screen.getByTestId("admin-roles-table");
   expect(rolesTable.textContent).toContain("project-manager");
   expect(rolesTable.textContent).toContain("developer");
+  expect(rolesTable.textContent).toContain("designer");
+  expect(screen.getByTestId("admin-role-designer").textContent).toContain(
+    "Design in Figma",
+  );
   expect(screen.getByTestId("admin-role-developer").textContent).toContain(
     "Work in implementation",
   );
