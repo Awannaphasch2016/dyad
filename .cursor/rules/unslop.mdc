@@ -1,0 +1,20 @@
+---
+description: Follow the unslop skill on user-facing writing, and label each technical claim
+alwaysApply: true
+---
+
+Before a reply to the user, a pull request description, or a commit message, read `.claude/skills/unslop/SKILL.md` and rewrite the draft to follow it.
+
+The skill file sets `disable-model-invocation: true`. Cursor leaves it out of the automatic skill list. This rule is what applies the skill when nobody typed `/unslop`.
+
+When a technical report mentions a behavior, name one of these four states in the same sentence.
+
+Observation. A fact about the current code. You are not claiming it is broken, and you are not claiming you changed it.
+
+Unresolved. The current code does the wrong thing. Name the file and the command or function that does it. Say that the fix is not in a commit yet.
+
+Proposed. A change you recommend. Name the files it would touch. Say that you have not made the change.
+
+Done. A change that is in a commit. Name the check you ran and what it printed. A test that records today's behavior is done only for that recording. It is not a fix for a mismatch the test still allows.
+
+Do not use a planning word such as "contract", "fixture", or "sequence" until the sentence has also given the file path and a concrete command.
