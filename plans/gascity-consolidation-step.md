@@ -233,7 +233,7 @@ That digest is the image published by run [38642254744](https://github.com/Awann
 
 `ops-axi toolbox use <digest>` is the version command. It checks the image exists, replaces `/usr/local/bin/ops-axi` and `gh-axi` from that image, and writes the digest into the `install` pin. Other sessions see it after the next environment build. `gh-axi update` inside the image does nothing useful: `/opt/axi` is owned by root and the image runs as `agent`.
 
-The readable-output skill is `unslop`, by Lauren Tan (`poteto`) in the `pstack` plugin. It cuts AI tells from writing. The code sibling is `deslop` in `cursor-team-kit`. A copy of `unslop` lives at `.claude/skills/unslop/SKILL.md`, which `.agents/skills` already links. Its current file sets `disable-model-invocation: true`, so a session runs it when asked. `poteto-mode` is the skill that applies `unslop` to prose on its own.
+The readable-output skill is `unslop`, by Lauren Tan (`poteto`) in the `pstack` plugin. It cuts AI tells from writing. The code sibling is `deslop` in `cursor-team-kit`. A copy of `unslop` lives at `.claude/skills/unslop/SKILL.md`, which `.agents/skills` already links. Its current file sets `disable-model-invocation: true`, so Cursor does not put it in the automatic skill list. `.cursor/rules/unslop.mdc` is `alwaysApply: true`, and that rule tells the agent to follow the skill on replies, pull request text, and commit messages. Installing the `pstack` plugin does not do this. `poteto-mode` has the same flag, so it also runs only when asked.
 
 What the environment keeps, and what the checkout keeps:
 
