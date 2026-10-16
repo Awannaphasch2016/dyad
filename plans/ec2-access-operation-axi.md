@@ -33,7 +33,7 @@ EC2_SSH_KEY=present|absent
 host_doppler=ok|broken
 ```
 
-`ops-axi ec2 check` starts the workflow (or reruns its latest run when GitHub refuses to dispatch a file that is not on `main`), waits, and prints those lines. Exit 0 means every link holds.
+`ops-axi ec2 check` starts the workflow, waits, and prints those lines. A refused dispatch fails the command. It does not rerun an older run. Exit 0 means every link holds.
 
 ## Step 2: what ops-axi is
 

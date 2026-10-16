@@ -1,0 +1,1792 @@
+{
+  "catalogBase": "a9c0b41122a252aa0d389e456cd21f91258586c3",
+  "grammar": "ops-axi <operation> [positional] [flags]",
+  "operationCount": 27,
+  "operations": [
+    {
+      "id": "ec2.check",
+      "name": "ec2 check",
+      "argv": [
+        "ec2",
+        "check"
+      ],
+      "kind": "dispatch",
+      "repo": "Awannaphasch2016/dyad",
+      "workflow": "ec2-access-check.yml",
+      "workflowPath": ".github/workflows/ec2-access-check.yml",
+      "ref": "cursor/axi-toolbox-image-plan-531e",
+      "fields": [
+        "doppler-project=dyad",
+        "doppler-config=preview"
+      ],
+      "project": "dyad",
+      "config": "preview",
+      "digest": null,
+      "pr": null,
+      "labelAction": null,
+      "writes": false,
+      "requiresDoppler": false,
+      "needsTitle": false,
+      "positional": null,
+      "verify": [],
+      "checkout": {
+        "triggers": [
+          "workflow_dispatch",
+          "push"
+        ],
+        "inputs": [
+          "doppler-project",
+          "doppler-config",
+          "aws-project",
+          "aws-config"
+        ],
+        "required": [],
+        "types": [],
+        "permissions": true
+      },
+      "dispatchRef": {
+        "sameCheckout": false,
+        "ref": "cursor/axi-toolbox-image-plan-531e",
+        "inputs": [],
+        "capturedFrom": "origin/cursor/axi-toolbox-image-plan-531e on 2026-10-16"
+      },
+      "undeclaredFields": [
+        "doppler-project",
+        "doppler-config"
+      ]
+    },
+    {
+      "id": "formula.role",
+      "name": "formula role",
+      "argv": [
+        "formula",
+        "role",
+        "--project",
+        "dyad",
+        "--config",
+        "preview"
+      ],
+      "kind": "dispatch",
+      "repo": "Awannaphasch2016/dyad",
+      "workflow": "preview-formula-role.yml",
+      "workflowPath": ".github/workflows/preview-formula-role.yml",
+      "ref": "cursor/formula-config-ui-55d6",
+      "fields": [
+        "doppler-project=dyad",
+        "doppler-config=preview"
+      ],
+      "project": "dyad",
+      "config": "preview",
+      "digest": null,
+      "pr": null,
+      "labelAction": null,
+      "writes": true,
+      "requiresDoppler": true,
+      "needsTitle": false,
+      "positional": null,
+      "verify": [],
+      "checkout": {
+        "triggers": [
+          "workflow_dispatch",
+          "push"
+        ],
+        "inputs": [
+          "doppler-project",
+          "doppler-config",
+          "aws-project",
+          "aws-config"
+        ],
+        "required": [],
+        "types": [],
+        "permissions": true
+      },
+      "dispatchRef": {
+        "sameCheckout": false,
+        "ref": "cursor/formula-config-ui-55d6",
+        "inputs": [],
+        "capturedFrom": "origin/cursor/formula-config-ui-55d6 on 2026-10-16"
+      },
+      "undeclaredFields": [
+        "doppler-project",
+        "doppler-config"
+      ]
+    },
+    {
+      "id": "formula.verify",
+      "name": "formula verify",
+      "argv": [
+        "formula",
+        "verify"
+      ],
+      "kind": "dispatch",
+      "repo": "Awannaphasch2016/dyad",
+      "workflow": "ec2-access-check.yml",
+      "workflowPath": ".github/workflows/ec2-access-check.yml",
+      "ref": "cursor/axi-toolbox-image-plan-531e",
+      "fields": [
+        "doppler-project=dyad",
+        "doppler-config=preview"
+      ],
+      "project": "dyad",
+      "config": "preview",
+      "digest": null,
+      "pr": null,
+      "labelAction": null,
+      "writes": false,
+      "requiresDoppler": false,
+      "needsTitle": false,
+      "positional": null,
+      "verify": [
+        {
+          "key": "AWS_PREVIEW_FORMULA_ROLE_ARN",
+          "equals": "present"
+        }
+      ],
+      "checkout": {
+        "triggers": [
+          "workflow_dispatch",
+          "push"
+        ],
+        "inputs": [
+          "doppler-project",
+          "doppler-config",
+          "aws-project",
+          "aws-config"
+        ],
+        "required": [],
+        "types": [],
+        "permissions": true
+      },
+      "dispatchRef": {
+        "sameCheckout": false,
+        "ref": "cursor/axi-toolbox-image-plan-531e",
+        "inputs": [],
+        "capturedFrom": "origin/cursor/axi-toolbox-image-plan-531e on 2026-10-16"
+      },
+      "undeclaredFields": [
+        "doppler-project",
+        "doppler-config"
+      ]
+    },
+    {
+      "id": "formula.deploy",
+      "name": "formula deploy",
+      "argv": [
+        "formula",
+        "deploy"
+      ],
+      "kind": "dispatch",
+      "repo": "Awannaphasch2016/dyad",
+      "workflow": "preview-formula.yml",
+      "workflowPath": ".github/workflows/preview-formula.yml",
+      "ref": "cursor/formula-config-ui-55d6",
+      "fields": [
+        "doppler-project=dyad",
+        "doppler-config=preview"
+      ],
+      "project": "dyad",
+      "config": "preview",
+      "digest": null,
+      "pr": null,
+      "labelAction": null,
+      "writes": true,
+      "requiresDoppler": false,
+      "needsTitle": false,
+      "positional": null,
+      "verify": [
+        {
+          "key": "url",
+          "regex": "^https?:\\/\\/"
+        }
+      ],
+      "checkout": {
+        "triggers": [
+          "workflow_dispatch",
+          "push"
+        ],
+        "inputs": [
+          "doppler-project",
+          "doppler-config",
+          "aws-project",
+          "aws-config"
+        ],
+        "required": [],
+        "types": [],
+        "permissions": true
+      },
+      "dispatchRef": {
+        "sameCheckout": false,
+        "ref": "cursor/formula-config-ui-55d6",
+        "inputs": [],
+        "capturedFrom": "origin/cursor/formula-config-ui-55d6 on 2026-10-16"
+      },
+      "undeclaredFields": [
+        "doppler-project",
+        "doppler-config"
+      ]
+    },
+    {
+      "id": "formula.status",
+      "name": "formula status",
+      "argv": [
+        "formula",
+        "status"
+      ],
+      "kind": "dispatch",
+      "repo": "Awannaphasch2016/dyad",
+      "workflow": "formula-status.yml",
+      "workflowPath": ".github/workflows/formula-status.yml",
+      "ref": "cursor/ops-axi-commands-f1a5",
+      "fields": [
+        "doppler-project=dyad",
+        "doppler-config=preview"
+      ],
+      "project": "dyad",
+      "config": "preview",
+      "digest": null,
+      "pr": null,
+      "labelAction": null,
+      "writes": false,
+      "requiresDoppler": false,
+      "needsTitle": false,
+      "positional": null,
+      "verify": [],
+      "checkout": {
+        "triggers": [
+          "workflow_dispatch"
+        ],
+        "inputs": [
+          "doppler-project",
+          "doppler-config",
+          "aws-project",
+          "aws-config"
+        ],
+        "required": [],
+        "types": [],
+        "permissions": true
+      },
+      "dispatchRef": {
+        "sameCheckout": true,
+        "ref": "cursor/ops-axi-commands-f1a5",
+        "inputs": [
+          "doppler-project",
+          "doppler-config",
+          "aws-project",
+          "aws-config"
+        ]
+      },
+      "undeclaredFields": []
+    },
+    {
+      "id": "doppler.status",
+      "name": "doppler status",
+      "argv": [
+        "doppler",
+        "status"
+      ],
+      "kind": "dispatch",
+      "repo": "Awannaphasch2016/dyad",
+      "workflow": "doppler-organize.yml",
+      "workflowPath": ".github/workflows/doppler-organize.yml",
+      "ref": "cursor/axi-toolbox-image-plan-531e",
+      "fields": [
+        "command=status",
+        "doppler-project=dyad"
+      ],
+      "project": "dyad",
+      "config": null,
+      "digest": null,
+      "pr": null,
+      "labelAction": null,
+      "writes": false,
+      "requiresDoppler": false,
+      "needsTitle": false,
+      "positional": null,
+      "verify": [
+        {
+          "key": "doppler_oidc",
+          "regex": "^http-200"
+        }
+      ],
+      "checkout": {
+        "triggers": [
+          "workflow_dispatch",
+          "push"
+        ],
+        "inputs": [
+          "command",
+          "doppler-project",
+          "doppler-config",
+          "aws-project",
+          "aws-config"
+        ],
+        "required": [
+          "command"
+        ],
+        "types": [],
+        "permissions": true
+      },
+      "dispatchRef": {
+        "sameCheckout": false,
+        "ref": "cursor/axi-toolbox-image-plan-531e",
+        "inputs": [
+          "command"
+        ],
+        "capturedFrom": "origin/cursor/axi-toolbox-image-plan-531e on 2026-10-16"
+      },
+      "undeclaredFields": [
+        "doppler-project"
+      ]
+    },
+    {
+      "id": "doppler.phase1",
+      "name": "doppler phase1",
+      "argv": [
+        "doppler",
+        "phase1"
+      ],
+      "kind": "dispatch",
+      "repo": "Awannaphasch2016/dyad",
+      "workflow": "doppler-organize.yml",
+      "workflowPath": ".github/workflows/doppler-organize.yml",
+      "ref": "cursor/axi-toolbox-image-plan-531e",
+      "fields": [
+        "command=phase1",
+        "doppler-project=dyad"
+      ],
+      "project": "dyad",
+      "config": null,
+      "digest": null,
+      "pr": null,
+      "labelAction": null,
+      "writes": true,
+      "requiresDoppler": false,
+      "needsTitle": false,
+      "positional": null,
+      "verify": [],
+      "checkout": {
+        "triggers": [
+          "workflow_dispatch",
+          "push"
+        ],
+        "inputs": [
+          "command",
+          "doppler-project",
+          "doppler-config",
+          "aws-project",
+          "aws-config"
+        ],
+        "required": [
+          "command"
+        ],
+        "types": [],
+        "permissions": true
+      },
+      "dispatchRef": {
+        "sameCheckout": false,
+        "ref": "cursor/axi-toolbox-image-plan-531e",
+        "inputs": [
+          "command"
+        ],
+        "capturedFrom": "origin/cursor/axi-toolbox-image-plan-531e on 2026-10-16"
+      },
+      "undeclaredFields": [
+        "doppler-project"
+      ]
+    },
+    {
+      "id": "doppler.verify",
+      "name": "doppler verify",
+      "argv": [
+        "doppler",
+        "verify"
+      ],
+      "kind": "dispatch",
+      "repo": "Awannaphasch2016/dyad",
+      "workflow": "doppler-organize.yml",
+      "workflowPath": ".github/workflows/doppler-organize.yml",
+      "ref": "cursor/axi-toolbox-image-plan-531e",
+      "fields": [
+        "command=verify",
+        "doppler-project=dyad"
+      ],
+      "project": "dyad",
+      "config": null,
+      "digest": null,
+      "pr": null,
+      "labelAction": null,
+      "writes": false,
+      "requiresDoppler": false,
+      "needsTitle": false,
+      "positional": null,
+      "verify": [],
+      "checkout": {
+        "triggers": [
+          "workflow_dispatch",
+          "push"
+        ],
+        "inputs": [
+          "command",
+          "doppler-project",
+          "doppler-config",
+          "aws-project",
+          "aws-config"
+        ],
+        "required": [
+          "command"
+        ],
+        "types": [],
+        "permissions": true
+      },
+      "dispatchRef": {
+        "sameCheckout": false,
+        "ref": "cursor/axi-toolbox-image-plan-531e",
+        "inputs": [
+          "command"
+        ],
+        "capturedFrom": "origin/cursor/axi-toolbox-image-plan-531e on 2026-10-16"
+      },
+      "undeclaredFields": [
+        "doppler-project"
+      ]
+    },
+    {
+      "id": "rollout",
+      "name": "rollout",
+      "argv": [
+        "rollout",
+        "5e952bbc"
+      ],
+      "kind": "dispatch",
+      "repo": "Awannaphasch2016/dyad",
+      "workflow": "gascity-rollout.yml",
+      "workflowPath": ".github/workflows/gascity-rollout.yml",
+      "ref": "cursor/browser-dyad-ui-bbea",
+      "fields": [
+        "commit=5e952bbc",
+        "doppler-project=dyad",
+        "doppler-config=prd",
+        "aws-project=aws",
+        "aws-config=dev"
+      ],
+      "project": "dyad",
+      "config": "prd",
+      "digest": null,
+      "pr": null,
+      "labelAction": null,
+      "writes": true,
+      "requiresDoppler": false,
+      "needsTitle": false,
+      "positional": {
+        "name": "sha",
+        "field": "commit",
+        "pattern": "^[0-9a-fA-F]{7,40}$"
+      },
+      "verify": [],
+      "checkout": {
+        "triggers": [
+          "workflow_dispatch",
+          "push"
+        ],
+        "inputs": [
+          "commit",
+          "doppler-project",
+          "doppler-config",
+          "aws-project",
+          "aws-config"
+        ],
+        "required": [],
+        "types": [],
+        "permissions": true
+      },
+      "dispatchRef": {
+        "sameCheckout": false,
+        "ref": "cursor/browser-dyad-ui-bbea",
+        "inputs": [
+          "commit"
+        ],
+        "capturedFrom": "origin/cursor/browser-dyad-ui-bbea on 2026-10-16"
+      },
+      "undeclaredFields": [
+        "doppler-project",
+        "doppler-config",
+        "aws-project",
+        "aws-config"
+      ]
+    },
+    {
+      "id": "host.status",
+      "name": "host status",
+      "argv": [
+        "host",
+        "status"
+      ],
+      "kind": "dispatch",
+      "repo": "Awannaphasch2016/dyad",
+      "workflow": "host-status.yml",
+      "workflowPath": ".github/workflows/host-status.yml",
+      "ref": "cursor/ops-axi-commands-f1a5",
+      "fields": [
+        "doppler-project=dyad",
+        "doppler-config=prd",
+        "aws-project=aws",
+        "aws-config=dev"
+      ],
+      "project": "dyad",
+      "config": "prd",
+      "digest": null,
+      "pr": null,
+      "labelAction": null,
+      "writes": false,
+      "requiresDoppler": false,
+      "needsTitle": false,
+      "positional": null,
+      "verify": [],
+      "checkout": {
+        "triggers": [
+          "workflow_dispatch"
+        ],
+        "inputs": [
+          "doppler-project",
+          "doppler-config",
+          "aws-project",
+          "aws-config"
+        ],
+        "required": [],
+        "types": [],
+        "permissions": true
+      },
+      "dispatchRef": {
+        "sameCheckout": true,
+        "ref": "cursor/ops-axi-commands-f1a5",
+        "inputs": [
+          "doppler-project",
+          "doppler-config",
+          "aws-project",
+          "aws-config"
+        ]
+      },
+      "undeclaredFields": []
+    },
+    {
+      "id": "preview.image",
+      "name": "preview image",
+      "argv": [
+        "preview",
+        "image"
+      ],
+      "kind": "dispatch",
+      "repo": "Awannaphasch2016/dyad",
+      "workflow": "preview-image.yml",
+      "workflowPath": ".github/workflows/preview-image.yml",
+      "ref": "cursor/axi-toolbox-image-plan-531e",
+      "fields": [
+        "doppler-project=dyad",
+        "doppler-config=preview"
+      ],
+      "project": "dyad",
+      "config": "preview",
+      "digest": null,
+      "pr": null,
+      "labelAction": null,
+      "writes": true,
+      "requiresDoppler": false,
+      "needsTitle": false,
+      "positional": null,
+      "verify": [],
+      "checkout": {
+        "triggers": [
+          "workflow_dispatch",
+          "push"
+        ],
+        "inputs": [
+          "doppler-project",
+          "doppler-config",
+          "aws-project",
+          "aws-config"
+        ],
+        "required": [],
+        "types": [],
+        "permissions": true
+      },
+      "dispatchRef": {
+        "sameCheckout": false,
+        "ref": "cursor/axi-toolbox-image-plan-531e",
+        "inputs": [],
+        "capturedFrom": "origin/cursor/axi-toolbox-image-plan-531e on 2026-10-16"
+      },
+      "undeclaredFields": [
+        "doppler-project",
+        "doppler-config"
+      ]
+    },
+    {
+      "id": "preview.up",
+      "name": "preview up",
+      "argv": [
+        "preview",
+        "up",
+        "177"
+      ],
+      "kind": "label",
+      "repo": "Awannaphasch2016/dyad",
+      "workflow": "preview.yml",
+      "workflowPath": ".github/workflows/preview.yml",
+      "ref": null,
+      "fields": [
+        "pr=177"
+      ],
+      "project": "dyad",
+      "config": "preview",
+      "digest": null,
+      "pr": "177",
+      "labelAction": "add",
+      "writes": true,
+      "requiresDoppler": false,
+      "needsTitle": false,
+      "positional": {
+        "name": "pr",
+        "field": "pr",
+        "pattern": "^[0-9]+$"
+      },
+      "verify": [],
+      "checkout": {
+        "triggers": [
+          "pull_request"
+        ],
+        "inputs": [],
+        "required": [],
+        "types": [
+          "opened",
+          "synchronize",
+          "reopened",
+          "closed",
+          "labeled",
+          "unlabeled"
+        ],
+        "permissions": true
+      },
+      "dispatchRef": null
+    },
+    {
+      "id": "preview.down",
+      "name": "preview down",
+      "argv": [
+        "preview",
+        "down",
+        "177"
+      ],
+      "kind": "label",
+      "repo": "Awannaphasch2016/dyad",
+      "workflow": "preview.yml",
+      "workflowPath": ".github/workflows/preview.yml",
+      "ref": null,
+      "fields": [
+        "pr=177"
+      ],
+      "project": "dyad",
+      "config": "preview",
+      "digest": null,
+      "pr": "177",
+      "labelAction": "remove",
+      "writes": true,
+      "requiresDoppler": false,
+      "needsTitle": false,
+      "positional": {
+        "name": "pr",
+        "field": "pr",
+        "pattern": "^[0-9]+$"
+      },
+      "verify": [],
+      "checkout": {
+        "triggers": [
+          "pull_request"
+        ],
+        "inputs": [],
+        "required": [],
+        "types": [
+          "opened",
+          "synchronize",
+          "reopened",
+          "closed",
+          "labeled",
+          "unlabeled"
+        ],
+        "permissions": true
+      },
+      "dispatchRef": null
+    },
+    {
+      "id": "preview.exec",
+      "name": "preview exec",
+      "argv": [
+        "preview",
+        "exec"
+      ],
+      "kind": "dispatch",
+      "repo": "Awannaphasch2016/dyad",
+      "workflow": "preview-exec.yml",
+      "workflowPath": ".github/workflows/preview-exec.yml",
+      "ref": "cursor/axi-toolbox-image-plan-531e",
+      "fields": [
+        "doppler-project=dyad",
+        "doppler-config=preview"
+      ],
+      "project": "dyad",
+      "config": "preview",
+      "digest": null,
+      "pr": null,
+      "labelAction": null,
+      "writes": true,
+      "requiresDoppler": false,
+      "needsTitle": false,
+      "positional": null,
+      "verify": [],
+      "checkout": {
+        "triggers": [
+          "workflow_dispatch",
+          "push"
+        ],
+        "inputs": [
+          "doppler-project",
+          "doppler-config",
+          "aws-project",
+          "aws-config"
+        ],
+        "required": [],
+        "types": [],
+        "permissions": true
+      },
+      "dispatchRef": {
+        "sameCheckout": false,
+        "ref": "cursor/axi-toolbox-image-plan-531e",
+        "inputs": [],
+        "capturedFrom": "origin/cursor/axi-toolbox-image-plan-531e on 2026-10-16"
+      },
+      "undeclaredFields": [
+        "doppler-project",
+        "doppler-config"
+      ]
+    },
+    {
+      "id": "preview.wake",
+      "name": "preview wake",
+      "argv": [
+        "preview",
+        "wake"
+      ],
+      "kind": "dispatch",
+      "repo": "Awannaphasch2016/dyad",
+      "workflow": "preview-wake.yml",
+      "workflowPath": ".github/workflows/preview-wake.yml",
+      "ref": "cursor/axi-toolbox-image-plan-531e",
+      "fields": [
+        "doppler-project=dyad",
+        "doppler-config=preview"
+      ],
+      "project": "dyad",
+      "config": "preview",
+      "digest": null,
+      "pr": null,
+      "labelAction": null,
+      "writes": true,
+      "requiresDoppler": false,
+      "needsTitle": false,
+      "positional": null,
+      "verify": [],
+      "checkout": {
+        "triggers": [
+          "workflow_dispatch",
+          "push"
+        ],
+        "inputs": [
+          "doppler-project",
+          "doppler-config",
+          "aws-project",
+          "aws-config"
+        ],
+        "required": [],
+        "types": [],
+        "permissions": true
+      },
+      "dispatchRef": {
+        "sameCheckout": false,
+        "ref": "cursor/axi-toolbox-image-plan-531e",
+        "inputs": [],
+        "capturedFrom": "origin/cursor/axi-toolbox-image-plan-531e on 2026-10-16"
+      },
+      "undeclaredFields": [
+        "doppler-project",
+        "doppler-config"
+      ]
+    },
+    {
+      "id": "preview.secrets",
+      "name": "preview secrets",
+      "argv": [
+        "preview",
+        "secrets",
+        "--project",
+        "dyad",
+        "--config",
+        "preview"
+      ],
+      "kind": "dispatch",
+      "repo": "Awannaphasch2016/dyad",
+      "workflow": "preview-secrets.yml",
+      "workflowPath": ".github/workflows/preview-secrets.yml",
+      "ref": "cursor/axi-toolbox-image-plan-531e",
+      "fields": [
+        "doppler-project=dyad",
+        "doppler-config=preview"
+      ],
+      "project": "dyad",
+      "config": "preview",
+      "digest": null,
+      "pr": null,
+      "labelAction": null,
+      "writes": true,
+      "requiresDoppler": true,
+      "needsTitle": false,
+      "positional": null,
+      "verify": [],
+      "checkout": {
+        "triggers": [
+          "workflow_dispatch",
+          "push"
+        ],
+        "inputs": [
+          "doppler-project",
+          "doppler-config",
+          "aws-project",
+          "aws-config"
+        ],
+        "required": [],
+        "types": [],
+        "permissions": true
+      },
+      "dispatchRef": {
+        "sameCheckout": false,
+        "ref": "cursor/axi-toolbox-image-plan-531e",
+        "inputs": [],
+        "capturedFrom": "origin/cursor/axi-toolbox-image-plan-531e on 2026-10-16"
+      },
+      "undeclaredFields": [
+        "doppler-project",
+        "doppler-config"
+      ]
+    },
+    {
+      "id": "preview.status",
+      "name": "preview status",
+      "argv": [
+        "preview",
+        "status",
+        "177"
+      ],
+      "kind": "dispatch",
+      "repo": "Awannaphasch2016/dyad",
+      "workflow": "preview-control.yml",
+      "workflowPath": ".github/workflows/preview-control.yml",
+      "ref": "cursor/ops-axi-commands-f1a5",
+      "fields": [
+        "action=status",
+        "pr=177",
+        "doppler-project=dyad",
+        "doppler-config=preview"
+      ],
+      "project": "dyad",
+      "config": "preview",
+      "digest": null,
+      "pr": "177",
+      "labelAction": null,
+      "writes": false,
+      "requiresDoppler": false,
+      "needsTitle": false,
+      "positional": {
+        "name": "pr",
+        "field": "pr",
+        "pattern": "^[0-9]+$"
+      },
+      "verify": [],
+      "checkout": {
+        "triggers": [
+          "workflow_dispatch"
+        ],
+        "inputs": [
+          "action",
+          "pr",
+          "git_branch",
+          "doppler-project",
+          "doppler-config",
+          "aws-project",
+          "aws-config"
+        ],
+        "required": [
+          "action"
+        ],
+        "types": [],
+        "permissions": true
+      },
+      "dispatchRef": {
+        "sameCheckout": true,
+        "ref": "cursor/ops-axi-commands-f1a5",
+        "inputs": [
+          "action",
+          "pr",
+          "git_branch",
+          "doppler-project",
+          "doppler-config",
+          "aws-project",
+          "aws-config"
+        ]
+      },
+      "undeclaredFields": []
+    },
+    {
+      "id": "preview.logs",
+      "name": "preview logs",
+      "argv": [
+        "preview",
+        "logs",
+        "177"
+      ],
+      "kind": "dispatch",
+      "repo": "Awannaphasch2016/dyad",
+      "workflow": "preview-control.yml",
+      "workflowPath": ".github/workflows/preview-control.yml",
+      "ref": "cursor/ops-axi-commands-f1a5",
+      "fields": [
+        "action=logs",
+        "pr=177",
+        "doppler-project=dyad",
+        "doppler-config=preview"
+      ],
+      "project": "dyad",
+      "config": "preview",
+      "digest": null,
+      "pr": "177",
+      "labelAction": null,
+      "writes": false,
+      "requiresDoppler": false,
+      "needsTitle": false,
+      "positional": {
+        "name": "pr",
+        "field": "pr",
+        "pattern": "^[0-9]+$"
+      },
+      "verify": [],
+      "checkout": {
+        "triggers": [
+          "workflow_dispatch"
+        ],
+        "inputs": [
+          "action",
+          "pr",
+          "git_branch",
+          "doppler-project",
+          "doppler-config",
+          "aws-project",
+          "aws-config"
+        ],
+        "required": [
+          "action"
+        ],
+        "types": [],
+        "permissions": true
+      },
+      "dispatchRef": {
+        "sameCheckout": true,
+        "ref": "cursor/ops-axi-commands-f1a5",
+        "inputs": [
+          "action",
+          "pr",
+          "git_branch",
+          "doppler-project",
+          "doppler-config",
+          "aws-project",
+          "aws-config"
+        ]
+      },
+      "undeclaredFields": []
+    },
+    {
+      "id": "preview.db-status",
+      "name": "preview db-status",
+      "argv": [
+        "preview",
+        "db-status",
+        "177"
+      ],
+      "kind": "dispatch",
+      "repo": "Awannaphasch2016/dyad",
+      "workflow": "preview-control.yml",
+      "workflowPath": ".github/workflows/preview-control.yml",
+      "ref": "cursor/ops-axi-commands-f1a5",
+      "fields": [
+        "action=db-status",
+        "pr=177",
+        "doppler-project=dyad",
+        "doppler-config=preview"
+      ],
+      "project": "dyad",
+      "config": "preview",
+      "digest": null,
+      "pr": "177",
+      "labelAction": null,
+      "writes": false,
+      "requiresDoppler": false,
+      "needsTitle": false,
+      "positional": {
+        "name": "pr",
+        "field": "pr",
+        "pattern": "^[0-9]+$"
+      },
+      "verify": [],
+      "checkout": {
+        "triggers": [
+          "workflow_dispatch"
+        ],
+        "inputs": [
+          "action",
+          "pr",
+          "git_branch",
+          "doppler-project",
+          "doppler-config",
+          "aws-project",
+          "aws-config"
+        ],
+        "required": [
+          "action"
+        ],
+        "types": [],
+        "permissions": true
+      },
+      "dispatchRef": {
+        "sameCheckout": true,
+        "ref": "cursor/ops-axi-commands-f1a5",
+        "inputs": [
+          "action",
+          "pr",
+          "git_branch",
+          "doppler-project",
+          "doppler-config",
+          "aws-project",
+          "aws-config"
+        ]
+      },
+      "undeclaredFields": []
+    },
+    {
+      "id": "vibe.status",
+      "name": "vibe status",
+      "argv": [
+        "vibe",
+        "status",
+        "177"
+      ],
+      "kind": "dispatch",
+      "repo": "Awannaphasch2016/dyad",
+      "workflow": "vibe-status.yml",
+      "workflowPath": ".github/workflows/vibe-status.yml",
+      "ref": "cursor/ops-axi-commands-f1a5",
+      "fields": [
+        "pr=177",
+        "doppler-project=dyad",
+        "doppler-config=preview"
+      ],
+      "project": "dyad",
+      "config": "preview",
+      "digest": null,
+      "pr": "177",
+      "labelAction": null,
+      "writes": false,
+      "requiresDoppler": false,
+      "needsTitle": false,
+      "positional": {
+        "name": "pr",
+        "field": "pr",
+        "pattern": "^[0-9]+$"
+      },
+      "verify": [],
+      "checkout": {
+        "triggers": [
+          "workflow_dispatch"
+        ],
+        "inputs": [
+          "pr",
+          "doppler-project",
+          "doppler-config"
+        ],
+        "required": [
+          "pr"
+        ],
+        "types": [],
+        "permissions": true
+      },
+      "dispatchRef": {
+        "sameCheckout": true,
+        "ref": "cursor/ops-axi-commands-f1a5",
+        "inputs": [
+          "pr",
+          "doppler-project",
+          "doppler-config"
+        ]
+      },
+      "undeclaredFields": []
+    },
+    {
+      "id": "bolt.status",
+      "name": "bolt status",
+      "argv": [
+        "bolt",
+        "status"
+      ],
+      "kind": "dispatch",
+      "repo": "Awannaphasch2016/dyad",
+      "workflow": "bolt-status.yml",
+      "workflowPath": ".github/workflows/bolt-status.yml",
+      "ref": "cursor/ops-axi-commands-f1a5",
+      "fields": [
+        "doppler-project=bolt",
+        "doppler-config=preview"
+      ],
+      "project": "bolt",
+      "config": "preview",
+      "digest": null,
+      "pr": null,
+      "labelAction": null,
+      "writes": false,
+      "requiresDoppler": false,
+      "needsTitle": false,
+      "positional": null,
+      "verify": [],
+      "checkout": {
+        "triggers": [
+          "workflow_dispatch"
+        ],
+        "inputs": [
+          "doppler-project",
+          "doppler-config"
+        ],
+        "required": [],
+        "types": [],
+        "permissions": true
+      },
+      "dispatchRef": {
+        "sameCheckout": true,
+        "ref": "cursor/ops-axi-commands-f1a5",
+        "inputs": [
+          "doppler-project",
+          "doppler-config"
+        ]
+      },
+      "undeclaredFields": []
+    },
+    {
+      "id": "forma.status",
+      "name": "forma status",
+      "argv": [
+        "forma",
+        "status"
+      ],
+      "kind": "dispatch",
+      "repo": "Awannaphasch2016/forma",
+      "workflow": "forma-status.yml",
+      "workflowPath": "packages/ops-axi/workflows/forma-status.yml",
+      "ref": "main",
+      "fields": [],
+      "project": null,
+      "config": null,
+      "digest": null,
+      "pr": null,
+      "labelAction": null,
+      "writes": false,
+      "requiresDoppler": false,
+      "needsTitle": false,
+      "positional": null,
+      "verify": [],
+      "checkout": {
+        "triggers": [
+          "workflow_dispatch"
+        ],
+        "inputs": [
+          "doppler-project",
+          "doppler-config"
+        ],
+        "required": [],
+        "types": [],
+        "permissions": true
+      },
+      "workflowInCatalogRepo": false
+    },
+    {
+      "id": "toolbox.image",
+      "name": "toolbox image",
+      "argv": [
+        "toolbox",
+        "image"
+      ],
+      "kind": "dispatch",
+      "repo": "Awannaphasch2016/dyad",
+      "workflow": "axi-toolbox-image.yml",
+      "workflowPath": ".github/workflows/axi-toolbox-image.yml",
+      "ref": "cursor/ops-axi-commands-f1a5",
+      "fields": [],
+      "project": null,
+      "config": null,
+      "digest": null,
+      "pr": null,
+      "labelAction": null,
+      "writes": false,
+      "requiresDoppler": false,
+      "needsTitle": false,
+      "positional": null,
+      "verify": [
+        {
+          "key": "image",
+          "regex": "^ghcr\\.io\\/.+@sha256:[0-9a-f]{64}$"
+        }
+      ],
+      "checkout": {
+        "triggers": [
+          "workflow_dispatch",
+          "push"
+        ],
+        "inputs": [],
+        "required": [],
+        "types": [],
+        "permissions": true
+      },
+      "dispatchRef": {
+        "sameCheckout": true,
+        "ref": "cursor/ops-axi-commands-f1a5",
+        "inputs": []
+      },
+      "undeclaredFields": []
+    },
+    {
+      "id": "toolbox.status",
+      "name": "toolbox status",
+      "argv": [
+        "toolbox",
+        "status"
+      ],
+      "kind": "dispatch",
+      "repo": "Awannaphasch2016/dyad",
+      "workflow": "toolbox-status.yml",
+      "workflowPath": ".github/workflows/toolbox-status.yml",
+      "ref": "cursor/ops-axi-commands-f1a5",
+      "fields": [],
+      "project": null,
+      "config": null,
+      "digest": null,
+      "pr": null,
+      "labelAction": null,
+      "writes": false,
+      "requiresDoppler": false,
+      "needsTitle": false,
+      "positional": null,
+      "verify": [],
+      "checkout": {
+        "triggers": [
+          "workflow_dispatch"
+        ],
+        "inputs": [],
+        "required": [],
+        "types": [],
+        "permissions": true
+      },
+      "dispatchRef": {
+        "sameCheckout": true,
+        "ref": "cursor/ops-axi-commands-f1a5",
+        "inputs": []
+      },
+      "undeclaredFields": []
+    },
+    {
+      "id": "toolbox.use",
+      "name": "toolbox use",
+      "argv": [
+        "toolbox",
+        "use",
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "kind": "toolbox-use",
+      "repo": "Awannaphasch2016/dyad",
+      "workflow": null,
+      "workflowPath": null,
+      "ref": null,
+      "fields": [],
+      "project": null,
+      "config": null,
+      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "pr": null,
+      "labelAction": null,
+      "writes": false,
+      "requiresDoppler": false,
+      "needsTitle": false,
+      "positional": {
+        "name": "digest",
+        "field": "digest",
+        "pattern": "^sha256:[0-9a-f]{64}$"
+      },
+      "verify": []
+    },
+    {
+      "id": "cursor.probe",
+      "name": "cursor probe",
+      "argv": [
+        "cursor",
+        "probe"
+      ],
+      "kind": "dispatch",
+      "repo": "Awannaphasch2016/dyad",
+      "workflow": "hitl-cursor-probe.yml",
+      "workflowPath": ".github/workflows/hitl-cursor-probe.yml",
+      "ref": "cursor/gascity-consolidation-step-f1a5",
+      "fields": [
+        "doppler-project=dyad",
+        "doppler-config=preview",
+        "aws-project=aws",
+        "aws-config=dev"
+      ],
+      "project": "dyad",
+      "config": "preview",
+      "digest": null,
+      "pr": null,
+      "labelAction": null,
+      "writes": false,
+      "requiresDoppler": false,
+      "needsTitle": false,
+      "positional": null,
+      "verify": [],
+      "checkout": {
+        "triggers": [
+          "workflow_dispatch"
+        ],
+        "inputs": [
+          "doppler-project",
+          "doppler-config",
+          "aws-project",
+          "aws-config"
+        ],
+        "required": [],
+        "types": [],
+        "permissions": true
+      },
+      "dispatchRef": {
+        "sameCheckout": false,
+        "ref": "cursor/gascity-consolidation-step-f1a5",
+        "inputs": [],
+        "capturedFrom": "origin/cursor/gascity-consolidation-step-f1a5 on 2026-10-16"
+      },
+      "undeclaredFields": [
+        "doppler-project",
+        "doppler-config",
+        "aws-project",
+        "aws-config"
+      ]
+    },
+    {
+      "id": "pr.open",
+      "name": "pr open",
+      "argv": [
+        "pr",
+        "open",
+        "Awannaphasch2016/forma",
+        "--title",
+        "Add status",
+        "--head",
+        "cursor/status"
+      ],
+      "kind": "dispatch",
+      "repo": "Awannaphasch2016/dyad",
+      "workflow": "pr-open.yml",
+      "workflowPath": ".github/workflows/pr-open.yml",
+      "ref": "cursor/ops-axi-commands-f1a5",
+      "fields": [
+        "target=Awannaphasch2016/forma",
+        "title=Add status",
+        "head=cursor/status",
+        "base=main"
+      ],
+      "project": null,
+      "config": null,
+      "digest": null,
+      "pr": null,
+      "labelAction": null,
+      "writes": true,
+      "requiresDoppler": false,
+      "needsTitle": true,
+      "positional": {
+        "name": "owner/repo",
+        "field": "target",
+        "pattern": "^[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+$"
+      },
+      "verify": [],
+      "checkout": {
+        "triggers": [
+          "workflow_dispatch"
+        ],
+        "inputs": [
+          "target",
+          "title",
+          "head",
+          "base",
+          "body",
+          "source-repo",
+          "source-ref"
+        ],
+        "required": [
+          "target",
+          "title",
+          "head"
+        ],
+        "types": [],
+        "permissions": true
+      },
+      "dispatchRef": {
+        "sameCheckout": true,
+        "ref": "cursor/ops-axi-commands-f1a5",
+        "inputs": [
+          "target",
+          "title",
+          "head",
+          "base",
+          "body",
+          "source-repo",
+          "source-ref"
+        ]
+      },
+      "undeclaredFields": []
+    }
+  ],
+  "proposed": [
+    {
+      "legacy": "ec2 check",
+      "canonical": [
+        "host",
+        "check",
+        "--host",
+        "gascity"
+      ],
+      "accepted": false
+    },
+    {
+      "legacy": "rollout",
+      "canonical": [
+        "host",
+        "rollout",
+        "--host",
+        "gascity",
+        "--sha",
+        "5e952bbc"
+      ],
+      "accepted": false
+    },
+    {
+      "legacy": "host status",
+      "canonical": [
+        "host",
+        "status",
+        "--host",
+        "gascity"
+      ],
+      "accepted": false
+    },
+    {
+      "legacy": "formula role",
+      "canonical": [
+        "identity",
+        "ensure",
+        "--profile",
+        "formula-preview"
+      ],
+      "accepted": false
+    },
+    {
+      "legacy": "formula verify",
+      "canonical": [
+        "identity",
+        "verify",
+        "--profile",
+        "formula-preview"
+      ],
+      "accepted": false
+    },
+    {
+      "legacy": "formula deploy",
+      "canonical": [
+        "formula",
+        "deploy",
+        "--env",
+        "preview"
+      ],
+      "accepted": false
+    },
+    {
+      "legacy": "formula status",
+      "canonical": [
+        "formula",
+        "status",
+        "--env",
+        "preview"
+      ],
+      "accepted": false
+    },
+    {
+      "legacy": "doppler status",
+      "canonical": [
+        "secrets",
+        "status",
+        "--profile",
+        "dyad"
+      ],
+      "accepted": false
+    },
+    {
+      "legacy": "doppler phase1",
+      "canonical": [
+        "secrets",
+        "migrate",
+        "--profile",
+        "dyad",
+        "--phase",
+        "phase1"
+      ],
+      "accepted": false
+    },
+    {
+      "legacy": "doppler verify",
+      "canonical": [
+        "secrets",
+        "verify",
+        "--profile",
+        "dyad"
+      ],
+      "accepted": false
+    },
+    {
+      "legacy": "preview image",
+      "canonical": [
+        "preview",
+        "deploy",
+        "--app",
+        "dyad",
+        "--target",
+        "wewebplus-ci"
+      ],
+      "accepted": false
+    },
+    {
+      "legacy": "preview up",
+      "canonical": [
+        "preview",
+        "up",
+        "--pr",
+        "177"
+      ],
+      "accepted": false
+    },
+    {
+      "legacy": "preview down",
+      "canonical": [
+        "preview",
+        "down",
+        "--pr",
+        "177"
+      ],
+      "accepted": false
+    },
+    {
+      "legacy": "preview exec",
+      "canonical": [
+        "preview",
+        "exec",
+        "--target",
+        "wewebplus-ci",
+        "--command",
+        "echo"
+      ],
+      "accepted": false
+    },
+    {
+      "legacy": "preview wake",
+      "canonical": [
+        "preview",
+        "wake",
+        "--target",
+        "wewebplus-ci"
+      ],
+      "accepted": false
+    },
+    {
+      "legacy": "preview secrets",
+      "canonical": [
+        "preview",
+        "key",
+        "seal",
+        "--target",
+        "wewebplus-ci"
+      ],
+      "accepted": false
+    },
+    {
+      "legacy": "preview status",
+      "canonical": [
+        "preview",
+        "status",
+        "--pr",
+        "177"
+      ],
+      "accepted": false
+    },
+    {
+      "legacy": "preview logs",
+      "canonical": [
+        "preview",
+        "logs",
+        "--pr",
+        "177"
+      ],
+      "accepted": false
+    },
+    {
+      "legacy": "preview db-status",
+      "canonical": [
+        "preview",
+        "database",
+        "status",
+        "--pr",
+        "177"
+      ],
+      "accepted": false
+    },
+    {
+      "legacy": "vibe status",
+      "canonical": [
+        "ui",
+        "status",
+        "--app",
+        "vibe",
+        "--pr",
+        "177"
+      ],
+      "accepted": false
+    },
+    {
+      "legacy": "bolt status",
+      "canonical": [
+        "ui",
+        "status",
+        "--app",
+        "bolt"
+      ],
+      "accepted": false
+    },
+    {
+      "legacy": "forma status",
+      "canonical": [
+        "ui",
+        "status",
+        "--app",
+        "forma"
+      ],
+      "accepted": false
+    },
+    {
+      "legacy": "toolbox image",
+      "canonical": [
+        "artifact",
+        "publish",
+        "--type",
+        "image",
+        "--name",
+        "axi-toolbox"
+      ],
+      "accepted": false
+    },
+    {
+      "legacy": "toolbox status",
+      "canonical": [
+        "artifact",
+        "status",
+        "--type",
+        "image",
+        "--name",
+        "axi-toolbox"
+      ],
+      "accepted": false
+    },
+    {
+      "legacy": "toolbox use",
+      "canonical": [
+        "toolbox",
+        "install",
+        "--digest",
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "accepted": false
+    },
+    {
+      "legacy": "cursor probe",
+      "canonical": [
+        "integration",
+        "probe",
+        "--provider",
+        "cursor"
+      ],
+      "accepted": false
+    },
+    {
+      "legacy": "pr open",
+      "canonical": [
+        "pr",
+        "open",
+        "Awannaphasch2016/forma",
+        "--title",
+        "Add status",
+        "--head",
+        "cursor/status"
+      ],
+      "accepted": true
+    }
+  ],
+  "notInCatalog": [
+    [
+      "resource",
+      "list"
+    ],
+    [
+      "ui",
+      "list"
+    ],
+    [
+      "ui",
+      "capabilities",
+      "--app",
+      "vibe"
+    ],
+    [
+      "session",
+      "prepare",
+      "--target",
+      "gascity"
+    ],
+    [
+      "session",
+      "status",
+      "--target",
+      "gascity"
+    ],
+    [
+      "session",
+      "run",
+      "--target",
+      "gascity",
+      "--command",
+      "echo ok"
+    ]
+  ]
+}
