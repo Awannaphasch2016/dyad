@@ -1,0 +1,41 @@
+# Contract tests for the ops-axi catalog. No production credentials.
+# The unit-test jobs in ci.yml run only when github.repository is
+# dyad-sh/dyad, so this fork needs its own job. It does not dispatch workflows.
+name: ops-axi contract
+
+on:
+  pull_request:
+    paths:
+      - packages/ops-axi/**
+      - .github/workflows/**
+      - .github/actions/**
+      - package.json
+  push:
+    branches:
+      - cursor/ops-axi-*
+    paths:
+      - packages/ops-axi/**
+      - .github/workflows/**
+      - .github/actions/**
+      - package.json
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ops-axi-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Legacy command contract
+        run: node --test packages/ops-axi/test/*.test.mjs
