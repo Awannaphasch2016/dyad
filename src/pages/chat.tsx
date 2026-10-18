@@ -15,7 +15,13 @@ import { useChats } from "@/hooks/useChats";
 import { selectedAppIdAtom } from "@/atoms/appAtoms";
 import { selectedChatIdAtom } from "@/atoms/chatAtoms";
 import { ipc } from "@/ipc/types";
-import { phaseFromTitle, previewOpenForPhase } from "@/lib/factoryPhase";
+import { canUseDesignPanel } from "@/auth/permissions";
+import { useClerkSession } from "@/auth/session";
+import {
+  canTogglePreviewForPhase,
+  phaseFromTitle,
+  previewOpenForPhase,
+} from "@/lib/factoryPhase";
 
 const DEFAULT_CHAT_PANEL_SIZE = 50;
 
@@ -31,6 +37,13 @@ export default function ChatPage() {
   const selectedAppId = useAtomValue(selectedAppIdAtom);
   const setSelectedAppId = useSetAtom(selectedAppIdAtom);
   const { chats, loading } = useChats(selectedAppId);
+  const session = useClerkSession();
+  const canDesign = canUseDesignPanel({
+    status: session.status,
+    roleId: session.status === "signed-in" ? session.roleId : null,
+    accountType:
+      session.status === "signed-in" ? session.account?.type : undefined,
+  });
   const previousSizeRef = useRef<number>(DEFAULT_CHAT_PANEL_SIZE);
   const isInitialMountRef = useRef(true);
   const selectedAppIdRef = useRef(selectedAppId);
@@ -115,8 +128,8 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (!factoryPhase) return;
-    setIsPreviewOpen(previewOpenForPhase(factoryPhase));
-  }, [factoryPhase, setIsPreviewOpen]);
+    setIsPreviewOpen(previewOpenForPhase(factoryPhase, { canDesign }));
+  }, [canDesign, factoryPhase, setIsPreviewOpen]);
 
   useEffect(() => {
     if (isPreviewOpen) {
@@ -165,7 +178,7 @@ export default function ChatPage() {
               chatId={chatId}
               isPreviewOpen={isPreviewOpen}
               onTogglePreview={() => {
-                if (factoryPhase && factoryPhase !== "implementation") {
+                if (!canTogglePreviewForPhase(factoryPhase, { canDesign })) {
                   setIsPreviewOpen(false);
                   ref.current?.collapse();
                   return;

@@ -41,8 +41,9 @@ import { cn } from "@/lib/utils";
 import { canUseDesignPanel } from "@/auth/permissions";
 import { useClerkSession } from "@/auth/session";
 import { useReducedMotionPref } from "@/hooks/useReducedMotion";
+import { selectedChatIdAtom } from "@/atoms/chatAtoms";
 import { useChats } from "@/hooks/useChats";
-import { hasFactoryPhases } from "@/lib/factoryPhase";
+import { hasFactoryPhases, phaseFromTitle } from "@/lib/factoryPhase";
 import {
   isFactoryPreviewTab,
   previewTabsForFactory,
@@ -213,8 +214,12 @@ export const PreviewToolbar = () => {
     isChatPanelHiddenAtom,
   );
   const selectedAppId = useAtomValue(selectedAppIdAtom);
+  const selectedChatId = useAtomValue(selectedChatIdAtom);
   const { chats } = useChats(selectedAppId);
   const factoryApp = hasFactoryPhases(chats);
+  const factoryPhase = phaseFromTitle(
+    chats.find((chat) => chat.id === selectedChatId)?.title,
+  );
   const session = useClerkSession();
   const canDesign = canUseDesignPanel({
     status: session.status,
@@ -269,10 +274,21 @@ export const PreviewToolbar = () => {
       if (!canDesign) setPreviewMode("preview");
       return;
     }
+    // Discovery and Delivery have no website Preview yet. Land Designers
+    // on the Design tab so Option A / C workflows are usable there.
+    if (
+      canDesign &&
+      factoryPhase != null &&
+      factoryPhase !== "implementation" &&
+      previewMode === "preview"
+    ) {
+      setPreviewMode("figma");
+      return;
+    }
     if (factoryApp && !isFactoryPreviewTab(previewMode)) {
       setPreviewMode("preview");
     }
-  }, [canDesign, factoryApp, previewMode, setPreviewMode]);
+  }, [canDesign, factoryApp, factoryPhase, previewMode, setPreviewMode]);
 
   const problemCount = problemReport ? problemReport.problems.length : 0;
   const displayCount =

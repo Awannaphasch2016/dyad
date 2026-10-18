@@ -22,6 +22,7 @@ import {
   orderedFactoryPhaseChats,
   phaseFromTitle,
   factoryChatIdsToDrop,
+  canTogglePreviewForPhase,
   previewOpenForPhase,
   factoryPhaseSkipsBlueprintQuestionnaire,
   userMessageHasApprovedDiscoverySummary,
@@ -43,10 +44,28 @@ describe("factoryPhase", () => {
     expect(factoryPhaseChatMode("delivery")).toBe("ask");
   });
 
-  it("opens the preview only for implementation", () => {
+  it("opens the preview only for implementation by default", () => {
     expect(previewOpenForPhase("discovery")).toBe(false);
     expect(previewOpenForPhase("implementation")).toBe(true);
     expect(previewOpenForPhase("delivery")).toBe(false);
+  });
+
+  it("opens Discovery and Delivery for someone who can design", () => {
+    expect(previewOpenForPhase("discovery", { canDesign: true })).toBe(true);
+    expect(previewOpenForPhase("delivery", { canDesign: true })).toBe(true);
+    expect(previewOpenForPhase("discovery", { canDesign: false })).toBe(false);
+  });
+
+  it("lets designers toggle the panel outside Implementation", () => {
+    expect(canTogglePreviewForPhase(null)).toBe(true);
+    expect(canTogglePreviewForPhase("implementation")).toBe(true);
+    expect(canTogglePreviewForPhase("discovery")).toBe(false);
+    expect(canTogglePreviewForPhase("discovery", { canDesign: true })).toBe(
+      true,
+    );
+    expect(canTogglePreviewForPhase("delivery", { canDesign: true })).toBe(
+      true,
+    );
   });
 
   it("moves forward only when the person continues", () => {

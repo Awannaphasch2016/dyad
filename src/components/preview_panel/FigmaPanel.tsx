@@ -153,8 +153,10 @@ export function FigmaPanel() {
       <div>
         <h2 className="text-sm font-medium">Design</h2>
         <p className="mt-1 text-xs text-muted-foreground">
-          Describe a screen to create it in Figma, or paste a Figma link to
-          build that screen in this app. Both go through the agent.
+          Use this in Discovery to set the design, in Implementation while the
+          app is built, or in Delivery to review. Describe a screen to create it
+          in Figma, or paste a Figma link to build that screen here. Both go
+          through the agent.
         </p>
         <p className="mt-2 text-xs text-muted-foreground">{remoteLabel}</p>
         <p className="mt-2 text-xs text-muted-foreground">{desktopLabel}</p>

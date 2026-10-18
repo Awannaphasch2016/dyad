@@ -34,9 +34,32 @@ export function factoryPhaseLabel(phase: FactoryPhase): string {
   return "Delivery";
 }
 
-/** The website preview belongs to the implementation chat only. */
-export function previewOpenForPhase(phase: FactoryPhase): boolean {
-  return phase === "implementation";
+/**
+ * Default open state for the right-hand panel.
+ * Implementation always opens the website Preview.
+ * Discovery and Delivery stay closed for most roles, but open for
+ * Designers so they can use the Design tab before and after build.
+ */
+export function previewOpenForPhase(
+  phase: FactoryPhase,
+  options?: { canDesign?: boolean },
+): boolean {
+  if (phase === "implementation") return true;
+  return options?.canDesign === true;
+}
+
+/**
+ * Whether the preview toggle may expand the right-hand panel.
+ * Non-factory chats always allow it. Factory Discovery/Delivery allow
+ * it only when the person can use the Design panel.
+ */
+export function canTogglePreviewForPhase(
+  phase: FactoryPhase | null,
+  options?: { canDesign?: boolean },
+): boolean {
+  if (phase == null) return true;
+  if (phase === "implementation") return true;
+  return options?.canDesign === true;
 }
 
 /**
