@@ -113,6 +113,8 @@ export const queryKeys = {
     all: ["factory"] as const,
     approvals: (appId: number | null) =>
       ["factory", "approvals", appId] as const,
+    discoveryDesign: (appId: number | null) =>
+      ["factory", "discovery-design", appId] as const,
     comments: (appId: number | null) => ["factory", "comments", appId] as const,
     questions: (appId: number | null, phase: string | null) =>
       ["factory", "questions", appId, phase] as const,

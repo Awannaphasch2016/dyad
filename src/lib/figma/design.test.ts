@@ -113,17 +113,19 @@ describe("figmaAccess", () => {
 });
 
 describe("designTurn", () => {
-  it("asks the agent to create the design in Figma", () => {
+  it("asks the agent to create the design in Figma via sandbox MCP hosts", () => {
     const text = designTurn({
       intent: "generate",
       prompt: "A settings screen",
       link: null,
     });
     expect(text).toContain("use_figma");
+    expect(text).toContain("execute_sandbox_script");
     expect(text).toContain("A settings screen");
+    expect(text).not.toMatch(/^Use the Figma MCP tool use_figma/m);
   });
 
-  it("hands a parsed link to the existing file writer", () => {
+  it("hands a parsed link to the existing file writer via sandbox MCP hosts", () => {
     const text = designTurn({
       intent: "import",
       prompt: "Match the spacing",
@@ -136,6 +138,9 @@ describe("designTurn", () => {
     expect(text).toContain("AbCdEf123456");
     expect(text).toContain("node 1:3");
     expect(text).toContain("write_file");
+    expect(text).toContain("execute_sandbox_script");
+    expect(text).toContain("get_metadata");
     expect(text).toContain("Match the spacing");
+    expect(text).toContain("Do not call them as top-level tools");
   });
 });

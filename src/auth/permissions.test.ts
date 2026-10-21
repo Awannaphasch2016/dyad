@@ -65,6 +65,50 @@ describe("clerk role gates", () => {
     });
   });
 
+  it("blocks Discovery approval until design is marked complete", () => {
+    expect(
+      approvalGate({
+        status: "unconfigured",
+        roleId: null,
+        phase: "discovery",
+        discoveryDesignComplete: false,
+      }),
+    ).toEqual({
+      allowed: false,
+      reason: "Mark the Discovery design complete before approving Discovery.",
+    });
+    expect(
+      approvalGate({
+        status: "signed-in",
+        roleId: "project-manager",
+        phase: "discovery",
+        accountType: "org",
+        discoveryDesignComplete: false,
+      }),
+    ).toEqual({
+      allowed: false,
+      reason: "Mark the Discovery design complete before approving Discovery.",
+    });
+    expect(
+      approvalGate({
+        status: "signed-in",
+        roleId: "project-manager",
+        phase: "discovery",
+        accountType: "org",
+        discoveryDesignComplete: true,
+      }),
+    ).toEqual({ allowed: true });
+    expect(
+      approvalGate({
+        status: "signed-in",
+        roleId: "project-manager",
+        phase: "implementation",
+        accountType: "org",
+        discoveryDesignComplete: false,
+      }),
+    ).toEqual({ allowed: true });
+  });
+
   it("lets only admins manage members once Clerk is configured", () => {
     expect(canManageMembers("unconfigured", false)).toBe(true);
     expect(canManageMembers("loading", false)).toBe(false);

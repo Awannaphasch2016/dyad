@@ -24,7 +24,7 @@
     "start:ending-sub": "node scripts/start-subscription-status.mjs subscription_ending",
     "start:paused-sub": "node scripts/start-subscription-status.mjs subscription_paused",
     "start:healthy-sub": "node scripts/start-subscription-status.mjs healthy",
-    "dev": "cross-env NODE_ENV=development npm start",
+    "dev": "cross-env NODE_ENV=development DYAD_SKIP_NATIVE_REBUILD=true npm start",
     "dev:engine": "cross-env DYAD_ENGINE_URL=http://localhost:8080/v1 npm start",
     "staging:engine": "cross-env DYAD_ENGINE_URL=https://staging---dyad-llm-engine-kq7pivehnq-uc.a.run.app/v1 npm start",
     "package": "npm run rebuild:keychain-reader && npm run clean && electron-forge package",

@@ -269,19 +269,32 @@ export const PreviewToolbar = () => {
     }
   }, [isVersionSelected, previewMode, setPreviewMode]);
 
+  // Land Designers on Design once when entering Discovery/Delivery. Do not
+  // bounce Preview→Design on every click — Build-from-link can leave real
+  // files worth previewing before Implementation.
+  const landedDesignForPhaseRef = useRef<string | null>(null);
   useEffect(() => {
+    if (factoryPhase === "implementation" || factoryPhase == null) {
+      landedDesignForPhaseRef.current = null;
+    }
     if (previewMode === "figma") {
-      if (!canDesign) setPreviewMode("preview");
+      if (!canDesign) {
+        setPreviewMode("preview");
+        return;
+      }
+      // Already on Design for this phase — count as the one-time land.
+      if (factoryPhase != null && factoryPhase !== "implementation") {
+        landedDesignForPhaseRef.current = factoryPhase;
+      }
       return;
     }
-    // Discovery and Delivery have no website Preview yet. Land Designers
-    // on the Design tab so Option A / C workflows are usable there.
     if (
       canDesign &&
       factoryPhase != null &&
       factoryPhase !== "implementation" &&
-      previewMode === "preview"
+      landedDesignForPhaseRef.current !== factoryPhase
     ) {
+      landedDesignForPhaseRef.current = factoryPhase;
       setPreviewMode("figma");
       return;
     }

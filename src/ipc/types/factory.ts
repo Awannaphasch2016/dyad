@@ -51,6 +51,16 @@ export const factoryContracts = {
     input: z.object({ appId: z.number(), phase: z.string() }),
     output: z.void(),
   }),
+  getDiscoveryDesign: defineContract({
+    channel: "factory:get-discovery-design",
+    input: z.object({ appId: z.number() }),
+    output: z.object({ complete: z.boolean() }),
+  }),
+  completeDiscoveryDesign: defineContract({
+    channel: "factory:complete-discovery-design",
+    input: z.object({ appId: z.number() }),
+    output: z.object({ complete: z.boolean() }),
+  }),
   importApprovals: defineContract({
     channel: "factory:import-approvals",
     input: z.object({ appId: z.number(), phases: z.array(z.string()) }),

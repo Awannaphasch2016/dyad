@@ -130,6 +130,12 @@ export const apps = sqliteTable(
     needsAppBlueprint: integer("needs_app_blueprint", { mode: "boolean" })
       .notNull()
       .default(sql`0`),
+    // Option A: Discovery stays open until a Designer marks design complete.
+    discoveryDesignComplete: integer("discovery_design_complete", {
+      mode: "boolean",
+    })
+      .notNull()
+      .default(sql`0`),
     // Per-app opt-in for the experimental AI E2E testing feature. Off by default:
     // running tests can mutate the app's real data, so the Tests panel gates all
     // run/generate controls behind this flag until the user explicitly enables it

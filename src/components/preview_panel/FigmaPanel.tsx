@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
-import { useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { selectedAppIdAtom } from "@/atoms/appAtoms";
 import { selectedChatIdAtom } from "@/atoms/chatAtoms";
 import { isChatPanelHiddenAtom } from "@/atoms/viewAtoms";
@@ -9,6 +9,7 @@ import { useClerkSession } from "@/auth/session";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { useChats } from "@/hooks/useChats";
 import { useSelectChat } from "@/hooks/useSelectChat";
 import { useStreamChat } from "@/hooks/useStreamChat";
 import { useMcp } from "@/hooks/useMcp";
@@ -19,6 +20,7 @@ import {
   figmaAccess,
   parseFigmaLink,
 } from "@/lib/figma/design";
+import { phaseFromTitle } from "@/lib/factoryPhase";
 import { queryKeys } from "@/lib/queryKeys";
 import { showError } from "@/lib/toast";
 
@@ -33,6 +35,10 @@ export function FigmaPanel() {
   const selectedAppId = useAtomValue(selectedAppIdAtom);
   const selectedChatId = useAtomValue(selectedChatIdAtom);
   const setIsChatPanelHidden = useSetAtom(isChatPanelHiddenAtom);
+  const { chats } = useChats(selectedAppId);
+  const factoryPhase = phaseFromTitle(
+    chats.find((chat) => chat.id === selectedChatId)?.title,
+  );
   const { selectChat } = useSelectChat();
   const queryClient = useQueryClient();
   const { streamMessage } = useStreamChat({ hasChatId: false });
@@ -43,6 +49,29 @@ export function FigmaPanel() {
     null,
   );
   const access = figmaAccess(servers, statusByServer);
+  const designQuery = useQuery({
+    queryKey: queryKeys.factory.discoveryDesign(selectedAppId),
+    enabled: selectedAppId != null && factoryPhase === "discovery",
+    queryFn: async () => {
+      if (selectedAppId == null) return { complete: false };
+      return ipc.factory.getDiscoveryDesign({ appId: selectedAppId });
+    },
+  });
+  const completeDesignMutation = useMutation({
+    mutationFn: async () => {
+      if (selectedAppId == null) throw new Error("No app selected");
+      return ipc.factory.completeDiscoveryDesign({ appId: selectedAppId });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.factory.discoveryDesign(selectedAppId),
+      });
+    },
+    onError: (error) => {
+      showError(error instanceof Error ? error.message : String(error));
+    },
+  });
+  const designComplete = designQuery.data?.complete === true;
 
   const link = parseFigmaLink(linkText);
   const linkError =
@@ -160,6 +189,13 @@ export function FigmaPanel() {
         </p>
         <p className="mt-2 text-xs text-muted-foreground">{remoteLabel}</p>
         <p className="mt-2 text-xs text-muted-foreground">{desktopLabel}</p>
+        {factoryPhase === "discovery" ? (
+          <p className="mt-2 text-xs text-muted-foreground">
+            {designComplete
+              ? "Design is complete. Discovery can be approved."
+              : "When the design requirement is done, mark it complete so Discovery can close."}
+          </p>
+        ) : null}
       </div>
       <label className="flex flex-col gap-1 text-xs">
         What should this screen be?
@@ -220,6 +256,24 @@ export function FigmaPanel() {
                 : "Connect Figma desktop"}
           </Button>
         )}
+        {factoryPhase === "discovery" && !designComplete ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={
+              busy != null ||
+              completeDesignMutation.isPending ||
+              designQuery.isLoading
+            }
+            data-testid="figma-design-complete"
+            onClick={() => void completeDesignMutation.mutateAsync()}
+          >
+            {completeDesignMutation.isPending
+              ? "Saving…"
+              : "Mark design complete"}
+          </Button>
+        ) : null}
       </div>
     </div>
   );

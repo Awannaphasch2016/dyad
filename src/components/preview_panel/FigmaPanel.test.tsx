@@ -12,6 +12,9 @@ vi.mock("@/hooks/useSelectChat", () => ({
 vi.mock("@/hooks/useStreamChat", () => ({
   useStreamChat: () => ({ streamMessage: vi.fn() }),
 }));
+vi.mock("@/hooks/useChats", () => ({
+  useChats: () => ({ chats: [] }),
+}));
 vi.mock("@/ipc/types", () => ({
   ipc: {
     chat: { createChat: vi.fn() },
@@ -19,6 +22,10 @@ vi.mock("@/ipc/types", () => ({
       addFromCatalog: vi.fn(),
       listCatalog: vi.fn(),
       listServers: vi.fn(),
+    },
+    factory: {
+      getDiscoveryDesign: vi.fn(async () => ({ complete: false })),
+      completeDiscoveryDesign: vi.fn(async () => ({ complete: true })),
     },
   },
 }));

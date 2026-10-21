@@ -18,7 +18,9 @@ export function registerFactoryHostHandlers() {
           error.message,
           error.statusCode === 404
             ? DyadErrorKind.NotFound
-            : DyadErrorKind.Validation,
+            : error.statusCode === 409
+              ? DyadErrorKind.Precondition
+              : DyadErrorKind.Validation,
         );
       }
       throw error;

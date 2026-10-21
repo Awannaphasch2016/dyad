@@ -126,6 +126,26 @@ export async function listPhaseApprovals(
     }));
 }
 
+export async function getDiscoveryDesignStatus(
+  event: { sender: { id: number } },
+  appId: number,
+): Promise<{ complete: boolean }> {
+  const { app } = await requireOwnedApp(event, appId, "view-page");
+  return { complete: Boolean(app.discoveryDesignComplete) };
+}
+
+export async function completeDiscoveryDesign(
+  event: { sender: { id: number } },
+  appId: number,
+): Promise<{ complete: boolean }> {
+  await requireOwnedApp(event, appId, "design");
+  db.update(apps)
+    .set({ discoveryDesignComplete: true, updatedAt: new Date() })
+    .where(eq(apps.id, appId))
+    .run();
+  return { complete: true };
+}
+
 export async function approvePhase(
   event: { sender: { id: number } },
   appId: number,
@@ -141,6 +161,12 @@ export async function approvePhase(
   const factoryPhase = approvalPhase(phase);
   if (!factoryPhase) {
     throw new DyadError("Unknown factory phase.", DyadErrorKind.Validation);
+  }
+  if (factoryPhase === "discovery" && !app.discoveryDesignComplete) {
+    throw new DyadError(
+      "Mark the Discovery design complete before approving Discovery.",
+      DyadErrorKind.Precondition,
+    );
   }
   const existing = db
     .select()

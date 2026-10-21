@@ -172,6 +172,13 @@ export function approveFactoryPhase(
   appId: number,
   phase: FactoryPhase,
 ) {
+  const app = requireApp(database, appId);
+  if (phase === "discovery" && !app.discoveryDesignComplete) {
+    throw new FactoryHostError(
+      "Mark the Discovery design complete before approving Discovery.",
+      409,
+    );
+  }
   resolveFactoryPhaseChats(database, appId);
   database
     .insert(factoryPhaseApprovals)

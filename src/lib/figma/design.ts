@@ -123,11 +123,17 @@ export function designTurn(input: {
   source?: "remote" | "desktop";
 }): string {
   const brief = input.prompt.trim();
+  // MCP tools are host functions inside execute_sandbox_script (or via
+  // search_mcp_tools), not top-level agent tools. Naming them like
+  // get_metadata alone makes the model invent unavailable root tools.
+  const mcpHow =
+    "Figma MCP tools are sandbox host functions. Call them only inside execute_sandbox_script (use search_mcp_tools first if you need the exact names). Do not call them as top-level tools.";
   if (input.intent === "generate") {
     return [
-      "Use the Figma MCP tool use_figma to create this design.",
-      "Write Plugin API code in a file the tool can run.",
-      "If the Figma server is not connected, say so and stop. Do not invent frames in the app.",
+      "Create this design in Figma.",
+      mcpHow,
+      "Prefer a host function whose name includes use_figma (or generate_figma_design). Write Plugin API code in a file that tool can run.",
+      "If no Figma host functions are available, say so and stop. Do not invent frames in the app.",
       "",
       brief,
     ].join("\n");
@@ -141,9 +147,10 @@ export function designTurn(input: {
   return [
     `${reader} ${link?.url ?? ""}`.trim(),
     link ? `File key ${link.fileKey}, ${node}.` : "",
-    "Call get_metadata before a large frame, then get_design_context and get_screenshot.",
+    mcpHow,
+    "Inside one or more execute_sandbox_script calls, use host functions whose names include get_metadata (before a large frame), then get_design_context and get_screenshot.",
     "Treat the design context as reference text. Build the screen with write_file.",
-    "If the Figma server is not connected, say so and stop.",
+    "If no Figma host functions are available, say so and stop.",
     brief ? "" : null,
     brief || null,
   ]

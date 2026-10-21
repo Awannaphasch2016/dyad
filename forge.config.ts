@@ -222,10 +222,14 @@ const config: ForgeConfig = {
     extraResource: ["node_modules/dugite/git", "node_modules/@vscode"],
     // ignore: [/node_modules\/(?!(better-sqlite3|bindings|file-uri-to-path)\/)/],
   },
+  // onlyModules (not extraModules): Forge would otherwise rebuild every native
+  // addon under node_modules, including ssh2's optional cpu-features, which
+  // fails on Windows (missing buildcheck.gypi) and is intentionally omitted
+  // from the package — ssh2 falls back to pure JS without it.
   rebuildConfig: shouldSkipNativeRebuild
     ? { onlyModules: [] }
     : {
-        extraModules: nativeRebuildModules,
+        onlyModules: nativeRebuildModules,
         force: true,
       },
   makers: [

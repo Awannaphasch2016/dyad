@@ -12,6 +12,8 @@ const getState = vi.hoisted(() => vi.fn());
 const approvePhase = vi.hoisted(() => vi.fn());
 const approveAccountPhase = vi.hoisted(() => vi.fn());
 const listApprovals = vi.hoisted(() => vi.fn());
+const getDiscoveryDesign = vi.hoisted(() => vi.fn());
+const completeDiscoveryDesign = vi.hoisted(() => vi.fn());
 const getChat = vi.hoisted(() => vi.fn());
 const downloadFactoryDocument = vi.hoisted(() => vi.fn());
 
@@ -61,6 +63,9 @@ vi.mock("@/ipc/types", () => ({
       listApprovals: (...args: unknown[]) => listApprovals(...args),
       importApprovals: vi.fn(),
       approve: (...args: unknown[]) => approveAccountPhase(...args),
+      getDiscoveryDesign: (...args: unknown[]) => getDiscoveryDesign(...args),
+      completeDiscoveryDesign: (...args: unknown[]) =>
+        completeDiscoveryDesign(...args),
       listComments: vi.fn(async () => ({ comments: [] })),
       addComment: vi.fn(),
       listQuestions: vi.fn(async () => ({ questions: [] })),
@@ -108,6 +113,10 @@ describe("FactoryPhaseBar", () => {
     approveAccountPhase.mockReset();
     listApprovals.mockReset();
     listApprovals.mockResolvedValue({ approvals: [] });
+    getDiscoveryDesign.mockReset();
+    getDiscoveryDesign.mockResolvedValue({ complete: true });
+    completeDiscoveryDesign.mockReset();
+    completeDiscoveryDesign.mockResolvedValue({ complete: true });
     approveAccountPhase.mockResolvedValue(undefined);
     getChat.mockReset();
     downloadFactoryDocument.mockReset();
@@ -116,6 +125,35 @@ describe("FactoryPhaseBar", () => {
       factoryHostManaged: false,
       gasCityProjectId: null,
       approvedPhases: ["discovery"],
+    });
+  });
+
+  it("keeps Discovery closed until design is marked complete", async () => {
+    getDiscoveryDesign.mockResolvedValue({ complete: false });
+    getState.mockResolvedValue({
+      appId: 7,
+      factoryHostManaged: false,
+      gasCityProjectId: null,
+      approvedPhases: [],
+    });
+    getChat.mockImplementation(async (chatId: number) =>
+      chatId === 1 ? { messages: [discoverySummary] } : { messages: [] },
+    );
+
+    renderBar();
+    const approve = await screen.findByRole("button", {
+      name: "Approve and continue to Implementation",
+    });
+    expect(approve).toHaveProperty("disabled", true);
+    expect(
+      screen.getByText(/Mark the Discovery design complete/i),
+    ).toBeTruthy();
+    const markDone = screen.getByRole("button", {
+      name: "Mark design complete",
+    });
+    fireEvent.click(markDone);
+    await waitFor(() => {
+      expect(completeDiscoveryDesign).toHaveBeenCalledWith({ appId: 7 });
     });
   });
 

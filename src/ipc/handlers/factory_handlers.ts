@@ -4,7 +4,9 @@ import { eq } from "drizzle-orm";
 import {
   addPhaseComment,
   approvePhase,
+  completeDiscoveryDesign,
   getAnswerLock,
+  getDiscoveryDesignStatus,
   importLocalApprovals,
   listPhaseApprovals,
   listPhaseComments,
@@ -49,6 +51,16 @@ export function registerFactoryHandlers() {
   createTypedHandler(factoryContracts.approve, async (event, params) => {
     await approvePhase(event, params.appId, params.phase);
   });
+
+  createTypedHandler(
+    factoryContracts.getDiscoveryDesign,
+    async (event, params) => getDiscoveryDesignStatus(event, params.appId),
+  );
+
+  createTypedHandler(
+    factoryContracts.completeDiscoveryDesign,
+    async (event, params) => completeDiscoveryDesign(event, params.appId),
+  );
 
   createTypedHandler(
     factoryContracts.importApprovals,

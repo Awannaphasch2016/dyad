@@ -42,10 +42,11 @@ import {
   canDownloadFactoryDocument,
   downloadFactoryDocument,
 } from "@/lib/factoryDocuments";
-import { approvalGate } from "@/auth/permissions";
+import { approvalGate, canUseDesignPanel } from "@/auth/permissions";
 import { useClerkRole, useClerkSession } from "@/auth/session";
 import { queryKeys } from "@/lib/queryKeys";
 import { cn } from "@/lib/utils";
+import { showError } from "@/lib/toast";
 import { HitlQuestionList } from "./HitlQuestionList";
 
 function approvalsStorageKey(appId: number): string {
@@ -100,6 +101,28 @@ export function FactoryPhaseBar() {
       if (appId == null) return [];
       const result = await ipc.factory.listComments({ appId });
       return result.comments;
+    },
+  });
+  const designQuery = useQuery({
+    queryKey: queryKeys.factory.discoveryDesign(appId),
+    enabled: appId != null,
+    queryFn: async () => {
+      if (appId == null) return { complete: false };
+      return ipc.factory.getDiscoveryDesign({ appId });
+    },
+  });
+  const completeDesignMutation = useMutation({
+    mutationFn: async () => {
+      if (appId == null) throw new Error("No app selected");
+      return ipc.factory.completeDiscoveryDesign({ appId });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.factory.discoveryDesign(appId),
+      });
+    },
+    onError: (error) => {
+      showError(error instanceof Error ? error.message : String(error));
     },
   });
   const { chats } = useChats(appId);
@@ -256,12 +279,20 @@ export function FactoryPhaseBar() {
   const next = nextFactoryPhase(phase);
   const nextChat = next ? byPhase[next] : undefined;
   const phaseSummary = summaries.get(phase) ?? null;
+  const designComplete = designQuery.data?.complete === true;
+  const canDesign = canUseDesignPanel({
+    status: session.status,
+    roleId: session.status === "signed-in" ? session.roleId : null,
+    accountType:
+      session.status === "signed-in" ? session.account?.type : undefined,
+  });
   const gate = approvalGate({
     status: role.status,
     roleId: role.roleId,
     phase,
     accountType:
       session.status === "signed-in" ? (session.account?.type ?? null) : null,
+    discoveryDesignComplete: phase === "discovery" ? designComplete : undefined,
   });
   const canApprove =
     canContinueFactoryPhase({
@@ -376,43 +407,66 @@ export function FactoryPhaseBar() {
             </Button>
           );
         })}
-        {showApproval && next && nextChat && (
-          <Button
-            type="button"
-            size="sm"
-            className="ml-auto"
-            disabled={!canApprove || approvalPending}
-            data-testid="factory-phase-continue"
-            onClick={() => void approveAndContinue()}
-          >
-            Approve and continue to {factoryPhaseLabel(next)}
-          </Button>
-        )}
-        {showApproval && !next && (
-          <Button
-            type="button"
-            size="sm"
-            className="ml-auto"
-            disabled={!canApprove || approvalPending}
-            data-testid="factory-phase-continue"
-            onClick={() => void recordApproval()}
-          >
-            Approve delivery
-          </Button>
-        )}
-        {canDownload && (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="ml-auto"
-            data-testid="factory-phase-download"
-            onClick={downloadDocumentation}
-          >
-            <Download className="size-3" aria-hidden />
-            Download documentation
-          </Button>
-        )}
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {phase === "discovery" && canDesign && !designComplete && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={
+                completeDesignMutation.isPending || designQuery.isLoading
+              }
+              data-testid="factory-design-complete"
+              onClick={() => void completeDesignMutation.mutateAsync()}
+            >
+              {completeDesignMutation.isPending
+                ? "Saving…"
+                : "Mark design complete"}
+            </Button>
+          )}
+          {phase === "discovery" && designComplete && (
+            <span
+              className="text-xs text-muted-foreground"
+              data-testid="factory-design-complete-status"
+            >
+              Design complete
+            </span>
+          )}
+          {showApproval && next && nextChat && (
+            <Button
+              type="button"
+              size="sm"
+              disabled={!canApprove || approvalPending}
+              data-testid="factory-phase-continue"
+              onClick={() => void approveAndContinue()}
+            >
+              Approve and continue to {factoryPhaseLabel(next)}
+            </Button>
+          )}
+          {showApproval && !next && (
+            <Button
+              type="button"
+              size="sm"
+              disabled={!canApprove || approvalPending}
+              data-testid="factory-phase-continue"
+              onClick={() => void recordApproval()}
+            >
+              Approve delivery
+            </Button>
+          )}
+          {canDownload && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              data-testid="factory-phase-download"
+              onClick={downloadDocumentation}
+            >
+              <Download className="size-3" aria-hidden />
+              Download documentation
+            </Button>
+          )}
+        </div>
       </div>
       {phase && (
         <HitlQuestionList

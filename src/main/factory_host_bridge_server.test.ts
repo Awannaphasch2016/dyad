@@ -188,6 +188,11 @@ describe("factory host bridge", () => {
     expect(stored).toHaveLength(1);
     expect(stored[0].content).toContain("Discovery is ready &lt;now&gt;");
 
+    database
+      .update(apps)
+      .set({ discoveryDesignComplete: true })
+      .where(eq(apps.id, appId))
+      .run();
     await request(`/v1/apps/${appId}/phases/discovery/approve`, {
       method: "POST",
     });

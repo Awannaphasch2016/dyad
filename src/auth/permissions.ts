@@ -51,18 +51,40 @@ export function approvalGate(input: {
   phase: FactoryPhase;
   /** A private account owns its phases. Organization approval follows the role. */
   accountType?: "user" | "org" | null;
+  /**
+   * Discovery close also needs design done (Option A). Omit on non-discovery
+   * phases. When provided as false, Discovery approval stays closed.
+   */
+  discoveryDesignComplete?: boolean;
 }): ApprovalGate {
-  if (input.status === "unconfigured") return { allowed: true };
+  if (input.status === "unconfigured") {
+    return discoveryDesignGate(input);
+  }
   if (input.status !== "signed-in") {
     return { allowed: false, reason: "Sign in to approve this phase." };
   }
-  if (input.accountType === "user") return { allowed: true };
-  if (
-    roleHasPermission(input.roleId, approvalPermissionForPhase(input.phase))
-  ) {
-    return { allowed: true };
+  if (input.accountType === "user") {
+    return discoveryDesignGate(input);
   }
-  return { allowed: false, reason: "Your role can't approve this phase." };
+  if (
+    !roleHasPermission(input.roleId, approvalPermissionForPhase(input.phase))
+  ) {
+    return { allowed: false, reason: "Your role can't approve this phase." };
+  }
+  return discoveryDesignGate(input);
+}
+
+function discoveryDesignGate(input: {
+  phase: FactoryPhase;
+  discoveryDesignComplete?: boolean;
+}): ApprovalGate {
+  if (input.phase === "discovery" && input.discoveryDesignComplete === false) {
+    return {
+      allowed: false,
+      reason: "Mark the Discovery design complete before approving Discovery.",
+    };
+  }
+  return { allowed: true };
 }
 
 /** Renderer-only. Unconfigured keeps the invite form usable. */
