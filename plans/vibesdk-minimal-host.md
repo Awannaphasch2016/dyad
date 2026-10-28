@@ -1,22 +1,50 @@
 # Vibe SDK minimal host
 
-This is the handoff plan for the selected Vibe SDK feature set. The branch that carries it consolidates the kept preview patches and stops. It does not add the Docker behavior. Review this plan before any further implementation.
+This is the handoff for the selected Vibe SDK host. The approved permission model and the in-chat question are implemented on this branch. The Docker behavior is specified below and is not implemented. Think stays the pin default until a later change selects `behaviorType: 'docker'`.
 
 The older swarm plan in [plans/vibesdk-agent-hitl.md](vibesdk-agent-hitl.md) is superseded for this selection. Its scripted-agent proof is not the selected design.
+
+## Related pull requests
+
+The implementation stack, parent to child, is [#68](https://github.com/Awannaphasch2016/dyad/pull/68) → [#124](https://github.com/Awannaphasch2016/dyad/pull/124) → [#128](https://github.com/Awannaphasch2016/dyad/pull/128) → [#135](https://github.com/Awannaphasch2016/dyad/pull/135) → [#138](https://github.com/Awannaphasch2016/dyad/pull/138) → [#143](https://github.com/Awannaphasch2016/dyad/pull/143) → [#153](https://github.com/Awannaphasch2016/dyad/pull/153) → [#158](https://github.com/Awannaphasch2016/dyad/pull/158) → [#161](https://github.com/Awannaphasch2016/dyad/pull/161) → [#164](https://github.com/Awannaphasch2016/dyad/pull/164) → [#165](https://github.com/Awannaphasch2016/dyad/pull/165) → [#166](https://github.com/Awannaphasch2016/dyad/pull/166) → [#167](https://github.com/Awannaphasch2016/dyad/pull/167) → [#168](https://github.com/Awannaphasch2016/dyad/pull/168) → [#170](https://github.com/Awannaphasch2016/dyad/pull/170). This branch starts from the organization snapshot in #135 and does not carry the later commits.
+
+| Pull request | What it decided, and what this branch did with it |
+| --- | --- |
+| [#68](https://github.com/Awannaphasch2016/dyad/pull/68) | Preview worker, D1, and the `preview-vibesdk` label. Kept. |
+| [#86](https://github.com/Awannaphasch2016/dyad/pull/86) | Plan for the shared Clerk session. The session code that landed with the preview is kept (`vibesdk-shared-role` only). |
+| [#121](https://github.com/Awannaphasch2016/dyad/pull/121), [#127](https://github.com/Awannaphasch2016/dyad/pull/127) | Plans for an agent-driven loop on the existing prompt box. Kept as the product rule. The scripted proof was not. |
+| [#124](https://github.com/Awannaphasch2016/dyad/pull/124) | Scripted two-role card. Left out. [#128](https://github.com/Awannaphasch2016/dyad/pull/128) replaced it with the real prompt box. |
+| [#128](https://github.com/Awannaphasch2016/dyad/pull/128) | Project Manager creates from the existing prompt box. Developer Enter does not. Kept. |
+| [#129](https://github.com/Awannaphasch2016/dyad/pull/129), [#134](https://github.com/Awannaphasch2016/dyad/pull/134) | Plans for organization belonging. The code landed in #135. This branch keeps `org_id` and `created_by`, then limits opening to `project_members`. |
+| [#135](https://github.com/Awannaphasch2016/dyad/pull/135) | Creating an app does not make the creator the owner, and every organization member could open it. The owner part stays. The "every member" part is replaced by project assignment. |
+| [#137](https://github.com/Awannaphasch2016/dyad/pull/137), [#138](https://github.com/Awannaphasch2016/dyad/pull/138) | Named turns and a locked waiting box. The two-view rule stays (named role sees the body, the other sees the waiting line). The lock icon, account-name labels, and the box chrome do not. |
+| [#139](https://github.com/Awannaphasch2016/dyad/pull/139), [#143](https://github.com/Awannaphasch2016/dyad/pull/143) | Avatars and the Orange "Response required" card. Left out. |
+| [#147](https://github.com/Awannaphasch2016/dyad/pull/147), [#153](https://github.com/Awannaphasch2016/dyad/pull/153) | Owe `generate_all` before the socket opens. Left out. The pin already sends `generate_all` after the handshake. |
+| [#157](https://github.com/Awannaphasch2016/dyad/pull/157), [#158](https://github.com/Awannaphasch2016/dyad/pull/158) | Session chrome and extra shared-session keys. Left out. |
+| [#161](https://github.com/Awannaphasch2016/dyad/pull/161), [#164](https://github.com/Awannaphasch2016/dyad/pull/164), [#165](https://github.com/Awannaphasch2016/dyad/pull/165), [#166](https://github.com/Awannaphasch2016/dyad/pull/166), [#167](https://github.com/Awannaphasch2016/dyad/pull/167), [#168](https://github.com/Awannaphasch2016/dyad/pull/168), [#170](https://github.com/Awannaphasch2016/dyad/pull/170) | Methodology catalogs, phase packs, Spec Kit, and the one-shop recording. Left out. Do not treat #170 as this host. |
+
+Merged Dyad HITL pull requests #7, #8, #9, and #12 are the Wewebplus membership tables this host reads. They are not Vibe SDK code. Do not alter them.
 
 ## Locked decisions
 
 - The only typing place is the Vibe SDK prompt box that already exists. A reply is the next user message on the existing `USER_SUGGESTION` websocket path. There is no second text field.
-- Only the Project Manager can create an app. The server gate is `assertProjectManager`. The home screen also returns early when the shared session role contains `Developer`, so a Developer press of Enter does not navigate into a new chat. The server gate is the one that counts.
-- There is no private app. An app row stores `org_id` and `created_by`. Creating records who used the permission. It does not confer belonging. Either member of that organization can open the app (`memberCanAccessApp`). Until `org_id` is set, only the Project Manager can connect.
-- Roles are read from `wewebplus.memberships` (`org_id`, `role_id` for the Clerk user id). Exactly one `project-manager` or `developer` row is usable. Shared `wewebplus` tables are not altered. This run's app, question, and answer rows live in the preview's own D1 database.
-- One question is open at a time. An unnamed or unknown role is stored as `project-manager` with `assignment = 'fallback'`. Requirements and UX go to the Project Manager. Files, code, and technical choices go to the Developer.
-- The named role sees the question body. The other role sees one waiting line, `Waiting on the Project Manager.` or `Waiting on the Developer.`, and does not see the body. One answer is stored once. A second answer does not resume the run.
+- Only the Project Manager can create an app. The server gate is `assertProjectManager`. The home screen also returns early when the shared session role contains `Developer`, so a Developer press of Enter does not navigate into a new chat. The server gate is the one that counts. Create happens before a project row exists, so it still reads the Wewebplus role. On create, the creator is inserted into `project_members` as `project-manager`. Otherwise they could not see the app they started.
+- There is no private app. An app row stores `org_id` and `created_by`. `created_by` records who used the permission. It is not an access check. A person sees a project only when `project_members` has a row for them. An Admin does not automatically see every project. An Admin can assign themselves.
+- Permissions are hardcoded. `project-manager` can view, start, and delete. `developer` can view. There is no `role_permissions` table and no per-project override.
+- Admin is an organization role on `org_members.org_role` (`admin` or `member`), not a project role and not a Wewebplus role. The Wewebplus project manager is inserted as `admin`. The Wewebplus developer is inserted as `member`. `INSERT OR IGNORE` keeps an existing admin from being demoted. Assigning another user requires `org_role = admin` and an existing organization member, then inserts `project_members`. `POST /api/org/assign` is that path. The two-browser spec calls it so the Developer can open the app.
+- A person can be Admin of the organization and `project-manager` on a project. Those are two rows.
+- Delete belongs to the project-manager role. Every project manager assigned to that project can delete it. The delete statement matches the app id and does not also require `apps.user_id` to be the caller. A developer cannot delete.
+- The last-admin guard is not implemented. If the only admin demotes themselves, project access through `project_members` still works, and nobody can assign people until `org_members` is edited by hand. Do not add the guard unless a later request asks for it.
+- Roles for the organization roster are read from `wewebplus.memberships` (`org_id`, `role_id` for the Clerk user id). Exactly one `project-manager` or `developer` row is usable. Shared `wewebplus` tables are not altered. Do not write `admin` into `wewebplus.memberships.role_id`. This run's app, membership, question, and answer rows live in the preview's own D1 database.
+- One question is open at a time. An unnamed or unknown role is stored as `project-manager` with `assignment = 'fallback'`. Requirements and UX go to the Project Manager. Files, code, and technical choices go to the Developer. The socket role is the project role from `project_members`, so the person who can answer is the person assigned that project role.
+- The named role sees the question body in the chat transcript (`data-testid="org-question"`). The other role sees one waiting line there, `Waiting on the Project Manager.` or `Waiting on the Developer.` (`data-testid="org-waiting"`), and does not see the body. The line is not dismissible. The clarifying-question panel is not mounted (`aboveContent={null}`). The prompt box unlocks only when the poll returns a body for that role. One answer is stored once. A second answer does not resume the run.
+- The display is the open row from `GET /api/org/question`, polled from the chat. `publishOrganizationQuestion` stores the row and does not also push the body as a conversation message, so the question is not shown twice. A refresh keeps the row.
 - The accepted answer is the next user message. That message starts the next run unit.
 - Think stays the default behavior, as the pin wrote it. This branch does not retarget Think at OpenRouter, does not change the preview iframe, and does not add a static-site deploy.
-- The Docker agent is a fourth behavior, selected in `CodeGeneratorAgent`, sibling of `ThinkCodingBehavior`. It is not a mode inside `ThinkAgent`. One container execution replaces the single `stub.chat()` call. The host does not evaluate model output to choose a next phase, and it does not wrap the container in the later eight-call bead loop.
+- The Docker agent is a fourth behavior, selected in `CodeGeneratorAgent`, sibling of `ThinkCodingBehavior`. It is not a mode inside `ThinkAgent`. One container execution replaces the single `stub.chat()` call. The host does not evaluate model output to choose a next phase, and it does not wrap the container in the later eight-call bead loop. That behavior file is not written yet.
 - Both browsers share one `CodeGeneratorAgent` and one `SpaceDO`. The editor file list is the shared generated code. There is no fleet type.
 - Electron, Gas City formula files, hitl-web, Bolt, phase permissions, Discovery/Implementation/Delivery, Continue, and the phase-approval button stay out. Do not vendor upstream methodology skills. The host does not run `gc`.
+- Gallery changes stay refused (`Changing the gallery flag is not available.`). `Make public` stays hidden. `visibility` stays the unused gallery flag. It is not belonging and not who may press Enter. GitHub repository visibility is a different column.
 
 ## What this branch contains
 
@@ -27,7 +55,7 @@ Kept from the organization snapshot (the commit that let organization members op
 - `deploy/preview/vibesdk.mjs` — preview names, Wrangler config, lab and production refusal, and `patchWorkerExports` (drops the `UserAppSandboxService` export). No model patch.
 - `deploy/preview/vibesdk-preview.mjs` — clone the pin, drop the sandbox export, apply Clerk shared sign-in, apply the organization run, deploy the per-PR worker. Think is logged as `think_behavior=upstream`. The worker does not receive `OPENROUTER_API_KEY`.
 - `deploy/preview/vibesdk-shared-auth.mjs` — Clerk session already used by the preview. The role is stored as `vibesdk-shared-role` and removed on sign-out. Later session keys for the account name and the organization name are not included.
-- `deploy/preview/vibesdk-org-run.mjs` — organization schema, membership read, create gate, question and answer rows, role filter, and the temporary Think intercept described below.
+- `deploy/preview/vibesdk-org-run.mjs` — organization schema, `org_members`, `project_members`, membership read, create gate, question and answer rows, role filter, assign route, and the temporary Think intercept described below.
 - `deploy/preview/vibesdk-cloudflare.mjs` — per-PR D1, KV, and R2. Lab and production ids are refused.
 - `deploy/preview/clerk-origins.mjs` — allow the preview `workers.dev` origin. The lab host is not added.
 - `deploy/preview/transition.mjs` — `preview-vibesdk` is its own label. The Dyad `preview` label does not deploy this worker.
@@ -67,6 +95,18 @@ D1 statements, applied idempotently on the preview database only:
 ```sql
 ALTER TABLE apps ADD COLUMN org_id TEXT
 ALTER TABLE apps ADD COLUMN created_by TEXT
+CREATE TABLE IF NOT EXISTS org_members (
+  org_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  org_role TEXT NOT NULL,
+  PRIMARY KEY (org_id, user_id)
+)
+CREATE TABLE IF NOT EXISTS project_members (
+  project_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  role_id TEXT NOT NULL,
+  PRIMARY KEY (project_id, user_id)
+)
 CREATE TABLE IF NOT EXISTS questions (
   id TEXT PRIMARY KEY,
   org_id TEXT NOT NULL,
@@ -93,31 +133,33 @@ Membership query, read-only:
 select org_id, role_id from wewebplus.memberships where user_id = $1
 ```
 
-Create: `assertProjectManager` on the agent create controller, then `claimOrganizationApp` sets `org_id` and `created_by`. Open and socket: `memberCanAccessApp` and `authorizeOrganizationSocket`. A different organization gets 404. A non-member gets 403.
+Create: `assertProjectManager` on the agent create controller, then `claimOrganizationApp` sets `org_id` and `created_by` and inserts the creator into `project_members` as `project-manager`. It also inserts the creator into `org_members` as `admin` when that row is missing. Open and socket: `memberCanAccessApp` and `authorizeOrganizationSocket` require a `project_members` row whose role includes `view`. The socket header `x-org-role` is that project role. Someone with no row gets 404. A user with no Wewebplus membership gets 403.
 
 Question path while Think is still the behavior that asks:
 
 1. `patchAskQuestionsTool` adds optional `targetRole` to the pin's `ask_questions` tool.
 2. `patchThink` changes the clarify prompt to exactly one question and, inside the tool-output branch of the stream, calls `publishOrganizationQuestion` and returns. It does not broadcast that tool call on the normal path.
-3. `publishOrganizationQuestion` stores one open row and sends the body only to sockets whose `x-org-role` matches. Other sockets get the waiting line.
+3. `publishOrganizationQuestion` stores one open row. It does not push the body onto the socket. The chat polls `GET /api/org/question` and renders one transcript line.
 4. `patchWebsocket` runs `acceptOrganizationAnswer` before `handleUserInput`. A refusal sends the waiting line and does not start a run. An acceptance lets the existing `USER_SUGGESTION` path queue the text.
 5. `redactConversation` strips a hidden body from transcript state sent to the other role.
 
 `patchThink` also holds streaming text until the turn ends, drops reasoning deltas, and suppresses the final text while `organizationHold` is set. That is part of this temporary intercept, not a separate product feature. Deleting `patchThink` in the cleanup step below removes it.
 
-Presentation on this branch: the named role sees the body in the existing clarifying-question slot (`data-testid="org-question"`) with the line `Reply in the prompt box.` The slot has no input. The other role sees `data-testid="org-waiting"`. See the review note below if that slot should become a transcript message instead.
+The named role's transcript line is `data-testid="org-question"`. The other role's line is `data-testid="org-waiting"`. The clarifying-question panel is replaced with `aboveContent={null}`, and the popup component returns null so a dismiss control cannot hide the question.
 
-## Gallery and delete refusal (review this)
+## Gallery refusal and project-manager delete
 
-`patchAppService` sets `isOwner: mayOpen` so either member can open the app, forces the header owner flag off, returns no visibility icon, skips the private-visibility 404 for an organization member, and refuses both gallery changes (`Changing the gallery flag is not available.`) and delete (`Deleting an app is not available.`). The two-browser spec asserts that neither role sees `Make public`.
+`patchAppService` sets `isOwner: mayOpen` from project assignment, so the pin's owner-only middleware lets an assigned member through. The header owner flag stays off, the visibility icon is removed, and the private-visibility 404 is skipped for an assigned member. Gallery changes stay refused (`Changing the gallery flag is not available.`). The two-browser spec asserts that neither role sees `Make public`.
 
-This is included because it is how that snapshot kept `created_by` from becoming the owner. It was not a separate confirmation of the gallery UI. If gallery controls should come back, reject this part and update `patchAppService` plus the `Make public` assertions in `e2e-vibesdk/tests/two-roles.spec.js`. Do not reinterpret `visibility` as belonging. `visibility` remains the pin's gallery flag. GitHub repository visibility is a different column.
+Delete is allowed when `canDeleteProject` is true, which is the `project-manager` project role. The delete matches `apps.id` only, so a second project manager assigned to that app can delete it. A developer receives `Deleting an app is not available.`
 
-## Question slot (review this)
+`visibility` remains the pin's gallery flag. Do not reinterpret it as belonging. GitHub repository visibility is a different column.
 
-The selected rule is: the named role sees the body, the other role sees one waiting line, and the reply is typed in the prompt box. This branch shows the body in the clarifying-question slot above the box. Later Orange cards and `Response required` were not brought forward.
+Owner-only routes other than delete and visibility (the git clone token and the preview token) follow `mayOpen`. An assigned developer can pass those middleware checks. They are not a separate product decision in this change. Leave them unless a later request refuses them.
 
-If the body must be a builder transcript message and the slot must go, change `publishOrganizationQuestion` to send the body as the chat message for the named role, delete the popup rewrite, and point `questionText` in the e2e at that message. Do not add a field.
+## Question in the chat
+
+The named role sees the body in the message list. The other role sees one waiting line. The reply is typed in the prompt box. The panel above the box is gone. The poll is the only copy of the question, so a websocket message is not sent with the same text.
 
 ## Why Think cannot be the Docker integration point
 
@@ -240,10 +282,10 @@ Leave `DEFAULT_FEATURE_DEFINITIONS.app.behaviorType` as `think`. Pass `behaviorT
 `e2e-vibesdk/tests/two-roles.spec.js` is the harness to keep:
 
 - Developer Enter on the home box does not open `/chat/`.
-- Project Manager Enter does.
-- The Developer opens that app from the sidebar.
+- Project Manager Enter does, and the creator is assigned as `project-manager`.
+- The spec then calls `POST /api/org/assign` as that admin to assign the Developer. The Developer opens that app from the sidebar. Without the assignment the app is hidden.
 - The two roles never both see a question body.
-- The listener sees `org-waiting` and does not see the body text.
+- The listener sees `org-waiting` in the transcript and does not see the body text.
 - The speaker's reply is typed into the prompt box.
 - `OPENROUTER_API_KEY` is only the answerer.
 
@@ -262,6 +304,13 @@ node --test deploy/preview/vibesdk.test.mjs deploy/preview/vibesdk-org-run.test.
 ```
 
 Those tests cover resource refusal, the absence of the removed patches, the organization role rules, and Clerk origin allowlisting. They do not deploy a worker and they do not start a browser.
+
+## Still not in this branch
+
+- `deploy/preview/vibesdk-docker-behavior.mjs`. The section above is the spec. Do not subclass `ThinkCodingBehavior` to reach it: `getSpaceStub` and `runPrompt` are private, so the Docker behavior has to be its own class. Do not relax the container refusal to host it. One HTTPS call to `DOCKER_HARNESS_URL` is the selected placement.
+- A last-admin guard.
+- A permission table, a permission-admin screen, and per-project permission overrides.
+- Switching the two-browser job off `cursor/vibesdk-org-belonging-0539`. Leave that gate until the selected behavior can finish a question.
 
 ## Out of scope for the implementer as well
 

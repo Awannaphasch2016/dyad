@@ -11,12 +11,15 @@ import {
   acceptTurn,
   assignRole,
   canCreate,
+  canProject,
   firstQuestion,
   orgControllerSource,
   orgPopupSource,
   orgRoutesSource,
   orgRunSource,
   patchAppService,
+  patchChat,
+  permissionsFor,
   presentQuestion,
   redactQuestionText,
 } from "./vibesdk-org-run.mjs";
@@ -96,16 +99,30 @@ test("creating an app does not make the creator the owner", () => {
     "            if (!ownershipResult.isOwner) {",
     "                return { success: false, error: 'You can only delete your own apps' };",
     "            }",
+    "                .where(and(",
+    "                    eq(schema.apps.id, appId),",
+    "                    eq(schema.apps.userId, userId)",
+    "                ))",
   ].join("\n");
   const patched = patchAppService(source);
   assert.match(patched, /memberCanAccessApp/);
+  assert.match(patched, /canDeleteProject/);
   assert.match(patched, /isOwner: mayOpen/);
-  assert.match(patched, /org_id = /);
+  assert.match(patched, /project_members/);
   assert.match(patched, /Changing the gallery flag is not available/);
   assert.match(patched, /Deleting an app is not available/);
   assert.equal(patched.includes("your own apps"), false);
   assert.equal(patched.includes("app.userId === userId"), false);
+  assert.equal(patched.includes("schema.apps.userId, userId"), false);
   assert.equal(patched.includes("isOwner: false"), false);
+});
+
+test("permissions are fixed in code for the two project roles", () => {
+  assert.deepEqual(permissionsFor(PM_ROLE), ["view", "start", "delete"]);
+  assert.deepEqual(permissionsFor(DEV_ROLE), ["view"]);
+  assert.equal(canProject(PM_ROLE, "delete"), true);
+  assert.equal(canProject(DEV_ROLE, "start"), false);
+  assert.equal(canProject(DEV_ROLE, "delete"), false);
 });
 
 test("only the project manager can create an organization app", () => {
@@ -164,13 +181,21 @@ test("the generated run does not keep the extra card or a phase", () => {
   assert.match(run, /target_role_id/);
   assert.match(run, /question_id TEXT PRIMARY KEY/);
   assert.match(run, /organizationIdFor/);
-  assert.match(run, /if \(!row\?\.org_id\) return member\.role === PM_ROLE/);
-  assert.match(run, /row\.org_id !== member\.orgId/);
+  assert.match(run, /org_members/);
+  assert.match(run, /project_members/);
+  assert.match(run, /canDeleteProject/);
+  assert.match(run, /assignProjectMember/);
+  assert.match(run, /permissionsForRole/);
   assert.equal(run.includes("row.user_id !== userId"), false);
   assert.match(run, new RegExp(CREATE_REFUSAL));
   assert.equal(popup.includes("<input"), false);
   assert.equal(popup.includes("<textarea"), false);
-  assert.match(popup, /data-testid="org-question"/);
-  assert.match(popup, /Reply in the prompt box/);
+  assert.match(popup, /return null/);
+  const chat = patchChat.toString();
+  assert.match(chat, /data-testid="org-question"/);
+  assert.match(chat, /data-testid="org-waiting"/);
+  assert.match(chat, /aboveContent=\{null\}/);
+  assert.equal(chat.includes("Reply in the prompt box"), false);
   assert.match(routes, /\/api\/org/);
+  assert.match(routes, /\/assign/);
 });

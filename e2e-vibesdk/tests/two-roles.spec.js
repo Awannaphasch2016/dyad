@@ -137,6 +137,20 @@ test("the project manager starts the organization app and each role answers the 
     await pm.waitForURL(/\/chat\/(?!new)/, { timeout: 180_000 });
     const appUrl = new URL(pm.url());
     await shot(pm, "project-manager-started");
+    const appId = appUrl.pathname.split("/").filter(Boolean).pop();
+    const assigned = await pm.evaluate(
+      async ({ appId, userId }) => {
+        const response = await fetch("/api/org/assign", {
+          method: "POST",
+          credentials: "include",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ appId, userId, roleId: "developer" }),
+        });
+        return response.status;
+      },
+      { appId, userId: process.env.VIBESDK_DEV_USER_ID ?? "" },
+    );
+    expect(assigned).toBe(200);
 
     const appLink = dev.locator(`a[href="${appUrl.pathname}"]`);
     await expect(appLink.first()).toBeVisible({ timeout: 90_000 });

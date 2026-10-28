@@ -1,9 +1,8 @@
 // Organization run for the Vibe SDK preview.
 // The prompt box already on the page is the only place anyone types.
-// The builder's existing question popup shows the question to the named role.
-// Memberships are read from wewebplus. The shared apps and questions tables
-// are not altered: Electron, hitl-web, and Bolt still use their phase columns.
-// This run's app, question, and answer rows live on the Vibe SDK app database.
+// The named project role sees the question in the chat. The other role sees
+// one waiting line. Memberships are read from wewebplus. The shared apps and
+// questions tables are not altered. This run's rows live on the Vibe SDK database.
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -59,6 +58,18 @@ export function presentQuestion(question, role) {
 
 export function canCreate(role) {
   return role === PM_ROLE;
+}
+
+// Permissions live in code. Admin is an organization role and does not
+// grant view, start, or delete. A project row does.
+export function permissionsFor(role) {
+  if (role === PM_ROLE) return ["view", "start", "delete"];
+  if (role === DEV_ROLE) return ["view"];
+  return [];
+}
+
+export function canProject(role, action) {
+  return permissionsFor(role).includes(action);
 }
 
 export function acceptTurn({ open, role, answer, alreadyAnswered }) {
@@ -366,11 +377,16 @@ export function patchAppService(source) {
   requireAnchor(source, ownerAnchor, "app owner");
   requireAnchor(source, listAnchor, "app list");
   requireAnchor(source, galleryAnchor, "gallery update");
+  const deleteWhereAnchor = `.where(and(
+                    eq(schema.apps.id, appId),
+                    eq(schema.apps.userId, userId)
+                ))`;
   requireAnchor(source, deleteAnchor, "app delete");
+  requireAnchor(source, deleteWhereAnchor, "app delete where");
   return source
     .replace(
       importAnchor,
-      `${importAnchor}\nimport { memberCanAccessApp, organizationIdFor } from '../../services/org/run';`,
+      `${importAnchor}\nimport { canDeleteProject, memberCanAccessApp } from '../../services/org/run';`,
     )
     .replace(
       ownerAnchor,
@@ -383,11 +399,10 @@ export function patchAppService(source) {
     )
     .replace(
       listAnchor,
-      `        const orgId = await organizationIdFor(this.env, userId);
-        const apps = await readDb
+      `        const apps = await readDb
             .select()
             .from(schema.apps)
-            .where(orgId ? sql\`org_id = \${orgId}\` : eq(schema.apps.userId, userId))`,
+            .where(sql\`id in (select project_id from project_members where user_id = \${userId})\`)`,
     )
     .replace(
       galleryAnchor,
@@ -395,8 +410,12 @@ export function patchAppService(source) {
     )
     .replace(
       deleteAnchor,
-      `            return { success: false, error: 'Deleting an app is not available.' };`,
-    );
+      `            const mayDelete = await canDeleteProject(this.env, appId, userId);
+            if (!mayDelete) {
+                return { success: false, error: 'Deleting an app is not available.' };
+            }`,
+    )
+    .replace(deleteWhereAnchor, `.where(eq(schema.apps.id, appId))`);
 }
 
 export function patchHome(source) {
@@ -447,7 +466,7 @@ export function patchChat(source) {
 \t\t\tsetOrgWaiting(typeof payload?.data?.waiting === 'string' ? payload.data.waiting : '');
 \t\t};
 \t\tvoid look();
-\t\tconst timer = window.setInterval(() => void look(), 2000);
+\t\tconst timer = window.setInterval(() => void look(), 500);
 \t\treturn () => {
 \t\t\tstop = true;
 \t\t\twindow.clearInterval(timer);
@@ -473,27 +492,28 @@ export function patchChat(source) {
 						</Badge>
 					)}`;
   const ownerAnchor = "\tconst isOwner = !!app && app.userId === user?.id;";
+  const transcriptAnchor = `\t\t\t\t\t\t\t\t{!appLoading && (
+\t\t\t\t\t\t\t\t\t<UserMessage
+\t\t\t\t\t\t\t\t\t\tmessage={query ?? displayQuery}
+\t\t\t\t\t\t\t\t\t/>
+\t\t\t\t\t\t\t\t)}`;
   requireAnchor(replaced, badgeAnchor, "chat gallery chip");
   requireAnchor(replaced, ownerAnchor, "chat owner");
+  requireAnchor(replaced, transcriptAnchor, "chat transcript");
+  requireAnchor(replaced, popupAnchor, "chat popup");
   return replaced
     .replace(ownerAnchor, "\tconst isOwner = false;")
     .replace(badgeAnchor, "")
     .replace(
-      popupAnchor,
-      `\t\t\t\t\t\t\taboveContent={
-\t\t\t\t\t\t\t\t<>
-\t\t\t\t\t\t\t\t\t{orgWaiting ? (
-\t\t\t\t\t\t\t\t\t\t<p data-testid="org-waiting" className="px-4 pb-2 text-sm">{orgWaiting}</p>
-\t\t\t\t\t\t\t\t\t) : null}
-\t\t\t\t\t\t\t\t\t<ClarifyingQuestionsPopup
-\t\t\t\t\t\t\t\t\t\tquestions={orgBody ? [{ question: orgBody }] : []}
-\t\t\t\t\t\t\t\t\t\topen={Boolean(orgBody)}
-\t\t\t\t\t\t\t\t\t\tonSubmit={submitClarifyingAnswers}
-\t\t\t\t\t\t\t\t\t\tonDismiss={dismissClarifyingQuestions}
-\t\t\t\t\t\t\t\t\t/>
-\t\t\t\t\t\t\t\t</>
-\t\t\t\t\t\t\t}`,
-    );
+      transcriptAnchor,
+      `${transcriptAnchor}
+\t\t\t\t\t\t\t\t{orgBody ? (
+\t\t\t\t\t\t\t\t\t<p data-testid="org-question" className="text-sm">{orgBody}</p>
+\t\t\t\t\t\t\t\t) : orgWaiting ? (
+\t\t\t\t\t\t\t\t\t<p data-testid="org-waiting" className="text-sm">{orgWaiting}</p>
+\t\t\t\t\t\t\t\t) : null}`,
+    )
+    .replace(popupAnchor, "\t\t\t\t\t\t\taboveContent={null}");
 }
 
 export function patchSidebar(source) {
@@ -721,6 +741,8 @@ async function applySchema(env: Env): Promise<void> {
 	const statements = [
 		'ALTER TABLE apps ADD COLUMN org_id TEXT',
 		'ALTER TABLE apps ADD COLUMN created_by TEXT',
+		'CREATE TABLE IF NOT EXISTS org_members (org_id TEXT NOT NULL, user_id TEXT NOT NULL, org_role TEXT NOT NULL, PRIMARY KEY (org_id, user_id))',
+		'CREATE TABLE IF NOT EXISTS project_members (project_id TEXT NOT NULL, user_id TEXT NOT NULL, role_id TEXT NOT NULL, PRIMARY KEY (project_id, user_id))',
 		'CREATE TABLE IF NOT EXISTS questions (id TEXT PRIMARY KEY, org_id TEXT NOT NULL, app_id TEXT NOT NULL, target_role_id TEXT NOT NULL, body TEXT NOT NULL, status TEXT NOT NULL, assignment TEXT NOT NULL, created_at INTEGER NOT NULL)',
 		'CREATE TABLE IF NOT EXISTS answers (question_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, body TEXT NOT NULL, created_at INTEGER NOT NULL)',
 	];
@@ -742,13 +764,55 @@ export async function assertProjectManager(env: Env, userId: string): Promise<{ 
 	return { ok: true, message: '' };
 }
 
-export async function claimOrganizationApp(env: Env, appId: string, userId: string): Promise<void> {
-	await ensureOrganizationSchema(env);
+function permissionsForRole(role: string): string[] {
+	if (role === PM_ROLE) return ['view', 'start', 'delete'];
+	if (role === DEV_ROLE) return ['view'];
+	return [];
+}
+
+async function ensureOrgMember(env: Env, userId: string): Promise<{ orgId: string; orgRole: string } | null> {
 	const member = await membership(env, userId);
-	if (!member || member.role !== PM_ROLE) {
+	if (!member) return null;
+	await ensureOrganizationSchema(env);
+	const orgRole = member.role === PM_ROLE ? 'admin' : 'member';
+	await env.DB.prepare('INSERT OR IGNORE INTO org_members (org_id, user_id, org_role) VALUES (?, ?, ?)').bind(member.orgId, userId, orgRole).run();
+	const stored = await env.DB.prepare('SELECT org_role FROM org_members WHERE org_id = ? AND user_id = ?').bind(member.orgId, userId).first<{ org_role: string }>();
+	return { orgId: member.orgId, orgRole: stored?.org_role ?? orgRole };
+}
+
+async function projectRole(env: Env, appId: string, userId: string): Promise<string | null> {
+	await ensureOrganizationSchema(env);
+	const row = await env.DB.prepare('SELECT role_id FROM project_members WHERE project_id = ? AND user_id = ?').bind(appId, userId).first<{ role_id: string }>();
+	return row?.role_id ?? null;
+}
+
+export async function claimOrganizationApp(env: Env, appId: string, userId: string): Promise<void> {
+	const actor = await ensureOrgMember(env, userId);
+	if (!actor || actor.orgRole !== 'admin') {
 		throw new Error('Only the Project Manager can create an organization app.');
 	}
-	await env.DB.prepare('UPDATE apps SET org_id = ?, created_by = ? WHERE id = ?').bind(member.orgId, userId, appId).run();
+	await env.DB.prepare('UPDATE apps SET org_id = ?, created_by = ? WHERE id = ?').bind(actor.orgId, userId, appId).run();
+	await env.DB.prepare('INSERT INTO project_members (project_id, user_id, role_id) VALUES (?, ?, ?) ON CONFLICT(project_id, user_id) DO UPDATE SET role_id = excluded.role_id').bind(appId, userId, PM_ROLE).run();
+}
+
+export async function assignProjectMember(env: Env, actorId: string, input: { appId?: string; userId?: string; roleId?: string }): Promise<{ ok: boolean; message: string }> {
+	const actor = await ensureOrgMember(env, actorId);
+	if (!actor || actor.orgRole !== 'admin') return { ok: false, message: 'Only an Admin can assign a project.' };
+	const userId = String(input.userId ?? '');
+	const appId = String(input.appId ?? '');
+	const roleId = String(input.roleId ?? '');
+	const target = await ensureOrgMember(env, userId);
+	if (!target || target.orgId !== actor.orgId) return { ok: false, message: 'That person is not in this organization.' };
+	if (!permissionsForRole(roleId).includes('view')) return { ok: false, message: 'Unknown project role.' };
+	const app = await env.DB.prepare('SELECT org_id FROM apps WHERE id = ?').bind(appId).first<{ org_id: string | null }>();
+	if (!app?.org_id || app.org_id !== actor.orgId) return { ok: false, message: 'Project not found.' };
+	await env.DB.prepare('INSERT INTO project_members (project_id, user_id, role_id) VALUES (?, ?, ?) ON CONFLICT(project_id, user_id) DO UPDATE SET role_id = excluded.role_id').bind(appId, userId, roleId).run();
+	return { ok: true, message: '' };
+}
+
+export async function canDeleteProject(env: Env, appId: string, userId: string): Promise<boolean> {
+	const role = await projectRole(env, appId, userId);
+	return permissionsForRole(role ?? '').includes('delete');
 }
 
 export async function organizationIdFor(env: Env, userId: string): Promise<string | null> {
@@ -758,50 +822,36 @@ export async function organizationIdFor(env: Env, userId: string): Promise<strin
 }
 
 export async function memberCanAccessApp(env: Env, appId: string, userId: string): Promise<boolean> {
-	await ensureOrganizationSchema(env);
-	const member = await membership(env, userId);
-	if (!member) return false;
-	const row = await env.DB.prepare('SELECT org_id FROM apps WHERE id = ?').bind(appId).first<{ org_id: string | null }>();
-	if (!row?.org_id) return member.role === PM_ROLE;
-	return row.org_id === member.orgId;
+	const role = await projectRole(env, appId, userId);
+	return permissionsForRole(role ?? '').includes('view');
 }
 
 export async function authorizeOrganizationSocket(env: Env, userId: string, appId: string, request: Request): Promise<Request | Response> {
-	const member = await membership(env, userId);
-	if (!member) return new Response('Forbidden', { status: 403 });
-	await ensureOrganizationSchema(env);
-	const row = await env.DB.prepare('SELECT org_id FROM apps WHERE id = ?').bind(appId).first<{ org_id: string | null }>();
-	if (!row || !row.org_id) {
-		if (member.role !== PM_ROLE) return new Response('Forbidden', { status: 403 });
-	} else if (row.org_id !== member.orgId) {
-		return new Response('Not found', { status: 404 });
-	}
+	const actor = await ensureOrgMember(env, userId);
+	if (!actor) return new Response('Forbidden', { status: 403 });
+	const role = await projectRole(env, appId, userId);
+	if (!permissionsForRole(role ?? '').includes('view')) return new Response('Not found', { status: 404 });
 	const headers = new Headers(request.headers);
 	headers.delete('x-org-role');
 	headers.delete('x-org-user');
 	headers.delete('x-org-id');
-	headers.set('x-org-role', member.role);
+	headers.set('x-org-role', role ?? '');
 	headers.set('x-org-user', userId);
-	headers.set('x-org-id', member.orgId);
+	headers.set('x-org-id', actor.orgId);
 	return new Request(request, { headers });
 }
 
 export async function latestOrganizationApp(env: Env, userId: string): Promise<{ id: string; title: string } | null> {
 	await ensureOrganizationSchema(env);
-	const member = await membership(env, userId);
-	if (!member) return null;
-	return await env.DB.prepare('SELECT id, title FROM apps WHERE org_id = ? ORDER BY created_at DESC LIMIT 1').bind(member.orgId).first<{ id: string; title: string }>();
+	return await env.DB.prepare('SELECT apps.id as id, apps.title as title FROM apps INNER JOIN project_members ON project_members.project_id = apps.id WHERE project_members.user_id = ? ORDER BY apps.created_at DESC LIMIT 1').bind(userId).first<{ id: string; title: string }>();
 }
 
 export async function openOrganizationQuestion(env: Env, userId: string, appId: string): Promise<{ body: string | null; waiting: string | null } | null> {
-	await ensureOrganizationSchema(env);
-	const member = await membership(env, userId);
-	if (!member || !appId) return null;
-	const app = await env.DB.prepare('SELECT org_id FROM apps WHERE id = ?').bind(appId).first<{ org_id: string | null }>();
-	if (!app?.org_id || app.org_id !== member.orgId) return null;
+	const role = await projectRole(env, appId, userId);
+	if (!role || !appId) return null;
 	const open = await env.DB.prepare("SELECT target_role_id, body, status FROM questions WHERE app_id = ? AND status = 'open' ORDER BY created_at DESC LIMIT 1").bind(appId).first<{ target_role_id: string; body: string; status: string }>();
 	if (!open) return { body: null, waiting: null };
-	if (open.target_role_id === member.role) return { body: open.body, waiting: null };
+	if (open.target_role_id === role) return { body: open.body, waiting: null };
 	return { body: null, waiting: waitingLine(open.target_role_id) };
 }
 
@@ -828,25 +878,8 @@ export async function publishOrganizationQuestion(input: {
 		await input.env.DB.prepare('INSERT INTO questions (id, org_id, app_id, target_role_id, body, status, assignment, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').bind(id, orgId, input.appId, question.targetRole, question.body, 'open', question.assignment, Date.now()).run();
 		stored = { id, org_id: orgId, app_id: input.appId, target_role_id: question.targetRole, body: question.body, status: 'open', assignment: question.assignment };
 	}
-	const targetRole = stored?.target_role_id ?? question.targetRole;
-	const body = stored?.body ?? question.body;
-	for (const socket of input.sockets) {
-		const actor = readOrganizationRole(socket);
-		if (actor?.role === targetRole) {
-			send(socket, {
-				message: '',
-				conversationId: input.conversationId,
-				isStreaming: false,
-				tool: { name: 'ask_questions', status: 'success', args: { questions: [{ question: body }] } },
-			});
-		} else {
-			send(socket, {
-				message: waitingLine(targetRole),
-				conversationId: input.conversationId,
-				isStreaming: false,
-			});
-		}
-	}
+	void stored;
+	void input.sockets;
 }
 
 export async function acceptOrganizationAnswer(env: Env, appId: string, connection: WebSocket, message: string): Promise<{ allow: boolean; message: string }> {
@@ -907,7 +940,7 @@ function stripBodies(value: unknown, hidden: { body: string; target_role_id: str
 export function orgControllerSource() {
   return `import { BaseController } from '../baseController';
 import type { RouteContext } from '../../types/route-context';
-import { latestOrganizationApp, openOrganizationQuestion } from '../../../services/org/run';
+import { assignProjectMember, latestOrganizationApp, openOrganizationQuestion } from '../../../services/org/run';
 
 export class OrgController extends BaseController {
 	static async currentApp(_request: Request, env: Env, _ctx: ExecutionContext, context: RouteContext) {
@@ -925,6 +958,15 @@ export class OrgController extends BaseController {
 		if (!view) return OrgController.createErrorResponse('Not found', 404);
 		return OrgController.createSuccessResponse(view);
 	}
+
+	static async assign(request: Request, env: Env, _ctx: ExecutionContext, context: RouteContext) {
+		const user = context.user;
+		if (!user) return OrgController.createErrorResponse('Authentication required', 401);
+		const body = await request.json().catch(() => ({}));
+		const result = await assignProjectMember(env, user.id, body as { appId?: string; userId?: string; roleId?: string });
+		if (!result.ok) return OrgController.createErrorResponse(result.message, 403);
+		return OrgController.createSuccessResponse({ assigned: true });
+	}
 }
 `;
 }
@@ -940,6 +982,7 @@ export function setupOrgRoutes(app: Hono<AppEnv>): void {
 	const router = new Hono<AppEnv>();
 	router.get('/app', setAuthLevel(AuthConfig.authenticated), adaptController(OrgController, OrgController.currentApp));
 	router.get('/question', setAuthLevel(AuthConfig.authenticated), adaptController(OrgController, OrgController.question));
+	router.post('/assign', setAuthLevel(AuthConfig.authenticated), adaptController(OrgController, OrgController.assign));
 	app.route('/api/org', router);
 }
 `;
@@ -961,16 +1004,8 @@ interface ClarifyingQuestionsPopupProps {
 	onDismiss?: () => void;
 }
 
-export function ClarifyingQuestionsPopup({ questions, open }: ClarifyingQuestionsPopupProps) {
-	const question = questions[0];
-	if (!open || !question?.question) return null;
-	return (
-		<div className="rounded-t-xl border border-b-0 bg-bg-4 px-4 py-3">
-			<p className="text-xs text-text-tertiary">Question</p>
-			<p data-testid="org-question" className="text-sm text-text-primary">{question.question}</p>
-			<p className="mt-1 text-xs text-text-tertiary">Reply in the prompt box.</p>
-		</div>
-	);
+export function ClarifyingQuestionsPopup(_props: ClarifyingQuestionsPopupProps) {
+	return null;
 }
 `;
 }
