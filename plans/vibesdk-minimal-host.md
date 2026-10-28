@@ -1,6 +1,6 @@
 # Vibe SDK minimal host
 
-This is the handoff for the selected Vibe SDK host. The approved permission model and the in-chat question are implemented on this branch. The Docker behavior is specified below and is not implemented. Think stays the pin default until a later change selects `behaviorType: 'docker'`.
+This is the handoff for the selected Vibe SDK host. The approved permission model and the in-chat question are implemented on this branch. The two-role demo uses the pin's default Think behavior. Docker stays specified below and waits until that agent is ready. There is no two-browser CI job on this branch. Manual testing uses the `preview-vibesdk` label.
 
 The older swarm plan in [plans/vibesdk-agent-hitl.md](vibesdk-agent-hitl.md) is superseded for this selection. Its scripted-agent proof is not the selected design.
 
@@ -289,9 +289,9 @@ Leave `DEFAULT_FEATURE_DEFINITIONS.app.behaviorType` as `think`. Pass `behaviorT
 - The speaker's reply is typed into the prompt box.
 - `OPENROUTER_API_KEY` is only the answerer.
 
-The job in `.github/workflows/preview-vibesdk.yml` (`hitl`) still requires `github.event.pull_request.head.ref == 'cursor/vibesdk-org-belonging-0539'`. Change that to the implementation branch only when the selected behavior can finish a question. On this branch it must stay gated off.
+The `hitl` job in `.github/workflows/preview-vibesdk.yml` stays gated on `cursor/vibesdk-org-belonging-0539`. Do not retarget it. The two-role walk is manual on the preview.
 
-This preview does not set `CLOUDFLARE_AI_GATEWAY` (`previewConfigViolations` rejects it) and does not inject an OpenRouter key. Unpatched Think uses the pin's model (Gemini through AI Gateway). A live Think question on this preview will fail closed until those credentials are deliberately configured, or until Docker replaces `stub.chat`. Do not restore `patchThinkModel` to make the check pass.
+This preview does not set `CLOUDFLARE_AI_GATEWAY` (`previewConfigViolations` rejects it) and does not inject an OpenRouter key. Think keeps the pin's model configuration (`google-ai-studio/gemini-3.6-flash` through whatever `getConfigurationForModel` returns). Do not restore `patchThinkModel`.
 
 The answerer key in the e2e job comes from the Doppler `dyad` / `preview` fetch already in that job. It is not a worker secret. Do not copy Clerk keys into the Doppler `vibesdk` / `dev` config.
 
@@ -305,12 +305,29 @@ node --test deploy/preview/vibesdk.test.mjs deploy/preview/vibesdk-org-run.test.
 
 Those tests cover resource refusal, the absence of the removed patches, the organization role rules, and Clerk origin allowlisting. They do not deploy a worker and they do not start a browser.
 
+## Where the question intercept sits
+
+The intercept is not a method of `ThinkAgent`. `ThinkAgent` is the durable object that owns the model and tool loop. The host does not step inside that loop.
+
+`patchThink` rewrites `ThinkCodingBehavior` in `worker/agents/core/behaviors/think.ts`. `CodeGeneratorAgent` selects that class when the behavior is `think`, which is the default for an app. Phasic and agentic do not get this rewrite.
+
+One turn:
+
+1. Enter sends `USER_SUGGESTION`, or the first build sends the prompt.
+2. `ThinkCodingBehavior.build()` drains that queue and `runPrompt` calls `stub.chat()` once.
+3. `ThinkAgent` runs its own loop and streams chunks back to `ThinkCodingBehavior`.
+4. The patched reader sees tool output named `ask_questions`, stores one question with `publishOrganizationQuestion`, and returns before the normal tool broadcast.
+5. The chat polls `GET /api/org/question` and draws one transcript line. The named role sees the body. The other role sees the waiting line.
+6. The named role's next prompt-box message is the next `stub.chat()`.
+
+When the Docker agent is ready, its own behavior calls `publishOrganizationQuestion` from the result envelope. That is when `patchThink` and `patchAskQuestionsTool` come off, so default Think matches the pin again.
+
 ## Still not in this branch
 
-- `deploy/preview/vibesdk-docker-behavior.mjs`. The section above is the spec. Do not subclass `ThinkCodingBehavior` to reach it: `getSpaceStub` and `runPrompt` are private, so the Docker behavior has to be its own class. Do not relax the container refusal to host it. One HTTPS call to `DOCKER_HARNESS_URL` is the selected placement.
+- `deploy/preview/vibesdk-docker-behavior.mjs`. Deferred until the Docker agent is ready. The section above is the spec. Do not subclass `ThinkCodingBehavior` to reach it: `getSpaceStub` and `runPrompt` are private, so the Docker behavior has to be its own class. Do not relax the container refusal to host it. One HTTPS call to `DOCKER_HARNESS_URL` is the selected placement.
 - A last-admin guard.
 - A permission table, a permission-admin screen, and per-project permission overrides.
-- Switching the two-browser job off `cursor/vibesdk-org-belonging-0539`. Leave that gate until the selected behavior can finish a question.
+- A two-browser CI job for this branch. The existing `hitl` job stays on `cursor/vibesdk-org-belonging-0539`.
 
 ## Out of scope for the implementer as well
 
