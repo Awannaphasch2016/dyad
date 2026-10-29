@@ -168,17 +168,9 @@ async function publishWithBodyFile() {
   ]);
   const env = { ...process.env, GH_TOKEN: secret };
   run("gh", ["auth", "setup-git"], { cwd: root, env });
-  spawnSync("git", ["-C", root, "fetch", "origin", BRANCH], {
-    encoding: "utf8",
+  run("git", ["-C", root, "push", "--force", "-u", "origin", BRANCH], {
     env,
   });
-  run(
-    "git",
-    ["-C", root, "push", "--force-with-lease", "-u", "origin", BRANCH],
-    {
-      env,
-    },
-  );
   const bodyPath = join(root, ".handoff-pr-body.md");
   await writeFile(
     bodyPath,
