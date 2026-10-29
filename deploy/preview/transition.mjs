@@ -46,17 +46,20 @@ export function transition(state, event) {
 // preview. A synchronize event without the label does not destroy. Preview 20
 // was created before the label existed, and a push must not delete it.
 // Adding the label to an already closed pull request does not destroy again.
-export function commandForPullRequest(event) {
+// The label argument defaults to Dyad's preview label. Omitting it keeps the
+// results above. Another app passes its own exact label.
+export function commandForPullRequest(event, label = "preview") {
+  const expected = label || "preview";
   const action = event.action || "";
   const labels = new Set(event.labels || []);
-  if (action === "labeled" && event.label === "preview" && event.closed) {
+  if (action === "labeled" && event.label === expected && event.closed) {
     return "skip";
   }
   if (event.closed || action === "closed") return "destroy";
-  if (action === "unlabeled" && event.label === "preview") return "destroy";
-  if (action === "labeled" && event.label === "preview") return "update";
+  if (action === "unlabeled" && event.label === expected) return "destroy";
+  if (action === "labeled" && event.label === expected) return "update";
   if (
-    labels.has("preview") &&
+    labels.has(expected) &&
     (action === "opened" || action === "synchronize" || action === "reopened")
   ) {
     return "update";

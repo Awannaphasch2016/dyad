@@ -1,0 +1,36 @@
+# Open the kept Vibe SDK host as a pull request on Awannaphasch2016/vibesdk.
+# The VIBESDK Actions secret is a personal access token for that repository.
+# This workflow does not print the token.
+
+name: Publish the Vibe SDK handoff
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cursor/vibesdk-minimal-host-0539
+    paths:
+      - .github/workflows/publish-vibesdk-handoff.yml
+      - scripts/git/publish-vibesdk-handoff.mjs
+      - scripts/git/vibesdk-handoff-pr.md
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Open the vibesdk pull request
+        env:
+          GH_TOKEN: ${{ secrets.VIBESDK }}
+        run: node scripts/git/publish-vibesdk-handoff.mjs --publish

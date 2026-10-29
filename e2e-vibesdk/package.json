@@ -1,0 +1,14 @@
+{
+  "name": "vibesdk-hitl-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Two-browser check for the Vibe SDK organization run. Runs in GitHub Actions. This package holds no secrets.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@clerk/backend": "^3.23.1",
+    "@clerk/testing": "^2.2.44",
+    "@playwright/test": "^1.64.0"
+  }
+}

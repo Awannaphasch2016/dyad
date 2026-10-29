@@ -1,0 +1,690 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+import {
+  deletePreviewResources,
+  ensurePreviewResources,
+  previewWasDeleted,
+} from "./vibesdk-cloudflare.mjs";
+import {
+  announceRemoval,
+  cloudflareCreds,
+  commandFromEnv,
+  decideFromEvent,
+  provisionPreview,
+  removalCommentAction,
+  upsertPreviewComment,
+  waitForHealth,
+} from "./vibesdk-preview.mjs";
+import {
+  membershipReady,
+  patchAuthRoutes,
+  patchClerkDocument,
+  patchClerkSecurity,
+  patchGlobalHeader,
+  patchLoginModal,
+  sharedSession,
+  sharedSignInSource,
+} from "./vibesdk-shared-auth.mjs";
+import {
+  BUILDER_NOTE,
+  LAB_D1_ID,
+  PREVIEW_COMMENT_MARKER,
+  PRODUCTION_DATABASE_ID,
+  PRODUCTION_KV_ID,
+  patchWorkerExports,
+  previewCommentBody,
+  previewConfigViolations,
+  previewNames,
+  previewWranglerConfig,
+} from "./vibesdk.mjs";
+
+const accountId = "a".repeat(32);
+const token = "t".repeat(40);
+const databaseId = "11111111-2222-3333-4444-555555555555";
+const kvId = "b".repeat(32);
+
+function creds(extra = {}) {
+  return {
+    CLOUDFLARE_API_TOKEN: token,
+    CLOUDFLARE_ACCOUNT_ID: accountId,
+    ...extra,
+  };
+}
+
+function jsonResponse(status, body) {
+  return {
+    status,
+    async text() {
+      return JSON.stringify(body);
+    },
+  };
+}
+
+test("a pull request gets its own workers.dev name", () => {
+  const names = previewNames(12);
+  assert.deepEqual(names, {
+    pr: "12",
+    worker: "vibesdk-pr-12",
+    d1: "vibesdk-pr-12",
+    kv: "vibesdk-pr-12",
+    r2: "vibesdk-pr-12",
+    host: "vibesdk-pr-12.karant-test-egress-canary.workers.dev",
+    url: "https://vibesdk-pr-12.karant-test-egress-canary.workers.dev",
+  });
+  assert.throws(() => previewNames("12;rm"), /Pull request number/);
+});
+
+test("the preview config refuses shared resources and leaves Think on the pin", () => {
+  const names = previewNames(12);
+  const config = previewWranglerConfig({
+    accountId,
+    databaseId,
+    kvId,
+    names,
+  });
+  assert.deepEqual(previewConfigViolations(config, names), []);
+  assert.equal(config.vars.CUSTOM_DOMAIN, names.host);
+  assert.equal(config.vars.ENABLE_EMAIL_AUTH, "false");
+  assert.equal(config.vars.CLOUDFLARE_AI_GATEWAY, undefined);
+  assert.equal(config.workers_dev, true);
+  const text = JSON.stringify(config);
+  assert.equal(text.includes("vibesdk-lab"), false);
+  assert.equal(text.includes("vibesdk-production"), false);
+  assert.equal(text.includes("build.cloudflare.dev"), false);
+  assert.equal(text.includes(PRODUCTION_DATABASE_ID), false);
+  assert.equal(text.includes(PRODUCTION_KV_ID), false);
+  assert.equal(text.includes(LAB_D1_ID), false);
+  assert.throws(
+    () =>
+      previewWranglerConfig({
+        accountId,
+        databaseId: PRODUCTION_DATABASE_ID,
+        kvId,
+        names,
+      }),
+    /refusing production d1/,
+  );
+  assert.throws(
+    () =>
+      previewWranglerConfig({
+        accountId,
+        databaseId: LAB_D1_ID,
+        kvId,
+        names,
+      }),
+    /refusing lab d1/,
+  );
+});
+
+test("the worker entry drops the generated-app sandbox export", () => {
+  const entry = patchWorkerExports(
+    "export { UserAppSandboxService } from './services/sandbox/sandboxSdkClient';\n",
+  );
+  assert.equal(entry.includes("UserAppSandboxService"), false);
+});
+
+test("comments name the builder and the preview URL", () => {
+  const names = previewNames(12);
+  const ready = previewCommentBody("ready", names);
+  assert.match(ready, new RegExp(PREVIEW_COMMENT_MARKER));
+  assert.match(ready, new RegExp(names.url.replaceAll(".", "\\.")));
+  assert.match(ready, new RegExp(BUILDER_NOTE));
+  assert.match(previewCommentBody("provisioning"), /provisioning/);
+  assert.match(previewCommentBody("failed"), /was not updated/);
+  assert.match(
+    previewCommentBody("removed", names),
+    /Removed Vibe SDK preview/,
+  );
+  const cleanup = previewCommentBody("cleanup-failed");
+  assert.match(cleanup, /cleanup did not finish/);
+  assert.equal(cleanup.includes("was not updated"), false);
+  assert.match(
+    previewCommentBody("cleanup-failed", names),
+    new RegExp(names.url.replaceAll(".", "\\.")),
+  );
+});
+
+test("creating resources refuses a production database before deploy", async () => {
+  const calls = [];
+  await assert.rejects(
+    () =>
+      provisionPreview({
+        pr: "70",
+        env: creds(),
+        request: async (method, path) => {
+          calls.push(`${method} ${path}`);
+          if (method === "GET") {
+            return { status: 200, payload: { success: true, result: [] } };
+          }
+          if (path.includes("/d1/")) {
+            return {
+              status: 200,
+              payload: {
+                success: true,
+                result: { name: "vibesdk-pr-70", uuid: PRODUCTION_DATABASE_ID },
+              },
+            };
+          }
+          return {
+            status: 200,
+            payload: {
+              success: true,
+              result: { id: kvId, name: "vibesdk-pr-70" },
+            },
+          };
+        },
+        run: async () => {
+          throw new Error("deploy should not start");
+        },
+      }),
+    /refusing production d1/,
+  );
+  assert.equal(
+    calls.some((call) => call.startsWith("DELETE")),
+    false,
+  );
+});
+
+test("a second delete finds nothing and makes no delete call", async () => {
+  const calls = [];
+  const request = async (method, path) => {
+    calls.push(`${method} ${path}`);
+    if (method === "GET" && path.includes("/workers/scripts/")) {
+      return { status: 404, payload: {} };
+    }
+    return { status: 200, payload: { success: true, result: [] } };
+  };
+  const first = await deletePreviewResources({
+    request,
+    accountId,
+    pr: "70",
+  });
+  const second = await deletePreviewResources({
+    request,
+    accountId,
+    pr: "70",
+  });
+  assert.equal(first.d1.deleted, false);
+  assert.equal(second.worker.deleted, false);
+  assert.equal(second.d1.deleted, false);
+  assert.equal(previewWasDeleted(second), false);
+  assert.equal(
+    calls.some((call) => call.startsWith("DELETE")),
+    false,
+  );
+  assert.equal(
+    calls.some((call) => /rate-?limit/i.test(call)),
+    false,
+  );
+});
+
+test("an existing worker is force-deleted once", async () => {
+  const calls = [];
+  const result = await deletePreviewResources({
+    accountId,
+    pr: "70",
+    request: async (method, path) => {
+      calls.push(`${method} ${path}`);
+      if (method === "GET" && path.includes("/workers/scripts/")) {
+        return { status: 200, payload: { success: true, result: {} } };
+      }
+      if (method === "DELETE" && path.includes("/workers/scripts/")) {
+        return { status: 200, payload: { success: true } };
+      }
+      return { status: 200, payload: { success: true, result: [] } };
+    },
+  });
+  assert.equal(result.worker.deleted, true);
+  assert.equal(previewWasDeleted(result), true);
+  const deletes = calls.filter((call) => call.startsWith("DELETE"));
+  assert.deepEqual(deletes, [
+    `DELETE /accounts/${accountId}/workers/scripts/vibesdk-pr-70?force=true`,
+  ]);
+});
+
+test("a missing worker still deletes a remaining database", async () => {
+  const calls = [];
+  const result = await deletePreviewResources({
+    accountId,
+    pr: "70",
+    request: async (method, path) => {
+      calls.push(`${method} ${path}`);
+      if (path.includes("/workers/scripts/")) {
+        return { status: 404, payload: {} };
+      }
+      if (method === "GET" && path.includes("/d1/")) {
+        return {
+          status: 200,
+          payload: {
+            success: true,
+            result: [{ name: "vibesdk-pr-70", uuid: databaseId }],
+          },
+        };
+      }
+      if (method === "DELETE" && path.endsWith(`/d1/database/${databaseId}`)) {
+        return { status: 412, payload: { success: false } };
+      }
+      if (method === "DELETE" && path.includes("force=true")) {
+        return { status: 200, payload: { success: true } };
+      }
+      return { status: 200, payload: { success: true, result: [] } };
+    },
+  });
+  assert.equal(result.worker.deleted, false);
+  assert.equal(result.d1.deleted, true);
+  assert.equal(previewWasDeleted(result), true);
+  assert.equal(calls.filter((call) => call.startsWith("DELETE ")).length, 2);
+  assert.equal(
+    calls.some((call) =>
+      call.includes(`/d1/database/${databaseId}?force=true`),
+    ),
+    true,
+  );
+  assert.equal(
+    calls.some((call) => call.startsWith("DELETE") && !call.includes("force=")),
+    true,
+  );
+});
+
+test("delete refuses the lab database id", async () => {
+  const calls = [];
+  await assert.rejects(
+    () =>
+      deletePreviewResources({
+        accountId,
+        pr: "70",
+        request: async (method, path) => {
+          calls.push(`${method} ${path}`);
+          if (path.includes("/workers/scripts/")) {
+            return { status: 404, payload: {} };
+          }
+          if (path.includes("/d1/")) {
+            return {
+              status: 200,
+              payload: {
+                success: true,
+                result: [{ name: "vibesdk-pr-70", uuid: LAB_D1_ID }],
+              },
+            };
+          }
+          return { status: 200, payload: { success: true, result: [] } };
+        },
+      }),
+    /refusing lab d1/,
+  );
+  assert.equal(
+    calls.some((call) => call.startsWith("DELETE")),
+    false,
+  );
+});
+
+test("an existing preview database is reused", async () => {
+  let created = false;
+  const posts = [];
+  const request = async (method, path, body) => {
+    if (method === "POST") posts.push(path);
+    if (path.includes("/d1/")) {
+      if (method === "GET") {
+        return {
+          status: 200,
+          payload: {
+            success: true,
+            result: created
+              ? [{ name: "vibesdk-pr-70", uuid: databaseId }]
+              : [],
+          },
+        };
+      }
+      created = true;
+      return {
+        status: 200,
+        payload: {
+          success: true,
+          result: { name: body.name, uuid: databaseId },
+        },
+      };
+    }
+    if (path.includes("/storage/kv/")) {
+      return {
+        status: 200,
+        payload: {
+          success: true,
+          result: [{ id: kvId, title: "vibesdk-pr-70" }],
+        },
+      };
+    }
+    return {
+      status: 200,
+      payload: { success: true, result: [{ name: "vibesdk-pr-70" }] },
+    };
+  };
+  const ensured = await ensurePreviewResources({
+    accountId,
+    pr: "70",
+    request,
+  });
+  assert.equal(ensured.databaseId, databaseId);
+  assert.equal(ensured.kvId, kvId);
+  const again = await ensurePreviewResources({
+    accountId,
+    pr: "70",
+    request,
+  });
+  assert.equal(again.databaseId, databaseId);
+  assert.deepEqual(posts, ["/accounts/" + accountId + "/d1/database"]);
+});
+
+test("the shared sign-in keeps one Wewebplus role and hides the email form", () => {
+  assert.equal(membershipReady("developer:1,project-manager:1"), true);
+  assert.equal(membershipReady("developer:1"), false);
+  assert.deepEqual(
+    sharedSession({
+      userId: "user_1",
+      memberships: [{ role_id: "project-manager", organization: "Wewebplus" }],
+    }),
+    {
+      signedIn: true,
+      organization: "Wewebplus",
+      role: "Project Manager",
+      userId: "user_1",
+    },
+  );
+  assert.equal(
+    sharedSession({
+      userId: "user_1",
+      memberships: [{ role_id: "project-manager" }, { role_id: "developer" }],
+    }).role,
+    null,
+  );
+  const routes = patchAuthRoutes(
+    "import { AuthController } from '../controllers/auth/controller';\n    authRouter.post('/register', setAuthLevel(AuthConfig.public), adaptController(AuthController, AuthController.register));\n",
+  );
+  assert.match(routes, /\/api\/auth\/shared|authRouter.post\('\/shared'/);
+  assert.throws(() => patchAuthRoutes("no routes"), /missed auth import/);
+  const modal = patchLoginModal(
+    [
+      "import { useState } from 'react';",
+      "export function LoginModal",
+      "\tconst hasEmailAuth = emailAuthEnabled && !!onEmailLogin;",
+      "\tconst hasRegistration = emailAuthEnabled && !!onRegister;",
+      "\tconst showGitHub = authProviders?.github && hasOAuth;",
+      "\tconst showGoogle = authProviders?.google && hasOAuth;",
+      "\tconst showCloudflare = authProviders?.cloudflare && hasOAuth;",
+      "\t\t\t\t<div className={cn('p-6 space-y-4 pt-6')}>",
+      "\t\t\t\t\t{/* GitHub */}",
+    ].join("\n"),
+  );
+  assert.match(modal, /Sign in/);
+  assert.match(modal, /&& false &&/);
+  assert.match(modal, /fetch\('\/api\/auth\/clerk'/);
+  assert.doesNotMatch(modal, /fetch\('\/api\/clerk'/);
+  assert.match(modal, /redirectToSignIn/);
+  assert.doesNotMatch(modal, /location\.assign/);
+  assert.match(modal, /replace\(\/\\\$\$\/, ''\)/);
+  assert.match(modal, /void startSharedSignIn\(\)/);
+  const controller = sharedSignInSource();
+  assert.match(
+    controller,
+    /emailVerified: address\.verification\?\.status === 'verified'/,
+  );
+  assert.match(controller, /createSession\(user\.id, request\)/);
+  assert.match(
+    controller,
+    /user\.id === identity\.userId \? 'ok' : 'ok-linked'/,
+  );
+  assert.doesNotMatch(
+    controller,
+    /if \(byEmail\) \{\s*await recordAttempt\(env, 'email-taken'\)/,
+  );
+});
+
+test("sign in leaves for the Clerk account page", () => {
+  const header = patchGlobalHeader(
+    [
+      "import { useAuthModal } from '../auth/AuthModalProvider';",
+      "export function GlobalHeader() {",
+      "\tconst { showAuthModal } = useAuthModal();",
+      "\t\t\t\t\t\t\t\tonClick={() => showAuthModal()}",
+    ].join("\n"),
+  );
+  assert.match(header, /startSharedSignIn/);
+  assert.doesNotMatch(header, /showAuthModal/);
+  const documentPolicy = patchClerkDocument(
+    `<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' blob: https://cdnjs.cloudflare.com https://cdn.tailwindcss.com https://esm.sh https://static.cloudflareinsights.com; style-src 'self';" />`,
+  );
+  assert.match(documentPolicy, /https:\/\/\*\.clerk\.accounts\.dev/);
+  const security = patchClerkSecurity(
+    [
+      `"'strict-dynamic'",`,
+      `"https://api.cloudflare.com"`,
+      `frameSrc: ["'none'"],`,
+      `"https://lh3.googleusercontent.com", // Google avatars`,
+      `workerSrc: ["'self'", "blob:"],`,
+      `crossOriginEmbedderPolicy: 'require-corp',`,
+      `crossOriginOpenerPolicy: 'same-origin',`,
+    ].join("\n"),
+  );
+  assert.match(security, /https:\/\/\*\.clerk\.accounts\.dev/);
+  assert.match(security, /frameSrc: \["'self'"/);
+  assert.match(security, /crossOriginEmbedderPolicy: false/);
+  assert.match(security, /same-origin-allow-popups/);
+  assert.doesNotMatch(security, /frameSrc: \["'none'"\]/);
+});
+
+test("cloudflare credentials use CLOUDFLARE_API_TOKEN", () => {
+  const preferred = cloudflareCreds({
+    CLOUDFLARE_API_TOKEN: "a".repeat(40),
+    CLOUDFLARE_API_TOKEN_: "b".repeat(40),
+    CLOUDFLARE_ACCOUNT_ID: "c".repeat(32),
+  });
+  assert.equal(preferred.tokenName, "CLOUDFLARE_API_TOKEN");
+  assert.equal(preferred.token, "a".repeat(40));
+  const fallback = cloudflareCreds({
+    CLOUDFLARE_API_TOKEN_: "b".repeat(40),
+    CLOUDFLARE_ACCOUNT_ID: "c".repeat(32),
+  });
+  assert.equal(fallback.tokenName, "CLOUDFLARE_API_TOKEN_");
+  assert.equal(fallback.token, "b".repeat(40));
+});
+
+test("preview-vibesdk decisions stay on that label", () => {
+  assert.equal(
+    decideFromEvent({
+      action: "synchronize",
+      labels: ["preview"],
+    }),
+    "skip",
+  );
+  assert.equal(
+    decideFromEvent({
+      action: "labeled",
+      label: "preview-vibesdk",
+      labels: ["preview-vibesdk"],
+    }),
+    "update",
+  );
+  assert.equal(decideFromEvent({ action: "closed", labels: [] }), "destroy");
+  assert.equal(
+    commandFromEnv({ EVENT_NAME: "workflow_dispatch", PR: "70" }),
+    "destroy",
+  );
+  assert.throws(
+    () => commandFromEnv({ EVENT_NAME: "workflow_dispatch", PR: "nope" }),
+    /Pull request number is required/,
+  );
+  assert.equal(
+    commandFromEnv({
+      EVENT_NAME: "pull_request",
+      ACTION: "closed",
+      CLOSED: "true",
+      LABELS: "",
+    }),
+    "destroy",
+  );
+});
+
+test("the status comment is created once and then updated", async () => {
+  const calls = [];
+  const comments = [];
+  const fetchImpl = async (url, options = {}) => {
+    calls.push(`${options.method || "GET"} ${url}`);
+    if (!options.method) return jsonResponse(200, comments);
+    const body = JSON.parse(options.body).body;
+    if (options.method === "POST") {
+      comments.push({ id: 9, body });
+      return jsonResponse(201, comments[0]);
+    }
+    comments[0].body = body;
+    return jsonResponse(200, comments[0]);
+  };
+  const names = previewNames(12);
+  const created = await upsertPreviewComment({
+    repo: "Awannaphasch2016/dyad",
+    pr: "12",
+    token: "github-token",
+    body: previewCommentBody("provisioning"),
+    fetchImpl,
+  });
+  const updated = await upsertPreviewComment({
+    repo: "Awannaphasch2016/dyad",
+    pr: "12",
+    token: "github-token",
+    body: previewCommentBody("ready", names),
+    fetchImpl,
+  });
+  assert.equal(created.updated, false);
+  assert.equal(updated.updated, true);
+  assert.match(comments[0].body, /vibesdk-pr-12/);
+  assert.equal(calls.filter((call) => call.startsWith("POST")).length, 1);
+});
+
+test("health checks the preview host only", async () => {
+  let hits = 0;
+  const status = await waitForHealth(
+    previewNames(12).url,
+    async () => {
+      hits += 1;
+      return { status: hits === 1 ? 503 : 200 };
+    },
+    async () => {},
+  );
+  assert.equal(status, 200);
+  await assert.rejects(
+    () =>
+      waitForHealth(
+        "https://vibesdk-lab.karant-test-egress-canary.workers.dev",
+      ),
+    /refusing health url/,
+  );
+});
+
+test("the Vibe SDK workflow stays off the Dyad devbox", () => {
+  const workflow = readFileSync(
+    new URL("../../.github/workflows/preview-vibesdk.yml", import.meta.url),
+    "utf8",
+  );
+  const script = readFileSync(
+    new URL("./vibesdk-preview.mjs", import.meta.url),
+    "utf8",
+  );
+  const resources = readFileSync(
+    new URL("./vibesdk.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.match(workflow, /preview-vibesdk/);
+  assert.match(workflow, /vibesdk-preview-pr-/);
+  assert.match(workflow, /doppler-project: dyad/);
+  assert.match(workflow, /doppler-config: preview/);
+  assert.match(workflow, /doppler-project: vibesdk/);
+  assert.match(workflow, /doppler-config: dev/);
+  assert.equal(workflow.includes("doppler-project: bolt"), false);
+  assert.equal(workflow.includes("doppler-project: forma"), false);
+  assert.equal(workflow.includes("preview-devbox-wewebplus-ci"), false);
+  assert.equal(workflow.includes("Wewebplus-ci"), false);
+  assert.equal(workflow.includes("controller.mjs"), false);
+  assert.equal(workflow.includes("DOPPLER_ADMIN_TOKEN"), false);
+  assert.equal(workflow.includes("preview-bolt"), false);
+  assert.equal(workflow.includes("preview-cloudflare"), false);
+  assert.equal(script.includes("neon.mjs"), false);
+  assert.equal(script.includes("controller.mjs"), false);
+  assert.equal(script.includes("DOPPLER_ADMIN_TOKEN"), false);
+  assert.match(script, /patchWorkerExports/);
+  assert.match(script, /applyOrganizationRun/);
+  assert.match(script, /think_behavior=upstream/);
+  assert.equal(script.includes("patchThinkModel"), false);
+  assert.equal(script.includes("patchThinkRouting"), false);
+  assert.equal(script.includes("patchAppCreationLimit"), false);
+  assert.equal(script.includes("patchStaticSiteDeploy"), false);
+  assert.equal(script.includes("patchPreviewServing"), false);
+  assert.equal(script.includes("patchPreviewPane"), false);
+  assert.equal(script.includes("OPENROUTER_API_KEY"), false);
+  assert.equal(resources.includes("neon.mjs"), false);
+  assert.equal(resources.includes("ensurePreviewBranch"), false);
+  const dyadPreview = readFileSync(
+    new URL("../../.github/workflows/preview.yml", import.meta.url),
+    "utf8",
+  );
+  assert.equal(dyadPreview.includes("wrangler"), false);
+  assert.equal(dyadPreview.includes("vibesdk"), false);
+  assert.equal(dyadPreview.includes("vibesdk-org-run"), false);
+  assert.match(workflow, /workflow_dispatch/);
+  assert.match(workflow, /description: Pull request number/);
+  assert.equal(workflow.includes("schedule:"), false);
+  assert.match(workflow, /cancel-in-progress: false/);
+  assert.match(workflow, /cleanup-failed/);
+  assert.match(workflow, /DELETED:/);
+  const destroy = workflow.split("\n  destroy:")[1];
+  assert.equal(destroy.includes("pull_request.head.sha"), false);
+  assert.match(destroy, /kind removed/);
+});
+
+test("a removal comment stays quiet unless a preview existed", async () => {
+  assert.equal(removalCommentAction({ deleted: true }), "removed");
+  assert.equal(
+    removalCommentAction({
+      deleted: false,
+      existingBody: "cleanup did not finish",
+    }),
+    "removed",
+  );
+  assert.equal(
+    removalCommentAction({ deleted: false, existingBody: "" }),
+    "silent",
+  );
+  const calls = [];
+  const silent = await announceRemoval({
+    repo: "Awannaphasch2016/dyad",
+    pr: "12",
+    token: "github-token",
+    deleted: false,
+    fetchImpl: async (url, options = {}) => {
+      calls.push(`${options.method || "GET"} ${url}`);
+      return jsonResponse(200, []);
+    },
+  });
+  assert.equal(silent, "silent");
+  assert.equal(
+    calls.some((call) => call.startsWith("POST") || call.startsWith("PATCH")),
+    false,
+  );
+  const comments = [
+    {
+      id: 4,
+      body: `${PREVIEW_COMMENT_MARKER}\nVibe SDK preview cleanup did not finish.`,
+    },
+  ];
+  const corrected = await announceRemoval({
+    repo: "Awannaphasch2016/dyad",
+    pr: "12",
+    token: "github-token",
+    deleted: false,
+    fetchImpl: async (url, options = {}) => {
+      if (!options.method) return jsonResponse(200, comments);
+      comments[0].body = JSON.parse(options.body).body;
+      return jsonResponse(200, comments[0]);
+    },
+  });
+  assert.equal(corrected, "removed");
+  assert.match(comments[0].body, /Removed Vibe SDK preview/);
+});
